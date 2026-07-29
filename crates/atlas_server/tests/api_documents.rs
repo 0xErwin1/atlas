@@ -32,6 +32,16 @@ fn doc_req(title: &str) -> CreateDocumentRequest {
     }
 }
 
+fn tamper_continuation(mut continuation: String) -> String {
+    let replacement = if continuation.starts_with('A') {
+        "B"
+    } else {
+        "A"
+    };
+    continuation.replace_range(..1, replacement);
+    continuation
+}
+
 async fn post_document_moves_batch(
     server: &support::TestServer,
     client: &atlas_client::AtlasClient,
@@ -486,6 +496,221 @@ async fn content_search_enforces_scan_and_utf8_page_boundaries() {
         .await
         .expect("non-progress guard search");
     assert_eq!(blocked.status(), reqwest::StatusCode::UNPROCESSABLE_ENTITY);
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn tampered_document_continuations_are_rejected_without_leaking_or_mutating_state() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-tamper").await;
+    let project = client
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj".into(),
+                slug: "proj-tamper".into(),
+                task_prefix: "PTM".into(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+    let content = "range first\nrange second\nneedle first\nneedle second";
+    let doc = client
+        .create_document(
+            &ws.slug,
+            &project.slug,
+            CreateDocumentRequest {
+                title: "Tamper continuations".into(),
+                folder_id: None,
+                content: Some(content.into()),
+            },
+        )
+        .await
+        .expect("create document");
+    let slug = doc.slug.as_deref().expect("slug");
+    let token = client.token().expect("authenticated token");
+    let http = reqwest::Client::new();
+    let range_url = format!(
+        "{}/api/workspaces/{}/documents/{slug}/content/range",
+        server.base_url(),
+        ws.slug
+    );
+    let search_url = format!(
+        "{}/api/workspaces/{}/documents/{slug}/content/search",
+        server.base_url(),
+        ws.slug
+    );
+
+    let range = http
+        .get(format!(
+            "{range_url}?start_line=1&end_line=2&line_limit=1&byte_limit=64"
+        ))
+        .bearer_auth(token)
+        .send()
+        .await
+        .expect("issue range continuation");
+    assert_eq!(range.status(), reqwest::StatusCode::OK);
+    let range: DocumentContentRangeDto = range.json().await.expect("range response");
+    let range_continuation = range.continuation.expect("range continuation");
+
+    let rejected_range = http
+        .get(format!(
+            "{range_url}?continuation={}",
+            tamper_continuation(range_continuation.clone())
+        ))
+        .bearer_auth(client.token().expect("authenticated token"))
+        .send()
+        .await
+        .expect("tampered range continuation request");
+    assert_eq!(rejected_range.status(), reqwest::StatusCode::BAD_REQUEST);
+    let rejected_range: serde_json::Value =
+        rejected_range.json().await.expect("range problem details");
+    assert_eq!(rejected_range["type"], "urn:atlas:error:bad-request");
+    assert_eq!(rejected_range["title"], "Bad Request");
+    assert!(rejected_range.get("lines").is_none());
+    assert!(rejected_range.get("content").is_none());
+
+    let resumed_range = http
+        .get(format!("{range_url}?continuation={range_continuation}"))
+        .bearer_auth(client.token().expect("authenticated token"))
+        .send()
+        .await
+        .expect("resume untampered range continuation");
+    assert_eq!(resumed_range.status(), reqwest::StatusCode::OK);
+    let resumed_range: DocumentContentRangeDto =
+        resumed_range.json().await.expect("resumed range response");
+    assert_eq!(resumed_range.lines[0].text, "range second");
+
+    let search = http
+        .post(&search_url)
+        .bearer_auth(client.token().expect("authenticated token"))
+        .json(&DocumentContentSearchRequest {
+            query: "needle".into(),
+            match_limit: Some(1),
+            ..Default::default()
+        })
+        .send()
+        .await
+        .expect("issue search continuation");
+    assert_eq!(search.status(), reqwest::StatusCode::OK);
+    let search: DocumentContentSearchDto = search.json().await.expect("search response");
+    let search_continuation = search.continuation.expect("search continuation");
+
+    let rejected_search = http
+        .post(&search_url)
+        .bearer_auth(client.token().expect("authenticated token"))
+        .json(&DocumentContentSearchRequest {
+            query: "needle".into(),
+            continuation: Some(tamper_continuation(search_continuation.clone())),
+            ..Default::default()
+        })
+        .send()
+        .await
+        .expect("tampered search continuation request");
+    assert_eq!(rejected_search.status(), reqwest::StatusCode::BAD_REQUEST);
+    let rejected_search: serde_json::Value = rejected_search
+        .json()
+        .await
+        .expect("search problem details");
+    assert_eq!(rejected_search["type"], "urn:atlas:error:bad-request");
+    assert_eq!(rejected_search["title"], "Bad Request");
+    assert!(rejected_search.get("matches").is_none());
+    assert!(rejected_search.get("content").is_none());
+
+    let resumed_search = http
+        .post(&search_url)
+        .bearer_auth(client.token().expect("authenticated token"))
+        .json(&DocumentContentSearchRequest {
+            query: "needle".into(),
+            continuation: Some(search_continuation),
+            ..Default::default()
+        })
+        .send()
+        .await
+        .expect("resume untampered search continuation");
+    assert_eq!(resumed_search.status(), reqwest::StatusCode::OK);
+    let resumed_search: DocumentContentSearchDto = resumed_search
+        .json()
+        .await
+        .expect("resumed search response");
+    assert_eq!(resumed_search.matches[0].preview, "needle second");
+
+    let current = client
+        .get_document(&ws.slug, slug)
+        .await
+        .expect("read document after rejected continuations");
+    assert_eq!(current.content, content);
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn invalid_pattern_search_returns_problem_details_without_partial_results() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "doc-invalid-pattern").await;
+    let project = client
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Proj".into(),
+                slug: "proj-invalid-pattern".into(),
+                task_prefix: "PIP".into(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+    let content = "needle one\nneedle two";
+    let doc = client
+        .create_document(
+            &ws.slug,
+            &project.slug,
+            CreateDocumentRequest {
+                title: "Invalid pattern".into(),
+                folder_id: None,
+                content: Some(content.into()),
+            },
+        )
+        .await
+        .expect("create document");
+    let slug = doc.slug.as_deref().expect("slug");
+    let url = format!(
+        "{}/api/workspaces/{}/documents/{slug}/content/search",
+        server.base_url(),
+        ws.slug
+    );
+
+    let response = reqwest::Client::new()
+        .post(url)
+        .bearer_auth(client.token().expect("authenticated token"))
+        .json(&DocumentContentSearchRequest {
+            query: "[".into(),
+            mode: Some(DocumentSearchMode::Pattern),
+            ..Default::default()
+        })
+        .send()
+        .await
+        .expect("invalid pattern search request");
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    let problem: serde_json::Value = response.json().await.expect("problem details");
+    assert_eq!(problem["type"], "urn:atlas:error:bad-request");
+    assert_eq!(problem["title"], "Bad Request");
+    assert_eq!(problem["status"], 400);
+    assert!(problem.get("matches").is_none());
+    assert!(problem.get("continuation").is_none());
+
+    let current = client
+        .get_document(&ws.slug, slug)
+        .await
+        .expect("read document after invalid pattern");
+    assert_eq!(current.content, content);
+
     db.teardown().await;
 }
 

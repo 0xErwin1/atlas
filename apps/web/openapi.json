@@ -3178,6 +3178,50 @@
         ]
       }
     },
+    "/api/workspaces/{ws}/documents/moves/batch": {
+      "post": {
+        "tags": [
+          "documents"
+        ],
+        "operationId": "move_documents_batch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentMoveBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DocumentMoveBatchResultDto"
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": ""
+          },
+          "422": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/api/workspaces/{ws}/documents/{slug}": {
       "get": {
         "tags": [
@@ -13985,6 +14029,109 @@
           }
         ],
         "description": "A one-based partial document-content edit."
+      },
+      "DocumentMoveBatchItemRequest": {
+        "type": "object",
+        "description": "One source document and destination folder/root in a document move batch.",
+        "required": [
+          "source_document"
+        ],
+        "properties": {
+          "folder_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The destination folder; `null` moves the document to the project root."
+          },
+          "source_document": {
+            "type": "string",
+            "description": "A document slug or stable UUID."
+          }
+        }
+      },
+      "DocumentMoveBatchRequest": {
+        "type": "object",
+        "description": "Request body for `POST /api/workspaces/{ws}/documents/moves/batch`.",
+        "required": [
+          "moves"
+        ],
+        "properties": {
+          "moves": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DocumentMoveBatchItemRequest"
+            }
+          }
+        }
+      },
+      "DocumentMoveBatchResultDto": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "index",
+              "document",
+              "outcome"
+            ],
+            "properties": {
+              "document": {
+                "$ref": "#/components/schemas/DocumentCompactDto"
+              },
+              "index": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "success"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "index",
+              "status",
+              "type",
+              "title",
+              "outcome"
+            ],
+            "properties": {
+              "hint": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "index": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "problem"
+                ]
+              },
+              "status": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "title": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "description": "One ordered result from a document move batch request."
       },
       "DocumentPresenceResponse": {
         "type": "object",
