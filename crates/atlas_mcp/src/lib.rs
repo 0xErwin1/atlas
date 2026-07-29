@@ -11,7 +11,8 @@ use atlas_api::dtos::boards_tasks::{
 };
 use atlas_api::dtos::documents::{
     CreateDocumentRequest, DocumentContentEditRequest, DocumentContentRangeQuery,
-    DocumentContentSearchRequest, DocumentLineEditRequest, DocumentSearchMode, MoveDocumentRequest,
+    DocumentContentSearchRequest, DocumentLineEditRequest, DocumentMoveBatchItemRequest,
+    DocumentMoveBatchRequest, DocumentMoveBatchResultDto, DocumentSearchMode, MoveDocumentRequest,
     UpdateContentRequest, UpdateDocumentRequest,
 };
 use atlas_api::dtos::folders::{CreateFolderRequest, MoveFolderRequest, RenameFolderRequest};
@@ -1142,6 +1143,26 @@ pub struct MoveDocumentParams {
     /// UUID string of the destination folder. Omit to move to the project root.
     #[serde(default)]
     pub folder_id: Option<String>,
+}
+
+/// One source document and destination folder/root accepted by the batch move tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DocumentMoveBatchItemParams {
+    /// Source document slug.
+    pub source_slug: String,
+    /// UUID string of the destination folder. Omit to move to the project root.
+    #[serde(default)]
+    pub folder_id: Option<String>,
+}
+
+/// Parameters accepted by the `move_documents_batch` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MoveDocumentsBatchParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Ordered document moves. At most 100 are accepted.
+    #[schemars(length(max = 100))]
+    pub moves: Vec<DocumentMoveBatchItemParams>,
 }
 
 /// Parameters accepted by the `copy_document` tool.
@@ -3296,6 +3317,63 @@ impl AtlasMcp {
 
         let result = project_document_compact(doc);
         serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Move up to 100 documents independently. Results remain ordered by input and each item is either a moved compact document or a structured problem."
+    )]
+    async fn move_documents_batch(
+        &self,
+        Parameters(params): Parameters<MoveDocumentsBatchParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        if params.moves.len() > 100 {
+            return Err("moves may contain at most 100 items".to_string());
+        }
+
+        let client = self.resolve_client(&ctx)?;
+        let moves = params
+            .moves
+            .into_iter()
+            .map(|item| {
+                let folder_id = parse_optional_uuid_param("folder_id", item.folder_id.as_deref())?;
+
+                Ok(DocumentMoveBatchItemRequest {
+                    source_document: item.source_slug,
+                    folder_id,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+
+        let results = client
+            .move_documents_batch(&params.workspace, DocumentMoveBatchRequest { moves })
+            .await
+            .map_err(|e| enrich_client_error(e, "move_documents_batch"))?
+            .into_iter()
+            .map(|result| match result {
+                DocumentMoveBatchResultDto::Success { index, document } => json!({
+                    "index": index,
+                    "outcome": "success",
+                    "document": project_document_metadata(document),
+                }),
+                DocumentMoveBatchResultDto::Problem {
+                    index,
+                    status,
+                    r#type,
+                    title,
+                    hint,
+                } => json!({
+                    "index": index,
+                    "outcome": "problem",
+                    "status": status,
+                    "type": r#type,
+                    "title": title,
+                    "hint": hint,
+                }),
+            })
+            .collect::<Vec<_>>();
+
+        serde_json::to_string(&results).map_err(|e| e.to_string())
     }
 
     #[tool(
@@ -6890,6 +6968,23 @@ mod tests {
         }
     }
 
+    #[test]
+    #[allow(clippy::indexing_slicing)]
+    fn document_move_batch_schema_requires_source_slug_and_bounds_moves() {
+        let schema = serde_json::to_value(schemars::schema_for!(MoveDocumentsBatchParams)).unwrap();
+        let moves = &schema["properties"]["moves"];
+
+        assert_eq!(moves["maxItems"], serde_json::json!(100));
+        assert_eq!(
+            moves["items"]["$ref"],
+            serde_json::json!("#/$defs/DocumentMoveBatchItemParams")
+        );
+        assert_eq!(
+            schema["$defs"]["DocumentMoveBatchItemParams"]["required"],
+            serde_json::json!(["source_slug"])
+        );
+    }
+
     #[tokio::test]
     #[allow(clippy::indexing_slicing)]
     async fn create_task_projects_initial_reference_titles_and_exact_request() {
@@ -7034,6 +7129,72 @@ mod tests {
             tool_text(&result),
             "references may contain at most 100 items"
         );
+    }
+
+    #[tokio::test]
+    #[allow(clippy::indexing_slicing)]
+    async fn document_move_batch_projects_ordered_compact_outcomes_without_disclosure() {
+        let (base_url, requests) = serve_recording_atlas(vec![(
+            "200 OK",
+            r#"[{"outcome":"success","index":0,"document":{"id":"00000000-0000-0000-0000-000000000001","workspace_id":"00000000-0000-0000-0000-000000000002","project_id":"00000000-0000-0000-0000-000000000003","folder_id":"00000000-0000-0000-0000-000000000004","slug":"first","title":"Current first title","head_revision_id":"00000000-0000-0000-0000-000000000005","head_seq":5,"frontmatter":{},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}},{"outcome":"problem","index":1,"status":404,"type":"urn:atlas:error:not-found","title":"Not found","hint":"document is unavailable"},{"outcome":"success","index":2,"document":{"id":"00000000-0000-0000-0000-000000000006","workspace_id":"00000000-0000-0000-0000-000000000002","project_id":"00000000-0000-0000-0000-000000000003","folder_id":null,"slug":"third","title":"Current third title","head_revision_id":"00000000-0000-0000-0000-000000000007","head_seq":7,"frontmatter":{},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}}]"#.to_string(),
+        )]);
+        let client =
+            start_mcp_client(AtlasMcp::new(base_url, "atlas_test").expect("server config")).await;
+
+        let result = client
+            .call_tool(call_tool_params(
+                "move_documents_batch",
+                serde_json::json!({
+                    "workspace": "ws",
+                    "moves": [
+                        {"source_slug": "first", "folder_id": "00000000-0000-0000-0000-000000000004"},
+                        {"source_slug": "missing", "folder_id": "00000000-0000-0000-0000-000000000004"},
+                        {"source_slug": "third"}
+                    ]
+                }),
+            ))
+            .await
+            .expect("batch document move MCP call succeeds");
+        let output: serde_json::Value = serde_json::from_str(tool_text(&result)).unwrap();
+
+        assert_eq!(output[0]["index"], 0);
+        assert_eq!(output[0]["outcome"], "success");
+        assert_eq!(output[0]["document"]["title"], "Current first title");
+        assert_eq!(output[1]["index"], 1);
+        assert_eq!(output[1]["outcome"], "problem");
+        assert_eq!(output[1]["status"], 404);
+        assert_eq!(output[1]["hint"], "document is unavailable");
+        assert!(output[1].get("document").is_none());
+        assert!(output[1].get("source_slug").is_none());
+        assert_eq!(output[2]["document"]["folder_id"], serde_json::Value::Null);
+
+        let request = requests.recv().expect("Atlas received batch move request");
+        assert!(request.starts_with("POST /api/workspaces/ws/documents/moves/batch "));
+        assert!(request.contains("\"source_document\":\"first\""));
+        assert!(request.contains("\"source_document\":\"missing\""));
+        assert!(request.contains("\"folder_id\":null"));
+    }
+
+    #[tokio::test]
+    async fn document_move_batch_rejects_more_than_one_hundred_items_before_dispatch() {
+        let client = start_mcp_client(
+            AtlasMcp::new("http://127.0.0.1:9", "atlas_test").expect("server config"),
+        )
+        .await;
+        let moves = (0..101)
+            .map(|index| serde_json::json!({"source_slug": format!("document-{index}")}))
+            .collect::<Vec<_>>();
+
+        let result = client
+            .call_tool(call_tool_params(
+                "move_documents_batch",
+                serde_json::json!({"workspace": "ws", "moves": moves}),
+            ))
+            .await
+            .expect("MCP tool call completes with a tool error");
+
+        assert!(result.is_error.unwrap_or(false));
+        assert_eq!(tool_text(&result), "moves may contain at most 100 items");
     }
 
     #[tokio::test]

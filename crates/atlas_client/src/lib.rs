@@ -27,8 +27,9 @@ use atlas_api::{
             CopyDocumentRequest, CreateDocumentRequest, DocumentCompactDto,
             DocumentContentEditRequest, DocumentContentRangeDto, DocumentContentRangeQuery,
             DocumentContentSearchDto, DocumentContentSearchRequest, DocumentDto,
-            DocumentSummaryDto, FrontmatterDto, MoveDocumentRequest, RevisionContentDto,
-            RevisionMetaDto, UpdateContentRequest, UpdateDocumentRequest,
+            DocumentMoveBatchRequest, DocumentMoveBatchResultDto, DocumentSummaryDto,
+            FrontmatterDto, MoveDocumentRequest, RevisionContentDto, RevisionMetaDto,
+            UpdateContentRequest, UpdateDocumentRequest,
         },
         folders::{
             CopyFolderRequest, CreateFolderRequest, FolderDto, MoveFolderRequest,
@@ -1623,6 +1624,21 @@ impl AtlasClient {
             .send()
             .await?;
         self.decode_response(response, "move_document").await
+    }
+
+    /// `POST /api/workspaces/{ws}/documents/moves/batch`
+    pub async fn move_documents_batch(
+        &self,
+        ws: &str,
+        body: DocumentMoveBatchRequest,
+    ) -> Result<Vec<DocumentMoveBatchResultDto>, ClientError> {
+        let response = self
+            .post(&format!("/api/workspaces/{ws}/documents/moves/batch"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "move_documents_batch").await
     }
 
     /// `POST /api/workspaces/{ws}/documents/{slug}/copy`
@@ -4858,5 +4874,72 @@ mod tests {
                     && problem.hint.as_deref()
                         == Some("position must be within the document line range")
         ));
+    }
+
+    #[tokio::test]
+    async fn document_move_batch_serializes_ordered_moves_and_decodes_mixed_outcomes() {
+        const RESPONSE: &str = r#"[{"outcome":"success","index":0,"document":{"id":"00000000-0000-0000-0000-000000000001","workspace_id":"00000000-0000-0000-0000-000000000002","project_id":"00000000-0000-0000-0000-000000000003","folder_id":"00000000-0000-0000-0000-000000000004","slug":"first","title":"Current first title","head_revision_id":"00000000-0000-0000-0000-000000000005","head_seq":5,"frontmatter":{},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}},{"outcome":"problem","index":1,"status":404,"type":"urn:atlas:error:not-found","title":"Not found","hint":"document is unavailable"},{"outcome":"success","index":2,"document":{"id":"00000000-0000-0000-0000-000000000006","workspace_id":"00000000-0000-0000-0000-000000000002","project_id":"00000000-0000-0000-0000-000000000003","folder_id":null,"slug":"third","title":"Current third title","head_revision_id":"00000000-0000-0000-0000-000000000007","head_seq":7,"frontmatter":{},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}}]"#;
+
+        let destination_folder = uuid::uuid!("00000000-0000-0000-0000-000000000004");
+        let request = DocumentMoveBatchRequest {
+            moves: vec![
+                atlas_api::dtos::documents::DocumentMoveBatchItemRequest {
+                    source_document: "first".into(),
+                    folder_id: Some(destination_folder),
+                },
+                atlas_api::dtos::documents::DocumentMoveBatchItemRequest {
+                    source_document: "missing".into(),
+                    folder_id: Some(destination_folder),
+                },
+                atlas_api::dtos::documents::DocumentMoveBatchItemRequest {
+                    source_document: "third".into(),
+                    folder_id: None,
+                },
+            ],
+        };
+        let (base_url, requests) = serve_once_observing("200 OK", RESPONSE);
+
+        let outcomes = AtlasClient::new(base_url)
+            .move_documents_batch("ws", request)
+            .await
+            .expect("batch move succeeds with per-item outcomes");
+
+        assert!(matches!(
+            outcomes.as_slice(),
+            [
+                DocumentMoveBatchResultDto::Success { index: 0, document },
+                DocumentMoveBatchResultDto::Problem {
+                    index: 1,
+                    status: 404,
+                    r#type,
+                    title,
+                    hint: Some(hint),
+                },
+                DocumentMoveBatchResultDto::Success { index: 2, .. },
+            ] if document.title == "Current first title"
+                && r#type == "urn:atlas:error:not-found"
+                && title == "Not found"
+                && hint == "document is unavailable"
+        ));
+
+        let sent: serde_json::Value = serde_json::from_str(
+            requests
+                .recv()
+                .expect("mock server received batch move request")
+                .split("\r\n\r\n")
+                .nth(1)
+                .expect("request includes a JSON body"),
+        )
+        .expect("batch move body is JSON");
+        assert_eq!(
+            sent,
+            serde_json::json!({
+                "moves": [
+                    {"source_document": "first", "folder_id": destination_folder},
+                    {"source_document": "missing", "folder_id": destination_folder},
+                    {"source_document": "third", "folder_id": null},
+                ]
+            })
+        );
     }
 }
