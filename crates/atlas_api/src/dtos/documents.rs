@@ -74,6 +74,41 @@ pub struct MoveDocumentRequest {
     pub folder_id: Option<uuid::Uuid>,
 }
 
+/// Request body for `POST /api/workspaces/{ws}/documents/moves/batch`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct DocumentMoveBatchRequest {
+    pub moves: Vec<DocumentMoveBatchItemRequest>,
+}
+
+/// One source document and destination folder/root in a document move batch.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct DocumentMoveBatchItemRequest {
+    /// A document slug or stable UUID.
+    pub source_document: String,
+    /// The destination folder; `null` moves the document to the project root.
+    pub folder_id: Option<uuid::Uuid>,
+}
+
+/// One ordered result from a document move batch request.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub enum DocumentMoveBatchResultDto {
+    Success {
+        index: usize,
+        document: DocumentCompactDto,
+    },
+    Problem {
+        index: usize,
+        status: u16,
+        r#type: String,
+        title: String,
+        hint: Option<String>,
+    },
+}
+
 /// Request body for `POST /api/workspaces/{ws}/documents/{slug}/copy`.
 ///
 /// `folder_id` is the destination folder for the copy. When omitted, the copy

@@ -13,6 +13,7 @@ use regex::Regex;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
+use std::collections::HashMap;
 
 use atlas_api::{
     dtos::boards_tasks::{
@@ -23,9 +24,10 @@ use atlas_api::{
         CommentBacklinkSourceDto, CommentDraftDto, CopyDocumentRequest, CreateDocumentRequest,
         DocumentCompactDto, DocumentContentEditRequest, DocumentContentRangeDto,
         DocumentContentRangeQuery, DocumentContentSearchDto, DocumentContentSearchRequest,
-        DocumentDto, DocumentLineDto, DocumentLineEditRequest, DocumentSearchMatchDto,
-        DocumentSearchMode, DocumentSummaryDto, FrontmatterDto, MoveDocumentRequest,
-        RevisionContentDto, RevisionMetaDto, UpdateContentRequest, UpdateDocumentRequest,
+        DocumentDto, DocumentLineDto, DocumentLineEditRequest, DocumentMoveBatchRequest,
+        DocumentMoveBatchResultDto, DocumentSearchMatchDto, DocumentSearchMode, DocumentSummaryDto,
+        FrontmatterDto, MoveDocumentRequest, RevisionContentDto, RevisionMetaDto,
+        UpdateContentRequest, UpdateDocumentRequest,
     },
     pagination::{Cursor, Page},
 };
@@ -39,7 +41,7 @@ use atlas_domain::{
     entities::documents::{AttachmentOwner, ExtractedLink, NewAttachment, NewDocument},
     entities::identity::MemberRole,
     ids::{AttachmentId, CommentDraftId, CommentId, DocumentId, FolderId, RevisionId, UserId},
-    permissions::{Capability, CapabilityAction, CapabilityFamily, Principal},
+    permissions::{Capability, CapabilityAction, CapabilityFamily, Principal, ResourceRole},
     ports::{
         comments::{CommentAttachmentDraftRepo, CommentLinkRepo, CommentRepo},
         documents::FolderPresence,
@@ -51,7 +53,10 @@ use crate::{
     authz::{
         Authorized, DocsCreate, DocsDelete, DocsRead, DocsUpdate, EditorMin, MinRole, ViewerMin,
         WorkspaceMember, authorize_folder_destination,
-        authorized::{DocumentCompactRes, DocumentSlugRes, ProjectRes},
+        authorized::{
+            DocumentCompactRes, DocumentSlugRes, ProjectRes, ResolvedResource, WorkspaceRes,
+            resolve_effective_role,
+        },
         batch_authorization::{
             BatchAuthorizationService, PgBatchAuthorizationSource, ProjectionSubject,
         },
@@ -59,6 +64,7 @@ use crate::{
     },
     error::ApiError,
     persistence::entities::documents::document,
+    persistence::entities::workspace_core::project,
     persistence::repos::{
         AttachmentRepo, DocumentLinkRepo, DocumentRepo, PgAttachmentLifecycle, PgAttachmentRepo,
         PgCommentLinkRepo, PgCommentRepo, PgDocumentLinkRepo, PgDocumentRepo,
@@ -2017,6 +2023,191 @@ pub(crate) async fn move_document(
         .ok_or(ApiError::NotFound)?;
 
     Ok(Json(document_to_dto(updated)))
+}
+
+fn document_move_batch_problem(index: usize, error: ApiError) -> DocumentMoveBatchResultDto {
+    let (status, r#type, title, hint) = match error {
+        ApiError::InvalidInput { .. }
+        | ApiError::Domain(atlas_domain::DomainError::InvalidInput { .. }) => (
+            422,
+            "urn:atlas:error:invalid-input".into(),
+            "Invalid Input".into(),
+            None,
+        ),
+        ApiError::Conflict | ApiError::Domain(atlas_domain::DomainError::AlreadyExists { .. }) => (
+            409,
+            "urn:atlas:error:conflict".into(),
+            "Conflict".into(),
+            None,
+        ),
+        _ => (
+            404,
+            "urn:atlas:error:not-found".into(),
+            "Not Found".into(),
+            Some("Check the identifier — it may not exist or you may not have access.".into()),
+        ),
+    };
+
+    DocumentMoveBatchResultDto::Problem {
+        index,
+        status,
+        r#type,
+        title,
+        hint,
+    }
+}
+
+async fn move_document_batch_item(
+    state: &AppState,
+    principal: &Principal,
+    membership: Option<MemberRole>,
+    workspace: &atlas_domain::entities::identity::Workspace,
+    source_document: &str,
+    folder_id: Option<uuid::Uuid>,
+) -> Result<DocumentCompactDto, ApiError> {
+    let mut params = HashMap::new();
+    params.insert("slug".to_string(), source_document.to_string());
+
+    let (source, chain) = DocumentSlugRes::resolve(&state.db, workspace, params).await?;
+    let effective_role =
+        resolve_effective_role(&state.db, principal, membership.clone(), workspace, &chain)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+
+    if effective_role < ResourceRole::Editor {
+        return Err(ApiError::NotFound);
+    }
+
+    if let Some(folder_id) = folder_id {
+        authorize_folder_destination(
+            &state.db,
+            principal,
+            membership,
+            workspace,
+            FolderId(folder_id),
+            EditorMin::ROLE,
+        )
+        .await
+        .map_err(|error| match error {
+            ApiError::Forbidden { .. } => ApiError::NotFound,
+            other => other,
+        })?;
+    } else {
+        authorize_document_root_destination(
+            state,
+            principal,
+            membership,
+            workspace,
+            source.0.project_id,
+        )
+        .await?;
+    }
+
+    let ctx = WorkspaceCtx::new(workspace.id, principal_to_actor(principal));
+    let document = source.0;
+    let doc_svc = state.document_service();
+    doc_svc
+        .move_to(
+            &ctx,
+            document.id,
+            folder_id.map(FolderId),
+            document.project_id,
+        )
+        .await
+        .map_err(ApiError::Domain)?;
+
+    let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
+    let updated = doc_repo
+        .get(&ctx, document.id)
+        .await
+        .map_err(ApiError::Domain)?
+        .ok_or(ApiError::NotFound)?;
+
+    Ok(document_to_compact_dto(updated))
+}
+
+async fn authorize_document_root_destination(
+    state: &AppState,
+    principal: &Principal,
+    membership: Option<MemberRole>,
+    workspace: &atlas_domain::entities::identity::Workspace,
+    project_id: Option<atlas_domain::ids::ProjectId>,
+) -> Result<(), ApiError> {
+    let chain = if let Some(project_id) = project_id {
+        let project = project::Entity::find_by_id(project_id.0)
+            .filter(project::Column::WorkspaceId.eq(workspace.id.0))
+            .filter(project::Column::DeletedAt.is_null())
+            .one(&*state.db)
+            .await
+            .map_err(|error| ApiError::Internal {
+                message: error.to_string(),
+            })?
+            .ok_or(ApiError::NotFound)?;
+        let mut params = HashMap::new();
+        params.insert("project_slug".into(), project.slug);
+        let (_, chain) = ProjectRes::resolve(&state.db, workspace, params).await?;
+        chain
+    } else {
+        let (_, chain) = WorkspaceRes::resolve(&state.db, workspace, ()).await?;
+        chain
+    };
+
+    let role = resolve_effective_role(&state.db, principal, membership, workspace, &chain)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    if role < ResourceRole::Editor {
+        return Err(ApiError::NotFound);
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/workspaces/{ws}/documents/moves/batch
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    post,
+    path = "/api/workspaces/{ws}/documents/moves/batch",
+    tag = "documents",
+    security(("bearer_auth" = [])),
+    request_body = DocumentMoveBatchRequest,
+    responses(
+        (status = 200, body = Vec<DocumentMoveBatchResultDto>),
+        (status = 413),
+        (status = 422),
+    )
+)]
+pub(crate) async fn move_documents_batch(
+    auth: Authorized<WorkspaceRes, ViewerMin, DocsUpdate>,
+    State(state): State<AppState>,
+    Json(body): Json<DocumentMoveBatchRequest>,
+) -> Result<Json<Vec<DocumentMoveBatchResultDto>>, ApiError> {
+    if body.moves.len() > 100 {
+        return Err(ApiError::InvalidInput {
+            message: "moves must contain at most 100 items".into(),
+        });
+    }
+
+    let mut results = Vec::with_capacity(body.moves.len());
+
+    for (index, request) in body.moves.into_iter().enumerate() {
+        match move_document_batch_item(
+            &state,
+            &auth.principal,
+            auth.membership.clone(),
+            &auth.workspace,
+            &request.source_document,
+            request.folder_id,
+        )
+        .await
+        {
+            Ok(document) => results.push(DocumentMoveBatchResultDto::Success { index, document }),
+            Err(error) => results.push(document_move_batch_problem(index, error)),
+        }
+    }
+
+    Ok(Json(results))
 }
 
 // ---------------------------------------------------------------------------

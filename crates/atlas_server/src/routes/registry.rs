@@ -629,6 +629,13 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
     },
     RouteEntry {
         method: "POST",
+        path_template: "/api/workspaces/{ws}/documents/moves/batch",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/api/workspaces/{ws}/documents/moves/batch"),
+        capability: Some("docs:update"),
+    },
+    RouteEntry {
+        method: "POST",
         path_template: "/api/workspaces/{ws}/documents/nonexistent-slug/copy",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/api/workspaces/{ws}/documents/{slug}/copy"),

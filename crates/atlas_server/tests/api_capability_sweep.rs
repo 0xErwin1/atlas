@@ -371,6 +371,7 @@ enum Case {
     DeleteDocumentCommentAttachment,
     DocumentHeartbeat,
     DocumentLeave,
+    MoveDocumentsBatch,
     // ---- boards (13) ----
     CreateBoard,
     ListBoards,
@@ -512,6 +513,7 @@ impl Case {
         Case::DeleteDocumentCommentAttachment,
         Case::DocumentHeartbeat,
         Case::DocumentLeave,
+        Case::MoveDocumentsBatch,
         Case::CreateBoard,
         Case::ListBoards,
         Case::GetBoard,
@@ -648,6 +650,7 @@ impl Case {
             Case::DeleteDocumentCommentAttachment => ("DELETE", "docs:update"),
             Case::DocumentHeartbeat => ("POST", "docs:read"),
             Case::DocumentLeave => ("DELETE", "docs:read"),
+            Case::MoveDocumentsBatch => ("POST", "docs:update"),
 
             Case::CreateBoard => ("POST", "boards:create"),
             Case::ListBoards => ("GET", "boards:read"),
@@ -1256,6 +1259,16 @@ async fn invoke(
                     "/api/workspaces/{ws}/documents/{}/presence",
                     fx.document_ref
                 ),
+            )
+            .await
+        }
+        Case::MoveDocumentsBatch => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "POST",
+                &format!("/api/workspaces/{ws}/documents/moves/batch"),
             )
             .await
         }
@@ -1970,6 +1983,91 @@ async fn partial_document_edit_requires_docs_update_capability() {
         .expect("wrong-scope partial edit request");
     assert_eq!(wrong_response.status(), reqwest::StatusCode::FORBIDDEN);
     let problem: ProblemDetails = wrong_response.json().await.expect("scope denial problem");
+    assert!(
+        problem
+            .detail
+            .as_deref()
+            .is_some_and(|detail| detail.contains("lacks required scope: docs:update"))
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn document_move_batch_requires_docs_update_capability() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, ws, owner_user) =
+        login_user_with_workspace(&server, &db, "cap-document-move-batch-owner").await;
+    let fx = seed_fixtures(&owner, &db, &ws.slug, ws.id.0, owner_user.id).await;
+    let http = reqwest::Client::new();
+    let body = serde_json::json!({
+        "moves": [{
+            "source_document": fx.document_ref,
+            "folder_id": null
+        }]
+    });
+
+    let update_token = create_scoped_agent(
+        &db,
+        owner_user.id,
+        "cap-document-move-batch-update",
+        vec![
+            Capability::ALL
+                .into_iter()
+                .find(|capability| capability.as_str() == "docs:update")
+                .expect("docs:update capability"),
+        ],
+    )
+    .await;
+    let update_response = http
+        .post(format!(
+            "{}/api/workspaces/{}/documents/moves/batch",
+            server.base_url(),
+            fx.ws_slug
+        ))
+        .bearer_auth(&update_token)
+        .json(&body)
+        .send()
+        .await
+        .expect("docs:update document move batch request");
+    assert_eq!(update_response.status(), reqwest::StatusCode::OK);
+    let outcomes: serde_json::Value = update_response
+        .json()
+        .await
+        .expect("decode docs:update batch result");
+    assert_eq!(outcomes[0]["outcome"], "success");
+    assert_eq!(outcomes[0]["document"]["id"], fx.document_ref);
+
+    let wrong_token = create_scoped_agent(
+        &db,
+        owner_user.id,
+        "cap-document-move-batch-wrong",
+        vec![
+            Capability::ALL
+                .into_iter()
+                .find(|capability| capability.as_str() == "docs:read")
+                .expect("docs:read capability"),
+        ],
+    )
+    .await;
+    let wrong_response = http
+        .post(format!(
+            "{}/api/workspaces/{}/documents/moves/batch",
+            server.base_url(),
+            fx.ws_slug
+        ))
+        .bearer_auth(&wrong_token)
+        .json(&body)
+        .send()
+        .await
+        .expect("wrong-scope document move batch request");
+    assert_eq!(wrong_response.status(), reqwest::StatusCode::FORBIDDEN);
+    let problem: ProblemDetails = wrong_response
+        .json()
+        .await
+        .expect("wrong-scope batch problem");
     assert!(
         problem
             .detail

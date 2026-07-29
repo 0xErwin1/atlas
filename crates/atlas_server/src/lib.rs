@@ -632,6 +632,11 @@ pub fn app(state: AppState) -> Router {
             axum::routing::patch(routes::documents::move_document),
         )
         .route(
+            "/api/workspaces/{ws}/documents/moves/batch",
+            axum::routing::post(routes::documents::move_documents_batch)
+                .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024)),
+        )
+        .route(
             "/api/workspaces/{ws}/documents/{slug}/copy",
             axum::routing::post(routes::documents::copy_document),
         )

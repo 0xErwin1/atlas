@@ -43,6 +43,9 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "DocumentContentEditRequest",
     "DocumentLineEditRequest",
     "MoveDocumentRequest",
+    "DocumentMoveBatchRequest",
+    "DocumentMoveBatchItemRequest",
+    "DocumentMoveBatchResultDto",
     "CopyDocumentRequest",
     "DocumentDto",
     "DocumentCompactDto",
@@ -378,6 +381,27 @@ fn reference_batch_operation_documents_its_bounded_result_contract() {
         batch
             .pointer("/responses/200/content/application~1json/schema/items/$ref")
             .is_some_and(|schema| schema == "#/components/schemas/CreateReferenceBatchResultDto"),
+        "the batch success response must expose one typed result per input item"
+    );
+}
+
+#[test]
+fn document_move_batch_operation_documents_its_bounded_result_contract() {
+    let document = serde_json::to_value(openapi()).expect("serialize OpenAPI document");
+    let path = "/api/workspaces/{ws}/documents/moves/batch";
+    let batch = operation(&document, path, "post");
+
+    assert_operation_statuses(&document, path, "post", &[200, 413, 422]);
+    assert_eq!(
+        batch.pointer("/requestBody/content/application~1json/schema/$ref"),
+        Some(&Value::String(
+            "#/components/schemas/DocumentMoveBatchRequest".into()
+        ))
+    );
+    assert!(
+        batch
+            .pointer("/responses/200/content/application~1json/schema/items/$ref")
+            .is_some_and(|schema| schema == "#/components/schemas/DocumentMoveBatchResultDto"),
         "the batch success response must expose one typed result per input item"
     );
 }

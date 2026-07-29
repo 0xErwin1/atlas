@@ -31,6 +31,24 @@ fn doc_req(title: &str) -> CreateDocumentRequest {
         content: None,
     }
 }
+
+async fn post_document_moves_batch(
+    server: &support::TestServer,
+    client: &atlas_client::AtlasClient,
+    workspace: &str,
+    body: serde_json::Value,
+) -> reqwest::Response {
+    reqwest::Client::new()
+        .post(format!(
+            "{}/api/workspaces/{workspace}/documents/moves/batch",
+            server.base_url()
+        ))
+        .bearer_auth(client.token().expect("authenticated token"))
+        .json(&body)
+        .send()
+        .await
+        .expect("document move batch request")
+}
 macro_rules! edit_content_range {
     ($server:expr, $client:expr, $workspace:expr, $slug:expr, $base:expr, $edit:expr $(,)?) => {
         reqwest::Client::new()
@@ -2377,6 +2395,547 @@ async fn move_within_authorized_project_folder_succeeds() {
     assert_eq!(moved.project_id, Some(project_a.id));
 
     db.teardown().await;
+}
+
+#[tokio::test]
+async fn document_moves_batch_preserves_order_and_prior_successes() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, user) =
+        support::login_user_with_workspace(&server, &db, "doc-moves-batch").await;
+
+    let project = client
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Project".to_string(),
+                slug: "doc-moves-batch-project".to_string(),
+                task_prefix: "DMB".to_string(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+
+    let destination = db
+        .folder_repo()
+        .create(
+            &WorkspaceCtx::new(ws.id, Actor::User(user.id)),
+            atlas_domain::entities::workspace_core::NewFolder {
+                project_id: Some(atlas_domain::ids::ProjectId(project.id)),
+                parent_folder_id: None,
+                name: "destination".to_string(),
+            },
+        )
+        .await
+        .expect("create destination folder");
+
+    let (foreign_client, foreign_workspace, _) =
+        support::login_user_with_workspace(&server, &db, "doc-moves-batch-foreign").await;
+    let foreign_project = foreign_client
+        .create_project(
+            &foreign_workspace.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Foreign Project".to_string(),
+                slug: "doc-moves-batch-foreign-project".to_string(),
+                task_prefix: "DMF".to_string(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create foreign project");
+    let foreign_document = foreign_client
+        .create_document(
+            &foreign_workspace.slug,
+            &foreign_project.slug,
+            doc_req("Foreign"),
+        )
+        .await
+        .expect("create foreign document");
+
+    let first = client
+        .create_document(&ws.slug, &project.slug, doc_req("First"))
+        .await
+        .expect("create first document");
+    let second = client
+        .create_document(&ws.slug, &project.slug, doc_req("Second"))
+        .await
+        .expect("create second document");
+
+    let first_slug = first.slug.as_deref().expect("first slug");
+    let second_slug = second.slug.as_deref().expect("second slug");
+    let response = post_document_moves_batch(
+        &server,
+        &client,
+        &ws.slug,
+        serde_json::json!({
+            "moves": [
+                { "source_document": first_slug, "folder_id": destination.id.0 },
+                { "source_document": foreign_document.id, "folder_id": null },
+                { "source_document": second_slug, "folder_id": null }
+            ]
+        }),
+    )
+    .await;
+
+    assert_eq!(response.status(), 200, "mixed batch must return outcomes");
+    let body: serde_json::Value = response.json().await.expect("batch response body");
+    let outcomes = body.as_array().expect("ordered result array");
+    assert_eq!(outcomes.len(), 3, "every input must have one outcome");
+    assert_eq!(outcomes[0]["outcome"], "success");
+    assert_eq!(outcomes[0]["index"], 0);
+    assert_eq!(outcomes[0]["document"]["id"], first.id.to_string());
+    assert!(
+        outcomes[0]["document"]["content"].is_null(),
+        "batch successes must use compact document values"
+    );
+    assert_eq!(outcomes[1]["outcome"], "problem");
+    assert_eq!(outcomes[1]["index"], 1);
+    assert_eq!(outcomes[1]["status"], 404);
+    assert!(
+        outcomes[1]["document"].is_null(),
+        "problems must not disclose source or destination data"
+    );
+    assert_eq!(outcomes[2]["outcome"], "success");
+    assert_eq!(outcomes[2]["index"], 2);
+
+    let first_after = client
+        .get_document(&ws.slug, first_slug)
+        .await
+        .expect("read first after batch");
+    let second_after = client
+        .get_document(&ws.slug, second_slug)
+        .await
+        .expect("read second after batch");
+    assert_eq!(first_after.folder_id, Some(destination.id.0));
+    assert_eq!(second_after.folder_id, None);
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn document_moves_batch_hides_inaccessible_sources_and_destinations() {
+    use atlas_domain::{
+        entities::workspace_core::NewFolder, ids::ProjectId, permissions::ResourceRole,
+    };
+
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, owner_user) =
+        support::login_user_with_workspace(&server, &db, "doc-moves-batch-auth").await;
+
+    let source_project = owner
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Source".into(),
+                slug: "doc-moves-batch-auth-source".into(),
+                task_prefix: "DMS".into(),
+                visibility: Some("private".into()),
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create source project");
+    let destination_project = owner
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Destination".into(),
+                slug: "doc-moves-batch-auth-destination".into(),
+                task_prefix: "DMD".into(),
+                visibility: Some("private".into()),
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create destination project");
+    let source_folder = db
+        .folder_repo()
+        .create(
+            &WorkspaceCtx::new(ws.id, Actor::User(owner_user.id)),
+            NewFolder {
+                project_id: Some(ProjectId(source_project.id)),
+                parent_folder_id: None,
+                name: "source folder".into(),
+            },
+        )
+        .await
+        .expect("create source folder");
+    let hidden_destination = db
+        .folder_repo()
+        .create(
+            &WorkspaceCtx::new(ws.id, Actor::User(owner_user.id)),
+            NewFolder {
+                project_id: Some(ProjectId(destination_project.id)),
+                parent_folder_id: None,
+                name: "hidden destination".into(),
+            },
+        )
+        .await
+        .expect("create hidden destination");
+    let allowed_source = owner
+        .create_document(
+            &ws.slug,
+            &source_project.slug,
+            CreateDocumentRequest {
+                title: "Allowed source".into(),
+                folder_id: Some(source_folder.id.0),
+                content: None,
+            },
+        )
+        .await
+        .expect("create allowed source");
+    let hidden_source = owner
+        .create_document(&ws.slug, &source_project.slug, doc_req("Hidden source"))
+        .await
+        .expect("create hidden source");
+    let allowed_slug = allowed_source.slug.as_deref().expect("allowed source slug");
+
+    let viewer = member_client_with_document_grant(
+        &server,
+        &db,
+        &ws,
+        "doc-moves-batch-viewer",
+        allowed_source.id,
+        ResourceRole::Viewer,
+    )
+    .await;
+    let viewer_response = post_document_moves_batch(
+        &server,
+        &viewer,
+        &ws.slug,
+        serde_json::json!({
+            "moves": [{ "source_document": allowed_slug, "folder_id": null }]
+        }),
+    )
+    .await;
+    assert_eq!(viewer_response.status(), reqwest::StatusCode::OK);
+    let viewer_outcomes: serde_json::Value =
+        viewer_response.json().await.expect("viewer batch response");
+    assert_eq!(viewer_outcomes[0]["outcome"], "problem");
+    assert_eq!(viewer_outcomes[0]["status"], 404);
+
+    let attacker = member_client_with_document_grant(
+        &server,
+        &db,
+        &ws,
+        "doc-moves-batch-attacker",
+        allowed_source.id,
+        ResourceRole::Editor,
+    )
+    .await;
+
+    let (foreign_owner, foreign_ws, foreign_user) =
+        support::login_user_with_workspace(&server, &db, "doc-moves-batch-auth-foreign").await;
+    let foreign_project = foreign_owner
+        .create_project(
+            &foreign_ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Foreign".into(),
+                slug: "doc-moves-batch-auth-foreign-project".into(),
+                task_prefix: "DMF".into(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create foreign project");
+    let foreign_folder = db
+        .folder_repo()
+        .create(
+            &WorkspaceCtx::new(foreign_ws.id, Actor::User(foreign_user.id)),
+            NewFolder {
+                project_id: Some(ProjectId(foreign_project.id)),
+                parent_folder_id: None,
+                name: "foreign destination".into(),
+            },
+        )
+        .await
+        .expect("create foreign destination");
+
+    let hidden_slug = hidden_source.slug.as_deref().expect("hidden source slug");
+    let response = post_document_moves_batch(
+        &server,
+        &attacker,
+        &ws.slug,
+        serde_json::json!({
+            "moves": [
+                { "source_document": hidden_slug, "folder_id": null },
+                { "source_document": allowed_slug, "folder_id": hidden_destination.id.0 },
+                { "source_document": allowed_slug, "folder_id": foreign_folder.id.0 },
+                { "source_document": allowed_slug, "folder_id": null }
+            ]
+        }),
+    )
+    .await;
+
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let outcomes: serde_json::Value = response.json().await.expect("batch response");
+    let outcomes = outcomes.as_array().expect("ordered outcomes");
+    assert_eq!(outcomes.len(), 4);
+    for (index, outcome) in outcomes.iter().enumerate() {
+        assert_eq!(outcome["outcome"], "problem");
+        assert_eq!(outcome["index"], index);
+        assert_eq!(outcome["status"], 404);
+        assert_eq!(outcome["type"], "urn:atlas:error:not-found");
+        assert_eq!(outcome["title"], "Not Found");
+        assert_eq!(
+            outcome["hint"],
+            "Check the identifier — it may not exist or you may not have access."
+        );
+    }
+
+    let source_after = owner
+        .get_document(&ws.slug, allowed_slug)
+        .await
+        .expect("read source after denied moves");
+    assert_eq!(source_after.folder_id, Some(source_folder.id.0));
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn document_moves_batch_rejects_an_oversized_envelope_before_processing() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, user) =
+        support::login_user_with_workspace(&server, &db, "doc-moves-batch-limit").await;
+
+    let project = client
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Project".into(),
+                slug: "doc-moves-batch-limit-project".into(),
+                task_prefix: "DML".into(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+    let folder = db
+        .folder_repo()
+        .create(
+            &WorkspaceCtx::new(ws.id, Actor::User(user.id)),
+            atlas_domain::entities::workspace_core::NewFolder {
+                project_id: Some(atlas_domain::ids::ProjectId(project.id)),
+                parent_folder_id: None,
+                name: "source folder".into(),
+            },
+        )
+        .await
+        .expect("create source folder");
+    let document = client
+        .create_document(
+            &ws.slug,
+            &project.slug,
+            CreateDocumentRequest {
+                title: "Oversized source".into(),
+                folder_id: Some(folder.id.0),
+                content: None,
+            },
+        )
+        .await
+        .expect("create source document");
+    let body = serde_json::to_vec(&serde_json::json!({
+        "moves": [{
+            "source_document": document.slug,
+            "folder_id": null
+        }],
+        "padding": "x".repeat(1024 * 1024)
+    }))
+    .expect("serialize oversized body");
+
+    let response = reqwest::Client::new()
+        .post(format!(
+            "{}/api/workspaces/{}/documents/moves/batch",
+            server.base_url(),
+            ws.slug
+        ))
+        .bearer_auth(client.token().expect("authenticated token"))
+        .header("content-type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .expect("oversized document move batch request");
+
+    assert_eq!(
+        response.status(),
+        413,
+        "oversized envelope must be rejected"
+    );
+    let document_after = client
+        .get_document(&ws.slug, document.slug.as_deref().expect("document slug"))
+        .await
+        .expect("read source after oversized request");
+    assert_eq!(document_after.folder_id, Some(folder.id.0));
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn document_moves_batch_rejects_more_than_one_hundred_items_before_processing() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, user) =
+        support::login_user_with_workspace(&server, &db, "doc-moves-batch-count").await;
+
+    let project = client
+        .create_project(
+            &ws.slug,
+            atlas_api::dtos::CreateProjectRequest {
+                name: "Project".into(),
+                slug: "doc-moves-batch-count-project".into(),
+                task_prefix: "DMC".into(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+    let folder = db
+        .folder_repo()
+        .create(
+            &WorkspaceCtx::new(ws.id, Actor::User(user.id)),
+            atlas_domain::entities::workspace_core::NewFolder {
+                project_id: Some(atlas_domain::ids::ProjectId(project.id)),
+                parent_folder_id: None,
+                name: "source folder".into(),
+            },
+        )
+        .await
+        .expect("create source folder");
+    let document = client
+        .create_document(
+            &ws.slug,
+            &project.slug,
+            CreateDocumentRequest {
+                title: "Count source".into(),
+                folder_id: Some(folder.id.0),
+                content: None,
+            },
+        )
+        .await
+        .expect("create source document");
+
+    let moves: Vec<serde_json::Value> = (0..101)
+        .map(|index| {
+            if index == 0 {
+                serde_json::json!({
+                    "source_document": document.slug,
+                    "folder_id": null
+                })
+            } else {
+                serde_json::json!({
+                    "source_document": format!("unreachable-{index}"),
+                    "folder_id": null
+                })
+            }
+        })
+        .collect();
+    let response = post_document_moves_batch(
+        &server,
+        &client,
+        &ws.slug,
+        serde_json::json!({ "moves": moves }),
+    )
+    .await;
+
+    assert_eq!(
+        response.status(),
+        422,
+        "more than 100 moves must be rejected"
+    );
+    let document_after = client
+        .get_document(&ws.slug, document.slug.as_deref().expect("document slug"))
+        .await
+        .expect("read source after oversized item count");
+    assert_eq!(document_after.folder_id, Some(folder.id.0));
+
+    db.teardown().await;
+}
+
+async fn member_client_with_document_grant(
+    server: &support::TestServer,
+    db: &support::TestDb,
+    ws: &atlas_server::persistence::repos::Workspace,
+    username: &str,
+    document_id: uuid::Uuid,
+    role: atlas_domain::permissions::ResourceRole,
+) -> atlas_client::AtlasClient {
+    use atlas_domain::entities::permissions::NewPermissionGrant;
+
+    let hash = atlas_server::auth::password::hash("TestPassword1!".to_string())
+        .await
+        .expect("hash");
+    let user = db
+        .user_repo()
+        .create(NewUser {
+            username: username.to_string(),
+            display_name: username.to_string(),
+            email: None,
+            password_hash: Some(hash),
+            is_root: false,
+            is_system_admin: false,
+        })
+        .await
+        .expect("create member");
+    support::activate_user_in_db(db, user.id.0).await;
+
+    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    db.membership_repo()
+        .add(&ctx, user.id, MemberRole::Member)
+        .await
+        .expect("add membership");
+    let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
+        conn: db.conn().clone(),
+    };
+    grant_repo
+        .upsert(NewPermissionGrant {
+            workspace_id: ws.id,
+            user_id: Some(user.id),
+            api_key_id: None,
+            group_id: None,
+            project_id: None,
+            folder_id: None,
+            document_id: None,
+            board_id: None,
+            role: atlas_domain::permissions::ResourceRole::Viewer,
+            created_by_user_id: None,
+            created_by_api_key_id: None,
+        })
+        .await
+        .expect("upsert workspace viewer grant");
+    grant_repo
+        .upsert(NewPermissionGrant {
+            workspace_id: ws.id,
+            user_id: Some(user.id),
+            api_key_id: None,
+            group_id: None,
+            project_id: None,
+            folder_id: None,
+            document_id: Some(atlas_domain::ids::DocumentId(document_id)),
+            board_id: None,
+            role,
+            created_by_user_id: None,
+            created_by_api_key_id: None,
+        })
+        .await
+        .expect("upsert document grant");
+
+    let mut client = atlas_client::AtlasClient::new(server.base_url().to_string());
+    client
+        .login(atlas_api::dtos::LoginRequest {
+            username: username.to_string(),
+            password: "TestPassword1!".to_string(),
+        })
+        .await
+        .expect("member login");
+    client
 }
 
 #[tokio::test]
