@@ -398,6 +398,15 @@ impl BoardRepo for PgBoardRepo {
 
         let board_project_id = ProjectId(board_row.project_id);
 
+        if anchor_is_invalid(position.before.as_deref())
+            || anchor_is_invalid(position.after.as_deref())
+        {
+            txn.rollback().await.map_err(db_err)?;
+            return Err(DomainError::PositionExhausted {
+                column_id: ColumnId(board_id.0),
+            });
+        }
+
         let position_key =
             match position::try_between(position.before.as_deref(), position.after.as_deref()) {
                 Some(key) => key,
@@ -471,6 +480,12 @@ impl BoardRepo for PgBoardRepo {
             .map_err(db_err)
     }
 
+    /// Moves a column between two neighbours.
+    ///
+    /// `position.before` is the key of the column this one must FOLLOW and
+    /// `position.after` the key of the column it must PRECEDE, so the resulting
+    /// key satisfies `before < key < after`. Callers must not swap them: a
+    /// swapped pair makes `try_between` fail and surfaces as `PositionExhausted`.
     async fn move_column(
         &self,
         ctx: &WorkspaceCtx,
@@ -491,6 +506,13 @@ impl BoardRepo for PgBoardRepo {
                 entity: "board_column",
                 id: column_id.0,
             })?;
+
+        if anchor_is_invalid(position.before.as_deref())
+            || anchor_is_invalid(position.after.as_deref())
+        {
+            txn.rollback().await.map_err(db_err)?;
+            return Err(DomainError::PositionExhausted { column_id });
+        }
 
         let new_key =
             match position::try_between(position.before.as_deref(), position.after.as_deref()) {

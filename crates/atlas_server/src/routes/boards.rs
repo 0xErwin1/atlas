@@ -535,14 +535,17 @@ pub(crate) async fn update_column(
     let board_id = auth.resource.0.id;
     let col_id = ColumnId(p.column_id);
 
+    // `before` is the key of the column this one must FOLLOW and `after` the key
+    // of the column it must PRECEDE, so the anchors pass through unswapped —
+    // exactly like `create_column` and every other position-taking route.
     if body.before.is_some() || body.after.is_some() {
         repo.move_column(
             &ctx,
             board_id,
             col_id,
             PositionBetween {
-                before: body.after,
-                after: body.before,
+                before: body.before,
+                after: body.after,
             },
         )
         .await

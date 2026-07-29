@@ -2310,15 +2310,16 @@ async fn patch_column_reorders_populated_columns_without_moving_tasks() {
         .await
         .expect("create task");
 
+    // `before` names the column the moved one must follow: First goes after Second.
     client
         .update_column(
             &ws.slug,
             board.id,
-            second.id,
+            first.id,
             UpdateColumnRequest {
                 name: None,
                 color: None,
-                before: Some(first.position_key.clone()),
+                before: Some(second.position_key.clone()),
                 after: None,
             },
         )
@@ -2336,6 +2337,7 @@ async fn patch_column_reorders_populated_columns_without_moving_tasks() {
     );
     assert_ne!(columns[0].position_key, columns[1].position_key);
 
+    // `after` names the column the moved one must precede: First goes back on top.
     client
         .update_column(
             &ws.slug,
@@ -2349,7 +2351,7 @@ async fn patch_column_reorders_populated_columns_without_moving_tasks() {
             },
         )
         .await
-        .expect("place column after anchor");
+        .expect("place column before anchor");
 
     let after_columns = client
         .list_columns(&ws.slug, board.id)
@@ -2360,7 +2362,7 @@ async fn patch_column_reorders_populated_columns_without_moving_tasks() {
             .iter()
             .map(|column| column.id)
             .collect::<Vec<_>>(),
-        vec![second.id, first.id],
+        vec![first.id, second.id],
         "after anchors preserve the requested relative order"
     );
 
@@ -2369,6 +2371,226 @@ async fn patch_column_reorders_populated_columns_without_moving_tasks() {
         .await
         .expect("get task after column reorder");
     assert_eq!(unchanged_task.column_id, first.id);
+
+    db.teardown().await;
+}
+
+/// Creates a board with `names.len()` columns laid out in the given order.
+///
+/// Each column is anchored with `before` = the previous column's key, which is
+/// the predecessor/successor contract the HTTP layer exposes.
+async fn board_with_columns(
+    client: &atlas_client::AtlasClient,
+    ws_slug: &str,
+    project_slug: &str,
+    names: &[&str],
+) -> (
+    atlas_api::dtos::boards_tasks::BoardDto,
+    Vec<atlas_api::dtos::boards_tasks::ColumnDto>,
+) {
+    let board = client
+        .create_board(
+            ws_slug,
+            project_slug,
+            CreateBoardRequest {
+                folder_id: None,
+                name: "Board".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let mut columns = Vec::new();
+
+    for name in names {
+        let previous_key = columns
+            .last()
+            .map(|c: &atlas_api::dtos::boards_tasks::ColumnDto| c.position_key.clone());
+
+        let column = client
+            .create_column(
+                ws_slug,
+                board.id,
+                CreateColumnRequest {
+                    name: (*name).to_string(),
+                    color: None,
+                    before: previous_key,
+                    after: None,
+                },
+            )
+            .await
+            .expect("create column");
+
+        columns.push(column);
+    }
+
+    (board, columns)
+}
+
+// The web UI reorders a column by sending `before` = the key of the column that
+// must end up above it and `after` = the key of the column that must end up
+// below it. Swapping those anchors server-side made mid-list reorders fail with
+// 409 PositionExhausted, so this pins the unswapped contract end to end.
+#[tokio::test]
+async fn patch_column_mid_list_reorder_uses_predecessor_successor_anchors() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "column-midlist").await;
+
+    client
+        .create_project(&ws.slug, project_req("column-midlist-project", "CML"))
+        .await
+        .expect("create project");
+
+    let (board, columns) = board_with_columns(
+        &client,
+        &ws.slug,
+        "column-midlist-project",
+        &["A", "B", "C"],
+    )
+    .await;
+    let (a, b, c) = (&columns[0], &columns[1], &columns[2]);
+
+    let moved = client
+        .update_column(
+            &ws.slug,
+            board.id,
+            c.id,
+            UpdateColumnRequest {
+                name: None,
+                color: None,
+                before: Some(a.position_key.clone()),
+                after: Some(b.position_key.clone()),
+            },
+        )
+        .await
+        .expect("mid-list reorder must succeed, not return 409 PositionExhausted");
+    assert_eq!(moved.id, c.id);
+
+    let ordered = client
+        .list_columns(&ws.slug, board.id)
+        .await
+        .expect("list columns after mid-list reorder");
+    assert_eq!(
+        ordered.iter().map(|column| column.id).collect::<Vec<_>>(),
+        vec![a.id, c.id, b.id],
+        "the moved column lands between its before and after anchors"
+    );
+
+    client
+        .update_column(
+            &ws.slug,
+            board.id,
+            b.id,
+            UpdateColumnRequest {
+                name: None,
+                color: None,
+                before: None,
+                after: Some(ordered[0].position_key.clone()),
+            },
+        )
+        .await
+        .expect("move to first must succeed");
+
+    let ordered = client
+        .list_columns(&ws.slug, board.id)
+        .await
+        .expect("list columns after move to first");
+    assert_eq!(
+        ordered.iter().map(|column| column.id).collect::<Vec<_>>(),
+        vec![b.id, a.id, c.id],
+        "an absent before anchor moves the column to the head"
+    );
+
+    client
+        .update_column(
+            &ws.slug,
+            board.id,
+            b.id,
+            UpdateColumnRequest {
+                name: None,
+                color: None,
+                before: Some(ordered[2].position_key.clone()),
+                after: None,
+            },
+        )
+        .await
+        .expect("move to last must succeed");
+
+    let ordered = client
+        .list_columns(&ws.slug, board.id)
+        .await
+        .expect("list columns after move to last");
+    assert_eq!(
+        ordered.iter().map(|column| column.id).collect::<Vec<_>>(),
+        vec![a.id, c.id, b.id],
+        "an absent after anchor moves the column to the tail"
+    );
+
+    db.teardown().await;
+}
+
+// Column anchors are fractional-index keys, not ids. A caller that sends a column
+// UUID must be told so instead of silently getting the default midpoint.
+#[tokio::test]
+async fn column_anchors_reject_unparseable_keys() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "column-bad-anchor").await;
+
+    client
+        .create_project(&ws.slug, project_req("column-bad-anchor-project", "CBA"))
+        .await
+        .expect("create project");
+
+    let (board, columns) =
+        board_with_columns(&client, &ws.slug, "column-bad-anchor-project", &["A", "B"]).await;
+
+    let created = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Invalid anchor".to_string(),
+                color: None,
+                before: Some(columns[0].id.to_string()),
+                after: None,
+            },
+        )
+        .await;
+    assert!(
+        matches!(created, Err(ClientError::Api(ref p)) if p.status == 409),
+        "creating a column with a column-id anchor must return 409, got: {created:?}"
+    );
+
+    let updated = client
+        .update_column(
+            &ws.slug,
+            board.id,
+            columns[1].id,
+            UpdateColumnRequest {
+                name: None,
+                color: None,
+                before: Some(columns[0].id.to_string()),
+                after: None,
+            },
+        )
+        .await;
+    assert!(
+        matches!(updated, Err(ClientError::Api(ref p)) if p.status == 409),
+        "moving a column with a column-id anchor must return 409, got: {updated:?}"
+    );
+
+    let unchanged = client
+        .list_columns(&ws.slug, board.id)
+        .await
+        .expect("list columns after rejected anchors");
+    assert_eq!(
+        unchanged.iter().map(|column| column.id).collect::<Vec<_>>(),
+        vec![columns[0].id, columns[1].id],
+        "rejected anchors leave the board untouched"
+    );
 
     db.teardown().await;
 }
