@@ -83,19 +83,26 @@ resources first. Identify tasks by readable_id (e.g. ATL-42) and documents by sl
 - Pass names, not UUIDs, for boards / columns / assignees; on a miss the error lists the \
 valid options.\n\
 - List responses are paginated as {items, next_cursor, has_more}; reads are compact by \
-default — pass detail=full for heavy fields (document content, task description).\n\
+default — pass detail=full for heavy fields (document content, task description). A compact \
+document read carries a short body `preview`, so identifying a document rarely needs the full \
+content; `list_documents` emits it only when asked with preview=true.\n\
 - PATCH updates are partial: omit a field to leave it unchanged, pass null to clear it.\n\
 - Resource deletion is recoverable for projects, folders, documents, comments, and attachments; permanent removal is a separate Trash purge workflow.\n\
 - Editing document content is compare-and-swap: read with `get_document detail=full` to get \
 head_revision_id and content, edit locally, then call `update_document_content` with \
 base_revision_id = head_revision_id; on a revision_conflict, apply the returned \
-base_to_current_patch and retry with current_revision_id.\n\
+base_to_current_patch and retry with current_revision_id. `edit_document_lines` takes the same \
+base_revision_id and applies a bounded line-range edit without resending the whole document — \
+prefer it after `read_document_lines` or `search_document_content`.\n\
+- Ordering anchors are position keys, not UUIDs: `before` is the position_key of the item the \
+new or moved item will follow (its predecessor), `after` is the position_key of the item it \
+will precede (its successor). Read them from the position_key field of the matching list tool.\n\
 \n\
 Tools by area (see each tool's own description for parameters):\n\
 - Read: `search`, `get_document`, `read_document_lines`, `search_document_content`, `list_tasks`, `get_task`.\n\
 - Structure: `list_documents`, `list_folders`, `list_boards`, `list_columns`.\n\
 - Workspace context: `list_workspaces`, `list_projects`, `list_members`, `list_tags`, \
-`list_used_labels`, `list_saved_searches`, `list_task_views`.\n\
+`list_used_labels`, `list_status_templates`, `list_saved_searches`, `list_task_views`.\n\
 - Self: `get_agent_identity` (the calling API key's own id, name, and capability scopes).\n\
 - Links and depth: `get_task_references`, `get_task_backlinks`, `get_document_backlinks`, \
 `list_checklist`, `list_comments`, `list_document_comments`, `list_activity`, \
@@ -110,15 +117,17 @@ created workspaces; existing workspaces are never retro-updated.\n\
 `add_task_assignee`, `remove_task_assignee`, `add_comment`, `update_comment`, \
 `delete_comment`.\n\
 - Document and folder writes: `create_document`, `update_document_metadata`, \
-`update_document_content`, `delete_document`, `move_document`, `copy_document`, \
-`add_document_comment`, `update_document_comment`, `delete_document_comment`, \
-`create_folder`, `rename_folder`, `move_folder`, `copy_folder`, `delete_folder`.\n\
+`update_document_content`, `edit_document_lines`, `delete_document`, `move_document`, \
+`move_documents_batch`, `copy_document`, `add_document_comment`, `update_document_comment`, \
+`delete_document_comment`, `create_folder`, `rename_folder`, `move_folder`, `copy_folder`, \
+`delete_folder`.\n\
 - Board, column and tag writes: `create_board`, `update_board`, `delete_board`, \
 `create_column`, `update_column`, `delete_column`, `create_tag`, `update_tag`, `delete_tag`.\n\
 - Graph writes: `add_task_reference`, `add_task_references_batch`, `remove_task_reference`, `add_checklist_item`, \
 `update_checklist_item`, `delete_checklist_item`, `promote_checklist_item`, \
 `create_subtask`, `promote_subtask`.\n\
-- Workspace-settings writes: `create_project`, `update_project`, `delete_project`, \
+- Workspace-settings writes (read the current statuses with `list_status_templates`): \
+`create_project`, `update_project`, `delete_project`, \
 `create_status_template`, `update_status_template`, `delete_status_template`, \
 `create_saved_search`, `rename_saved_search`, `delete_saved_search`, `create_task_view`, \
 `update_task_view`, `delete_task_view`.\n\
@@ -630,6 +639,9 @@ pub struct ListDocumentsParams {
     /// Filter documents by folder assignment: omit for any, true for unfiled, false for filed.
     #[serde(default)]
     pub unfiled: Option<bool>,
+    /// Include a short body preview per row. Off by default: it costs an extra content read.
+    #[serde(default)]
+    pub preview: Option<bool>,
 }
 
 /// Parameters accepted by the `list_folders` tool.
@@ -1291,10 +1303,12 @@ pub struct CreateColumnParams {
     /// Optional color swatch ID for the column.
     #[serde(default)]
     pub color: Option<String>,
-    /// Optional position anchor: UUID/key of the column this new column should appear before.
+    /// Optional position anchor: `position_key` (from `list_columns`) of the column the new
+    /// column should follow, i.e. its predecessor. Not a column UUID.
     #[serde(default)]
     pub before: Option<String>,
-    /// Optional position anchor: UUID/key of the column this new column should appear after.
+    /// Optional position anchor: `position_key` (from `list_columns`) of the column the new
+    /// column should precede, i.e. its successor. Not a column UUID.
     #[serde(default)]
     pub after: Option<String>,
 }
@@ -1314,10 +1328,12 @@ pub struct UpdateColumnParams {
     /// Color swatch ID. Omit to leave unchanged. Pass JSON null to clear. Pass a string to set.
     #[serde(default, deserialize_with = "present_value")]
     pub color: Option<serde_json::Value>,
-    /// Optional position anchor: UUID/key of the column this column should move before.
+    /// Optional position anchor: `position_key` (from `list_columns`) of the column this column
+    /// should follow, i.e. its new predecessor. Not a column UUID.
     #[serde(default)]
     pub before: Option<String>,
-    /// Optional position anchor: UUID/key of the column this column should move after.
+    /// Optional position anchor: `position_key` (from `list_columns`) of the column this column
+    /// should precede, i.e. its new successor. Not a column UUID.
     #[serde(default)]
     pub after: Option<String>,
 }
@@ -1441,10 +1457,12 @@ pub struct AddChecklistItemParams {
     pub readable_id: String,
     /// Title of the new checklist item.
     pub title: String,
-    /// Optional position anchor: position key of the item this new item should appear before.
+    /// Optional position anchor: `position_key` (from `list_checklist`) of the item the new item
+    /// should follow, i.e. its predecessor. Not an item UUID.
     #[serde(default)]
     pub before: Option<String>,
-    /// Optional position anchor: position key of the item this new item should appear after.
+    /// Optional position anchor: `position_key` (from `list_checklist`) of the item the new item
+    /// should precede, i.e. its successor. Not an item UUID.
     #[serde(default)]
     pub after: Option<String>,
 }
@@ -1464,10 +1482,12 @@ pub struct UpdateChecklistItemParams {
     /// New checked state. Omit to leave unchanged.
     #[serde(default)]
     pub checked: Option<bool>,
-    /// Optional position anchor: position key of the item this item should move before.
+    /// Optional position anchor: `position_key` (from `list_checklist`) of the item this item
+    /// should follow, i.e. its new predecessor. Not an item UUID.
     #[serde(default)]
     pub before: Option<String>,
-    /// Optional position anchor: position key of the item this item should move after.
+    /// Optional position anchor: `position_key` (from `list_checklist`) of the item this item
+    /// should precede, i.e. its new successor. Not an item UUID.
     #[serde(default)]
     pub after: Option<String>,
 }
@@ -1721,6 +1741,13 @@ pub struct DeleteProjectParams {
     pub confirm: bool,
 }
 
+/// Parameters accepted by the `list_status_templates` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListStatusTemplatesParams {
+    /// Workspace slug.
+    pub workspace: String,
+}
+
 /// Parameters accepted by the `create_status_template` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CreateStatusTemplateParams {
@@ -1731,10 +1758,12 @@ pub struct CreateStatusTemplateParams {
     /// Optional color swatch identifier.
     #[serde(default)]
     pub color: Option<String>,
-    /// Optional ID of the existing template to insert before.
+    /// Optional position anchor: `position_key` (from `list_status_templates`) of the template
+    /// the new template should follow, i.e. its predecessor.
     #[serde(default)]
     pub before: Option<String>,
-    /// Optional ID of the existing template to insert after.
+    /// Optional position anchor: `position_key` (from `list_status_templates`) of the template
+    /// the new template should precede, i.e. its successor.
     #[serde(default)]
     pub after: Option<String>,
 }
@@ -1752,10 +1781,12 @@ pub struct UpdateStatusTemplateParams {
     /// Color swatch. Omit to leave unchanged. Pass JSON null to clear.
     #[serde(default, deserialize_with = "present_value")]
     pub color: Option<serde_json::Value>,
-    /// Reorder: insert before this template ID.
+    /// Reorder anchor: `position_key` (from `list_status_templates`) of the template this
+    /// template should follow, i.e. its new predecessor.
     #[serde(default)]
     pub before: Option<String>,
-    /// Reorder: insert after this template ID.
+    /// Reorder anchor: `position_key` (from `list_status_templates`) of the template this
+    /// template should precede, i.e. its new successor.
     #[serde(default)]
     pub after: Option<String>,
 }
@@ -1790,10 +1821,12 @@ pub struct UpdatePlatformStatusTemplateParams {
     /// Color swatch. Omit to leave unchanged. Pass JSON null to clear.
     #[serde(default, deserialize_with = "present_value")]
     pub color: Option<serde_json::Value>,
-    /// Reorder: insert before this position key.
+    /// Reorder anchor: `position_key` (from `list_platform_status_templates`) of the default
+    /// status this one should follow, i.e. its new predecessor.
     #[serde(default)]
     pub before: Option<String>,
-    /// Reorder: insert after this position key.
+    /// Reorder anchor: `position_key` (from `list_platform_status_templates`) of the default
+    /// status this one should precede, i.e. its new successor.
     #[serde(default)]
     pub after: Option<String>,
 }
@@ -2225,7 +2258,7 @@ impl AtlasMcp {
     }
 
     #[tool(
-        description = "List documents in a project within an Atlas workspace. Omit `unfiled` for any document, pass true for unfiled documents, or false for filed documents."
+        description = "List documents in a project within an Atlas workspace. Omit `unfiled` for any document, pass true for unfiled documents, or false for filed documents. Pass `preview: true` to add a short body preview per row, enough to tell same-titled documents apart without a full read."
     )]
     async fn list_documents(
         &self,
@@ -2236,12 +2269,13 @@ impl AtlasMcp {
         let limit = params.limit.unwrap_or(20).clamp(1, 200);
 
         let page = client
-            .list_documents_with_unfiled_filter(
+            .list_documents_with_options(
                 &params.workspace,
                 &params.project,
                 params.cursor.as_deref(),
                 Some(limit),
                 params.unfiled,
+                params.preview.unwrap_or(false),
             )
             .await
             .map_err(|e| enrich_client_error(e, "list_documents"))?;
@@ -3627,7 +3661,9 @@ response — do NOT create those columns again; only add columns for statuses th
     }
 
     #[tool(
-        description = "Create a new column on a board. Optional color and ordering anchors (before/after)."
+        description = "Create a new column on a board. Optional color and ordering anchors: \
+                       before = position_key of the column this one follows, \
+                       after = position_key of the column this one precedes."
     )]
     async fn create_column(
         &self,
@@ -3655,8 +3691,11 @@ response — do NOT create those columns again; only add columns for statuses th
     }
 
     #[tool(
-        description = "Update a column. Column resolved by name on the board. \
-                       Color: omit to leave unchanged, pass null to clear, pass a string to set."
+        description = "Update a column: rename, recolor, or reorder. Column resolved by name on \
+                       the board. Color: omit to leave unchanged, pass null to clear, pass a \
+                       string to set. Reorder with the anchors: before = position_key of the \
+                       column this one follows, after = position_key of the column this one \
+                       precedes."
     )]
     async fn update_column(
         &self,
@@ -3947,7 +3986,11 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Add a checklist item to a task. Optional before/after ordering anchors.")]
+    #[tool(
+        description = "Add a checklist item to a task. Optional ordering anchors: \
+                       before = position_key of the item this one follows, \
+                       after = position_key of the item this one precedes."
+    )]
     async fn add_checklist_item(
         &self,
         Parameters(params): Parameters<AddChecklistItemParams>,
@@ -3972,7 +4015,8 @@ response — do NOT create those columns again; only add columns for statuses th
 
     #[tool(
         description = "Update a checklist item (PATCH). Omit title or checked to leave unchanged. \
-                       Optional before/after ordering anchors."
+                       Optional ordering anchors: before = position_key of the item this one \
+                       follows, after = position_key of the item this one precedes."
     )]
     async fn update_checklist_item(
         &self,
@@ -4486,8 +4530,31 @@ response — do NOT create those columns again; only add columns for statuses th
     // Status template CRUD
     // -----------------------------------------------------------------------
 
+    #[tool(
+        description = "List the status templates of a workspace, ordered by position. \
+        Returns each template's id, name, color, position_key and updated_at — the id is what \
+        update_status_template and delete_status_template take, and the position_key is what \
+        before/after anchors take."
+    )]
+    async fn list_status_templates(
+        &self,
+        Parameters(params): Parameters<ListStatusTemplatesParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
+        let templates = client
+            .list_status_templates(&params.workspace)
+            .await
+            .map_err(|e| enrich_client_error(e, "list_status_templates"))?;
+
+        let result = wrap_vec(templates, project_status_template);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
     #[tool(description = "Create a workspace status template. \
-        Optional color swatch and ordering anchors (before/after). \
+        Optional color swatch and ordering anchors: before = position_key of the template this \
+        one follows, after = position_key of the template this one precedes. \
         Returns the created template.")]
     async fn create_status_template(
         &self,
@@ -4512,9 +4579,13 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Update a workspace status template. \
+    #[tool(
+        description = "Update a workspace status template: rename, recolor, or reorder. \
         name and color are optional PATCH fields; color accepts null to clear. \
-        Returns the updated template.")]
+        Reorder with the anchors: before = position_key of the template this one follows, \
+        after = position_key of the template this one precedes. \
+        Returns the updated template."
+    )]
     async fn update_status_template(
         &self,
         Parameters(params): Parameters<UpdateStatusTemplateParams>,
@@ -4624,7 +4695,8 @@ response — do NOT create those columns again; only add columns for statuses th
 
     #[tool(
         description = "Update an Atlas-wide default status (rename, recolor, reorder). \
-        color accepts null to clear. \
+        color accepts null to clear. Reorder with the anchors: before = position_key of the \
+        status this one follows, after = position_key of the status this one precedes. \
         Requires a root/system-admin session token; API keys receive 403."
     )]
     async fn update_platform_status_template(
@@ -5701,6 +5773,22 @@ mod tests {
     }
 
     #[test]
+    fn workspace_status_template_tools_are_registered() {
+        let router = AtlasMcp::tool_router();
+        for name in [
+            "list_status_templates",
+            "create_status_template",
+            "update_status_template",
+            "delete_status_template",
+        ] {
+            assert!(
+                router.has_route(name),
+                "expected MCP tool `{name}` to be registered"
+            );
+        }
+    }
+
+    #[test]
     fn platform_status_template_tools_are_registered() {
         let router = AtlasMcp::tool_router();
         for name in [
@@ -6708,18 +6796,44 @@ mod tests {
         let server = AtlasMcp::new("http://localhost:8080", "test-token").unwrap();
         let info = server.get_info();
         let instructions = info.instructions.as_deref().unwrap_or("");
-        assert!(
-            instructions.contains("`update_document_content`"),
-            "instructions must mention update_document_content"
-        );
-        assert!(
-            instructions.contains("`create_document`"),
-            "instructions must mention create_document"
-        );
-        assert!(
-            instructions.contains("`delete_folder`"),
-            "instructions must mention delete_folder"
-        );
+        for name in [
+            "create_document",
+            "update_document_content",
+            "edit_document_lines",
+            "delete_document",
+            "move_document",
+            "move_documents_batch",
+            "copy_document",
+            "delete_folder",
+        ] {
+            assert!(
+                instructions.contains(&format!("`{name}`")),
+                "instructions must mention {name}"
+            );
+        }
+    }
+
+    /// Guards the tool catalog in the instruction preamble against drift: a tool that is
+    /// registered but never named is invisible to agents that plan from the preamble.
+    #[test]
+    fn get_info_instructions_reference_bounded_read_and_status_template_tools() {
+        let server = AtlasMcp::new("http://localhost:8080", "test-token").unwrap();
+        let info = server.get_info();
+        let instructions = info.instructions.as_deref().unwrap_or("");
+        for name in [
+            "read_document_lines",
+            "search_document_content",
+            "list_status_templates",
+            "create_status_template",
+            "update_status_template",
+            "delete_status_template",
+            "list_platform_status_templates",
+        ] {
+            assert!(
+                instructions.contains(&format!("`{name}`")),
+                "instructions must mention {name}"
+            );
+        }
     }
 
     // -----------------------------------------------------------------------

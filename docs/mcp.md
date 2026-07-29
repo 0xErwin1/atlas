@@ -91,6 +91,8 @@ Shared behavior from `ATLAS_INSTRUCTIONS` and tool parameter docs:
 - `search`
 - `semantic_search`
 - `get_document`
+- `read_document_lines`
+- `search_document_content`
 - `list_tasks`
 - `get_task`
 - `list_documents`
@@ -102,6 +104,7 @@ Shared behavior from `ATLAS_INSTRUCTIONS` and tool parameter docs:
 - `list_members`
 - `list_workspaces`
 - `list_projects`
+- `list_status_templates`
 - `list_saved_searches`
 - `list_task_views`
 - `get_task_references`
@@ -139,8 +142,10 @@ Shared behavior from `ATLAS_INSTRUCTIONS` and tool parameter docs:
 - `create_document`
 - `update_document_metadata`
 - `update_document_content`
+- `edit_document_lines`
 - `delete_document`
 - `move_document`
+- `move_documents_batch`
 - `copy_document`
 - `create_folder`
 - `rename_folder`
@@ -164,7 +169,8 @@ Shared behavior from `ATLAS_INSTRUCTIONS` and tool parameter docs:
 - `delete_project`
 - `create_status_template`
 - `update_status_template`
-- `delete_status_template`
+- `delete_status_template` (the ids these take, and the `position_key` values their
+  `before`/`after` anchors take, come from the read tool `list_status_templates`)
 - `create_saved_search`
 - `rename_saved_search`
 - `delete_saved_search`
@@ -177,9 +183,12 @@ Shared behavior from `ATLAS_INSTRUCTIONS` and tool parameter docs:
 1. use `search` for exact lexical discovery, or `semantic_search` for embedding-backed concept discovery when embeddings are enabled
 2. use task readable IDs and document slugs in follow-up calls
 3. before implementing a task, call `get_task` with `detail=full` and `list_task_attachments` so descriptions and attached screenshots/files are considered
-4. for document edits, call `get_document` with `detail=full`, keep the returned revision id, then call `update_document_content`
-5. if a CAS conflict comes back, apply the returned patch and retry against `current_revision_id`
-6. only call destructive tools after an explicit decision and `confirm: true`
+4. to locate a passage inside a large document, call `search_document_content` for matching line ranges, then `read_document_lines` to pull only those lines; both return `head_revision_id`
+5. for a targeted edit, call `edit_document_lines` with `base_revision_id` set to that `head_revision_id` — it replaces a bounded line range without resending the whole body
+6. for a whole-document rewrite, call `get_document` with `detail=full`, keep the returned `head_revision_id`, then call `update_document_content` with `base_revision_id`
+7. if a CAS conflict comes back from either write path, apply the returned patch and retry against `current_revision_id`
+8. when reordering columns, checklist items, or status templates, read the current `position_key` values from the matching list tool: `before` is the position key of the item the moved item will follow, `after` is the position key of the item it will precede
+9. only call destructive tools after an explicit decision and `confirm: true`
 
 ## Current MCP gaps
 
