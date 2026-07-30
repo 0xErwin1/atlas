@@ -55,28 +55,34 @@ watch(() => workspace.activeWorkspaceSlug, loadProjects);
 // Whole-sidebar loading gate: the tree stays behind a single loader until every
 // space's initial catalog has settled, instead of each space popping in on its
 // own. The spaces stay mounted (so they load) while the gate is closed; later
-// background revalidations never reopen it because a settled slug is sticky
+// background revalidations never reopen it because a settled space is sticky
 // until the project set itself changes (e.g. a workspace switch).
-const settledSlugs = ref<Set<string>>(new Set());
+const settledSpaceKeys = ref<Set<string>>(new Set());
 
-function onSpaceSettled(slug: string): void {
-  if (settledSlugs.value.has(slug)) return;
-  const next = new Set(settledSlugs.value);
-  next.add(slug);
-  settledSlugs.value = next;
+function onSpaceSettled(spaceKey: string): void {
+  if (settledSpaceKeys.value.has(spaceKey)) return;
+  const next = new Set(settledSpaceKeys.value);
+  next.add(spaceKey);
+  settledSpaceKeys.value = next;
 }
 
-const projectSlugs = computed(() => workspace.projects.map((project) => project.slug));
+function spaceKey(project: (typeof workspace.projects)[number]): string {
+  return `${project.workspace_id}:${project.slug}`;
+}
+
+const projectSpaceKeys = computed(() => workspace.projects.map(spaceKey));
 
 const allSpacesReady = computed(
-  () => projectSlugs.value.length > 0 && projectSlugs.value.every((slug) => settledSlugs.value.has(slug)),
+  () =>
+    projectSpaceKeys.value.length > 0 &&
+    projectSpaceKeys.value.every((key) => settledSpaceKeys.value.has(key)),
 );
 
 watch(
-  () => projectSlugs.value.join('\0'),
-  (nextSlugs) => {
-    const next = new Set(nextSlugs === '' ? [] : nextSlugs.split('\0'));
-    settledSlugs.value = new Set([...settledSlugs.value].filter((slug) => next.has(slug)));
+  () => projectSpaceKeys.value.join('\0'),
+  (nextSpaceKeys) => {
+    const next = new Set(nextSpaceKeys === '' ? [] : nextSpaceKeys.split('\0'));
+    settledSpaceKeys.value = new Set([...settledSpaceKeys.value].filter((key) => next.has(key)));
   },
 );
 
@@ -122,12 +128,12 @@ defineExpose({ openNewPage });
           <SectionLabel>Spaces</SectionLabel>
           <NotesSpace
             v-for="(project, index) in workspace.projects"
-            :key="project.slug"
+            :key="spaceKey(project)"
             :ref="(el) => (spaceRefs[index] = el as InstanceType<typeof NotesSpace> | null)"
             :project="project"
             :active-slug="activeSlug"
             :active-board-id="activeBoardId"
-            @initial-settled="onSpaceSettled(project.slug)"
+            @initial-settled="onSpaceSettled(spaceKey(project))"
           />
         </div>
 

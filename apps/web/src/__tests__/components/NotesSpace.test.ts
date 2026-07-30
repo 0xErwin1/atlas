@@ -206,6 +206,30 @@ describe('NotesSpace catalog', () => {
     wrapper.unmount();
   });
 
+  it('does not load an old same-slug project against the next workspace during a switch', async () => {
+    const workspace = setupWorkspace();
+    const oldGeneral = { ...SANDBOX, slug: 'general', workspace_id: 'old-workspace-id' };
+    workspace.projects = [oldGeneral];
+    vi.spyOn(workspace, 'workspaceIdForSlug').mockReturnValue(WORKSPACE_ID);
+
+    const wrapper = mount(NotesSpace, {
+      props: { project: oldGeneral, activeSlug: null, activeBoardId: null },
+    });
+    await flushPromises();
+    GET.mockClear();
+
+    workspace.switchWorkspace('new-workspace');
+    await flushPromises();
+
+    expect(GET).not.toHaveBeenCalledWith(
+      '/api/workspaces/{ws}/projects/{project_slug}/folders',
+      expect.objectContaining({
+        params: expect.objectContaining({ path: { ws: 'new-workspace', project_slug: 'general' } }),
+      }),
+    );
+    wrapper.unmount();
+  });
+
   it.each([403, 404])('retracts cached catalog state before showing a known denial (%i)', async (status) => {
     const store = new MemoryCacheStore();
     seedCatalog(store, 'sandbox', catalog('Cached folder', 'Cached document'));
@@ -220,6 +244,130 @@ describe('NotesSpace catalog', () => {
     expect(useDocumentsStore().summariesByProject).toEqual({ sandbox: [] });
     expect(wrapper.findComponent(NotesTree).exists()).toBe(false);
     expect(wrapper.text()).toContain('Couldn’t load notes');
+    wrapper.unmount();
+  });
+
+  it('incrementally fetches and upserts a created document without reloading the catalog', async () => {
+    setupWorkspace();
+    const docs = useDocumentsStore();
+    const loadSummaries = vi.spyOn(docs, 'loadSummaries').mockResolvedValue();
+    const loadFolders = vi.spyOn(useFoldersStore(), 'load').mockResolvedValue();
+    const loadBoards = vi.spyOn(useBoardsStore(), 'loadBoardsForProject').mockResolvedValue(null);
+    const wrapper = mountSpace();
+    await flushPromises();
+    GET.mockClear();
+    loadSummaries.mockClear();
+    loadFolders.mockClear();
+    loadBoards.mockClear();
+    GET.mockResolvedValueOnce({
+      data: {
+        id: 'new-document-id',
+        slug: 'new-document',
+        title: 'New document',
+        folder_id: null,
+        head_seq: 2,
+        updated_at: '2026-01-02T00:00:00Z',
+        project_id: SANDBOX_PROJECT_ID,
+        workspace_id: WORKSPACE_ID,
+        content: '',
+        frontmatter: {},
+        head_revision_id: 'revision-id',
+        created_at: '2026-01-02T00:00:00Z',
+      },
+    });
+
+    capturedLiveHandlers().onEvent({
+      type: EVENT_TYPE.DOCUMENT_CREATED,
+      data: { document_id: 'new-document-id', slug: 'new-document', title: 'New document' },
+      envelope: { project_id: SANDBOX_PROJECT_ID } as never,
+    });
+    await flushPromises();
+
+    expect(GET).toHaveBeenCalledOnce();
+    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/documents/{slug}', {
+      params: { path: { ws: 'atlas', slug: 'new-document' } },
+    });
+    expect(docs.summariesFor('sandbox').map((item) => item.id)).toContain('new-document-id');
+    expect(loadFolders).not.toHaveBeenCalled();
+    expect(loadSummaries).not.toHaveBeenCalled();
+    expect(loadBoards).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it('falls back to the catalog reload when a relevant created payload is incomplete', async () => {
+    setupWorkspace();
+    const loadSummaries = vi.spyOn(useDocumentsStore(), 'loadSummaries').mockResolvedValue();
+    vi.spyOn(useFoldersStore(), 'load').mockResolvedValue();
+    vi.spyOn(useBoardsStore(), 'loadBoardsForProject').mockResolvedValue(null);
+    const wrapper = mountSpace();
+    await flushPromises();
+    GET.mockClear();
+    loadSummaries.mockClear();
+
+    vi.useFakeTimers();
+    capturedLiveHandlers().onEvent({
+      type: EVENT_TYPE.DOCUMENT_CREATED,
+      data: { document_id: 'new-document-id', slug: 'new-document' },
+      envelope: { project_id: SANDBOX_PROJECT_ID } as never,
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    vi.useRealTimers();
+
+    expect(GET).not.toHaveBeenCalled();
+    expect(loadSummaries).toHaveBeenCalledWith('atlas', 'sandbox');
+    wrapper.unmount();
+  });
+
+  it('falls back to the catalog reload when the targeted document fetch fails', async () => {
+    setupWorkspace();
+    const docs = useDocumentsStore();
+    const loadSummaries = vi.spyOn(docs, 'loadSummaries').mockResolvedValue();
+    vi.spyOn(useFoldersStore(), 'load').mockResolvedValue();
+    vi.spyOn(useBoardsStore(), 'loadBoardsForProject').mockResolvedValue(null);
+    const wrapper = mountSpace();
+    await flushPromises();
+    GET.mockClear();
+    loadSummaries.mockClear();
+    GET.mockResolvedValueOnce({ error: { hint: 'not found' } });
+
+    vi.useFakeTimers();
+    capturedLiveHandlers().onEvent({
+      type: EVENT_TYPE.DOCUMENT_CREATED,
+      data: { document_id: 'new-document-id', slug: 'new-document', title: 'New document' },
+      envelope: { project_id: SANDBOX_PROJECT_ID } as never,
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    vi.useRealTimers();
+
+    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/documents/{slug}', {
+      params: { path: { ws: 'atlas', slug: 'new-document' } },
+    });
+    expect(docs.summariesFor('sandbox').map((item) => item.id)).not.toContain('new-document-id');
+    expect(loadSummaries).toHaveBeenCalledWith('atlas', 'sandbox');
+    wrapper.unmount();
+  });
+
+  it('ignores a created event for another project', async () => {
+    setupWorkspace();
+    const loadSummaries = vi.spyOn(useDocumentsStore(), 'loadSummaries').mockResolvedValue();
+    vi.spyOn(useFoldersStore(), 'load').mockResolvedValue();
+    vi.spyOn(useBoardsStore(), 'loadBoardsForProject').mockResolvedValue(null);
+    const wrapper = mountSpace();
+    await flushPromises();
+    GET.mockClear();
+    loadSummaries.mockClear();
+
+    vi.useFakeTimers();
+    capturedLiveHandlers().onEvent({
+      type: EVENT_TYPE.DOCUMENT_CREATED,
+      data: { document_id: 'other-document-id', slug: 'other-document', title: 'Other document' },
+      envelope: { project_id: 'a-different-project' } as never,
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    vi.useRealTimers();
+
+    expect(GET).not.toHaveBeenCalled();
+    expect(loadSummaries).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 

@@ -10,6 +10,10 @@ import { attachmentFileName } from '@/lib/fileTransfer';
 import { collectPaged } from '@/lib/pagination';
 
 export type DocumentSummary = components['schemas']['Page_DocumentSummaryDto']['items'][number];
+export type FetchedDocumentSummary = {
+  summary: DocumentSummary;
+  projectId: string | null;
+};
 export type BacklinkSummary = components['schemas']['Page_BacklinkDto']['items'][number];
 export type CommentDto = components['schemas']['CommentDto'];
 export type AttachmentDto = components['schemas']['AttachmentDto'];
@@ -36,6 +40,16 @@ function legacyCommentItems(data: CommentListResponse): CommentDto[] | null {
 type BacklinksCacheOptions = {
   workspaceId: string;
 };
+
+const fetchedDocumentSchema = z.object({
+  id: z.string().min(1),
+  slug: z.string().min(1),
+  title: z.string(),
+  folder_id: z.string().nullable().optional(),
+  head_seq: z.number(),
+  updated_at: z.string(),
+  project_id: z.string().nullable().optional(),
+});
 
 const backlinksSchema: z.ZodType<BacklinkSummary[]> = z.array(
   z
@@ -106,6 +120,38 @@ export const useDocumentsStore = defineStore('documents', () => {
     if (summariesDisplayProjectSlug === null || summariesDisplayProjectSlug === projectSlug) {
       summaries.value = items;
     }
+  }
+
+  function upsertSummary(projectSlug: string, summary: DocumentSummary): void {
+    const existing = summariesFor(projectSlug);
+    const index = existing.findIndex((item) => item.id === summary.id);
+    const next =
+      index === -1 ? [...existing, summary] : existing.map((item, i) => (i === index ? summary : item));
+    next.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+    publishSummariesForProject(projectSlug, next);
+  }
+
+  async function fetchSummary(ws: string, slug: string): Promise<FetchedDocumentSummary | null> {
+    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/documents/{slug}', {
+      params: { path: { ws, slug } },
+    });
+    if (apiError !== undefined || data === undefined) return null;
+
+    const parsed = fetchedDocumentSchema.safeParse(data);
+    if (!parsed.success) return null;
+
+    const document = parsed.data;
+    return {
+      summary: {
+        id: document.id,
+        slug: document.slug,
+        title: document.title,
+        folder_id: document.folder_id ?? null,
+        head_seq: document.head_seq,
+        updated_at: document.updated_at,
+      },
+      projectId: document.project_id ?? null,
+    };
   }
 
   /** Removes one project's catalog without disturbing other mounted project spaces. */
@@ -616,6 +662,8 @@ export const useDocumentsStore = defineStore('documents', () => {
     clearProjectBuckets,
     clearProject,
     publishSummariesForProject,
+    upsertSummary,
+    fetchSummary,
     resetSecondaryTarget,
     clearSecondaryTarget,
     loadSummaries,

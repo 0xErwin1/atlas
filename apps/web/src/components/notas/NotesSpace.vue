@@ -23,7 +23,7 @@ import { useContextMenu } from '@/composables/useContextMenu';
 import { type LiveUpdateEvent, useLiveUpdates } from '@/composables/useLiveUpdates';
 import { useProjectDeletion } from '@/composables/useProjectDeletion';
 import { routeAfterClose } from '@/lib/docsTabs';
-import { EVENT_TYPE, type LiveEnvelope } from '@/lib/eventTypes';
+import { EVENT_TYPE, eventString, type LiveEnvelope } from '@/lib/eventTypes';
 import { type NoteCatalog, noteCatalogSchema } from '@/lib/noteCatalog';
 import { docKey, type TreeNodeRef } from '@/lib/notesTree';
 import { collectPaged } from '@/lib/pagination';
@@ -128,12 +128,19 @@ async function loadTree(): Promise<void> {
   }
 
   const project = props.project;
+  const workspaceId = workspace.workspaceIdForSlug(wsSlug);
+  // A synchronous workspace change can reach this still-mounted space before
+  // Vue removes its old project row. Do not issue that stale catalog request.
+  if (workspaceId !== null && project.workspace_id !== workspaceId) {
+    catalogTarget.value = null;
+    return;
+  }
+
   const target = `${wsSlug}:${project.slug}`;
   if (catalogTarget.value !== target) {
     catalogTarget.value = null;
   }
 
-  const workspaceId = workspace.workspaceIdForSlug(wsSlug);
   const context: CatalogLoadContext = {
     sequence,
     wsSlug,
@@ -561,9 +568,70 @@ function eventTargetsThisProject(envelope: LiveEnvelope): boolean {
   return eventProjectId === ownProjectId;
 }
 
+type DocumentCreatedEvent = {
+  documentId: string;
+  slug: string;
+  title: string;
+  projectId: string | undefined;
+};
+
+function parseDocumentCreatedEvent(data: unknown): DocumentCreatedEvent | null {
+  const documentId = eventString(data, 'document_id');
+  const slug = eventString(data, 'slug');
+  const title = eventString(data, 'title');
+  if (
+    documentId === undefined ||
+    documentId === '' ||
+    slug === undefined ||
+    slug === '' ||
+    title === undefined ||
+    title === ''
+  ) {
+    return null;
+  }
+
+  return { documentId, slug, title, projectId: eventString(data, 'project_id') };
+}
+
+function isCurrentCreatedDocumentTarget(wsSlug: string, project: ProjectSummary): boolean {
+  return ws.value === wsSlug && props.project.id === project.id && props.project.slug === project.slug;
+}
+
+async function reconcileCreatedDocument(evt: LiveUpdateEvent): Promise<void> {
+  const created = parseDocumentCreatedEvent(evt.data);
+  if (created === null) {
+    scheduleLiveReload();
+    return;
+  }
+
+  const project = props.project;
+  if (created.projectId !== undefined && project.id !== undefined && created.projectId !== project.id) return;
+
+  const wsSlug = ws.value;
+  if (wsSlug === '') return;
+
+  const fetched = await documents.fetchSummary(wsSlug, created.slug);
+  if (!isCurrentCreatedDocumentTarget(wsSlug, project)) return;
+
+  if (
+    fetched === null ||
+    fetched.summary.id !== created.documentId ||
+    fetched.summary.slug !== created.slug ||
+    (fetched.projectId !== null && project.id !== undefined && fetched.projectId !== project.id)
+  ) {
+    scheduleLiveReload();
+    return;
+  }
+
+  documents.upsertSummary(project.slug, fetched.summary);
+}
+
 function onLiveEvent(evt: LiveUpdateEvent): void {
   switch (evt.type) {
     case EVENT_TYPE.DOCUMENT_CREATED:
+      if (eventTargetsThisProject(evt.envelope)) void reconcileCreatedDocument(evt);
+      break;
+
     case EVENT_TYPE.DOCUMENT_UPDATED:
     case EVENT_TYPE.DOCUMENT_MOVED:
     case EVENT_TYPE.DOCUMENT_DELETED:

@@ -281,8 +281,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       return;
     }
     if (committedSlug.value !== null) disposeWorkspaceLiveUpdates();
-    setActiveWorkspace(slug);
+    // Clear first: NotesSpace observes workspace changes synchronously, so it
+    // must never see an old project while the new workspace is active.
     projects.value = [];
+    setActiveWorkspace(slug);
     persistWorkspace(slug);
   }
 

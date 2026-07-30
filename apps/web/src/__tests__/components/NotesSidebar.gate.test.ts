@@ -95,6 +95,40 @@ describe('NotesSidebar whole-sidebar loading gate', () => {
     wrapper.unmount();
   });
 
+  it('keeps the gate closed while a same-slug space loads in the next workspace', async () => {
+    const workspace = useWorkspaceStore();
+    workspace.setActiveWorkspace('old-workspace');
+    workspace.projects = [
+      {
+        slug: 'general',
+        name: 'General',
+        task_prefix: 'GEN',
+        workspace_id: 'old-id',
+        visibility: 'workspace',
+      },
+    ];
+    GET.mockResolvedValue({ data: { items: [] }, error: undefined });
+
+    const wrapper = mount(NotesSidebar);
+    await flushPromises();
+    GET.mockReturnValue(new Promise(() => {}));
+
+    workspace.switchWorkspace('new-workspace');
+    workspace.projects = [
+      {
+        slug: 'general',
+        name: 'General',
+        task_prefix: 'GEN',
+        workspace_id: 'new-id',
+        visibility: 'workspace',
+      },
+    ];
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.findComponent(LoadingState).exists()).toBe(true);
+    wrapper.unmount();
+  });
+
   it('preserves settled projects when a later project refresh adds another space', async () => {
     const workspace = setupProjects();
     GET.mockResolvedValue({ data: { items: [] }, error: undefined });

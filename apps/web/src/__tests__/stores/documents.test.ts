@@ -67,6 +67,21 @@ describe('useDocumentsStore', () => {
     allowResourceCache();
   });
 
+  it('upserts summaries by stable id without disturbing other project buckets', () => {
+    const store = useDocumentsStore();
+    store.publishSummariesForProject('alpha', [summary('a1', 'Zulu')]);
+    store.publishSummariesForProject('beta', [summary('b1', 'Beta')]);
+
+    store.upsertSummary('alpha', summary('a2', 'Alpha'));
+    store.upsertSummary('alpha', summary('a1', 'Updated Zulu'));
+
+    expect(store.summariesFor('alpha').map((item) => [item.id, item.title])).toEqual([
+      ['a2', 'Alpha'],
+      ['a1', 'Updated Zulu'],
+    ]);
+    expect(store.summariesFor('beta').map((item) => item.id)).toEqual(['b1']);
+  });
+
   it('loadSummaries populates document summaries (REQ-W14)', async () => {
     GET.mockResolvedValue({ data: { items: [summary('d1', 'Readme')], has_more: false } });
 
