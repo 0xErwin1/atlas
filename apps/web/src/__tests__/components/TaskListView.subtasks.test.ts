@@ -116,9 +116,13 @@ describe('TaskListView sub-task rows', () => {
       ready: [task('parent-id', 'ATL-1', 'ready', 'Ready to take', 1)],
       progress: [],
     });
-    const loadSubtasks = vi
-      .spyOn(boards, 'loadSubtasks')
-      .mockResolvedValue([task('child-id', 'ATL-2', 'ready', 'Ready to take')]);
+    const expandSubtasks = vi
+      .spyOn(boards, 'expandSubtasks')
+      .mockImplementation(async (_ws: string, parentReadableId: string) => {
+        boards.subtasksByParent = new Map(boards.subtasksByParent).set(parentReadableId, [
+          task('child-id', 'ATL-2', 'ready', 'Ready to take'),
+        ]);
+      });
     const moveTaskToColumn = vi.spyOn(boards, 'moveTaskToColumn').mockResolvedValue(true);
 
     const wrapper = mount(TaskListView, {
@@ -136,7 +140,7 @@ describe('TaskListView sub-task rows', () => {
 
     await expandParent(wrapper);
 
-    expect(loadSubtasks).toHaveBeenCalledWith('ws', 'ATL-1');
+    expect(expandSubtasks).toHaveBeenCalledWith('ws', 'ATL-1');
     const childRow = wrapper.find('.task-row-stub[data-readable-id="ATL-2"]');
     expect(childRow.attributes('data-status-name')).toBe('Ready to take');
     expect(childRow.attributes('data-ring-color')).toBe('var(--c-primary)');

@@ -368,6 +368,7 @@ async function loadView(force = false, background = false): Promise<void> {
 // swaps to fresh data atomically on success; a transient failure keeps the
 // current data, while an authoritative 403/404 still retracts a gone board/view.
 function reloadActive(): void {
+  void boards.refreshAllCachedSubtasks(ws.value);
   if (isView.value) void loadView(true, true);
   else void loadBoard(true);
 }
@@ -395,6 +396,19 @@ function applyRemoteMove(taskId: string, toColumnId: string): void {
   }
 }
 
+// Keeps the list view's expanded sub-task branches live. Child tasks are absent
+// from the board columns, so `upsertTaskById` never reaches them: without this a
+// nested row would keep the status it had when its branch was first fetched.
+// A created task carries no parent on the payload, hence the full refresh.
+function refreshSubtaskBranches(taskId: string, isCreate: boolean): void {
+  if (isCreate) {
+    void boards.refreshAllCachedSubtasks(ws.value);
+    return;
+  }
+
+  void boards.refreshCachedSubtasksForTask(ws.value, taskId);
+}
+
 // Applies another actor's change to the board and, when it targets the open
 // task, to the detail pane. Board mutations run only in board mode; open-task
 // refreshes apply in either mode since the pane can float over a task view too.
@@ -404,12 +418,17 @@ function onLiveEvent(evt: LiveUpdateEvent): void {
 
   switch (evt.type) {
     case EVENT_TYPE.TASK_CREATED:
-      if (taskId !== undefined && onCurrentBoard) void boards.upsertTaskById(ws.value, taskId);
+      if (taskId === undefined) break;
+      if (onCurrentBoard) {
+        void boards.upsertTaskById(ws.value, taskId);
+        refreshSubtaskBranches(taskId, true);
+      }
       break;
 
     case EVENT_TYPE.TASK_UPDATED:
       if (taskId === undefined) break;
       if (onCurrentBoard) void boards.upsertTaskById(ws.value, taskId);
+      refreshSubtaskBranches(taskId, false);
       openTaskLive.apply(evt.type, taskId);
       break;
 
@@ -417,6 +436,7 @@ function onLiveEvent(evt: LiveUpdateEvent): void {
       if (taskId === undefined) break;
       const toColumn = eventString(evt.data, 'to_column_id');
       if (!isView.value && toColumn !== undefined) applyRemoteMove(taskId, toColumn);
+      refreshSubtaskBranches(taskId, false);
       openTaskLive.apply(evt.type, taskId);
       break;
     }
@@ -424,6 +444,7 @@ function onLiveEvent(evt: LiveUpdateEvent): void {
     case EVENT_TYPE.TASK_DELETED:
       if (taskId === undefined) break;
       if (!isView.value) boards.removeTaskById(taskId);
+      boards.removeCachedSubtask(taskId);
       if (openTaskLive.apply(evt.type, taskId) === 'deleted') closePane();
       break;
 

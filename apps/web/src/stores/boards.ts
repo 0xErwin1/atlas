@@ -1480,8 +1480,7 @@ export const useBoardsStore = defineStore('boards', () => {
   /**
    * Fetches a task's direct sub-tasks as row summaries, so the list view can
    * expand a task in place. Returns an empty list on error (the caller shows a
-   * collapsed, empty branch rather than surfacing a blocking error); the list is
-   * not cached here — the view holds the expansion cache.
+   * collapsed, empty branch rather than surfacing a blocking error).
    */
   async function loadSubtasks(ws: string, readableId: string): Promise<TaskSummaryDto[]> {
     const { data, error: apiError } = await wrappedClient.GET(
@@ -1495,6 +1494,112 @@ export const useBoardsStore = defineStore('boards', () => {
     }
 
     return data;
+  }
+
+  /**
+   * Expansion cache for the list view's sub-task branches, keyed by parent
+   * readable_id. It lives here rather than in the view because child tasks never
+   * appear in the board columns: without a store-side cache no live task event
+   * could reach an expanded branch, and a nested row would keep rendering the
+   * status it had when the branch was first fetched. The view owns only which
+   * rows are open; collapsing keeps the branch cached so re-expanding is instant.
+   */
+  const subtasksByParent = ref<Map<string, TaskSummaryDto[]>>(new Map());
+  const subtaskRequests = new Set<string>();
+  const emptySubtasks: TaskSummaryDto[] = [];
+
+  function setCachedSubtasks(parentReadableId: string, children: TaskSummaryDto[]): void {
+    subtasksByParent.value = new Map(subtasksByParent.value).set(parentReadableId, children);
+  }
+
+  function cachedSubtasks(parentReadableId: string): TaskSummaryDto[] {
+    return subtasksByParent.value.get(parentReadableId) ?? emptySubtasks;
+  }
+
+  /** The cached branch a task belongs to, by task UUID; null when uncached. */
+  function cachedSubtaskParentOf(taskId: string): string | null {
+    for (const [parentReadableId, children] of subtasksByParent.value.entries()) {
+      if (children.some((child) => child.id === taskId)) return parentReadableId;
+    }
+    return null;
+  }
+
+  /** The cached branch a task belongs to, by readable_id; null when uncached. */
+  function cachedSubtaskParentOfReadable(readableId: string): string | null {
+    for (const [parentReadableId, children] of subtasksByParent.value.entries()) {
+      if (children.some((child) => child.readable_id === readableId)) return parentReadableId;
+    }
+    return null;
+  }
+
+  /**
+   * Fetches a branch once and caches it. Concurrent toggles of the same parent
+   * share the in-flight request instead of firing a second fetch.
+   */
+  async function expandSubtasks(ws: string, parentReadableId: string): Promise<void> {
+    if (subtasksByParent.value.has(parentReadableId) || subtaskRequests.has(parentReadableId)) return;
+
+    subtaskRequests.add(parentReadableId);
+    const children = await loadSubtasks(ws, parentReadableId);
+    subtaskRequests.delete(parentReadableId);
+    setCachedSubtasks(parentReadableId, children);
+  }
+
+  /** Refetches one cached branch; a no-op for a parent that was never expanded. */
+  async function refreshCachedSubtasks(ws: string, parentReadableId: string): Promise<void> {
+    if (!subtasksByParent.value.has(parentReadableId)) return;
+
+    const children = await loadSubtasks(ws, parentReadableId);
+    if (!subtasksByParent.value.has(parentReadableId)) return;
+
+    setCachedSubtasks(parentReadableId, children);
+  }
+
+  /**
+   * Refetches the branch holding `taskId`. Returns false when no cached branch
+   * holds it, so a caller can fall back to refreshing every branch (a freshly
+   * created sub-task carries no parent on the event payload).
+   */
+  async function refreshCachedSubtasksForTask(ws: string, taskId: string): Promise<boolean> {
+    const parentReadableId = cachedSubtaskParentOf(taskId);
+    if (parentReadableId === null) return false;
+
+    await refreshCachedSubtasks(ws, parentReadableId);
+    return true;
+  }
+
+  /** Refetches every cached branch, keeping expanded rows live. */
+  async function refreshAllCachedSubtasks(ws: string): Promise<void> {
+    const parents = [...subtasksByParent.value.keys()];
+    await Promise.all(parents.map((parentReadableId) => refreshCachedSubtasks(ws, parentReadableId)));
+  }
+
+  /** Drops a deleted task from whichever cached branch holds it. */
+  function removeCachedSubtask(taskId: string): void {
+    const parentReadableId = cachedSubtaskParentOf(taskId);
+    if (parentReadableId === null) return;
+
+    const children = subtasksByParent.value.get(parentReadableId) ?? [];
+    setCachedSubtasks(
+      parentReadableId,
+      children.filter((child) => child.id !== taskId),
+    );
+  }
+
+  /** Reflects this client's own status move on a cached sub-task row. */
+  function patchCachedSubtaskColumn(readableId: string, columnId: string, columnName?: string): void {
+    const parentReadableId = cachedSubtaskParentOfReadable(readableId);
+    if (parentReadableId === null) return;
+
+    const children = subtasksByParent.value.get(parentReadableId) ?? [];
+    setCachedSubtasks(
+      parentReadableId,
+      children.map((child) =>
+        child.readable_id === readableId
+          ? { ...child, column_id: columnId, column_name: columnName ?? child.column_name }
+          : child,
+      ),
+    );
   }
 
   /**
@@ -1543,6 +1648,8 @@ export const useBoardsStore = defineStore('boards', () => {
     columns.value = [];
     tasks.value = new Map();
     taskDetails.value = new Map();
+    subtasksByParent.value = new Map();
+    subtaskRequests.clear();
     loading.value = false;
     detailsLoading.value = false;
     loadError.value = null;
@@ -1585,6 +1692,14 @@ export const useBoardsStore = defineStore('boards', () => {
     loadBoardContents,
     cancelBoardLoad,
     loadSubtasks,
+    subtasksByParent,
+    cachedSubtasks,
+    cachedSubtaskParentOfReadable,
+    expandSubtasks,
+    refreshCachedSubtasksForTask,
+    refreshAllCachedSubtasks,
+    removeCachedSubtask,
+    patchCachedSubtaskColumn,
     upsertTaskById,
     reconcileTask,
     applyOptimisticMove,

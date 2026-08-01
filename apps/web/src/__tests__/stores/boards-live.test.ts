@@ -101,3 +101,68 @@ describe('useBoardsStore.upsertTaskById', () => {
     expect(GET).not.toHaveBeenCalled();
   });
 });
+
+function mockSubtasks(items: TaskSummaryDto[]): void {
+  GET.mockResolvedValue({ data: items, error: undefined });
+}
+
+describe('useBoardsStore sub-task branch cache', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+  });
+
+  it('fetches a branch once and serves the cached children afterwards', async () => {
+    const store = useBoardsStore();
+    mockSubtasks([task('2', 'c1')]);
+
+    await store.expandSubtasks('ws', 'ATL-1');
+    await store.expandSubtasks('ws', 'ATL-1');
+
+    expect(GET).toHaveBeenCalledTimes(1);
+    expect(store.cachedSubtasks('ATL-1')).toHaveLength(1);
+  });
+
+  it('refreshes the branch holding a task that changed elsewhere', async () => {
+    const store = useBoardsStore();
+    mockSubtasks([task('2', 'c1')]);
+    await store.expandSubtasks('ws', 'ATL-1');
+
+    mockSubtasks([{ ...task('2', 'c2'), column_name: 'Done' }]);
+    const handled = await store.refreshCachedSubtasksForTask('ws', '2');
+
+    expect(handled).toBe(true);
+    expect(store.cachedSubtasks('ATL-1')[0]?.column_id).toBe('c2');
+    expect(store.cachedSubtasks('ATL-1')[0]?.column_name).toBe('Done');
+  });
+
+  it('reports an unhandled task when no cached branch holds it', async () => {
+    const store = useBoardsStore();
+    mockSubtasks([task('2', 'c1')]);
+    await store.expandSubtasks('ws', 'ATL-1');
+    vi.clearAllMocks();
+
+    const handled = await store.refreshCachedSubtasksForTask('ws', '99');
+
+    expect(handled).toBe(false);
+    expect(GET).not.toHaveBeenCalled();
+  });
+
+  it('drops a deleted task from its cached branch', async () => {
+    const store = useBoardsStore();
+    mockSubtasks([task('2', 'c1'), task('3', 'c1')]);
+    await store.expandSubtasks('ws', 'ATL-1');
+
+    store.removeCachedSubtask('2');
+
+    expect(store.cachedSubtasks('ATL-1').map((child) => child.id)).toEqual(['3']);
+  });
+
+  it('never refetches a branch that was never expanded', async () => {
+    const store = useBoardsStore();
+
+    await store.refreshAllCachedSubtasks('ws');
+
+    expect(GET).not.toHaveBeenCalled();
+  });
+});

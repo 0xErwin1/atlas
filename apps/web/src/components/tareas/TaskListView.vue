@@ -335,7 +335,7 @@ async function onAssigneeOpen(task: TaskSummaryDto, value: boolean): Promise<voi
 function onStatusPick(task: TaskSummaryDto, columnId: string): void {
   if (columnId === task.column_id) return;
 
-  if (findCachedSubtaskParent(task.readable_id) !== null) {
+  if (boards.cachedSubtaskParentOfReadable(task.readable_id) !== null) {
     void moveCachedSubtaskToColumn(task.readable_id, columnId);
     return;
   }
@@ -367,41 +367,16 @@ function findRowTask(readableId: string): TaskSummaryDto | undefined {
   const top = boards.findTaskByReadableId(readableId);
   if (top !== undefined) return top;
 
-  for (const children of subtaskCache.value.values()) {
+  for (const children of boards.subtasksByParent.values()) {
     const found = children.find((c) => c.readable_id === readableId);
     if (found !== undefined) return found;
   }
   return undefined;
 }
 
-// Sub-task expansion (tree): which rows are open, plus a per-parent cache of the
-// fetched children so re-expanding is instant. Keyed by readable_id.
+// Sub-task expansion (tree): which rows are open. The fetched children live in
+// the boards store so live task events keep an expanded branch in sync.
 const expandedTasks = ref<Set<string>>(new Set());
-const subtaskCache = ref<Map<string, TaskSummaryDto[]>>(new Map());
-const loadingSubtasks = new Set<string>();
-
-function findCachedSubtaskParent(readableId: string): string | null {
-  for (const [parentId, children] of subtaskCache.value.entries()) {
-    if (children.some((child) => child.readable_id === readableId)) return parentId;
-  }
-  return null;
-}
-
-function patchCachedSubtaskStatus(readableId: string, columnId: string): void {
-  const parentId = findCachedSubtaskParent(readableId);
-  if (parentId === null) return;
-
-  const children = subtaskCache.value.get(parentId);
-  if (children === undefined) return;
-
-  const column = columnById.value.get(columnId);
-  const nextChildren = children.map((child) =>
-    child.readable_id === readableId
-      ? { ...child, column_id: columnId, column_name: column?.name ?? child.column_name }
-      : child,
-  );
-  subtaskCache.value = new Map(subtaskCache.value).set(parentId, nextChildren);
-}
 
 async function moveCachedSubtaskToColumn(readableId: string, columnId: string): Promise<void> {
   const ok = await boards.moveTaskToColumn(props.ws, readableId, columnId);
@@ -410,7 +385,7 @@ async function moveCachedSubtaskToColumn(readableId: string, columnId: string): 
     return;
   }
 
-  patchCachedSubtaskStatus(readableId, columnId);
+  boards.patchCachedSubtaskColumn(readableId, columnId, columnById.value.get(columnId)?.name);
 }
 
 function hasSubtasks(task: TaskSummaryDto): boolean {
@@ -422,7 +397,7 @@ function isExpanded(task: TaskSummaryDto): boolean {
 }
 
 function childrenOf(task: TaskSummaryDto): TaskSummaryDto[] {
-  return subtaskCache.value.get(task.readable_id) ?? [];
+  return boards.cachedSubtasks(task.readable_id);
 }
 
 async function toggleExpand(task: TaskSummaryDto): Promise<void> {
@@ -438,15 +413,9 @@ async function toggleExpand(task: TaskSummaryDto): Promise<void> {
   next.add(id);
   expandedTasks.value = next;
 
-  // Fetch once; a cached branch re-expands instantly, and a concurrent toggle is
-  // guarded so a double-click never fires two requests.
-  if (subtaskCache.value.has(id) || loadingSubtasks.has(id)) return;
-
-  loadingSubtasks.add(id);
-  const children = await boards.loadSubtasks(props.ws, id);
-  loadingSubtasks.delete(id);
-
-  subtaskCache.value = new Map(subtaskCache.value).set(id, children);
+  // The store fetches once and keeps the branch cached, so a re-expand is instant
+  // and a concurrent toggle never fires a second request.
+  await boards.expandSubtasks(props.ws, id);
 }
 
 // The presentational row takes every derived value and option list as props; this
