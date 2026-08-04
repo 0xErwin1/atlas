@@ -85,5 +85,6 @@ pub(crate) async fn meta(State(state): State<AppState>) -> impl IntoResponse {
         build: std::env::var("ATLAS_BUILD").ok(),
         url: std::env::var("ATLAS_SERVER_URL").ok(),
         max_attachment_bytes: Some(state.max_attachment_bytes),
+        semantic_search_enabled: Some(state.embedding_provider.is_some()),
     })
 }

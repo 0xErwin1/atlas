@@ -640,6 +640,14 @@ fn comment_freedom_contract_is_exact_for_feeds_backlinks_attachments_and_metadat
     );
     assert_eq!(limit.get("format"), Some(&Value::String("int64".into())));
     assert_eq!(limit.get("minimum"), Some(&serde_json::json!(0)));
+
+    let semantic_search_enabled = document
+        .pointer("/components/schemas/ServerMetaDto/properties/semantic_search_enabled")
+        .expect("server metadata must advertise semantic search availability");
+    assert_eq!(
+        semantic_search_enabled.get("type"),
+        Some(&serde_json::json!(["boolean", "null"]))
+    );
 }
 
 fn operation<'a>(document: &'a Value, path: &str, method: &str) -> &'a Value {

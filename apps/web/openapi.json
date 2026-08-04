@@ -16679,6 +16679,12 @@
             "format": "int64",
             "minimum": 0
           },
+          "semantic_search_enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "url": {
             "type": [
               "string",

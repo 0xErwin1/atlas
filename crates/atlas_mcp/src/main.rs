@@ -195,6 +195,8 @@ mod tests {
 
     const INITIALIZE_REQUEST: &str = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}"#;
     const TOOL_CALL_REQUEST: &str = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_agent_identity","arguments":{}}}"#;
+    const TOOLS_LIST_REQUEST: &str =
+        r#"{"jsonrpc":"2.0","id":3,"method":"tools/list","params":{}}"#;
 
     async fn spawn_router(
         router: Router,
@@ -233,6 +235,19 @@ mod tests {
                 "name": name,
                 "scopes": []
             }
+        }))
+    }
+
+    async fn mock_meta(headers: HeaderMap) -> Json<serde_json::Value> {
+        let enabled = headers
+            .get(http::header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            != Some("Bearer atlas_disabled");
+
+        Json(serde_json::json!({
+            "version": "1",
+            "build": null,
+            "semantic_search_enabled": enabled
         }))
     }
 
@@ -308,6 +323,38 @@ mod tests {
             assert_eq!(response.status(), http::StatusCode::OK);
             let body = response.text().await?;
             assert!(body.contains(expected_name), "response was {body}");
+        }
+
+        mcp_server.abort();
+        backend_server.abort();
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn stateless_http_tools_list_uses_each_requests_bearer_context() -> anyhow::Result<()> {
+        let backend = Router::new().route("/api/meta", get(mock_meta));
+        let (backend_url, backend_server) = spawn_router(backend).await?;
+        let router = build_http_router(backend_url, "127.0.0.1".to_string())?;
+        let (base_url, mcp_server) = spawn_router(router).await?;
+        let client = reqwest::Client::new();
+        let mcp_url = format!("{base_url}/mcp");
+
+        for (token, expected) in [("atlas_disabled", false), ("atlas_enabled", true)] {
+            let response = post_mcp(&client, &mcp_url, token, TOOLS_LIST_REQUEST).await?;
+
+            assert_eq!(response.status(), http::StatusCode::OK);
+            let body: serde_json::Value = response.json().await?;
+            let tools = body
+                .pointer("/result/tools")
+                .and_then(serde_json::Value::as_array)
+                .ok_or_else(|| anyhow!("tools/list response does not contain tools: {body}"))?;
+            assert_eq!(
+                tools.iter().any(|tool| {
+                    tool.get("name").and_then(serde_json::Value::as_str) == Some("semantic_search")
+                }),
+                expected
+            );
         }
 
         mcp_server.abort();

@@ -153,6 +153,8 @@ pub struct ServerMetaDto {
     pub url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_attachment_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantic_search_enabled: Option<bool>,
 }
 
 /// Request body for `POST /api/users`.

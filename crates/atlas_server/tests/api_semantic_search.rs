@@ -50,6 +50,38 @@ async fn get_semantic_search(
 }
 
 #[tokio::test]
+async fn semantic_search_returns_503_when_embeddings_are_disabled() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let mut state = atlas_server::state::AppState::for_test(db.conn().clone())
+        .await
+        .expect("test state");
+    state.embedding_provider = None;
+    let server = support::TestServer::spawn_with_state(state).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "sem-disabled").await;
+    let token = client.token().expect("must be logged in");
+
+    let response = get_semantic_search(
+        &reqwest::Client::new(),
+        token,
+        server.base_url(),
+        &ws.slug,
+        "q=runbook",
+    )
+    .await;
+
+    assert_eq!(response.status(), reqwest::StatusCode::SERVICE_UNAVAILABLE);
+    let body: Value = response.json().await.expect("json body");
+    assert_eq!(
+        body.get("detail"),
+        Some(&Value::String(
+            "semantic search embeddings are disabled".to_owned()
+        ))
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
 async fn semantic_search_absent_q_returns_422_on_dedicated_route() {
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;

@@ -38,6 +38,24 @@ async fn meta_exposes_version_and_optional_url() {
         "url must be absent when ATLAS_SERVER_URL is unset"
     );
     assert_eq!(meta.max_attachment_bytes, Some(20 * 1024 * 1024));
+    assert_eq!(meta.semantic_search_enabled, Some(true));
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn meta_reports_semantic_search_disabled_when_no_embedding_provider_exists() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let mut state = atlas_server::state::AppState::for_test(db.conn().clone())
+        .await
+        .expect("test state");
+    state.embedding_provider = None;
+    let server = support::TestServer::spawn_with_state(state).await;
+    let (client, _ws, _user) =
+        support::login_user_with_workspace(&server, &db, "meta-semantic-disabled").await;
+
+    let meta = client.server_meta().await.expect("server_meta request");
+    assert_eq!(meta.semantic_search_enabled, Some(false));
 
     db.teardown().await;
 }

@@ -29,9 +29,9 @@ use rmcp::{
     ErrorData as McpError, ServerHandler,
     handler::server::wrapper::Parameters,
     model::{
-        AnnotateAble, Content, Implementation, ListResourceTemplatesResult, RawResourceTemplate,
-        ReadResourceRequestParams, ReadResourceResult, ResourceContents, ServerCapabilities,
-        ServerInfo,
+        AnnotateAble, Content, Implementation, ListResourceTemplatesResult, ListToolsResult,
+        RawResourceTemplate, ReadResourceRequestParams, ReadResourceResult, ResourceContents,
+        ServerCapabilities, ServerInfo,
     },
     service::{RequestContext, RoleServer},
     tool, tool_handler, tool_router,
@@ -39,6 +39,8 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
+
+const SERVER_META_DISCOVERY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Preserves the distinction between an absent field and an explicit JSON `null`.
 ///
@@ -78,8 +80,9 @@ conventions shared across all of them.\n\
 \n\
 Conventions:\n\
 - Discover before acting: use `search` (keyword plus filters like status:open, tag:rust) \
-for lexical matches or `semantic_search` for concept matches, then list tools to find \
-resources first. Identify tasks by readable_id (e.g. ATL-42) and documents by slug.\n\
+for lexical matches. Use `semantic_search` for concept matches only when it is advertised. \
+Then list tools to find resources first. Identify tasks by readable_id (e.g. ATL-42) and \
+documents by slug.\n\
 - Pass names, not UUIDs, for boards / columns / assignees; on a miss the error lists the \
 valid options.\n\
 - List responses are paginated as {items, next_cursor, has_more}; reads are compact by \
@@ -5204,6 +5207,51 @@ impl ServerHandler for AtlasMcp {
         .with_instructions(ATLAS_INSTRUCTIONS)
     }
 
+    async fn list_tools(
+        &self,
+        _request: Option<rmcp::model::PaginatedRequestParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<ListToolsResult, McpError> {
+        let mut tools = Self::tool_router().list_all();
+
+        let client = match self.resolve_client(&ctx) {
+            Ok(client) => client,
+            Err(error) => {
+                tracing::warn!(
+                    error = %error,
+                    "server capability discovery failed; retaining optional MCP tools"
+                );
+                return Ok(ListToolsResult::with_all_items(tools));
+            }
+        };
+
+        match tokio::time::timeout(SERVER_META_DISCOVERY_TIMEOUT, client.server_meta()).await {
+            Ok(Ok(meta)) if meta.semantic_search_enabled == Some(false) => {
+                tools.retain(|tool| tool.name.as_ref() != "semantic_search");
+            }
+            Ok(Ok(meta)) if meta.semantic_search_enabled.is_none() => {
+                tracing::warn!(
+                    "server capability metadata is unavailable; retaining optional MCP tools"
+                );
+            }
+            Ok(Ok(_)) => {}
+            Ok(Err(error)) => {
+                tracing::warn!(
+                    error = %error,
+                    "server capability discovery failed; retaining optional MCP tools"
+                );
+            }
+            Err(_) => {
+                tracing::warn!(
+                    timeout_ms = SERVER_META_DISCOVERY_TIMEOUT.as_millis(),
+                    "server capability discovery timed out; retaining optional MCP tools"
+                );
+            }
+        }
+
+        Ok(ListToolsResult::with_all_items(tools))
+    }
+
     async fn list_resource_templates(
         &self,
         _request: Option<rmcp::model::PaginatedRequestParams>,
@@ -5307,6 +5355,18 @@ mod tests {
             .expect("MCP client starts")
     }
 
+    async fn listed_tool_names(server: AtlasMcp) -> Vec<String> {
+        start_mcp_client(server)
+            .await
+            .peer()
+            .list_all_tools()
+            .await
+            .expect("tools/list succeeds")
+            .into_iter()
+            .map(|tool| tool.name.into_owned())
+            .collect()
+    }
+
     fn call_tool_params(name: &str, arguments: serde_json::Value) -> CallToolRequestParams {
         CallToolRequestParams::new(name.to_string()).with_arguments(
             arguments
@@ -5382,6 +5442,98 @@ mod tests {
         });
 
         (format!("http://{address}"), request_rx)
+    }
+
+    fn serve_hanging_meta() -> (
+        String,
+        std::sync::mpsc::Receiver<String>,
+        std::sync::mpsc::Sender<()>,
+    ) {
+        use std::io::Read;
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("recording server binds");
+        let address = listener.local_addr().expect("recording server has address");
+        let (request_tx, request_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("recording server accepts request");
+            let mut request = [0_u8; 8192];
+            let length = stream
+                .read(&mut request)
+                .expect("recording server reads request");
+            request_tx
+                .send(
+                    String::from_utf8_lossy(request.get(..length).unwrap_or_default()).into_owned(),
+                )
+                .expect("recording server records request");
+            match release_rx.recv() {
+                Ok(()) | Err(_) => {}
+            }
+        });
+
+        (format!("http://{address}"), request_rx, release_tx)
+    }
+
+    #[tokio::test]
+    async fn tools_list_hides_semantic_search_only_when_explicitly_disabled() {
+        for (body, expected) in [
+            (
+                r#"{"version":"1","build":null,"semantic_search_enabled":false}"#,
+                false,
+            ),
+            (
+                r#"{"version":"1","build":null,"semantic_search_enabled":true}"#,
+                true,
+            ),
+            (r#"{"version":"1","build":null}"#, true),
+        ] {
+            let (base_url, requests) = serve_recording_atlas(vec![("200 OK", body.to_string())]);
+            let tools = listed_tool_names(AtlasMcp::new(base_url, "atlas_test").unwrap()).await;
+
+            assert_eq!(tools.iter().any(|name| name == "semantic_search"), expected);
+            assert!(
+                requests
+                    .recv()
+                    .expect("metadata request")
+                    .starts_with("GET /api/meta ")
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn tools_list_retains_semantic_search_when_metadata_request_fails() {
+        let (base_url, requests) = serve_transport_failing_meta();
+        let tools = listed_tool_names(AtlasMcp::new(base_url, "atlas_test").unwrap()).await;
+
+        assert!(tools.iter().any(|name| name == "semantic_search"));
+        assert!(
+            requests
+                .recv()
+                .expect("metadata request")
+                .starts_with("GET /api/meta ")
+        );
+    }
+
+    #[tokio::test]
+    async fn tools_list_times_out_hanging_metadata_and_retains_semantic_search() {
+        let (base_url, requests, release) = serve_hanging_meta();
+        let tools = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            listed_tool_names(AtlasMcp::new(base_url, "atlas_test").unwrap()),
+        )
+        .await
+        .expect("tools/list capability discovery must be bounded");
+
+        assert!(tools.iter().any(|name| name == "semantic_search"));
+        assert!(
+            requests
+                .recv()
+                .expect("metadata request")
+                .starts_with("GET /api/meta ")
+        );
+        drop(release);
     }
 
     #[tokio::test]
@@ -5755,6 +5907,17 @@ mod tests {
     }
 
     #[test]
+    fn get_info_recommends_semantic_search_only_when_advertised() {
+        let server = AtlasMcp::new("http://localhost:8080", "test-token").unwrap();
+        let instructions = server
+            .get_info()
+            .instructions
+            .expect("instructions are present");
+
+        assert!(instructions.contains("when it is advertised"));
+    }
+
+    #[test]
     fn webhook_management_tools_are_registered() {
         let router = AtlasMcp::tool_router();
         for name in [
@@ -5871,6 +6034,7 @@ mod tests {
             build: None,
             url: None,
             max_attachment_bytes: None,
+            semantic_search_enabled: None,
         };
         let error = require_comment_attachment_limit(Ok(absent), "upload_task_comment_attachment")
             .unwrap_err();

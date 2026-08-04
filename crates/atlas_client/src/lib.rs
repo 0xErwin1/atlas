@@ -4252,14 +4252,9 @@ mod tests {
             "200 OK",
             r#"{"version":"1","build":null,"url":null}"#,
         ));
-        assert!(
-            absent
-                .server_meta()
-                .await
-                .unwrap()
-                .max_attachment_bytes
-                .is_none()
-        );
+        let absent_meta = absent.server_meta().await.unwrap();
+        assert!(absent_meta.max_attachment_bytes.is_none());
+        assert!(absent_meta.semantic_search_enabled.is_none());
 
         let null = AtlasClient::new(serve_once(
             "200 OK",
@@ -4271,6 +4266,19 @@ mod tests {
                 .unwrap()
                 .max_attachment_bytes
                 .is_none()
+        );
+
+        let disabled = AtlasClient::new(serve_once(
+            "200 OK",
+            r#"{"version":"1","build":null,"url":null,"semantic_search_enabled":false}"#,
+        ));
+        assert_eq!(
+            disabled
+                .server_meta()
+                .await
+                .unwrap()
+                .semantic_search_enabled,
+            Some(false)
         );
 
         let malformed = AtlasClient::new(serve_once(
