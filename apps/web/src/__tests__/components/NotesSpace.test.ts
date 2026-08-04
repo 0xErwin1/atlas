@@ -12,7 +12,7 @@ import {
 import type { LiveUpdateHandlers } from '@/composables/useLiveUpdates';
 import { EVENT_TYPE } from '@/lib/eventTypes';
 
-const { GET, PATCH } = vi.hoisted(() => ({ GET: vi.fn(), PATCH: vi.fn() }));
+const { GET, PATCH, PUT } = vi.hoisted(() => ({ GET: vi.fn(), PATCH: vi.fn(), PUT: vi.fn() }));
 const { routerCurrentRoute, routerPush } = vi.hoisted(() => ({
   routerCurrentRoute: { value: { name: 'notes', params: { slug: 'doc-1' } } },
   routerPush: vi.fn(),
@@ -27,6 +27,7 @@ vi.mock('@/api/wrapper', () => ({
   wrappedClient: {
     GET,
     PATCH,
+    PUT,
   },
 }));
 
@@ -40,6 +41,7 @@ import { useDocumentsStore } from '@/stores/documents';
 import { useFoldersStore } from '@/stores/folders';
 import { useLastViewedStore } from '@/stores/lastViewed';
 import { useNotesTabsStore } from '@/stores/notesTabs';
+import { useUiStateStore } from '@/stores/uiState';
 import type { ProjectSummary } from '@/stores/workspace';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -191,6 +193,7 @@ describe('NotesSpace catalog', () => {
     vi.clearAllMocks();
     GET.mockResolvedValue({ data: { items: [] }, error: undefined });
     PATCH.mockResolvedValue({ data: {}, error: undefined });
+    PUT.mockResolvedValue({ data: {}, error: undefined });
     setResourceCachePrincipal(undefined);
     try {
       localStorage.clear();
@@ -204,6 +207,27 @@ describe('NotesSpace catalog', () => {
 
     expect(wrapper.get('.atl-row').attributes('style')).toContain('padding-left: 8px');
     wrapper.unmount();
+  });
+
+  it('restores project expansion by stable project id after remount', async () => {
+    setupWorkspace();
+    const uiState = useUiStateStore();
+    uiState.setProjectCollapsed(WORKSPACE_ID, SANDBOX_PROJECT_ID, true);
+
+    const collapsed = mountSpace();
+    await flushPromises();
+    expect(collapsed.findComponent(NotesTree).exists()).toBe(false);
+
+    await collapsed.get('.atl-row').trigger('click');
+    await flushPromises();
+    expect(uiState.isProjectCollapsed(WORKSPACE_ID, SANDBOX_PROJECT_ID)).toBe(false);
+    expect(collapsed.findComponent(NotesTree).exists()).toBe(true);
+    collapsed.unmount();
+
+    const remounted = mountSpace();
+    await flushPromises();
+    expect(remounted.findComponent(NotesTree).exists()).toBe(true);
+    remounted.unmount();
   });
 
   it('does not load an old same-slug project against the next workspace during a switch', async () => {

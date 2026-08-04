@@ -5,6 +5,8 @@ import NoteTreeRow from '@/components/notas/NoteTreeRow.vue';
 import { docKey, folderKey, type TreeFolder } from '@/lib/notesTree';
 import { useTreeSelection } from '@/stores/treeSelection';
 
+const WORKSPACE_ID = 'workspace-a';
+
 vi.mock('@/api/wrapper', () => ({
   wrappedClient: { GET: vi.fn().mockResolvedValue({ data: { state: {} } }), PUT: vi.fn() },
 }));
@@ -41,7 +43,7 @@ function dropWith(...nodes: unknown[]) {
 
 function mountRow() {
   return mount(NoteTreeRow, {
-    props: { folder: folder(), depth: 0, activeSlug: null },
+    props: { folder: folder(), workspaceId: WORKSPACE_ID, depth: 0, activeSlug: null },
   });
 }
 
@@ -172,7 +174,7 @@ describe('NoteTreeRow drag-and-drop', () => {
 
   it('renders a nested board row with its counter and emits select-board on click', async () => {
     const wrapper = mount(NoteTreeRow, {
-      props: { folder: folderWithBoard(), depth: 0, activeSlug: null },
+      props: { folder: folderWithBoard(), workspaceId: WORKSPACE_ID, depth: 0, activeSlug: null },
     });
     await wrapper.get('.atl-row').trigger('click');
 
@@ -188,7 +190,7 @@ describe('NoteTreeRow drag-and-drop', () => {
 
   it('drops a board node onto a sibling folder to trigger its move', async () => {
     const wrapper = mount(NoteTreeRow, {
-      props: { folder: folderWithBoard(), depth: 0, activeSlug: null },
+      props: { folder: folderWithBoard(), workspaceId: WORKSPACE_ID, depth: 0, activeSlug: null },
     });
     const dropTarget = wrapper.findAll('.tree-dnd')[0];
 

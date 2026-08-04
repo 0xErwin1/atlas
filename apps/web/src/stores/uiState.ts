@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { components } from '@/api/types';
 import { wrappedClient } from '@/api/wrapper';
+import { errorHint } from '@/lib/apiError';
 import { isBoardView } from '@/lib/boardViews';
 import type { TaskBoardView } from '@/stores/ui';
 
@@ -10,54 +11,161 @@ import type { TaskBoardView } from '@/stores/ui';
 // body is cast to the wire type at the boundary.
 type UiStatePayload = components['schemas']['UpdateUiStateRequest']['state'];
 
+interface SidebarExpansionState {
+  collapsedProjects: string[];
+  expandedFolders: string[];
+}
+
 /**
  * Per-user UI state, persisted server-side via `/api/me/ui-state` so preferences
  * (e.g. which sidebar folders are collapsed) survive refreshes and follow the
- * user across devices. Writes are debounced into a single PUT.
+ * user across devices. Writes are debounced and serialized so an older PUT can
+ * never finish after a newer PUT from this client.
  */
 export const useUiStateStore = defineStore('uiState', () => {
   const data = ref<Record<string, unknown>>({});
   const loaded = ref(false);
+  const error = ref<string | null>(null);
 
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
+  let saveLoop: Promise<void> | null = null;
+  let saveRequested = false;
+  let latestSnapshot: Record<string, unknown> = {};
+  let generation = 0;
 
   async function load(): Promise<void> {
-    const { data: res } = await wrappedClient.GET('/api/me/ui-state');
+    const requestGeneration = generation;
+    const { data: res, error: loadError } = await wrappedClient.GET('/api/me/ui-state');
+    if (requestGeneration !== generation) return;
+
+    if (loadError !== undefined) {
+      error.value = errorHint(loadError, 'Failed to load UI preferences');
+      loaded.value = true;
+      return;
+    }
+
     const state = (res as { state?: unknown } | undefined)?.state;
     if (state !== null && typeof state === 'object') {
       data.value = state as Record<string, unknown>;
     }
+    error.value = null;
     loaded.value = true;
   }
 
   function scheduleSave(): void {
+    latestSnapshot = data.value;
     if (saveTimer !== null) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       saveTimer = null;
-      void wrappedClient.PUT('/api/me/ui-state', {
-        body: { state: data.value as unknown as UiStatePayload },
-      });
+      saveRequested = true;
+      ensureSaveLoop();
     }, 600);
   }
 
-  // Expanded sidebar folders are stored as a list of ids; absence means the
-  // folder is collapsed (the default), so a fresh user sees the tree closed and
-  // opens only what they need.
-  function expandedFolders(): string[] {
+  function ensureSaveLoop(): void {
+    if (saveLoop !== null) return;
+
+    const loopGeneration = generation;
+    saveLoop = runSaveLoop(loopGeneration);
+    void saveLoop.finally(() => {
+      saveLoop = null;
+      if (saveRequested) ensureSaveLoop();
+    });
+  }
+
+  async function runSaveLoop(loopGeneration: number): Promise<void> {
+    while (loopGeneration === generation && saveRequested) {
+      saveRequested = false;
+      await save(latestSnapshot, loopGeneration);
+    }
+  }
+
+  async function save(state: Record<string, unknown>, requestGeneration: number): Promise<void> {
+    try {
+      const { error: saveError } = await wrappedClient.PUT('/api/me/ui-state', {
+        body: { state: state as unknown as UiStatePayload },
+      });
+      if (requestGeneration !== generation) return;
+
+      error.value = saveError === undefined ? null : errorHint(saveError, 'Failed to save UI preferences');
+    } catch (cause) {
+      if (requestGeneration === generation) {
+        error.value = errorHint(cause, 'Failed to save UI preferences');
+      }
+    }
+  }
+
+  function legacyExpandedFolders(): string[] {
     const v = data.value.expandedFolders;
     return Array.isArray(v) ? (v as string[]) : [];
   }
 
-  function isFolderCollapsed(id: string): boolean {
-    return !expandedFolders().includes(id);
+  function sidebarExpansionByWorkspace(): Record<string, SidebarExpansionState> {
+    const value = data.value.sidebarExpansionByWorkspace;
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return {};
+
+    return value as Record<string, SidebarExpansionState>;
   }
 
-  function setFolderCollapsed(id: string, collapsed: boolean): void {
-    const next = new Set(expandedFolders());
-    if (collapsed) next.delete(id);
-    else next.add(id);
-    data.value = { ...data.value, expandedFolders: [...next] };
+  function workspaceExpansion(workspaceId: string): SidebarExpansionState {
+    const stored = sidebarExpansionByWorkspace()[workspaceId];
+    return {
+      collapsedProjects: Array.isArray(stored?.collapsedProjects) ? stored.collapsedProjects : [],
+      expandedFolders: Array.isArray(stored?.expandedFolders)
+        ? stored.expandedFolders
+        : legacyExpandedFolders(),
+    };
+  }
+
+  function setWorkspaceExpansion(workspaceId: string, state: SidebarExpansionState): void {
+    data.value = {
+      ...data.value,
+      sidebarExpansionByWorkspace: {
+        ...sidebarExpansionByWorkspace(),
+        [workspaceId]: state,
+      },
+    };
     scheduleSave();
+  }
+
+  function isProjectCollapsed(workspaceId: string, projectId: string): boolean {
+    return workspaceExpansion(workspaceId).collapsedProjects.includes(projectId);
+  }
+
+  function setProjectCollapsed(workspaceId: string, projectId: string, collapsed: boolean): void {
+    const state = workspaceExpansion(workspaceId);
+    const next = new Set(state.collapsedProjects);
+    if (collapsed) next.add(projectId);
+    else next.delete(projectId);
+
+    setWorkspaceExpansion(workspaceId, { ...state, collapsedProjects: [...next] });
+  }
+
+  function isFolderCollapsed(workspaceId: string, folderId: string): boolean {
+    return !workspaceExpansion(workspaceId).expandedFolders.includes(folderId);
+  }
+
+  function setFolderCollapsed(workspaceId: string, folderId: string, collapsed: boolean): void {
+    const state = workspaceExpansion(workspaceId);
+    const next = new Set(state.expandedFolders);
+    if (collapsed) next.delete(folderId);
+    else next.add(folderId);
+
+    setWorkspaceExpansion(workspaceId, { ...state, expandedFolders: [...next] });
+  }
+
+  function reset(): void {
+    generation += 1;
+    saveRequested = false;
+    latestSnapshot = {};
+    if (saveTimer !== null) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+
+    data.value = {};
+    loaded.value = false;
+    error.value = null;
   }
 
   // The board layout (kanban/list/table/...) the user last chose, keyed by board
@@ -100,7 +208,11 @@ export const useUiStateStore = defineStore('uiState', () => {
   return {
     data,
     loaded,
+    error,
     load,
+    reset,
+    isProjectCollapsed,
+    setProjectCollapsed,
     isFolderCollapsed,
     setFolderCollapsed,
     boardViewFor,

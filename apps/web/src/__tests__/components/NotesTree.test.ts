@@ -4,6 +4,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import NotesTree from '@/components/notas/NotesTree.vue';
 import { docKey } from '@/lib/notesTree';
 import { useTreeSelection } from '@/stores/treeSelection';
+import { useUiStateStore } from '@/stores/uiState';
+
+const WORKSPACE_ID = 'workspace-a';
 
 vi.mock('@/api/wrapper', () => ({
   wrappedClient: { GET: vi.fn().mockResolvedValue({ data: { state: {} } }), PUT: vi.fn() },
@@ -18,6 +21,7 @@ describe('NotesTree', () => {
     const wrapper = mount(NotesTree, {
       props: {
         projectName: 'Atlas',
+        workspaceId: WORKSPACE_ID,
         folders: [
           { id: 'f1', name: 'Specs', parent_folder_id: null },
           { id: 'f2', name: 'Drafts', parent_folder_id: 'f1' },
@@ -47,16 +51,41 @@ describe('NotesTree', () => {
 
   it('shows the empty state when there is nothing to show', () => {
     const wrapper = mount(NotesTree, {
-      props: { projectName: 'Atlas', folders: [], docs: [], activeSlug: null },
+      props: { projectName: 'Atlas', workspaceId: WORKSPACE_ID, folders: [], docs: [], activeSlug: null },
     });
 
     expect(wrapper.text()).toContain('No documents yet.');
+  });
+
+  it('defaults folders closed and restores workspace-scoped expansion after remount', async () => {
+    const props = {
+      projectName: 'Atlas',
+      workspaceId: WORKSPACE_ID,
+      folders: [
+        { id: 'f1', name: 'Root', parent_folder_id: null },
+        { id: 'f2', name: 'Nested', parent_folder_id: 'f1' },
+      ],
+      docs: [{ id: 'd1', title: 'Nested note', slug: 'nested-note', folder_id: 'f1' }],
+      activeSlug: null,
+    };
+    const collapsed = mount(NotesTree, { props });
+
+    expect(collapsed.text()).not.toContain('Nested');
+    await collapsed.get('[role="treeitem"][aria-label="Folder: Root"] .atl-row').trigger('click');
+    expect(collapsed.text()).toContain('Nested');
+    collapsed.unmount();
+
+    const remounted = mount(NotesTree, { props });
+    expect(useUiStateStore().isFolderCollapsed('workspace-a', 'f1')).toBe(false);
+    expect(remounted.text()).toContain('Nested');
+    remounted.unmount();
   });
 
   it('disables a doc with no slug so it never navigates to an invalid route', () => {
     const wrapper = mount(NotesTree, {
       props: {
         projectName: 'Atlas',
+        workspaceId: WORKSPACE_ID,
         folders: [],
         docs: [{ id: 'd1', title: 'Unslugged', slug: null, folder_id: null }],
         activeSlug: null,
@@ -71,6 +100,7 @@ describe('NotesTree', () => {
     const wrapper = mount(NotesTree, {
       props: {
         projectName: 'Atlas',
+        workspaceId: WORKSPACE_ID,
         folders: [],
         docs: [],
         boards: [{ id: 'b1', name: 'Roadmap', folder_id: null, task_count: 23 }],
@@ -91,6 +121,7 @@ describe('NotesTree', () => {
     const wrapper = mount(NotesTree, {
       props: {
         projectName: 'Atlas',
+        workspaceId: WORKSPACE_ID,
         folders: [],
         docs: [{ id: 'd1', title: 'Planning', slug: 'planning', folder_id: null }],
         boards: [{ id: 'b1', name: 'Roadmap', folder_id: null, task_count: 23 }],
@@ -107,6 +138,7 @@ describe('NotesTree', () => {
     const wrapper = mount(NotesTree, {
       props: {
         projectName: 'Atlas',
+        workspaceId: WORKSPACE_ID,
         folders: [
           { id: 'f1', name: 'Root', parent_folder_id: null },
           { id: 'f2', name: 'Nested', parent_folder_id: 'f1' },
@@ -146,7 +178,14 @@ describe('NotesTree', () => {
 
   it('aligns root inline creation with root display rows', async () => {
     const wrapper = mount(NotesTree, {
-      props: { projectName: 'Atlas', folders: [], docs: [], boards: [], activeSlug: null },
+      props: {
+        projectName: 'Atlas',
+        workspaceId: WORKSPACE_ID,
+        folders: [],
+        docs: [],
+        boards: [],
+        activeSlug: null,
+      },
     });
 
     await wrapper.get('button[aria-label="New page or folder"]').trigger('click');
@@ -164,6 +203,7 @@ describe('NotesTree', () => {
     const wrapper = mount(NotesTree, {
       props: {
         projectName: 'Atlas',
+        workspaceId: WORKSPACE_ID,
         folders: [],
         docs: [],
         boards: [{ id: 'b1', name: 'Roadmap', folder_id: null, task_count: 0 }],
@@ -189,6 +229,7 @@ describe('NotesTree', () => {
     const wrapper = mount(NotesTree, {
       props: {
         projectName: 'Atlas',
+        workspaceId: WORKSPACE_ID,
         folders: [],
         docs: [{ id: 'd2', title: 'Root note', slug: 'root-note', folder_id: null }],
         activeSlug: null,

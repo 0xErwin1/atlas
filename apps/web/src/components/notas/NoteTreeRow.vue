@@ -19,6 +19,7 @@ import { useUiStateStore } from '@/stores/uiState';
 const props = withDefaults(
   defineProps<{
     folder: TreeFolder;
+    workspaceId: string;
     depth: number;
     activeSlug: string | null;
     activeBoardId?: string | null;
@@ -45,12 +46,11 @@ const emit = defineEmits<{
 
 const uiState = useUiStateStore();
 
-// Expand/collapse is persisted per user (server-side) so it survives refreshes
-// and follows the user across devices; default is expanded.
-const expanded = computed(() => !uiState.isFolderCollapsed(props.folder.id));
+// Expand/collapse is persisted per user and workspace; folders default closed.
+const expanded = computed(() => !uiState.isFolderCollapsed(props.workspaceId, props.folder.id));
 
 function toggleExpanded(): void {
-  uiState.setFolderCollapsed(props.folder.id, expanded.value);
+  uiState.setFolderCollapsed(props.workspaceId, props.folder.id, expanded.value);
 }
 
 const selection = useTreeSelection();
@@ -153,7 +153,7 @@ const {
 
 // Creating inside a folder: expand it first so the input and the new item show.
 function startCreate(kind: 'new-doc' | 'new-folder' | 'new-board'): void {
-  uiState.setFolderCollapsed(props.folder.id, false);
+  uiState.setFolderCollapsed(props.workspaceId, props.folder.id, false);
   startEdit({ kind });
 }
 
@@ -330,6 +330,7 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 2) * treeDepthSte
       <NoteTreeRow
         v-for="child in folder.folders"
         :key="child.id"
+        :workspace-id="workspaceId"
         :folder="child"
         :depth="depth + 1"
         :active-slug="activeSlug"

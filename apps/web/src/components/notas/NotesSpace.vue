@@ -35,6 +35,7 @@ import { useNotesTabsStore } from '@/stores/notesTabs';
 import { useResourceStatusStore } from '@/stores/resourceStatus';
 import { useTreeSelection } from '@/stores/treeSelection';
 import { useUiStore } from '@/stores/ui';
+import { useUiStateStore } from '@/stores/uiState';
 import type { ProjectSummary } from '@/stores/workspace';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -70,8 +71,13 @@ const tabs = useNotesTabsStore();
 const { deleteProject: runProjectDeletion } = useProjectDeletion();
 const ui = useUiStore();
 const resourceStatus = useResourceStatusStore();
+const uiState = useUiStateStore();
 
-const expanded = ref(true);
+const expanded = computed(() =>
+  props.project.id === undefined
+    ? true
+    : !uiState.isProjectCollapsed(props.project.workspace_id, props.project.id),
+);
 
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
 const catalogTarget = ref<string | null>(null);
@@ -685,7 +691,9 @@ const deletingProject = ref(false);
 // Creation from the space header: expand the space, then open the tree's inline
 // input so the new item is typed in this project's context.
 async function startCreate(kind: 'page' | 'board' | 'folder'): Promise<void> {
-  expanded.value = true;
+  if (props.project.id !== undefined) {
+    uiState.setProjectCollapsed(props.project.workspace_id, props.project.id, false);
+  }
   await nextTick();
   if (kind === 'page') treeRef.value?.openNewPage();
   else if (kind === 'board') treeRef.value?.openNewBoard();
@@ -706,7 +714,9 @@ function openHeaderMenu(event: MouseEvent): void {
 }
 
 function toggleExpanded(): void {
-  expanded.value = !expanded.value;
+  if (props.project.id !== undefined) {
+    uiState.setProjectCollapsed(props.project.workspace_id, props.project.id, expanded.value);
+  }
 }
 
 defineExpose({
@@ -741,6 +751,7 @@ defineExpose({
         v-else-if="hasCatalog"
         ref="treeRef"
         :project-name="project.name"
+        :workspace-id="project.workspace_id"
         :folders="treeFolders"
         :docs="treeSummaries"
         :boards="treeBoards"

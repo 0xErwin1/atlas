@@ -44,6 +44,7 @@ import {
   setWorkspaceLiveUpdatesAuthorizationInvalidator,
 } from '@/lib/workspaceLiveUpdates';
 import { type MeResponse, useAuthStore } from '@/stores/auth';
+import { useUiStateStore } from '@/stores/uiState';
 
 const mockGet = wrappedClient.GET as ReturnType<typeof vi.fn>;
 const mockPost = wrappedClient.POST as ReturnType<typeof vi.fn>;
@@ -172,6 +173,18 @@ describe('useAuthStore', () => {
     expect(disposeWorkspaceLiveUpdates).toHaveBeenCalledOnce();
     expect(store.user).toBeNull();
     expect(store.isAuthenticated).toBe(false);
+  });
+
+  it('clears persisted UI state when the active identity is cleared', async () => {
+    const auth = useAuthStore();
+    const uiState = useUiStateStore();
+    uiState.data = { sidebarExpansionByWorkspace: { workspace: { collapsedProjects: ['project'] } } };
+    uiState.loaded = true;
+
+    await auth.clearUser();
+
+    expect(uiState.data).toEqual({});
+    expect(uiState.loaded).toBe(false);
   });
 
   it('registers the default broker invalidator through clearUser', () => {

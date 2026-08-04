@@ -25,6 +25,7 @@ import NoteTreeRow from './NoteTreeRow.vue';
 const props = withDefaults(
   defineProps<{
     projectName: string;
+    workspaceId: string;
     folders: FolderInput[];
     docs: DocInput[];
     boards?: BoardInput[];
@@ -69,7 +70,9 @@ function revealActive(slug: string | null): void {
   if (doc === undefined) return;
 
   for (const folderId of folderAncestors(props.folders, doc.folder_id ?? null)) {
-    if (uiState.isFolderCollapsed(folderId)) uiState.setFolderCollapsed(folderId, false);
+    if (uiState.isFolderCollapsed(props.workspaceId, folderId)) {
+      uiState.setFolderCollapsed(props.workspaceId, folderId, false);
+    }
   }
 
   void nextTick(() => {
@@ -88,7 +91,9 @@ watch(
 );
 
 // Keep the selection store's range order in sync with what is actually visible.
-const visibleKeys = computed(() => flattenVisible(tree.value, (id) => uiState.isFolderCollapsed(id)));
+const visibleKeys = computed(() =>
+  flattenVisible(tree.value, (id) => uiState.isFolderCollapsed(props.workspaceId, id)),
+);
 watch(visibleKeys, (keys) => selection.setOrder(keys), { immediate: true });
 
 function onDocClick(event: MouseEvent, slug: string): void {
@@ -310,6 +315,7 @@ defineExpose({
       <NoteTreeRow
         v-for="folder in tree.folders"
         :key="folder.id"
+        :workspace-id="workspaceId"
         :folder="folder"
         :depth="0"
         :active-slug="activeSlug"

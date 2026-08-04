@@ -13,6 +13,7 @@ import {
   setWorkspaceLiveUpdatesAuthorizationInvalidator,
 } from '@/lib/workspaceLiveUpdates';
 import { getPlatformTransport } from '@/platform/transport';
+import { useUiStateStore } from '@/stores/uiState';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 export type MeResponse = components['schemas']['MeResponse'];
@@ -85,6 +86,7 @@ export const useAuthStore = defineStore('auth', () => {
     setResourceCachePrincipal(undefined);
     disposeWorkspaceLiveUpdates();
     useWorkspaceStore().clearWorkspaceAliases();
+    useUiStateStore().reset();
     user.value = null;
     isAuthenticated.value = false;
     apiKeyWarning.value = false;
