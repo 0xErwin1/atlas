@@ -328,8 +328,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    * — used while a switch briefly nulls the active workspace. A monotonic
    * generation plus an active-workspace check mirror `loadMembers`' staleness
    * guard, so a slow or failed response can never clobber a newer load's result.
+   * Revalidation callers may preserve the published list on failure; initial
+   * loads and workspace changes retain the existing clear-on-error behavior.
    */
-  async function loadProjects(ws: string): Promise<void> {
+  async function loadProjects(ws: string, options: { preserveOnError?: boolean } = {}): Promise<void> {
     if (ws === '') {
       projectsError.value = null;
       projects.value = [];
@@ -347,7 +349,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     if (generation !== projectsLoadGeneration || activeWorkspaceSlug.value !== ws) return;
 
     if (loadError !== undefined) {
-      projects.value = [];
+      if (options.preserveOnError !== true) projects.value = [];
       projectsError.value = errorHint(loadError, 'Failed to load projects');
       return;
     }

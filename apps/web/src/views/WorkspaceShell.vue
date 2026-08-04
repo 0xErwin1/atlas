@@ -26,6 +26,7 @@ const workspace = useWorkspaceStore();
 const { isMobile } = useBreakpoint();
 
 const sidebarRef = ref<InstanceType<typeof NotesSidebar> | null>(null);
+const sidebarRefreshing = ref(false);
 
 // The tab strip "+" in the notes content still opens a new page in the (now
 // hoisted) sidebar tree; the content pane reaches it through this bridge.
@@ -38,6 +39,17 @@ const commandPaletteShortcut = formatShortcut('command-palette');
 
 function openNewPage(): void {
   sidebarRef.value?.openNewPage();
+}
+
+async function refreshSidebar(): Promise<void> {
+  if (sidebarRefreshing.value) return;
+
+  sidebarRefreshing.value = true;
+  try {
+    await sidebarRef.value?.refresh();
+  } finally {
+    sidebarRefreshing.value = false;
+  }
 }
 
 const activeWorkspace = computed(() =>
@@ -113,6 +125,17 @@ function openSearch(): void {
 
     <ContextSidebar v-if="!ui.sidebarCollapsed">
       <template #header-actions>
+        <button
+          type="button"
+          class="atl-gbtn"
+          title="Refresh sidebar"
+          aria-label="Refresh sidebar"
+          :aria-busy="sidebarRefreshing"
+          :disabled="sidebarRefreshing"
+          @click="refreshSidebar"
+        >
+          <Icon name="refresh-cw" :size="14" :class="{ 'sidebar-refresh-spin': sidebarRefreshing }" />
+        </button>
         <button type="button" class="atl-gbtn" title="Search" aria-label="Search" @click="openSearch">
           <Icon name="search" :size="14" />
         </button>
@@ -155,3 +178,15 @@ function openSearch(): void {
     <GlobalDialogs />
   </div>
 </template>
+
+<style scoped>
+.sidebar-refresh-spin {
+  animation: sidebar-refresh-spin 1.1s linear infinite;
+}
+
+@keyframes sidebar-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+</style>

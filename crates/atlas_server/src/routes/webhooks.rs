@@ -37,6 +37,7 @@ const PAGE_LIMIT: u64 = 50;
 
 /// Known event-type strings from the domain catalog.
 const KNOWN_EVENT_TYPES: &[&str] = &[
+    "project.created",
     "task.created",
     "task.updated",
     "task.moved",

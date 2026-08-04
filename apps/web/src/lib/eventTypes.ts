@@ -1,6 +1,7 @@
 // Mirrors the server-side catalog (crates/atlas_domain/src/entities/events.rs
 // event_type() and routes/webhooks.rs KNOWN_EVENT_TYPES). Keep in sync.
 export const EVENT_TYPE = {
+  PROJECT_CREATED: 'project.created',
   TASK_CREATED: 'task.created',
   TASK_UPDATED: 'task.updated',
   TASK_MOVED: 'task.moved',

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import NotesSpace from '@/components/notas/NotesSpace.vue';
 import SidebarViews from '@/components/notas/SidebarViews.vue';
@@ -12,6 +12,8 @@ import Icon from '@/components/ui/Icon.vue';
 import SectionLabel from '@/components/ui/SectionLabel.vue';
 import { useActiveSidebarNode } from '@/composables/useActiveSidebarNode';
 import { useContextMenu } from '@/composables/useContextMenu';
+import { type LiveUpdateEvent, useLiveUpdates } from '@/composables/useLiveUpdates';
+import { EVENT_TYPE } from '@/lib/eventTypes';
 import { boardKey, docKey } from '@/lib/notesTree';
 import { useTreeSelection } from '@/stores/treeSelection';
 import { useWorkspaceStore } from '@/stores/workspace';
@@ -20,6 +22,7 @@ const workspace = useWorkspaceStore();
 const selection = useTreeSelection();
 
 const spaceRefs = ref<Array<InstanceType<typeof NotesSpace> | null>>([]);
+const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
 
 const { activeSlug, activeBoardId, activeViewId } = useActiveSidebarNode();
 
@@ -51,6 +54,27 @@ async function loadProjects(): Promise<void> {
 
 onMounted(loadProjects);
 watch(() => workspace.activeWorkspaceSlug, loadProjects);
+
+async function reloadProjects(): Promise<void> {
+  const wsSlug = workspace.activeWorkspaceSlug;
+  if (wsSlug === null) return;
+
+  await workspace.loadProjects(wsSlug, { preserveOnError: true });
+}
+
+function onLiveEvent(event: LiveUpdateEvent): void {
+  if (event.type === EVENT_TYPE.PROJECT_CREATED) void reloadProjects();
+}
+
+useLiveUpdates(ws, { onEvent: onLiveEvent, onResync: () => void reloadProjects() });
+
+async function refresh(): Promise<void> {
+  await reloadProjects();
+  await nextTick();
+
+  const reloads = spaceRefs.value.flatMap((space) => (space === null ? [] : [space.reload()]));
+  await Promise.all(reloads);
+}
 
 // Whole-sidebar loading gate: the tree stays behind a single loader until every
 // space's initial catalog has settled, instead of each space popping in on its
@@ -113,7 +137,7 @@ function openBackgroundMenu(event: MouseEvent): void {
   openAt(event);
 }
 
-defineExpose({ openNewPage });
+defineExpose({ openNewPage, refresh });
 </script>
 
 <template>

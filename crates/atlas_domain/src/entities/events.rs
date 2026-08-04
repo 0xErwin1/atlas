@@ -35,6 +35,7 @@ pub mod version {
     pub const COLUMN_DELETED: i32 = 1;
     pub const FOLDER_CREATED: i32 = 1;
     pub const FOLDER_DELETED: i32 = 1;
+    pub const PROJECT_CREATED: i32 = 1;
 }
 
 /// Identifies the origin channel of a domain event.
@@ -228,6 +229,13 @@ pub struct FolderDeletedPayload {
     pub project_id: Option<ProjectId>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProjectCreatedPayload {
+    pub project_id: ProjectId,
+    pub name: String,
+    pub slug: String,
+}
+
 // ─── DomainEvent enum ────────────────────────────────────────────────────────
 
 /// Typed catalog of all domain events emitted by this system.
@@ -265,6 +273,8 @@ pub enum DomainEvent {
     // Folder events
     FolderCreated(FolderCreatedPayload),
     FolderDeleted(FolderDeletedPayload),
+    // Project events
+    ProjectCreated(ProjectCreatedPayload),
 }
 
 impl DomainEvent {
@@ -287,6 +297,7 @@ impl DomainEvent {
             DomainEvent::ColumnDeleted(_) => "column.deleted",
             DomainEvent::FolderCreated(_) => "folder.created",
             DomainEvent::FolderDeleted(_) => "folder.deleted",
+            DomainEvent::ProjectCreated(_) => "project.created",
         }
     }
 
@@ -309,6 +320,7 @@ impl DomainEvent {
             DomainEvent::ColumnDeleted(_) => version::COLUMN_DELETED,
             DomainEvent::FolderCreated(_) => version::FOLDER_CREATED,
             DomainEvent::FolderDeleted(_) => version::FOLDER_DELETED,
+            DomainEvent::ProjectCreated(_) => version::PROJECT_CREATED,
         }
     }
 
@@ -329,6 +341,7 @@ impl DomainEvent {
             | DomainEvent::BoardMoved(_) => "board",
             DomainEvent::ColumnCreated(_) | DomainEvent::ColumnDeleted(_) => "column",
             DomainEvent::FolderCreated(_) | DomainEvent::FolderDeleted(_) => "folder",
+            DomainEvent::ProjectCreated(_) => "project",
         }
     }
 
@@ -351,6 +364,7 @@ impl DomainEvent {
             DomainEvent::ColumnDeleted(p) => p.column_id.0,
             DomainEvent::FolderCreated(p) => p.folder_id.0,
             DomainEvent::FolderDeleted(p) => p.folder_id.0,
+            DomainEvent::ProjectCreated(p) => p.project_id.0,
         }
     }
 }
@@ -460,7 +474,7 @@ mod tests {
         assert_eq!(src, EventSource::External("external/github".to_string()));
     }
 
-    // ─── DomainEvent serde round-trips (all 14 variants) ─────────────────────
+    // ─── DomainEvent serde round-trips (all 15 variants) ─────────────────────
 
     #[test]
     fn test_task_created_roundtrip() {
@@ -600,6 +614,15 @@ mod tests {
         roundtrip(&DomainEvent::FolderDeleted(FolderDeletedPayload {
             folder_id: FolderId(nil_uuid()),
             project_id: Some(ProjectId(nil_uuid())),
+        }));
+    }
+
+    #[test]
+    fn test_project_created_roundtrip() {
+        roundtrip(&DomainEvent::ProjectCreated(ProjectCreatedPayload {
+            project_id: ProjectId(nil_uuid()),
+            name: "Atlas".to_string(),
+            slug: "atlas".to_string(),
         }));
     }
 
@@ -987,6 +1010,7 @@ mod tests {
         assert_eq!(COLUMN_DELETED, 1);
         assert_eq!(FOLDER_CREATED, 1);
         assert_eq!(FOLDER_DELETED, 1);
+        assert_eq!(PROJECT_CREATED, 1);
     }
 
     // ─── EventActor ──────────────────────────────────────────────────────────

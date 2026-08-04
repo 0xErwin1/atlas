@@ -410,8 +410,8 @@ mod tests {
         BoardCreatedPayload, BoardDeletedPayload, BoardMovedPayload, BoardUpdatedPayload,
         ColumnCreatedPayload, ColumnDeletedPayload, DocumentCreatedPayload, DocumentDeletedPayload,
         DocumentMovedPayload, DocumentUpdatedPayload, DomainEvent, FolderCreatedPayload,
-        FolderDeletedPayload, TaskCreatedPayload, TaskDeletedPayload, TaskMovedPayload,
-        TaskUpdatedPayload,
+        FolderDeletedPayload, ProjectCreatedPayload, TaskCreatedPayload, TaskDeletedPayload,
+        TaskMovedPayload, TaskUpdatedPayload,
     };
     use atlas_domain::ids::{
         BoardId, ColumnId, DocumentId, FolderId, ProjectId, RevisionId, TaskId,
@@ -505,6 +505,11 @@ mod tests {
                 folder_id: FolderId(nid()),
                 project_id: None,
             }),
+            DomainEvent::ProjectCreated(ProjectCreatedPayload {
+                project_id: ProjectId(nid()),
+                name: "p".into(),
+                slug: "p".into(),
+            }),
         ]
     }
 
@@ -531,6 +536,7 @@ mod tests {
             DomainEvent::FolderCreated(_) | DomainEvent::FolderDeleted(_) => {
                 CapabilityFamily::Folders
             }
+            DomainEvent::ProjectCreated(_) => CapabilityFamily::Projects,
         }
     }
 

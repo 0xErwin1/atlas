@@ -4,6 +4,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
+use sea_orm::TransactionTrait;
 use serde::Deserialize;
 
 use atlas_api::{
@@ -12,6 +13,7 @@ use atlas_api::{
 };
 use atlas_domain::{
     Actor, WorkspaceCtx,
+    entities::events::{DomainEvent, ProjectCreatedPayload},
     entities::permissions::NewPermissionGrant,
     entities::workspace_core::{NewProject, UpdateProject},
     permissions::{
@@ -26,7 +28,7 @@ use crate::{
         ViewerMin, WorkspaceMember, authorized::ProjectRes, enforce_api_key_scope,
     },
     error::ApiError,
-    persistence::repos::{PermissionGrantRepo, PgPermissionGrantRepo, PgProjectRepo, ProjectRepo},
+    persistence::repos::{PgOutboxRepo, PgPermissionGrantRepo, PgProjectRepo, ProjectRepo},
     routes::validation::{validate_name, validate_task_prefix},
     state::AppState,
 };
@@ -61,24 +63,23 @@ pub(crate) async fn create_project(
 
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
-    let repo = PgProjectRepo {
-        conn: (*state.db).clone(),
-    };
-
-    let project = repo
-        .create(
-            &ctx,
-            NewProject {
-                name: body.name,
-                slug: body.slug,
-                task_prefix: body.task_prefix,
-                visibility: visibility.clone(),
-            },
-        )
-        .await
-        .map_err(|e| ApiError::Internal {
-            message: e.to_string(),
-        })?;
+    let txn = state.db.begin().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+    let project = PgProjectRepo::create_in(
+        &txn,
+        &ctx,
+        NewProject {
+            name: body.name,
+            slug: body.slug,
+            task_prefix: body.task_prefix,
+            visibility: visibility.clone(),
+        },
+    )
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
 
     let creator_role = match auth.effective {
         r if r >= ResourceRole::Admin => ResourceRole::Admin,
@@ -93,11 +94,9 @@ pub(crate) async fn create_project(
         Principal::User(_) | Principal::Group(_) => None,
     };
 
-    let grant_repo = PgPermissionGrantRepo {
-        conn: (*state.db).clone(),
-    };
-    grant_repo
-        .upsert(NewPermissionGrant {
+    PgPermissionGrantRepo::upsert_in(
+        &txn,
+        NewPermissionGrant {
             workspace_id: auth.workspace.id,
             user_id: created_by_user_id,
             api_key_id: created_by_api_key_id,
@@ -109,11 +108,30 @@ pub(crate) async fn create_project(
             role: creator_role,
             created_by_user_id,
             created_by_api_key_id,
-        })
-        .await
-        .map_err(|e| ApiError::Internal {
-            message: e.to_string(),
-        })?;
+        },
+    )
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    PgOutboxRepo::insert_in(
+        &txn,
+        &ctx,
+        Some(project.id),
+        None,
+        DomainEvent::ProjectCreated(ProjectCreatedPayload {
+            project_id: project.id,
+            name: project.name.clone(),
+            slug: project.slug.clone(),
+        }),
+    )
+    .await
+    .map_err(ApiError::Domain)?;
+
+    txn.commit().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
 
     Ok((StatusCode::CREATED, Json(project_to_dto(&project))))
 }

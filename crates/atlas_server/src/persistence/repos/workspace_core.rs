@@ -12,8 +12,8 @@ use atlas_domain::{
 };
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait,
-    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
+    EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
 };
 
 use crate::persistence::entities::workspace_core::{
@@ -132,9 +132,12 @@ pub struct PgProjectRepo {
     pub conn: DatabaseConnection,
 }
 
-#[async_trait]
-impl ProjectRepo for PgProjectRepo {
-    async fn create(&self, ctx: &WorkspaceCtx, new: NewProject) -> Result<Project, DomainError> {
+impl PgProjectRepo {
+    pub(crate) async fn create_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        new: NewProject,
+    ) -> Result<Project, DomainError> {
         let created_by_user_id = user_id_from_actor(&ctx.actor);
         let created_by_api_key_id = api_key_id_from_actor(&ctx.actor);
         let (vis_str, vis_role_str) = visibility_to_str(&new.visibility);
@@ -153,11 +156,15 @@ impl ProjectRepo for PgProjectRepo {
             updated_at: Set(Utc::now()),
             deleted_at: Set(None),
         };
-        model
-            .insert(&self.conn)
-            .await
-            .map(project_from)
-            .map_err(db_err)
+
+        model.insert(conn).await.map(project_from).map_err(db_err)
+    }
+}
+
+#[async_trait]
+impl ProjectRepo for PgProjectRepo {
+    async fn create(&self, ctx: &WorkspaceCtx, new: NewProject) -> Result<Project, DomainError> {
+        Self::create_in(&self.conn, ctx, new).await
     }
 
     async fn list_visible(

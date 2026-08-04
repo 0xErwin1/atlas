@@ -111,4 +111,24 @@ describe('WorkspaceShell persistent sidebar', () => {
 
     wrapper.unmount();
   });
+
+  it('shows a desktop sidebar refresh action that reloads projects without navigation', async () => {
+    const workspace = useWorkspaceStore();
+    const loadProjects = vi.spyOn(workspace, 'loadProjects').mockResolvedValue();
+    const router = makeShellRouter();
+    await router.push('/n');
+    await router.isReady();
+
+    const wrapper = mount(AppRoot, { global: { plugins: [router] } });
+    await flushPromises();
+    loadProjects.mockClear();
+
+    const refresh = wrapper.get('button[aria-label="Refresh sidebar"]');
+    await refresh.trigger('click');
+    await flushPromises();
+
+    expect(loadProjects).toHaveBeenCalledWith('atlas', { preserveOnError: true });
+    expect(router.currentRoute.value.fullPath).toBe('/n');
+    wrapper.unmount();
+  });
 });

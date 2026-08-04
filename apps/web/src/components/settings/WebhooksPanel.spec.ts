@@ -129,7 +129,9 @@ describe('WebhooksPanel', () => {
 
     await wrapper.findComponent(MultiSelect).find('.cursor-pointer').trigger('click');
     await flushPromises();
-    await wrapper.findAll('[role="option"]')[0]?.trigger('click');
+    const taskCreated = wrapper.findAll('[role="option"]').find((option) => option.text() === 'task.created');
+    if (taskCreated === undefined) throw new Error('task.created option not found');
+    await taskCreated.trigger('click');
 
     await findBtn(wrapper, 'Create webhook').trigger('click');
     await flushPromises();

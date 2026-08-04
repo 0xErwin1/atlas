@@ -60,6 +60,27 @@ describe('useWorkspaceStore', () => {
     expect(store.activeWorkspaceSlug).toBe('second');
   });
 
+  it('preserves visible projects when an explicit revalidation fails', async () => {
+    const store = useWorkspaceStore();
+    store.setActiveWorkspace('atlas');
+    store.projects = [
+      {
+        id: 'project-1',
+        slug: 'existing',
+        name: 'Existing',
+        task_prefix: 'EXT',
+        workspace_id: 'workspace-1',
+        visibility: 'workspace',
+      },
+    ];
+    mockGet.mockResolvedValue({ error: { hint: 'Projects unavailable' } });
+
+    await store.loadProjects('atlas', { preserveOnError: true });
+
+    expect(store.projects.map((project) => project.slug)).toEqual(['existing']);
+    expect(store.projectsError).toBe('Projects unavailable');
+  });
+
   it('disposes live updates on a committed workspace switch, but not a transient null', () => {
     const store = useWorkspaceStore();
     store.setActiveWorkspace('first');

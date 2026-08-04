@@ -851,6 +851,33 @@ async fn create_webhook_rejects_unknown_event_type() {
     db.teardown().await;
 }
 
+#[tokio::test]
+async fn create_webhook_accepts_project_created_event_type() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _user) =
+        support::login_user_with_workspace(&server, &db, "wh-project-created-type").await;
+
+    let response = http()
+        .post(format!(
+            "{}/api/workspaces/{}/webhooks",
+            server.base_url(),
+            ws.slug
+        ))
+        .bearer_auth(client.token().expect("token"))
+        .json(&serde_json::json!({
+            "target_url": "https://example.com/hook",
+            "event_types": ["project.created"]
+        }))
+        .send()
+        .await
+        .expect("create webhook request");
+
+    assert_eq!(response.status(), 201);
+
+    db.teardown().await;
+}
+
 // ---------------------------------------------------------------------------
 // B4.5-6: validation — board scope without scope_id rejected with 422
 // ---------------------------------------------------------------------------

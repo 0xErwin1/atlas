@@ -12,6 +12,10 @@ use atlas_api::dtos::{
     boards_tasks::{CreateBoardRequest, CreateColumnRequest, CreateTaskRequest},
 };
 use atlas_client::ClientError;
+use atlas_server::persistence::entities::{
+    events_outbox::event_outbox, permissions::permission_grant,
+};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use support::{TestDb, TestServer, login_root_user, login_user_with_workspace};
 
 fn project_req(name: &str, slug: &str) -> CreateProjectRequest {
@@ -40,6 +44,46 @@ async fn create_project_succeeds_for_workspace_member() {
     assert_eq!(project.slug, "my-project");
     assert_eq!(project.workspace_id, ws.id.0);
     assert_eq!(project.visibility, "workspace");
+}
+
+#[tokio::test]
+async fn create_project_commits_creator_grant_and_project_created_event() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (client, ws, user) = login_user_with_workspace(&server, &db, "proj-created-event").await;
+    let project = client
+        .create_project(&ws.slug, project_req("Remote Project", "remote-project"))
+        .await
+        .expect("create project");
+
+    let grant = permission_grant::Entity::find()
+        .filter(permission_grant::Column::WorkspaceId.eq(ws.id.0))
+        .filter(permission_grant::Column::ProjectId.eq(project.id))
+        .filter(permission_grant::Column::UserId.eq(user.id.0))
+        .one(db.conn())
+        .await
+        .expect("query creator grant");
+    assert!(
+        grant.is_some(),
+        "creator grant must commit with the project"
+    );
+
+    let event = event_outbox::Entity::find()
+        .filter(event_outbox::Column::WorkspaceId.eq(ws.id.0))
+        .filter(event_outbox::Column::ProjectId.eq(project.id))
+        .filter(event_outbox::Column::EventType.eq("project.created"))
+        .one(db.conn())
+        .await
+        .expect("query project event")
+        .expect("project.created outbox event");
+
+    assert_eq!(event.aggregate_type, "project");
+    assert_eq!(event.aggregate_id, project.id);
+    assert_eq!(event.payload["data"]["project_id"], project.id.to_string());
+    assert_eq!(event.payload["data"]["slug"], "remote-project");
+
+    db.teardown().await;
 }
 
 #[tokio::test]

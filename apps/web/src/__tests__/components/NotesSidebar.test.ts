@@ -27,6 +27,7 @@ import NotesSpace from '@/components/notas/NotesSpace.vue';
 import SidebarViews from '@/components/notas/SidebarViews.vue';
 import ContextMenu from '@/components/ui/ContextMenu.vue';
 import Dropdown from '@/components/ui/Dropdown.vue';
+import { EVENT_TYPE } from '@/lib/eventTypes';
 import { useWorkspaceStore } from '@/stores/workspace';
 import NotesSidebar from '@/views/NotesSidebar.vue';
 
@@ -176,6 +177,52 @@ describe('NotesSidebar unified all-projects container', () => {
       expect(event.defaultPrevented).toBe(false);
       target.remove();
     }
+    wrapper.unmount();
+  });
+
+  it('authoritatively reloads projects for project.created and stream resync', async () => {
+    const workspace = useWorkspaceStore();
+    workspace.setActiveWorkspace('atlas');
+    workspace.projects = [];
+    const loadProjects = vi.spyOn(workspace, 'loadProjects').mockResolvedValue();
+
+    const wrapper = mount(NotesSidebar);
+    await flushPromises();
+    loadProjects.mockClear();
+
+    const handlers = useLiveUpdates.mock.calls[0]?.[1] as
+      | { onEvent: (event: { type: string }) => void; onResync?: () => void }
+      | undefined;
+    handlers?.onEvent({ type: EVENT_TYPE.PROJECT_CREATED });
+    await flushPromises();
+    handlers?.onResync?.();
+    await flushPromises();
+
+    expect(loadProjects).toHaveBeenCalledTimes(2);
+    expect(loadProjects).toHaveBeenNthCalledWith(1, 'atlas', { preserveOnError: true });
+    expect(loadProjects).toHaveBeenNthCalledWith(2, 'atlas', { preserveOnError: true });
+    wrapper.unmount();
+  });
+
+  it('refreshes the authoritative project list before reloading mounted spaces', async () => {
+    const workspace = setupProjects();
+    const loadProjects = vi.spyOn(workspace, 'loadProjects').mockResolvedValue();
+    const wrapper = mount(NotesSidebar);
+    await flushPromises();
+    GET.mockClear();
+
+    await (wrapper.vm as unknown as { refresh: () => Promise<void> }).refresh();
+
+    expect(loadProjects).toHaveBeenCalledWith('atlas', { preserveOnError: true });
+    expect(
+      GET.mock.calls.filter(([path]) => String(path).endsWith('/projects/{project_slug}/folders')),
+    ).toHaveLength(2);
+    expect(
+      GET.mock.calls.filter(([path]) => String(path).endsWith('/projects/{project_slug}/documents')),
+    ).toHaveLength(2);
+    expect(
+      GET.mock.calls.filter(([path]) => String(path).endsWith('/projects/{project_slug}/boards')),
+    ).toHaveLength(2);
     wrapper.unmount();
   });
 });
