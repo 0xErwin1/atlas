@@ -3,6 +3,7 @@
 mod support;
 
 use atlas_server::state::AppState;
+use sea_orm::ConnectionTrait;
 
 #[tokio::test]
 async fn anchor_interval_field_exists_and_is_u32() {
@@ -41,6 +42,29 @@ async fn anchor_interval_is_at_least_2_with_default_env() {
         state.anchor_interval >= 2,
         "anchor_interval must be >= 2, got: {}",
         state.anchor_interval
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn semantic_search_is_disabled_when_provider_exists_but_schema_is_absent() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    db.conn()
+        .execute_unprepared("DROP TABLE search_embeddings")
+        .await
+        .expect("drop semantic search table");
+
+    let state = AppState::for_test(db.conn().clone())
+        .await
+        .expect("for_test");
+
+    assert!(state.embedding_provider.is_some());
+    assert!(
+        !state
+            .semantic_search_enabled_now()
+            .await
+            .expect("semantic search readiness")
     );
 
     db.teardown().await;

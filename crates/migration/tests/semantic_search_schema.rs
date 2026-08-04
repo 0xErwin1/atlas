@@ -1,14 +1,20 @@
-use migration::m20260708_000039_search_embeddings::Migration;
+use migration::{
+    m20260708_000039_search_embeddings::{self, Migration as HistoricalMigration},
+    m20260804_000045_repair_search_embeddings::Migration as RepairMigration,
+};
 use sea_orm_migration::prelude::MigrationName;
 
 #[test]
 fn semantic_search_embeddings_migration_name_follows_apikey_scopes() {
-    assert_eq!(Migration.name(), "m20260708_000039_search_embeddings");
+    assert_eq!(
+        HistoricalMigration.name(),
+        "m20260708_000039_search_embeddings"
+    );
 }
 
 #[test]
 fn semantic_search_embeddings_schema_contains_required_pgvector_shape() {
-    let schema = migration::m20260708_000039_search_embeddings::up_sql();
+    let schema = m20260708_000039_search_embeddings::up_sql();
 
     assert!(schema.contains("pg_available_extensions WHERE name = 'vector'"));
     assert!(schema.contains("CREATE EXTENSION IF NOT EXISTS vector"));
@@ -20,4 +26,16 @@ fn semantic_search_embeddings_schema_contains_required_pgvector_shape() {
     assert!(schema.contains("search_embeddings_model_dimensions_stale_idx"));
     assert!(schema.contains("USING ivfflat (embedding vector_cosine_ops)"));
     assert!(schema.contains("skipping optional semantic search embedding schema"));
+}
+
+#[test]
+fn semantic_search_schema_repair_reuses_the_idempotent_schema_definition() {
+    assert_eq!(
+        RepairMigration.name(),
+        "m20260804_000045_repair_search_embeddings"
+    );
+    assert_eq!(
+        migration::m20260804_000045_repair_search_embeddings::up_sql(),
+        m20260708_000039_search_embeddings::up_sql()
+    );
 }

@@ -1,4 +1,4 @@
-use sea_orm::DatabaseConnection;
+use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement};
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -129,6 +129,14 @@ impl AppState {
         })
     }
 
+    pub async fn semantic_search_enabled_now(&self) -> Result<bool, DbErr> {
+        if self.embedding_provider.is_none() {
+            return Ok(false);
+        }
+
+        probe_semantic_search_schema(&self.db).await
+    }
+
     /// Returns a clone of this state with a custom attachment size cap.
     ///
     /// Intended for integration tests that need to trigger the oversize path
@@ -187,6 +195,22 @@ impl AppState {
     fn comment_service(&self) -> CommentService {
         CommentService::with_attachment_store((*self.db).clone(), self.attachments.clone())
     }
+}
+
+async fn probe_semantic_search_schema(db: &DatabaseConnection) -> Result<bool, DbErr> {
+    let row = db
+        .query_one_raw(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') AS vector_extension, \
+             to_regclass('public.search_embeddings') IS NOT NULL AS embeddings_table",
+        ))
+        .await?
+        .ok_or_else(|| DbErr::Custom("semantic search schema probe returned no row".to_owned()))?;
+
+    let vector_extension: bool = row.try_get("", "vector_extension")?;
+    let embeddings_table: bool = row.try_get("", "embeddings_table")?;
+
+    Ok(vector_extension && embeddings_table)
 }
 
 /// Builds the attachment store selected by `ATLAS_ATTACHMENT_BACKEND`.

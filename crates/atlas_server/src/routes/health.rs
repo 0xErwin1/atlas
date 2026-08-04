@@ -9,7 +9,7 @@ use serde_json::json;
 
 use atlas_api::dtos::ServerMetaDto;
 
-use crate::state::AppState;
+use crate::{error::ApiError, state::AppState};
 
 #[utoipa::path(
     get,
@@ -79,12 +79,20 @@ pub(crate) async fn version() -> impl IntoResponse {
         (status = 401, description = "Unauthenticated"),
     )
 )]
-pub(crate) async fn meta(State(state): State<AppState>) -> impl IntoResponse {
-    Json(ServerMetaDto {
+pub(crate) async fn meta(State(state): State<AppState>) -> Result<impl IntoResponse, ApiError> {
+    let semantic_search_enabled =
+        state
+            .semantic_search_enabled_now()
+            .await
+            .map_err(|error| ApiError::Internal {
+                message: format!("semantic search schema readiness check failed: {error}"),
+            })?;
+
+    Ok(Json(ServerMetaDto {
         version: env!("CARGO_PKG_VERSION").to_string(),
         build: std::env::var("ATLAS_BUILD").ok(),
         url: std::env::var("ATLAS_SERVER_URL").ok(),
         max_attachment_bytes: Some(state.max_attachment_bytes),
-        semantic_search_enabled: Some(state.embedding_provider.is_some()),
-    })
+        semantic_search_enabled: Some(semantic_search_enabled),
+    }))
 }

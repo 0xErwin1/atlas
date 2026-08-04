@@ -2,6 +2,8 @@
 
 mod support;
 
+use sea_orm::ConnectionTrait;
+
 #[tokio::test]
 async fn health_endpoint_returns_200_via_atlas_client() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -53,6 +55,46 @@ async fn meta_reports_semantic_search_disabled_when_no_embedding_provider_exists
     let server = support::TestServer::spawn_with_state(state).await;
     let (client, _ws, _user) =
         support::login_user_with_workspace(&server, &db, "meta-semantic-disabled").await;
+
+    let meta = client.server_meta().await.expect("server_meta request");
+    assert_eq!(meta.semantic_search_enabled, Some(false));
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn meta_reports_semantic_search_disabled_when_schema_is_absent() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    db.conn()
+        .execute_unprepared("DROP TABLE search_embeddings")
+        .await
+        .expect("drop semantic search table");
+    let state = atlas_server::state::AppState::for_test(db.conn().clone())
+        .await
+        .expect("test state");
+    let server = support::TestServer::spawn_with_state(state).await;
+    let (client, _ws, _user) =
+        support::login_user_with_workspace(&server, &db, "meta-semantic-schema-absent").await;
+
+    let meta = client.server_meta().await.expect("server_meta request");
+    assert_eq!(meta.semantic_search_enabled, Some(false));
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn meta_reports_semantic_search_disabled_when_schema_disappears_after_startup() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let state = atlas_server::state::AppState::for_test(db.conn().clone())
+        .await
+        .expect("test state");
+    db.conn()
+        .execute_unprepared("DROP TABLE search_embeddings")
+        .await
+        .expect("drop semantic search table after startup readiness");
+    let server = support::TestServer::spawn_with_state(state).await;
+    let (client, _ws, _user) =
+        support::login_user_with_workspace(&server, &db, "meta-semantic-schema-drift").await;
 
     let meta = client.server_meta().await.expect("server_meta request");
     assert_eq!(meta.semantic_search_enabled, Some(false));

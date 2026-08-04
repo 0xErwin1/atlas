@@ -10,12 +10,14 @@ use atlas_api::{
     pagination::Page,
 };
 use atlas_domain::{
-    WorkspaceCtx,
+    DomainError, WorkspaceCtx,
     entities::{
         boards_tasks::{NewBoard, NewTask, PositionBetween},
         documents::NewDocument,
     },
-    semantic_search::{ResourceKind, SemanticIndexChunk, SemanticSearchSource},
+    semantic_search::{
+        EmbeddingInput, EmbeddingProvider, ResourceKind, SemanticIndexChunk, SemanticSearchSource,
+    },
 };
 use atlas_server::{
     embeddings::DeterministicEmbeddingProvider,
@@ -24,8 +26,32 @@ use atlas_server::{
         PgPermissionGrantRepo, PgSemanticIndexWriter, PgTaskRepo, TaskRepo,
     },
 };
+use sea_orm::ConnectionTrait;
 use serde_json::Value;
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
+
+struct RecordingEmbeddingProvider {
+    calls: Arc<AtomicUsize>,
+}
+
+#[async_trait::async_trait]
+impl EmbeddingProvider for RecordingEmbeddingProvider {
+    async fn embed(&self, _inputs: &[EmbeddingInput]) -> Result<Vec<Vec<f32>>, DomainError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Ok(vec![vec![0.0; 1536]])
+    }
+
+    fn model(&self) -> &str {
+        "recording-test-provider"
+    }
+
+    fn dimensions(&self) -> usize {
+        1536
+    }
+}
 
 fn semantic_search_url(base: &str, ws: &str, qs: &str) -> String {
     if qs.is_empty() {
@@ -77,6 +103,40 @@ async fn semantic_search_returns_503_when_embeddings_are_disabled() {
             "semantic search embeddings are disabled".to_owned()
         ))
     );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn semantic_search_returns_503_before_embedding_when_schema_is_absent() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut state = atlas_server::state::AppState::for_test(db.conn().clone())
+        .await
+        .expect("test state");
+    state.embedding_provider = Some(Arc::new(RecordingEmbeddingProvider {
+        calls: calls.clone(),
+    }));
+    db.conn()
+        .execute_unprepared("DROP TABLE search_embeddings")
+        .await
+        .expect("drop semantic search table after startup readiness");
+    let server = support::TestServer::spawn_with_state(state).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "sem-schema-absent").await;
+    let token = client.token().expect("must be logged in");
+
+    let response = get_semantic_search(
+        &reqwest::Client::new(),
+        token,
+        server.base_url(),
+        &ws.slug,
+        "q=runbook",
+    )
+    .await;
+
+    assert_eq!(response.status(), reqwest::StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
 
     db.teardown().await;
 }

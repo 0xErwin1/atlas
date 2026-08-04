@@ -44,6 +44,7 @@ pub mod m20260715_000041_comment_attachment_drafts;
 pub mod m20260720_000042_board_folder;
 pub mod m20260721_000043_recoverable_deletion;
 pub mod m20260725_000044_platform_status_templates;
+pub mod m20260804_000045_repair_search_embeddings;
 
 use sea_orm_migration::prelude::*;
 
@@ -97,6 +98,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260720_000042_board_folder::Migration),
             Box::new(m20260721_000043_recoverable_deletion::Migration),
             Box::new(m20260725_000044_platform_status_templates::Migration),
+            Box::new(m20260804_000045_repair_search_embeddings::Migration),
         ]
     }
 }
@@ -111,7 +113,7 @@ mod tests {
     }
 
     #[test]
-    fn platform_status_templates_migration_is_registered_last() {
+    fn semantic_search_schema_repair_migration_is_registered_last() {
         let migrations = Migrator::migrations();
         let names: Vec<_> = migrations
             .iter()
@@ -120,7 +122,7 @@ mod tests {
 
         assert_eq!(
             names.last(),
-            Some(&"m20260725_000044_platform_status_templates")
+            Some(&"m20260804_000045_repair_search_embeddings")
         );
     }
 }

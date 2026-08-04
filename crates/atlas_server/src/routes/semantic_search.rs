@@ -63,10 +63,6 @@ pub(crate) async fn semantic_search(
         message: "query parameter 'q' is required".into(),
     })?;
 
-    if raw_q.trim().is_empty() {
-        return Ok(Json(Page::<SemanticSearchHitDto>::empty()).into_response());
-    }
-
     let provider =
         state
             .embedding_provider
@@ -74,6 +70,21 @@ pub(crate) async fn semantic_search(
             .ok_or_else(|| ApiError::ServiceUnavailable {
                 message: "semantic search embeddings are disabled".to_owned(),
             })?;
+
+    let schema_ready = state.semantic_search_enabled_now().await.map_err(|error| {
+        ApiError::Domain(atlas_domain::DomainError::Internal {
+            message: format!("semantic search schema readiness check failed: {error}"),
+        })
+    })?;
+    if !schema_ready {
+        return Err(ApiError::ServiceUnavailable {
+            message: "semantic search schema is unavailable".to_owned(),
+        });
+    }
+
+    if raw_q.trim().is_empty() {
+        return Ok(Json(Page::<SemanticSearchHitDto>::empty()).into_response());
+    }
 
     let type_filter = parse_type_filter(params.type_filter.as_deref());
     let after = resolve_cursor(params.cursor.as_deref())?;
