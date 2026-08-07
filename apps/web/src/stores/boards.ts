@@ -349,6 +349,36 @@ export const useBoardsStore = defineStore('boards', () => {
     return boardsByProject.value.get(projectSlug) ?? [];
   }
 
+  /**
+   * Drops one board from a project's catalog by id, for a live delete or a move
+   * out of the project. Returns whether the catalog changed, so a caller can
+   * tell an event about this project from one it can ignore.
+   */
+  function removeFromProject(projectSlug: string, boardId: string): boolean {
+    const existing = boardsFor(projectSlug);
+    const next = existing.filter((board) => board.id !== boardId);
+    if (next.length === existing.length) return false;
+
+    publishForProject(projectSlug, next);
+    return true;
+  }
+
+  /** Re-parents one board within a project's catalog, for a live move. */
+  function moveInProject(projectSlug: string, boardId: string, folderId: string | null): boolean {
+    const existing = boardsFor(projectSlug);
+    const index = existing.findIndex((board) => board.id === boardId);
+    if (index === -1) return false;
+
+    const current = existing[index];
+    if (current === undefined || (current.folder_id ?? null) === folderId) return false;
+
+    publishForProject(
+      projectSlug,
+      existing.map((board, i) => (i === index ? { ...board, folder_id: folderId } : board)),
+    );
+    return true;
+  }
+
   /** Removes one project's board catalog without invalidating other project spaces. */
   function clearProject(projectSlug: string, projectId?: string): void {
     catalogRequests.delete(projectSlug);
@@ -1676,6 +1706,8 @@ export const useBoardsStore = defineStore('boards', () => {
     loadBoards,
     loadBoardsForProject,
     boardsFor,
+    removeFromProject,
+    moveInProject,
     publishForProject,
     createBoard,
     renameBoard,

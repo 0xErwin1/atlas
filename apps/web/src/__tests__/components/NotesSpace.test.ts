@@ -418,7 +418,7 @@ describe('NotesSpace catalog', () => {
     expect(loadSummaries).toHaveBeenCalledTimes(1);
     expect(loadSummaries).toHaveBeenCalledWith('atlas', 'sandbox');
 
-    handlers.onResync?.();
+    handlers.onResync?.('desync');
     await wrapper.vm.$nextTick();
 
     expect(loadFolders).toHaveBeenCalledWith('atlas', 'sandbox');
@@ -426,12 +426,143 @@ describe('NotesSpace catalog', () => {
     wrapper.unmount();
   });
 
+  it('removes a deleted document from the tree without refetching the catalog', async () => {
+    setupWorkspace();
+    const docs = useDocumentsStore();
+    const loadSummaries = vi.spyOn(docs, 'loadSummaries').mockResolvedValue();
+    vi.spyOn(useFoldersStore(), 'load').mockResolvedValue();
+    vi.spyOn(useBoardsStore(), 'loadBoardsForProject').mockResolvedValue(null);
+    const wrapper = mountSpace();
+    await flushPromises();
+
+    docs.publishSummariesForProject('sandbox', catalog('Folder', 'Doomed note').summaries);
+    GET.mockClear();
+    loadSummaries.mockClear();
+
+    vi.useFakeTimers();
+    capturedLiveHandlers().onEvent({
+      type: EVENT_TYPE.DOCUMENT_DELETED,
+      data: { document_id: 'Doomed note-document' },
+      envelope: { project_id: SANDBOX_PROJECT_ID } as never,
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    vi.useRealTimers();
+
+    expect(docs.summariesFor('sandbox')).toEqual([]);
+    expect(GET).not.toHaveBeenCalled();
+    expect(loadSummaries).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it('re-parents a moved document in place without refetching the catalog', async () => {
+    setupWorkspace();
+    const docs = useDocumentsStore();
+    const loadSummaries = vi.spyOn(docs, 'loadSummaries').mockResolvedValue();
+    vi.spyOn(useFoldersStore(), 'load').mockResolvedValue();
+    vi.spyOn(useBoardsStore(), 'loadBoardsForProject').mockResolvedValue(null);
+    const wrapper = mountSpace();
+    await flushPromises();
+
+    docs.publishSummariesForProject('sandbox', catalog('Folder', 'Travelling note').summaries);
+    GET.mockClear();
+    loadSummaries.mockClear();
+
+    vi.useFakeTimers();
+    capturedLiveHandlers().onEvent({
+      type: EVENT_TYPE.DOCUMENT_MOVED,
+      data: {
+        document_id: 'Travelling note-document',
+        project_id: SANDBOX_PROJECT_ID,
+        to_folder_id: 'Folder-folder',
+      },
+      envelope: { project_id: SANDBOX_PROJECT_ID } as never,
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    vi.useRealTimers();
+
+    expect(docs.summariesFor('sandbox').map((item) => item.folder_id)).toEqual(['Folder-folder']);
+    expect(GET).not.toHaveBeenCalled();
+    expect(loadSummaries).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it('refreshes only the touched document row on document.updated, not the whole catalog', async () => {
+    setupWorkspace();
+    const docs = useDocumentsStore();
+    const loadSummaries = vi.spyOn(docs, 'loadSummaries').mockResolvedValue();
+    vi.spyOn(useFoldersStore(), 'load').mockResolvedValue();
+    vi.spyOn(useBoardsStore(), 'loadBoardsForProject').mockResolvedValue(null);
+    const wrapper = mountSpace();
+    await flushPromises();
+
+    docs.publishSummariesForProject('sandbox', catalog('Folder', 'Old title').summaries);
+    GET.mockClear();
+    loadSummaries.mockClear();
+    GET.mockResolvedValue({
+      error: undefined,
+      data: {
+        id: 'Old title-document',
+        slug: 'old-title',
+        title: 'Renamed live',
+        folder_id: null,
+        head_seq: 3,
+        updated_at: '2026-01-03T00:00:00Z',
+        project_id: SANDBOX_PROJECT_ID,
+        workspace_id: WORKSPACE_ID,
+        content: '',
+        frontmatter: {},
+        head_revision_id: 'revision-id',
+        created_at: '2026-01-02T00:00:00Z',
+      },
+    });
+
+    capturedLiveHandlers().onEvent({
+      type: EVENT_TYPE.DOCUMENT_UPDATED,
+      data: { document_id: 'Old title-document', revision_id: 'revision-id', seq: 3 },
+      envelope: { project_id: SANDBOX_PROJECT_ID } as never,
+    });
+    await flushPromises();
+
+    expect(GET).toHaveBeenCalledOnce();
+    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/documents/{slug}', {
+      params: { path: { ws: 'atlas', slug: 'old-title' } },
+    });
+    expect(docs.summariesFor('sandbox').map((item) => item.title)).toEqual(['Renamed live']);
+    expect(loadSummaries).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it('ignores a document.updated for a document this space does not list', async () => {
+    setupWorkspace();
+    const docs = useDocumentsStore();
+    const loadSummaries = vi.spyOn(docs, 'loadSummaries').mockResolvedValue();
+    vi.spyOn(useFoldersStore(), 'load').mockResolvedValue();
+    vi.spyOn(useBoardsStore(), 'loadBoardsForProject').mockResolvedValue(null);
+    const wrapper = mountSpace();
+    await flushPromises();
+
+    docs.publishSummariesForProject('sandbox', catalog('Folder', 'Mine').summaries);
+    GET.mockClear();
+    loadSummaries.mockClear();
+
+    vi.useFakeTimers();
+    capturedLiveHandlers().onEvent({
+      type: EVENT_TYPE.DOCUMENT_UPDATED,
+      data: { document_id: 'someone-elses-document', revision_id: 'r', seq: 1 },
+      envelope: { project_id: SANDBOX_PROJECT_ID } as never,
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    vi.useRealTimers();
+
+    expect(GET).not.toHaveBeenCalled();
+    expect(loadSummaries).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
   it.each([
     EVENT_TYPE.BOARD_CREATED,
     EVENT_TYPE.BOARD_UPDATED,
-    EVENT_TYPE.BOARD_DELETED,
-    EVENT_TYPE.BOARD_MOVED,
-  ])('refreshes the catalog on a %s live event, mirroring document event handling', async (eventType) => {
+  ])('refreshes the catalog on a %s live event it cannot place from the payload', async (eventType) => {
     setupWorkspace();
     const docs = useDocumentsStore();
     vi.spyOn(useFoldersStore(), 'load').mockResolvedValue();
@@ -655,7 +786,7 @@ describe('NotesSpace catalog', () => {
     GET.mockReturnValueOnce(new Promise(() => {}))
       .mockReturnValueOnce(new Promise(() => {}))
       .mockReturnValueOnce(new Promise(() => {}));
-    capturedLiveHandlers().onResync?.();
+    capturedLiveHandlers().onResync?.('desync');
     await flushPromises();
     await wrapper.vm.$nextTick();
 

@@ -40,6 +40,23 @@ const globalPurgeFailures = new Set<string>();
 const unresolvedAliasBlocks = new Set<string>();
 const workspaceAliases = new Map<string, string>();
 
+/**
+ * Resolves a workspace slug to its canonical UUID from the workspace catalog the
+ * app has already loaded.
+ *
+ * Without it the only source of slug→UUID knowledge is a live event that already
+ * mapped cleanly, so the very first unmappable event blocks the cache globally —
+ * and a blocked cache is what turns every later navigation into a bare network
+ * load. The catalog knows the answer long before any event arrives.
+ */
+type WorkspaceAliasResolver = (workspaceSlug: string) => string | undefined;
+
+let workspaceAliasResolver: WorkspaceAliasResolver | null = null;
+
+export function setWorkspaceAliasResolver(resolve: WorkspaceAliasResolver | null): void {
+  workspaceAliasResolver = resolve;
+}
+
 export function allowResourceCache(): void {
   if (
     currentPrincipal === undefined ||
@@ -153,7 +170,7 @@ export async function invalidateResourceCache(
 function resolveWorkspaceAlias(workspaceSlug: string | undefined): string | undefined {
   if (workspaceSlug === undefined) return undefined;
 
-  const workspaceId = workspaceAliases.get(workspaceSlug);
+  const workspaceId = workspaceAliases.get(workspaceSlug) ?? workspaceAliasResolver?.(workspaceSlug);
   return isCanonicalWorkspaceId(workspaceId) ? workspaceId : undefined;
 }
 

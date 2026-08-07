@@ -375,13 +375,25 @@ fn emit_workspace_closed<R: Runtime>(
     .map_err(|_| "desktop workspace closure delivery failed")
 }
 
+/// Why the frontend is being asked to catch up.
+///
+/// The distinction matters because the two cost wildly different amounts on the
+/// frontend: a `reconnect` is a benign upstream recycle where at most a short
+/// gap of events was missed, and is reconciled by a silent revalidation against
+/// the resource cache; a `desync` is the server's own `resync` frame (its
+/// in-process broadcast lagged and dropped events), which is the only case that
+/// justifies dropping cached state.
+const RESYNC_REASON_RECONNECT: &str = "reconnect";
+const RESYNC_REASON_DESYNC: &str = "desync";
+
 fn emit_workspace_resync<R: Runtime>(
     app: &tauri::AppHandle<R>,
     workspace_slug: &str,
+    reason: &str,
 ) -> Result<(), DesktopError> {
     app.emit(
         "atlas://workspace-resync",
-        serde_json::json!({"workspace_slug": workspace_slug}),
+        serde_json::json!({"workspace_slug": workspace_slug, "reason": reason}),
     )
     .map_err(|_| DesktopError::EventDelivery)
 }
@@ -395,7 +407,7 @@ fn emit_workspace_frame<R: Runtime>(
         StreamFrame::LiveEnvelope(envelope) => app
             .emit("atlas://workspace-event", envelope)
             .map_err(|_| DesktopError::EventDelivery),
-        StreamFrame::Resync => emit_workspace_resync(app, workspace_slug),
+        StreamFrame::Resync => emit_workspace_resync(app, workspace_slug, RESYNC_REASON_DESYNC),
     }
 }
 
@@ -1207,12 +1219,17 @@ async fn run_workspace_stream<R: Runtime>(
 
 /// Runs one upstream SSE connection to completion, forwarding every live frame.
 ///
-/// On a reconnect (`is_reconnect`) a single `atlas://workspace-resync` is emitted
-/// once the upstream is open, so the frontend performs an atomic catch-up for any
-/// events missed during the gap. This is the fallback for true transparent replay:
-/// the Atlas SSE server assigns no event `id:` and honors no `Last-Event-ID`
-/// header (its events come from an in-process broadcast with no replay log), so a
-/// native `EventSource`'s silent replay cannot be reproduced.
+/// On a reconnect (`is_reconnect`) a single `atlas://workspace-resync` carrying
+/// `reason: "reconnect"` is emitted once the upstream is open, so the frontend
+/// performs an atomic catch-up for any events missed during the gap. This is the
+/// fallback for true transparent replay: the Atlas SSE server assigns no event
+/// `id:` and honors no `Last-Event-ID` header (its events come from an in-process
+/// broadcast with no replay log), so a native `EventSource`'s silent replay
+/// cannot be reproduced.
+///
+/// The reason is what keeps a healthy stream's periodic recycle cheap: a benign
+/// reconnect must never read to the frontend as "drop everything and reload",
+/// which is reserved for the server's own `resync` frame (`reason: "desync"`).
 async fn run_workspace_stream_connection<R: Runtime>(
     client: &reqwest::Client,
     request: reqwest::Request,
@@ -1253,7 +1270,9 @@ async fn run_workspace_stream_connection<R: Runtime>(
         "desktop workspace event stream connected"
     );
 
-    if is_reconnect && emit_workspace_resync(app, workspace_slug).is_err() {
+    if is_reconnect
+        && emit_workspace_resync(app, workspace_slug, RESYNC_REASON_RECONNECT).is_err()
+    {
         tracing::warn!("desktop workspace resync delivery failed");
         return WorkspaceStreamAttempt {
             termination: StreamTermination::Terminal,

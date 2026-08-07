@@ -418,7 +418,11 @@ async function reconcileOpenNote(eventDocumentId: string | null): Promise<void> 
   const target: NoteTarget = { workspaceSlug: ws.value, slug: slug.value };
   try {
     const result = await load(target.workspaceSlug, target.slug);
-    applyLoadedDocument(result, target.slug);
+    // A catch-up that finds the same revision must not touch the buffer:
+    // re-applying it would cancel a pending body sync and hand the properties
+    // editor a fresh `meta` object, which reads on screen as a flicker for a
+    // note that never changed.
+    if (result.headRevisionId !== headRevisionId.value) applyLoadedDocument(result, target.slug);
     remoteChangesPending.value = false;
   } catch (error) {
     if (isDocumentDeniedError(error)) {

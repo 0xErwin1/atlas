@@ -28,6 +28,16 @@ interface DesktopWorkspaceClosed {
   workspace_slug: string;
 }
 
+/**
+ * A catch-up request from the desktop host. `reason` distinguishes a benign
+ * upstream recycle (`reconnect`, reconciled by a silent revalidation) from the
+ * server's own lag signal (`desync`, the only case that drops cached state).
+ * Absent on an older host, which is read as the conservative `desync`.
+ */
+interface DesktopWorkspaceResync extends DesktopWorkspaceClosed {
+  reason?: string;
+}
+
 const DESKTOP_EVENT_NAME = 'atlas://workspace-event';
 const DESKTOP_CLOSED_EVENT_NAME = 'atlas://workspace-closed';
 const DESKTOP_RESYNC_EVENT_NAME = 'atlas://workspace-resync';
@@ -183,10 +193,12 @@ class DesktopWorkspaceEventSource implements WorkspaceEventSource {
       }
       this.unlistenClosed = unlistenClosed;
 
-      const unlistenResync = await this.bridge.listen<DesktopWorkspaceClosed>(
+      const unlistenResync = await this.bridge.listen<DesktopWorkspaceResync>(
         DESKTOP_RESYNC_EVENT_NAME,
         (event) => {
-          if (event.payload.workspace_slug === this.workspaceSlug) this.dispatchResync();
+          if (event.payload.workspace_slug === this.workspaceSlug) {
+            this.dispatchResync(event.payload.reason);
+          }
         },
       );
       if (this.readyState === CLOSED) {
@@ -264,10 +276,14 @@ class DesktopWorkspaceEventSource implements WorkspaceEventSource {
     this.onerror?.(new Event('error'));
   }
 
-  private dispatchResync(): void {
+  // The reason travels as the frame `data`, mirroring how the browser transport
+  // carries the server's `resync` frame, so the broker reads one shape on both
+  // platforms. The server sends an empty `data`, which reads as `desync`.
+  private dispatchResync(reason?: string): void {
     if (this.readyState === CLOSED) return;
 
-    const event = new Event('resync');
+    const data = reason === undefined ? '' : JSON.stringify({ reason });
+    const event = new MessageEvent('resync', { data });
     this.listeners.get('resync')?.forEach((listener) => {
       listener(event);
     });

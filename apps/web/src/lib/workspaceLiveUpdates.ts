@@ -17,9 +17,24 @@ export interface WorkspaceLiveUpdate {
   envelope: LiveEnvelope;
 }
 
+/**
+ * Why a subscriber is being asked to catch up.
+ *
+ * `reconnect` — the transport reopened after a gap. At most a short window of
+ * events was missed, and the cached copy of every resource is still the best
+ * base to reconcile against: subscribers revalidate silently and swap the result
+ * in atomically, without clearing state or showing a loader. A healthy desktop
+ * stream recycles on a cadence, so this path must stay cheap.
+ *
+ * `desync` — the server's in-process broadcast lagged and dropped events, or a
+ * frame arrived that could not be read. What the cache holds may be arbitrarily
+ * far behind, so this is the only reason that drops cached state.
+ */
+export type LiveResyncReason = 'desync' | 'reconnect';
+
 export interface WorkspaceLiveUpdateHandlers {
   onEvent: (update: WorkspaceLiveUpdate) => void;
-  onResync: () => void;
+  onResync: (reason: LiveResyncReason) => void;
   onReconnectFailed?: () => void;
 }
 
@@ -130,10 +145,32 @@ export function createWorkspaceLiveUpdatesBroker(
     });
   }
 
-  function dispatchResync(candidate: Lifetime): void {
-    beginLiveCacheInvalidation(candidate);
+  function dispatchResync(candidate: Lifetime, reason: LiveResyncReason): void {
+    // A benign reconnect deliberately leaves the cache intact: purging it would
+    // force every subscriber to refetch from an empty base and show a loader,
+    // which is exactly what a periodic upstream recycle must not cost.
+    if (reason === 'desync') beginLiveCacheInvalidation(candidate);
     observeDesktopGateStatus(candidate, 'resync');
-    dispatch(candidate, (subscriber) => subscriber.onResync());
+    dispatch(candidate, (subscriber) => subscriber.onResync(reason));
+  }
+
+  /**
+   * Reads the resync reason off a `resync` frame. The browser transport carries
+   * the server's frame, whose `data` is empty; the desktop transport carries the
+   * host's reason. Anything unrecognized is read as `desync`, so an unknown
+   * signal degrades to the safe, expensive path rather than being ignored.
+   */
+  function resyncReasonFrom(event: Event): LiveResyncReason {
+    const data = (event as MessageEvent).data;
+    if (typeof data !== 'string' || data === '') return 'desync';
+
+    try {
+      const parsed: unknown = JSON.parse(data);
+      const reason = (parsed as { reason?: unknown } | null)?.reason;
+      return reason === 'reconnect' ? 'reconnect' : 'desync';
+    } catch {
+      return 'desync';
+    }
   }
 
   function observeDesktopGateStatus(
@@ -286,7 +323,7 @@ export function createWorkspaceLiveUpdatesBroker(
       }
       if (isReconnect) {
         observeDesktopGateStatus(candidate, 'reconnected');
-        dispatchResync(candidate);
+        dispatchResync(candidate, 'reconnect');
       }
     };
 
@@ -307,9 +344,9 @@ export function createWorkspaceLiveUpdatesBroker(
         dispatchEvent(candidate, sourceToken, event as MessageEvent),
       );
     }
-    source.addEventListener('resync', () => {
+    source.addEventListener('resync', (event) => {
       if (!isCurrent(candidate, sourceToken)) return;
-      dispatchResync(candidate);
+      dispatchResync(candidate, resyncReasonFrom(event));
     });
 
     installForegroundListeners(candidate);
@@ -364,9 +401,9 @@ export function createWorkspaceLiveUpdatesBroker(
         dispatchEvent(candidate, sourceToken, event as MessageEvent),
       );
     }
-    source.addEventListener('resync', () => {
+    source.addEventListener('resync', (event) => {
       if (!isCurrent(candidate, sourceToken)) return;
-      dispatchResync(candidate);
+      dispatchResync(candidate, resyncReasonFrom(event));
     });
     installForegroundListeners(candidate);
     return candidate;
@@ -380,7 +417,7 @@ export function createWorkspaceLiveUpdatesBroker(
       parsed = JSON.parse(event.data);
     } catch (error) {
       console.debug('workspaceLiveUpdates: ignoring unparseable event', error);
-      dispatchResync(candidate);
+      dispatchResync(candidate, 'desync');
       return;
     }
 
@@ -390,7 +427,7 @@ export function createWorkspaceLiveUpdatesBroker(
       typeof (parsed as LiveEnvelope).event_type !== 'string'
     ) {
       console.debug('workspaceLiveUpdates: ignoring event without an event_type');
-      dispatchResync(candidate);
+      dispatchResync(candidate, 'desync');
       return;
     }
 

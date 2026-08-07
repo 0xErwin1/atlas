@@ -402,6 +402,63 @@ describe('workspace live updates broker', () => {
     source.close();
   });
 
+  it('carries the desktop host resync reason through to subscribers', async () => {
+    let receiveResync: ((event: { payload: unknown }) => void) | undefined;
+    const bridge: DesktopBridge = {
+      invoke: desktopInvoke(),
+      listen: async (eventName, handler) => {
+        if (eventName === 'atlas://workspace-resync') {
+          receiveResync = handler as (event: { payload: unknown }) => void;
+        }
+        return () => {};
+      },
+    };
+    setPlatformTransport(createDesktopPlatformTransport(bridge));
+    const broker = createWorkspaceLiveUpdatesBroker();
+    const subscriber = handlers();
+    const subscription = broker.acquire('acme', subscriber);
+
+    await flushPromises();
+    expect(receiveResync).toBeTypeOf('function');
+
+    // The host recycles a healthy upstream on a cadence; that must stay a cheap
+    // background catch-up, never a cache-dropping reload.
+    receiveResync?.({ payload: { workspace_slug: 'acme', reason: 'reconnect' } });
+    expect(subscriber.onResync).toHaveBeenCalledExactlyOnceWith('reconnect');
+    expect(invalidateLiveResourceCache).not.toHaveBeenCalled();
+
+    receiveResync?.({ payload: { workspace_slug: 'acme', reason: 'desync' } });
+    expect(subscriber.onResync).toHaveBeenLastCalledWith('desync');
+    expect(invalidateLiveResourceCache).toHaveBeenCalledExactlyOnceWith(undefined, 'acme');
+
+    subscription.release();
+    vi.advanceTimersByTime(30_000);
+  });
+
+  it('reads a desktop resync without a reason as a desync', async () => {
+    let receiveResync: ((event: { payload: unknown }) => void) | undefined;
+    const bridge: DesktopBridge = {
+      invoke: desktopInvoke(),
+      listen: async (eventName, handler) => {
+        if (eventName === 'atlas://workspace-resync') {
+          receiveResync = handler as (event: { payload: unknown }) => void;
+        }
+        return () => {};
+      },
+    };
+    setPlatformTransport(createDesktopPlatformTransport(bridge));
+    const broker = createWorkspaceLiveUpdatesBroker();
+    const subscriber = handlers();
+    const subscription = broker.acquire('acme', subscriber);
+
+    await flushPromises();
+    receiveResync?.({ payload: { workspace_slug: 'acme' } });
+
+    expect(subscriber.onResync).toHaveBeenCalledExactlyOnceWith('desync');
+    subscription.release();
+    vi.advanceTimersByTime(30_000);
+  });
+
   it('starts cache invalidation before dispatching a valid task event to subscribers', () => {
     const broker = createWorkspaceLiveUpdatesBroker();
     const order: string[] = [];
@@ -457,7 +514,7 @@ describe('workspace live updates broker', () => {
 
     FakeEventSource.instances[0]?.emit('resync', 'reload');
 
-    expect(onResync).toHaveBeenCalledExactlyOnceWith();
+    expect(onResync).toHaveBeenCalledExactlyOnceWith('desync');
     expect(invalidateLiveResourceCache).toHaveBeenCalledExactlyOnceWith(undefined, 'acme');
     expect(order).toEqual(['cache', 'subscriber']);
     subscription.release();
@@ -474,7 +531,7 @@ describe('workspace live updates broker', () => {
 
     expect(invalidateLiveResourceCache).toHaveBeenCalledExactlyOnceWith(undefined, 'acme');
     expect(subscriber.onEvent).not.toHaveBeenCalled();
-    expect(subscriber.onResync).toHaveBeenCalledExactlyOnceWith();
+    expect(subscriber.onResync).toHaveBeenCalledExactlyOnceWith('desync');
     expect(consoleDebug).toHaveBeenCalledOnce();
     subscription.release();
     vi.advanceTimersByTime(30_000);
@@ -834,8 +891,11 @@ describe('workspace live updates broker', () => {
       vi.advanceTimersByTime(500);
       FakeEventSource.instances[1]?.emitOpen();
 
-      expect(first.onResync).toHaveBeenCalledExactlyOnceWith();
-      expect(second.onResync).toHaveBeenCalledExactlyOnceWith();
+      expect(first.onResync).toHaveBeenCalledExactlyOnceWith('reconnect');
+      expect(second.onResync).toHaveBeenCalledExactlyOnceWith('reconnect');
+      // A benign reconnect must leave the cache intact: purging it would force
+      // every subscriber to reload from an empty base and show a loader.
+      expect(invalidateLiveResourceCache).not.toHaveBeenCalled();
       firstSubscription.release();
       secondSubscription.release();
       vi.advanceTimersByTime(30_000);
@@ -865,7 +925,7 @@ describe('workspace live updates broker', () => {
 
       expect(FakeEventSource.instances).toHaveLength(2);
       FakeEventSource.instances[1]?.emitOpen();
-      expect(subscriber.onResync).toHaveBeenCalledExactlyOnceWith();
+      expect(subscriber.onResync).toHaveBeenCalledExactlyOnceWith('reconnect');
       subscription.release();
       vi.advanceTimersByTime(30_000);
     });

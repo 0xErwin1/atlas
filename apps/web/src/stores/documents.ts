@@ -131,6 +131,40 @@ export const useDocumentsStore = defineStore('documents', () => {
     publishSummariesForProject(projectSlug, next);
   }
 
+  /**
+   * Drops one document from a project's catalog by its canonical id, for a live
+   * delete or a move out of the project. Returns whether the catalog changed, so
+   * a caller can tell an event about this project from one it can ignore.
+   */
+  function removeSummaryById(projectSlug: string, documentId: string): boolean {
+    const existing = summariesFor(projectSlug);
+    const next = existing.filter((item) => item.id !== documentId);
+    if (next.length === existing.length) return false;
+
+    publishSummariesForProject(projectSlug, next);
+    return true;
+  }
+
+  /** Re-parents one document within a project's catalog, for a live move. */
+  function moveSummaryById(projectSlug: string, documentId: string, folderId: string | null): boolean {
+    const existing = summariesFor(projectSlug);
+    const index = existing.findIndex((item) => item.id === documentId);
+    if (index === -1) return false;
+
+    const current = existing[index];
+    if (current === undefined || current.folder_id === folderId) return false;
+
+    publishSummariesForProject(
+      projectSlug,
+      existing.map((item, i) => (i === index ? { ...item, folder_id: folderId } : item)),
+    );
+    return true;
+  }
+
+  function summaryById(projectSlug: string, documentId: string): DocumentSummary | undefined {
+    return summariesFor(projectSlug).find((item) => item.id === documentId);
+  }
+
   async function fetchSummary(ws: string, slug: string): Promise<FetchedDocumentSummary | null> {
     const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/documents/{slug}', {
       params: { path: { ws, slug } },
@@ -663,6 +697,9 @@ export const useDocumentsStore = defineStore('documents', () => {
     clearProject,
     publishSummariesForProject,
     upsertSummary,
+    removeSummaryById,
+    moveSummaryById,
+    summaryById,
     fetchSummary,
     resetSecondaryTarget,
     clearSecondaryTarget,

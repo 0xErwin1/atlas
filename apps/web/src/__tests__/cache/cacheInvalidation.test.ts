@@ -4,6 +4,7 @@ import { mapLiveCacheInvalidation } from '@/cache/cacheInvalidation';
 const workspaceId = '019ef171-bbcf-7b90-9be6-5dbb382afd08';
 const taskId = '019ef171-bbcf-7b90-9be6-5dbb382afd09';
 const boardId = '019ef171-bbcf-7b90-9be6-5dbb382afd0a';
+const projectId = '019ef171-bbcf-7b90-9be6-5dbb382afd0b';
 
 function envelope(eventType: string, data: unknown, overrides: Record<string, unknown> = {}) {
   return {
@@ -62,29 +63,46 @@ describe('live cache invalidation mapper', () => {
     expect(mapLiveCacheInvalidation(envelope('presence.updated', {}))).toBeNull();
   });
 
-  it.each([
-    ['document.created', { slug: 'new-note' }, undefined],
-    ['document.updated', { slug: 'existing-note' }, ['document:existing-note']],
-    ['document.moved', { slug: 'existing-note' }, ['document:existing-note']],
-    ['document.deleted', { slug: 'existing-note' }, ['document:existing-note']],
-  ])('maps %s without leaving its note catalog fresh', (eventType, data, tags) => {
-    const result = mapLiveCacheInvalidation(envelope(eventType, data));
+  it('scopes a document body update to that document alone', () => {
+    expect(
+      mapLiveCacheInvalidation(envelope('document.updated', { slug: 'existing-note' }, { project_id: projectId })),
+    ).toEqual({ scope: 'resource', workspaceId, tags: ['document:existing-note'] });
+  });
 
-    expect(result).toEqual(
-      tags === undefined ? { scope: 'workspace', workspaceId } : { scope: 'resource', workspaceId, tags },
-    );
+  it.each([
+    ['document.created', { slug: 'new-note' }],
+    ['document.moved', { slug: 'existing-note' }],
+    ['document.deleted', { slug: 'existing-note' }],
+  ])('%s ages its project catalog rather than the whole workspace', (eventType, data) => {
+    expect(mapLiveCacheInvalidation(envelope(eventType, data, { project_id: projectId }))).toEqual({
+      scope: 'resource',
+      workspaceId,
+      tags: [`project-uuid:${projectId}`, `document:${(data as { slug: string }).slug}`],
+    });
+  });
+
+  it.each([
+    'document.created',
+    'document.moved',
+    'document.deleted',
+    'folder.created',
+    'folder.deleted',
+  ])('%s falls back to the workspace when it carries no project', (eventType) => {
+    expect(mapLiveCacheInvalidation(envelope(eventType, {}))).toEqual({ scope: 'workspace', workspaceId });
   });
 
   it.each([
     'folder.created',
     'folder.deleted',
-  ])('%s conservatively stales the current workspace', (eventType) => {
-    expect(mapLiveCacheInvalidation(envelope(eventType, {}))).toEqual({ scope: 'workspace', workspaceId });
+  ])('%s ages only its project catalog', (eventType) => {
+    expect(mapLiveCacheInvalidation(envelope(eventType, {}, { project_id: projectId }))).toEqual({
+      scope: 'resource',
+      workspaceId,
+      tags: [`project-uuid:${projectId}`],
+    });
   });
 
   it.each([
-    'board.created',
-    'board.deleted',
     'column.created',
     'column.deleted',
   ])('%s invalidates board and workspace task collections', (eventType) => {
@@ -92,6 +110,38 @@ describe('live cache invalidation mapper', () => {
       scope: 'resource',
       workspaceId,
       tags: ['task-board', 'workspace-tasks', `board:${boardId}`],
+    });
+  });
+
+  it.each([
+    'board.created',
+    'board.deleted',
+    'board.moved',
+    'board.updated',
+  ])('%s also ages the project catalog the board is listed in', (eventType) => {
+    expect(
+      mapLiveCacheInvalidation(envelope(eventType, {}, { board_id: boardId, project_id: projectId })),
+    ).toEqual({
+      scope: 'resource',
+      workspaceId,
+      tags: ['task-board', 'workspace-tasks', `board:${boardId}`, `project-uuid:${projectId}`],
+    });
+  });
+
+  it('falls back to the workspace for a board event without a project', () => {
+    expect(mapLiveCacheInvalidation(envelope('board.created', {}, { board_id: boardId }))).toEqual({
+      scope: 'workspace',
+      workspaceId,
+    });
+  });
+
+  // The project list is fetched directly, never through the resource cache, so a
+  // new project must not cost the workspace its cached state.
+  it('leaves project.created cache-neutral', () => {
+    expect(mapLiveCacheInvalidation(envelope('project.created', {}))).toEqual({
+      scope: 'resource',
+      workspaceId,
+      tags: [],
     });
   });
 });

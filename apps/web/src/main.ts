@@ -3,7 +3,11 @@ import { createPinia } from 'pinia';
 import { createApp } from 'vue';
 import App from './App.vue';
 import { setCacheInvalidationHandler, setRequestOutcomeHandler, setUnauthorizedHandler } from './api/wrapper';
-import { blockResourceCacheForUnknownAlias, invalidateResourceCache } from './cache/cacheRuntime';
+import {
+  blockResourceCacheForUnknownAlias,
+  invalidateResourceCache,
+  setWorkspaceAliasResolver,
+} from './cache/cacheRuntime';
 import { disposeWorkspaceLiveUpdates } from './lib/workspaceLiveUpdates';
 import { createBrowserPlatformTransport } from './platform/browser';
 import { createDesktopPlatformTransport } from './platform/desktop';
@@ -90,6 +94,13 @@ setWorkspaceAliasInvalidationHandler((scope, workspaceId) => {
   if (scope.scope === 'none') return Promise.resolve(true);
   return invalidateResourceCache(scope.scope, workspaceId, scope.tags);
 });
+
+// Lets live-event invalidation resolve a workspace slug from the loaded catalog
+// instead of only from a previous well-formed event, so an event that cannot be
+// scoped no longer blocks the cache globally.
+setWorkspaceAliasResolver(
+  (workspaceSlug) => useWorkspaceStore(appPinia).workspaceIdForSlug(workspaceSlug) ?? undefined,
+);
 
 export function installTransportStatus(): () => void {
   if (removeTransportListeners !== null) return removeTransportListeners;

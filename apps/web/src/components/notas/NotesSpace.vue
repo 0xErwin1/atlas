@@ -9,6 +9,7 @@ import {
   resourceCacheEpoch,
   resourceCacheIsPurging,
 } from '@/cache/cacheRuntime';
+import { projectCatalogTag } from '@/cache/cacheInvalidation';
 import { buildCacheKey, CACHE_CADENCE } from '@/cache/resourceCache';
 import FolderPickerDialog from '@/components/notas/FolderPickerDialog.vue';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
@@ -115,14 +116,25 @@ interface CatalogLoadContext {
   project: ProjectSummary;
   target: string;
   statusKey: string;
+  /**
+   * A background catch-up rather than a user-visible load: it must not raise the
+   * loading flag, flap the freshness row, or replace a rendered tree with an
+   * error. The published catalog still swaps in atomically when it lands.
+   */
+  silent: boolean;
   isCurrent: () => boolean;
 }
 
-async function loadTree(): Promise<void> {
+interface LoadTreeOptions {
+  silent?: boolean;
+}
+
+async function loadTree(options: LoadTreeOptions = {}): Promise<void> {
   const sequence = ++catalogSequence;
   const wsSlug = workspace.activeWorkspaceSlug;
   if (wsSlug === null) {
     catalogTarget.value = null;
+    settleInitial();
     return;
   }
 
@@ -139,6 +151,7 @@ async function loadTree(): Promise<void> {
   // Vue removes its old project row. Do not issue that stale catalog request.
   if (workspaceId !== null && project.workspace_id !== workspaceId) {
     catalogTarget.value = null;
+    settleInitial();
     return;
   }
 
@@ -147,12 +160,15 @@ async function loadTree(): Promise<void> {
     catalogTarget.value = null;
   }
 
+  // A silent catch-up on a tree that is not on screen yet has nothing to preserve,
+  // so it falls back to a visible load rather than settling nothing.
   const context: CatalogLoadContext = {
     sequence,
     wsSlug,
     project,
     target,
     statusKey: `note-tree:${wsSlug}:${project.slug}`,
+    silent: options.silent === true && catalogTarget.value === target,
     isCurrent: () => sequence === catalogSequence && workspace.activeWorkspaceSlug === wsSlug,
   };
 
@@ -180,10 +196,12 @@ async function loadTree(): Promise<void> {
 // may have set) so a boards-only failure surfaces the error state instead of
 // silently publishing a catalog with stale or missing boards.
 async function loadCatalogDegraded(ctx: CatalogLoadContext): Promise<void> {
-  loading.value = true;
-  catalogError.value = null;
+  if (!ctx.silent) {
+    loading.value = true;
+    catalogError.value = null;
+  }
   const onlineHint = typeof navigator === 'undefined' || navigator.onLine;
-  resourceStatus.beginRequest(ctx.statusKey, onlineHint);
+  if (!ctx.silent) resourceStatus.beginRequest(ctx.statusKey, onlineHint);
 
   const [, , boardsError] = await Promise.all([
     folders.load(ctx.wsSlug, ctx.project.slug),
@@ -194,7 +212,9 @@ async function loadCatalogDegraded(ctx: CatalogLoadContext): Promise<void> {
   if (ctx.isCurrent()) {
     const failure = folders.error ?? documents.error ?? boardsError;
     if (failure !== null) {
-      catalogError.value = failure;
+      // A failed background catch-up keeps the rendered tree; only the freshness
+      // row reports that the update did not land.
+      if (!ctx.silent) catalogError.value = failure;
       resourceStatus.recordRequestFailure(ctx.statusKey, onlineHint);
     } else {
       catalogTarget.value = ctx.target;
@@ -202,6 +222,8 @@ async function loadCatalogDegraded(ctx: CatalogLoadContext): Promise<void> {
     }
   }
 
+  // Cleared even for a silent load: this sequence supersedes any in-flight
+  // visible load, whose own `finally` will no longer match.
   if (ctx.sequence === catalogSequence) loading.value = false;
 }
 
@@ -261,10 +283,15 @@ async function loadCatalogCached(ctx: CatalogLoadContext, key: string): Promise<
     return { folders: folderPage.items, summaries: summaryPage.items, boards: boardPage.items };
   };
 
+  // Tagged by slug for local mutations (which know it) and by UUID for live
+  // events (whose envelopes only ever route by UUID).
+  const tags = [`project:${project.slug}`];
+  if (project.id !== undefined && project.id !== '') tags.push(projectCatalogTag(project.id));
+
   const request = {
     key,
     payloadSchema: noteCatalogSchema,
-    tags: [`project:${project.slug}`],
+    tags,
     freshForMs: CACHE_CADENCE.catalog.freshForMs,
     activeForMs: CACHE_CADENCE.catalog.activeForMs,
     retentionForMs: CATALOG_RETENTION_MS,
@@ -273,24 +300,30 @@ async function loadCatalogCached(ctx: CatalogLoadContext, key: string): Promise<
     isCurrent: ctx.isCurrent,
   };
 
-  loading.value = true;
-  catalogError.value = null;
+  if (!ctx.silent) {
+    loading.value = true;
+    catalogError.value = null;
+  }
   const onlineHint = typeof navigator === 'undefined' || navigator.onLine;
-  resourceStatus.beginRequest(ctx.statusKey, onlineHint);
+  if (!ctx.silent) resourceStatus.beginRequest(ctx.statusKey, onlineHint);
   const operation = hydrateAndRevalidateResource(request);
   void operation.hydration.then((hydrated) => {
-    if (hydrated !== null && ctx.isCurrent()) resourceStatus.setRefreshing(ctx.statusKey);
+    if (hydrated !== null && ctx.isCurrent() && !ctx.silent) resourceStatus.setRefreshing(ctx.statusKey);
   });
   try {
     await operation.completion;
   } catch (error) {
     if (ctx.isCurrent()) {
       const status = (error as { status?: number } | undefined)?.status;
+      // Access loss is authoritative even in the background: the tree must not
+      // keep showing a project this principal may no longer read.
       if (catalogDenied || status === 403 || status === 404) {
         clearCatalog();
         loading.value = false;
+        catalogError.value = 'Failed to load notes';
+      } else if (!ctx.silent) {
+        catalogError.value = 'Failed to load notes';
       }
-      catalogError.value = 'Failed to load notes';
       resourceStatus.recordRequestFailure(ctx.statusKey, onlineHint);
     }
   } finally {
@@ -632,20 +665,138 @@ async function reconcileCreatedDocument(evt: LiveUpdateEvent): Promise<void> {
   documents.upsertSummary(project.slug, fetched.summary);
 }
 
+/**
+ * Refreshes one already-listed document's catalog row.
+ *
+ * `document.updated` carries only the document's id and revision, so the row's
+ * title has to be re-read — but that is one document request, not the project's
+ * whole three-endpoint catalog. A document this space does not list is not ours
+ * to reconcile, and is dropped rather than turned into a reload.
+ */
+async function reconcileUpdatedDocument(documentId: string): Promise<void> {
+  const project = props.project;
+  const known = documents.summaryById(project.slug, documentId);
+  if (known === undefined) return;
+
+  const knownSlug = known.slug;
+  const wsSlug = ws.value;
+  if (wsSlug === '' || knownSlug == null || knownSlug === '') return;
+
+  const fetched = await documents.fetchSummary(wsSlug, knownSlug);
+  if (!isCurrentCreatedDocumentTarget(wsSlug, project)) return;
+
+  if (fetched === null || fetched.summary.id !== documentId) {
+    scheduleLiveReload();
+    return;
+  }
+
+  documents.upsertSummary(project.slug, fetched.summary);
+}
+
+/**
+ * Applies a document move. A move within this project re-parents the row in
+ * place; a move out drops it. A move *into* this project is the only case that
+ * needs the catalog, because the document was never listed here to begin with.
+ */
+function reconcileMovedDocument(evt: LiveUpdateEvent): void {
+  const documentId = eventString(evt.data, 'document_id');
+  if (documentId === undefined || documentId === '') {
+    scheduleLiveReload();
+    return;
+  }
+
+  const project = props.project;
+  const eventProjectId = eventString(evt.data, 'project_id');
+  const listed = documents.summaryById(project.slug, documentId) !== undefined;
+
+  if (eventProjectId !== undefined && project.id !== undefined && eventProjectId !== project.id) {
+    if (listed) documents.removeSummaryById(project.slug, documentId);
+    return;
+  }
+
+  if (!listed) {
+    scheduleLiveReload();
+    return;
+  }
+
+  documents.moveSummaryById(project.slug, documentId, eventString(evt.data, 'to_folder_id') ?? null);
+}
+
+function reconcileMovedBoard(evt: LiveUpdateEvent): void {
+  const boardId = eventString(evt.data, 'board_id');
+  if (boardId === undefined || boardId === '') {
+    scheduleLiveReload();
+    return;
+  }
+
+  const project = props.project;
+  const eventProjectId = eventString(evt.data, 'project_id');
+  const listed = boards.boardsFor(project.slug).some((board) => board.id === boardId);
+
+  if (eventProjectId !== undefined && project.id !== undefined && eventProjectId !== project.id) {
+    if (listed) boards.removeFromProject(project.slug, boardId);
+    return;
+  }
+
+  if (!listed) {
+    scheduleLiveReload();
+    return;
+  }
+
+  boards.moveInProject(project.slug, boardId, eventString(evt.data, 'to_folder_id') ?? null);
+}
+
+/**
+ * Removes a deleted node from the tree without a refetch. An id this space does
+ * not list belongs to another project, so nothing is reloaded for it.
+ */
+function reconcileDeletion(evt: LiveUpdateEvent, kind: 'board' | 'document'): void {
+  const id = eventString(evt.data, kind === 'document' ? 'document_id' : 'board_id');
+  if (id === undefined || id === '') {
+    scheduleLiveReload();
+    return;
+  }
+
+  if (kind === 'document') documents.removeSummaryById(props.project.slug, id);
+  else boards.removeFromProject(props.project.slug, id);
+}
+
 function onLiveEvent(evt: LiveUpdateEvent): void {
+  if (!eventTargetsThisProject(evt.envelope)) return;
+
   switch (evt.type) {
     case EVENT_TYPE.DOCUMENT_CREATED:
-      if (eventTargetsThisProject(evt.envelope)) void reconcileCreatedDocument(evt);
+      void reconcileCreatedDocument(evt);
       break;
 
-    case EVENT_TYPE.DOCUMENT_UPDATED:
+    case EVENT_TYPE.DOCUMENT_UPDATED: {
+      const documentId = eventString(evt.data, 'document_id');
+      if (documentId === undefined || documentId === '') scheduleLiveReload();
+      else void reconcileUpdatedDocument(documentId);
+      break;
+    }
+
     case EVENT_TYPE.DOCUMENT_MOVED:
+      reconcileMovedDocument(evt);
+      break;
+
     case EVENT_TYPE.DOCUMENT_DELETED:
+      reconcileDeletion(evt, 'document');
+      break;
+
+    case EVENT_TYPE.BOARD_DELETED:
+      reconcileDeletion(evt, 'board');
+      break;
+
+    case EVENT_TYPE.BOARD_MOVED:
+      reconcileMovedBoard(evt);
+      break;
+
+    // A created board carries no folder placement and a renamed board carries no
+    // new name, so neither can be placed from the payload alone.
     case EVENT_TYPE.BOARD_CREATED:
     case EVENT_TYPE.BOARD_UPDATED:
-    case EVENT_TYPE.BOARD_DELETED:
-    case EVENT_TYPE.BOARD_MOVED:
-      if (eventTargetsThisProject(evt.envelope)) scheduleLiveReload();
+      scheduleLiveReload();
       break;
 
     default:
@@ -653,18 +804,31 @@ function onLiveEvent(evt: LiveUpdateEvent): void {
   }
 }
 
-useLiveUpdates(ws, { onEvent: onLiveEvent, onResync: () => void loadTree() });
+// A benign reconnect catches up in the background: the rendered tree stays put
+// and the refreshed catalog swaps in atomically. Only a real desync — where the
+// cached catalog may be arbitrarily stale — pays for a visible reload.
+useLiveUpdates(ws, {
+  onEvent: onLiveEvent,
+  onResync: (reason) => void loadTree({ silent: reason === 'reconnect' }),
+});
 
 onBeforeUnmount(clearLiveReloadTimers);
 
-// The initial load settles when `loading` first returns to false after the
-// mount fetch (the same transition for the ready and error paths).
+// The sidebar holds its tree behind a loader until every space reports its
+// initial load settled, so this must fire on *every* terminal path of that first
+// load — including the ones that return before a request is ever issued. A path
+// that settles nothing latches the whole sidebar on "Loading…" permanently.
 const initialSettledEmitted = ref(false);
+
+function settleInitial(): void {
+  if (initialSettledEmitted.value) return;
+
+  initialSettledEmitted.value = true;
+  emit('initial-settled');
+}
+
 watch(loading, (now, prev) => {
-  if (!initialSettledEmitted.value && prev && !now) {
-    initialSettledEmitted.value = true;
-    emit('initial-settled');
-  }
+  if (prev && !now) settleInitial();
 });
 
 onMounted(loadTree);
