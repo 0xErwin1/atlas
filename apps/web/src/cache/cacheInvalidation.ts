@@ -118,7 +118,10 @@ export function mapLiveCacheInvalidation(envelope: LiveEnvelope): CacheInvalidat
     if (isCanonicalWorkspaceId(envelope.board_id)) tags.push(`board:${envelope.board_id}`);
     // A board appears in its project's note tree, so its lifecycle also ages
     // that catalog; a column only lives inside the board.
-    if (envelope.event_type !== EVENT_TYPE.COLUMN_CREATED && envelope.event_type !== EVENT_TYPE.COLUMN_DELETED) {
+    if (
+      envelope.event_type !== EVENT_TYPE.COLUMN_CREATED &&
+      envelope.event_type !== EVENT_TYPE.COLUMN_DELETED
+    ) {
       if (isCanonicalWorkspaceId(envelope.project_id)) tags.push(projectCatalogTag(envelope.project_id));
       else return workspaceFallback(envelope);
     }

@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { wrappedClient } from '@/api/wrapper';
+import { projectCatalogTag } from '@/cache/cacheInvalidation';
 import {
   getResourceCachePrincipal,
   hydrateAndRevalidateResource,
@@ -9,7 +10,6 @@ import {
   resourceCacheEpoch,
   resourceCacheIsPurging,
 } from '@/cache/cacheRuntime';
-import { projectCatalogTag } from '@/cache/cacheInvalidation';
 import { buildCacheKey, CACHE_CADENCE } from '@/cache/resourceCache';
 import FolderPickerDialog from '@/components/notas/FolderPickerDialog.vue';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type

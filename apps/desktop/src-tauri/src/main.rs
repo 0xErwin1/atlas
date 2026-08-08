@@ -1270,8 +1270,7 @@ async fn run_workspace_stream_connection<R: Runtime>(
         "desktop workspace event stream connected"
     );
 
-    if is_reconnect
-        && emit_workspace_resync(app, workspace_slug, RESYNC_REASON_RECONNECT).is_err()
+    if is_reconnect && emit_workspace_resync(app, workspace_slug, RESYNC_REASON_RECONNECT).is_err()
     {
         tracing::warn!("desktop workspace resync delivery failed");
         return WorkspaceStreamAttempt {

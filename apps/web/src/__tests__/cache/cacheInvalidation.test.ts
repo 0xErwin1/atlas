@@ -65,7 +65,9 @@ describe('live cache invalidation mapper', () => {
 
   it('scopes a document body update to that document alone', () => {
     expect(
-      mapLiveCacheInvalidation(envelope('document.updated', { slug: 'existing-note' }, { project_id: projectId })),
+      mapLiveCacheInvalidation(
+        envelope('document.updated', { slug: 'existing-note' }, { project_id: projectId }),
+      ),
     ).toEqual({ scope: 'resource', workspaceId, tags: ['document:existing-note'] });
   });
 
@@ -91,10 +93,7 @@ describe('live cache invalidation mapper', () => {
     expect(mapLiveCacheInvalidation(envelope(eventType, {}))).toEqual({ scope: 'workspace', workspaceId });
   });
 
-  it.each([
-    'folder.created',
-    'folder.deleted',
-  ])('%s ages only its project catalog', (eventType) => {
+  it.each(['folder.created', 'folder.deleted'])('%s ages only its project catalog', (eventType) => {
     expect(mapLiveCacheInvalidation(envelope(eventType, {}, { project_id: projectId }))).toEqual({
       scope: 'resource',
       workspaceId,
