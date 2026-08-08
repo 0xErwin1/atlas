@@ -45,6 +45,7 @@ pub mod m20260720_000042_board_folder;
 pub mod m20260721_000043_recoverable_deletion;
 pub mod m20260725_000044_platform_status_templates;
 pub mod m20260804_000045_repair_search_embeddings;
+pub mod m20260808_000046_repair_search_embeddings;
 
 use sea_orm_migration::prelude::*;
 
@@ -99,6 +100,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260721_000043_recoverable_deletion::Migration),
             Box::new(m20260725_000044_platform_status_templates::Migration),
             Box::new(m20260804_000045_repair_search_embeddings::Migration),
+            Box::new(m20260808_000046_repair_search_embeddings::Migration),
         ]
     }
 }
@@ -122,7 +124,7 @@ mod tests {
 
         assert_eq!(
             names.last(),
-            Some(&"m20260804_000045_repair_search_embeddings")
+            Some(&"m20260808_000046_repair_search_embeddings")
         );
     }
 }

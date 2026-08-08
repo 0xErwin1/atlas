@@ -1,6 +1,7 @@
 use migration::{
     m20260708_000039_search_embeddings::{self, Migration as HistoricalMigration},
     m20260804_000045_repair_search_embeddings::Migration as RepairMigration,
+    m20260808_000046_repair_search_embeddings::Migration as SecondRepairMigration,
 };
 use sea_orm_migration::prelude::MigrationName;
 
@@ -36,6 +37,18 @@ fn semantic_search_schema_repair_reuses_the_idempotent_schema_definition() {
     );
     assert_eq!(
         migration::m20260804_000045_repair_search_embeddings::up_sql(),
+        m20260708_000039_search_embeddings::up_sql()
+    );
+}
+
+#[test]
+fn second_semantic_search_schema_repair_reuses_the_idempotent_schema_definition() {
+    assert_eq!(
+        SecondRepairMigration.name(),
+        "m20260808_000046_repair_search_embeddings"
+    );
+    assert_eq!(
+        migration::m20260808_000046_repair_search_embeddings::up_sql(),
         m20260708_000039_search_embeddings::up_sql()
     );
 }
