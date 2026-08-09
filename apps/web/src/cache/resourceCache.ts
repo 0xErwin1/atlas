@@ -539,6 +539,39 @@ export class ResourceCache {
     return this.finishPurge(purge, deleted);
   }
 
+  /**
+   * Ages every in-memory entry carrying any of `tags` instead of dropping it.
+   *
+   * `readFresh` refuses an aged entry, so it can never let a caller skip the
+   * network; `hydrate` still serves it, so the resource paints in the same tick
+   * and the revalidation that always follows a hydration corrects it. That is
+   * the difference between a spinner and a value that is briefly one round trip
+   * behind — the right trade for content that merely changed, and the wrong one
+   * for content the principal may no longer read, which stays on `purgeTags`.
+   *
+   * Only the hot map is aged. A cold entry is unreachable without a scoped store
+   * update, and it is only ever read through `hydrate`, which revalidates.
+   */
+  markStaleTags(tags: readonly string[], principal?: string, workspaceId?: string): boolean {
+    if (principal === undefined) {
+      this.block();
+      return false;
+    }
+
+    if (this.isSuspended()) return false;
+
+    const tagSet = new Set(tags);
+    for (const [key, entry] of this.hot) {
+      if (entry.stale) continue;
+      if (!cacheKeyMatchesScope(key, principal, workspaceId)) continue;
+      if (!entry.tags.some((tag) => tagSet.has(tag))) continue;
+
+      this.hot.set(key, { ...entry, stale: true });
+    }
+
+    return true;
+  }
+
   dispose(): void {
     this.block();
   }
@@ -567,7 +600,7 @@ export class ResourceCache {
         if (request.nextAttemptAt > now) continue;
 
         const entry = this.hot.get(key);
-        if (entry !== undefined && entry.validatedAt + request.freshForMs > now) {
+        if (entry !== undefined && !entry.stale && entry.validatedAt + request.freshForMs > now) {
           request.nextAttemptAt = entry.validatedAt + request.freshForMs;
           continue;
         }

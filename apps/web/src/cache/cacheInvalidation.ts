@@ -5,6 +5,17 @@ export interface CacheInvalidationScope {
   scope: 'resource' | 'workspace';
   workspaceId: string;
   tags?: string[];
+  /**
+   * How the tagged entries are invalidated. `purge` drops them; `stale` ages
+   * them so they still hydrate a view instantly while the revalidation that
+   * follows corrects it.
+   *
+   * Only an event that changes content the principal already reads may age
+   * rather than drop — anything touching membership or authorization must
+   * purge, so revoked data is never served again even for one frame. Defaults
+   * to `purge` when omitted.
+   */
+  mode?: 'purge' | 'stale';
 }
 
 function eventString(data: unknown, key: string): string | undefined {
@@ -78,7 +89,11 @@ export function mapLiveCacheInvalidation(envelope: LiveEnvelope): CacheInvalidat
     if (envelope.event_type === EVENT_TYPE.TASK_MOVED) tags.push('task-board');
     tags.push('workspace-tasks');
 
-    return { scope: 'resource', workspaceId: envelope.workspace_id, tags };
+    // A task changing is the most frequent event in an active workspace, and
+    // dropping every board it touches is what makes returning to a board tab
+    // pay for a full reload. The board is still readable, only older, so it is
+    // aged instead: the tab paints from cache and the revalidation corrects it.
+    return { scope: 'resource', workspaceId: envelope.workspace_id, tags, mode: 'stale' };
   }
 
   const documentEvents: ReadonlySet<string> = new Set([

@@ -6,6 +6,7 @@ import { deferred } from '@/__tests__/deferred';
 import {
   allowResourceCache,
   configureResourceCacheForTest,
+  invalidateResourceCache,
   setResourceCachePrincipal,
 } from '@/cache/cacheRuntime';
 import {
@@ -298,6 +299,83 @@ describe('useBoardsStore', () => {
     expect(warn).toHaveBeenCalledOnce();
 
     warn.mockRestore();
+  });
+
+  describe('returning to a board that is already cached', () => {
+    function mockBoardFetches(boardId: string, columnId: string, taskId: string): void {
+      GET.mockImplementation((path: string) => {
+        if (path.endsWith('/columns'))
+          return Promise.resolve({ data: [col(columnId, 'a')], error: undefined });
+        if (path.endsWith('/tasks')) {
+          return Promise.resolve({
+            data: { items: [task(taskId, 'ATL-1', columnId)], has_more: false, next_cursor: null },
+            error: undefined,
+          });
+        }
+        return Promise.resolve({ data: board(boardId), error: undefined });
+      });
+    }
+
+    it('paints from cache without raising the spinner or refetching', async () => {
+      mockBoardFetches('board-1', 'column-1', 'task-1');
+
+      const store = useBoardsStore();
+      await store.loadBoardContents('ws', 'board-1', WORKSPACE_ID);
+      await store.loadBoardContents('ws', 'board-2', WORKSPACE_ID);
+      GET.mockClear();
+
+      mockBoardFetches('board-1', 'column-1', 'task-1');
+      const revisit = store.loadBoardContents('ws', 'board-1', WORKSPACE_ID);
+
+      // Asserted before awaiting: a cached composite has to be on screen within
+      // the synchronous prefix of the load, or a spinner renders in between.
+      expect(store.loading).toBe(false);
+      expect(store.board?.id).toBe('board-1');
+      expect(store.tasksByColumn('column-1').map((item) => item.id)).toEqual(['task-1']);
+
+      await revisit;
+
+      expect(GET).not.toHaveBeenCalled();
+    });
+
+    it('still retracts the previous board when nothing is cached for the next one', async () => {
+      mockBoardFetches('board-1', 'column-1', 'task-1');
+
+      const store = useBoardsStore();
+      await store.loadBoardContents('ws', 'board-1', WORKSPACE_ID);
+
+      const pending = deferred<{ data: unknown; error: undefined }>();
+      GET.mockImplementation(() => pending.promise);
+      const load = store.loadBoardContents('ws', 'board-2', WORKSPACE_ID);
+
+      expect(store.loading).toBe(true);
+      expect(store.board).toBeNull();
+      expect(store.tasksByColumn('column-1')).toEqual([]);
+
+      pending.resolve({ data: undefined, error: undefined });
+      await load;
+    });
+
+    it('repaints from an aged composite and corrects it from the network', async () => {
+      mockBoardFetches('board-1', 'column-1', 'task-1');
+
+      const store = useBoardsStore();
+      await store.loadBoardContents('ws', 'board-1', WORKSPACE_ID);
+      await store.loadBoardContents('ws', 'board-2', WORKSPACE_ID);
+
+      // What a live task event on board-1 now does instead of dropping it.
+      await invalidateResourceCache('resource', WORKSPACE_ID, ['board:board-1'], 'stale');
+
+      mockBoardFetches('board-1', 'column-1', 'task-2');
+      const revisit = store.loadBoardContents('ws', 'board-1', WORKSPACE_ID);
+
+      expect(store.loading).toBe(false);
+      expect(store.tasksByColumn('column-1').map((item) => item.id)).toEqual(['task-1']);
+
+      await revisit;
+
+      expect(store.tasksByColumn('column-1').map((item) => item.id)).toEqual(['task-2']);
+    });
   });
 
   it('hydrates an exact board composite before an offline refresh and keeps it usable for active retry', async () => {

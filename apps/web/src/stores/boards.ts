@@ -817,13 +817,14 @@ export const useBoardsStore = defineStore('boards', () => {
     activeColumnsRequest = null;
     activeTasksRequest = null;
 
+    // Clearing the error surface is not destructive to what is on screen, so it
+    // runs up front; retracting the visible board is, and waits until the cache
+    // is known to hold nothing for this one.
     if (!backgroundRefresh) {
       invalidateTaskDetails();
-      loading.value = true;
       loadError.value = null;
       loadErrorStatus.value = null;
       error.value = null;
-      clearBoardComposite();
     }
 
     const cacheKey =
@@ -893,10 +894,30 @@ export const useBoardsStore = defineStore('boards', () => {
 
     const validateComposite =
       workspaceId === undefined ? boardCompositeSchema : boardCompositePayloadSchema(boardId, workspaceId);
+    let published = false;
     const publish = (composite: BoardComposite): void => {
       if (!isCurrent()) return;
       publishBoardComposite(validateComposite.parse(composite));
+      published = true;
       loading.value = false;
+    };
+
+    /**
+     * Retracts the board on screen and raises the spinner, unless a cached
+     * composite already painted this one.
+     *
+     * A hot cache hit publishes inside the synchronous prefix of the hydration,
+     * so by the time this runs the new board is already mounted and clearing
+     * would only flash an empty board over it. Every other path — cold cache,
+     * cache unavailable, bare network — still retracts, because leaving the
+     * previous board visible under the new board's title is worse than a
+     * spinner.
+     */
+    const retractUnlessPublished = (): void => {
+      if (backgroundRefresh || published) return;
+
+      loading.value = true;
+      clearBoardComposite();
     };
 
     if (cacheKey !== null && workspaceId !== undefined && resourceCache.isAvailable()) {
@@ -906,6 +927,11 @@ export const useBoardsStore = defineStore('boards', () => {
         tags: [`board:${boardId}`, 'task-board', `workspace:${workspaceId}`],
         deriveTags: (composite: BoardComposite) =>
           composite.tasks.flatMap((task) => [`task:${task.readable_id}`, `task-uuid:${task.id}`]),
+        // Switching back to a board tab within the freshness window reuses the
+        // cached composite synchronously and skips the fetch fan-out entirely.
+        // Safe because every change to a board ages its entry through the live
+        // stream before the window elapses.
+        reuseFresh: true,
         freshForMs: CACHE_CADENCE.primary.freshForMs,
         activeForMs: CACHE_CADENCE.primary.activeForMs,
         retentionForMs: 24 * 60 * 60 * 1000,
@@ -916,8 +942,12 @@ export const useBoardsStore = defineStore('boards', () => {
 
       activeBoardCacheKey = cacheKey;
       activeBoardCacheScope = { boardId, workspaceId };
+
+      const pending = hydrateAndRevalidateResource(request);
+      retractUnlessPublished();
+
       try {
-        await hydrateAndRevalidateResource(request).completion;
+        await pending.completion;
       } catch (cause) {
         if (!isCurrent()) return false;
 
@@ -942,6 +972,8 @@ export const useBoardsStore = defineStore('boards', () => {
       loading.value = false;
       return true;
     }
+
+    retractUnlessPublished();
 
     try {
       publish(await load());

@@ -19,6 +19,7 @@ interface ResourceCacheRuntime {
   purge(): Promise<boolean>;
   purgeTags(tags: readonly string[], principal?: string, workspaceId?: string): Promise<boolean>;
   purgeWorkspace(workspaceId: string, principal?: string): Promise<boolean>;
+  markStaleTags(tags: readonly string[], principal?: string, workspaceId?: string): boolean;
   hydrate<T>(
     request: Pick<ResourceCacheRequest<T>, 'key' | 'payloadSchema' | 'publish' | 'isCurrent'>,
   ): Promise<T | null>;
@@ -146,6 +147,7 @@ export async function invalidateResourceCache(
   scope: 'workspace' | 'resource',
   workspaceId: string,
   tags: readonly string[],
+  mode: 'purge' | 'stale' = 'purge',
 ): Promise<boolean> {
   if (!isCanonicalPrincipal(currentPrincipal) || !isCanonicalWorkspaceId(workspaceId)) return false;
   const invalidated =
@@ -153,7 +155,9 @@ export async function invalidateResourceCache(
       ? await resourceCache.purgeWorkspace(workspaceId, currentPrincipal)
       : tags.length === 0
         ? true
-        : await resourceCache.purgeTags(tags, currentPrincipal, workspaceId);
+        : mode === 'stale'
+          ? resourceCache.markStaleTags(tags, currentPrincipal, workspaceId)
+          : await resourceCache.purgeTags(tags, currentPrincipal, workspaceId);
 
   if (invalidated) {
     unresolvedAliasBlocks.delete(currentPrincipal);
@@ -210,7 +214,12 @@ export async function invalidateLiveResourceCache(
     workspaceAliases.set(workspaceSlug, invalidation.workspaceId);
   }
 
-  return invalidateResourceCache(invalidation.scope, invalidation.workspaceId, invalidation.tags ?? []);
+  return invalidateResourceCache(
+    invalidation.scope,
+    invalidation.workspaceId,
+    invalidation.tags ?? [],
+    invalidation.mode ?? 'purge',
+  );
 }
 
 export async function invalidateWorkspaceTaskQueryCache(workspaceId: string): Promise<boolean> {

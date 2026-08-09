@@ -31,6 +31,7 @@ describe('live cache invalidation mapper', () => {
         scope: 'resource',
         workspaceId,
         tags: [`task-uuid:${taskId}`, `board:${boardId}`, 'workspace-tasks'],
+        mode: 'stale',
       },
     );
   });
@@ -42,6 +43,7 @@ describe('live cache invalidation mapper', () => {
       scope: 'resource',
       workspaceId,
       tags: [`task-uuid:${taskId}`, `board:${boardId}`, 'task-board', 'workspace-tasks'],
+      mode: 'stale',
     });
   });
 

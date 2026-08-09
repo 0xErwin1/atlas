@@ -77,8 +77,16 @@ describe('ResourceCache runtime', () => {
     const wrongWorkspaceId = '019ef171-bbcf-7b90-9be6-5dbb382afd09';
     const purgeWorkspace = vi.fn().mockResolvedValue(true);
     const purgeTags = vi.fn().mockResolvedValue(true);
+    const markStaleTags = vi.fn().mockReturnValue(true);
     const purge = vi.fn().mockResolvedValue(true);
-    configureResourceCacheForTest({ allow: vi.fn(), block: vi.fn(), purgeTags, purgeWorkspace, purge });
+    configureResourceCacheForTest({
+      allow: vi.fn(),
+      block: vi.fn(),
+      purgeTags,
+      markStaleTags,
+      purgeWorkspace,
+      purge,
+    });
     setResourceCachePrincipal(principal);
 
     await invalidateLiveResourceCache(

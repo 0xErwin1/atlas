@@ -155,4 +155,95 @@ describe('resource cache revalidation payload delivery', () => {
 
     expect(result.payload).toEqual({ id: 'doc-1' });
   });
+
+  describe('aging a tag instead of dropping it', () => {
+    const payloadSchema = z.object({ id: z.string() });
+
+    async function cacheWithBoard(): Promise<{ cache: ResourceCache; key: string }> {
+      const cache = new ResourceCache({ store: noopStore(), policy: DEFAULT_CACHE_POLICY });
+      cache.allow();
+
+      const key = buildCacheKey({
+        principal,
+        workspaceId,
+        resourceKind: 'task-board',
+        resourceId: 'board-a',
+      });
+      if (key === null) throw new Error('expected a canonical cache key');
+
+      await cache.revalidate({
+        key,
+        payloadSchema,
+        tags: ['board:board-a'],
+        freshForMs: 120_000,
+        retentionForMs: 600_000,
+        load: async () => ({ id: 'board-a' }),
+        publish: () => {},
+        isCurrent: () => true,
+      });
+
+      return { cache, key };
+    }
+
+    it('keeps an aged entry hydratable so a view paints without waiting on the network', async () => {
+      const { cache, key } = await cacheWithBoard();
+
+      expect(cache.markStaleTags(['board:board-a'], principal, workspaceId)).toBe(true);
+
+      const published: unknown[] = [];
+      const hydrated = await cache.hydrate({
+        key,
+        payloadSchema,
+        publish: (payload) => published.push(payload),
+        isCurrent: () => true,
+      });
+
+      expect(hydrated).toEqual({ id: 'board-a' });
+      expect(published).toEqual([{ id: 'board-a' }]);
+    });
+
+    it('refuses an aged entry as fresh so it can never skip the revalidation', async () => {
+      const { cache, key } = await cacheWithBoard();
+
+      const request = {
+        key,
+        payloadSchema,
+        freshForMs: 120_000,
+        publish: () => {},
+        isCurrent: () => true,
+      };
+
+      expect(cache.readFresh(request)).toEqual({ id: 'board-a' });
+
+      cache.markStaleTags(['board:board-a'], principal, workspaceId);
+
+      expect(cache.readFresh(request)).toBeNull();
+    });
+
+    it('leaves an entry carrying none of the aged tags fresh', async () => {
+      const { cache, key } = await cacheWithBoard();
+
+      cache.markStaleTags(['board:board-b'], principal, workspaceId);
+
+      expect(
+        cache.readFresh({
+          key,
+          payloadSchema,
+          freshForMs: 120_000,
+          publish: () => {},
+          isCurrent: () => true,
+        }),
+      ).toEqual({ id: 'board-a' });
+    });
+
+    it('blocks rather than ages anything when the principal is unknown', async () => {
+      const { cache, key } = await cacheWithBoard();
+
+      expect(cache.markStaleTags(['board:board-a'])).toBe(false);
+      expect(cache.isAvailable()).toBe(false);
+      expect(
+        await cache.hydrate({ key, payloadSchema, publish: () => {}, isCurrent: () => true }),
+      ).toBeNull();
+    });
+  });
 });
