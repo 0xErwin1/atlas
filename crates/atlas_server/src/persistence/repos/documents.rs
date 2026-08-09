@@ -38,10 +38,10 @@ use crate::persistence::live_ancestors::{
     folder_chain_is_live_sql, live_comment_chain, live_document_chain, live_folder_chain,
     live_project, live_task_chain, project_is_live_sql, task_chain_is_live_sql,
 };
-use crate::persistence::repos::PgSecurityAuditRepo;
 use crate::persistence::repos::comment_attachment_drafts::{
     lock_active_draft_for_upload, record_upload_or_replay_in,
 };
+use crate::persistence::repos::{PgSearchIndexQueueRepo, PgSecurityAuditRepo};
 
 pub use atlas_domain::ports::documents::{
     AttachmentRepo, AttachmentWriteIntentRepo, DocumentLinkRepo, DocumentRepo,
@@ -1263,11 +1263,15 @@ impl PgAttachmentRepo {
         let mut active = row.into_active_model();
         active.file_name = Set(file_name);
         active.updated_at = Set(Utc::now());
-        active
+        let renamed = active
             .update(&self.conn)
             .await
             .map(attachment_from)
-            .map_err(db_err)
+            .map_err(db_err)?;
+
+        enqueue_attachment_owner(&self.conn, ctx, renamed.document_id, renamed.task_id).await?;
+
+        Ok(renamed)
     }
 }
 
@@ -1296,11 +1300,15 @@ impl AttachmentRepo for PgAttachmentRepo {
             updated_at: Set(Utc::now()),
             deleted_at: Set(None),
         };
-        model
+        let stored = model
             .insert(&self.conn)
             .await
             .map(attachment_from)
-            .map_err(db_err)
+            .map_err(db_err)?;
+
+        enqueue_attachment_owner(&self.conn, ctx, stored.document_id, stored.task_id).await?;
+
+        Ok(stored)
     }
 
     async fn find(
@@ -1373,6 +1381,9 @@ impl AttachmentRepo for PgAttachmentRepo {
                 id: id.0,
             })?;
 
+        let owner_document_id = row.document_id;
+        let owner_task_id = row.task_id;
+
         let mut active = row.into_active_model();
         active.deleted_at = Set(Some(Utc::now()));
         active.updated_at = Set(Utc::now());
@@ -1381,9 +1392,37 @@ impl AttachmentRepo for PgAttachmentRepo {
         PgSecurityAuditRepo::append_resource_deleted_in(&txn, ctx, TrashKind::Attachment, id.0)
             .await?;
 
+        enqueue_attachment_owner(
+            &txn,
+            ctx,
+            owner_document_id.map(DocumentId),
+            owner_task_id.map(TaskId),
+        )
+        .await?;
+
         txn.commit().await.map_err(db_err)?;
         Ok(())
     }
+}
+
+/// Marks the document or task that owns an attachment as needing re-indexing.
+///
+/// Comment- and draft-owned attachments are skipped on purpose: only attachments
+/// hanging directly off a document or task contribute their file name to that
+/// resource's indexed text.
+async fn enqueue_attachment_owner(
+    conn: &impl ConnectionTrait,
+    ctx: &WorkspaceCtx,
+    document_id: Option<DocumentId>,
+    task_id: Option<TaskId>,
+) -> Result<(), DomainError> {
+    if let Some(document_id) = document_id {
+        PgSearchIndexQueueRepo::enqueue_document_in(conn, ctx.workspace_id, document_id).await?;
+    }
+    if let Some(task_id) = task_id {
+        PgSearchIndexQueueRepo::enqueue_task_in(conn, ctx.workspace_id, task_id).await?;
+    }
+    Ok(())
 }
 
 pub struct PgAttachmentWriteIntentRepo {

@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 
 use crate::persistence::{
     entities::{comments::comment_attachment_draft, documents::attachment},
-    repos::{PgCommentLinkRepo, PgCommentRepo, PgSecurityAuditRepo},
+    repos::{PgCommentLinkRepo, PgCommentRepo, PgSearchIndexQueueRepo, PgSecurityAuditRepo},
 };
 
 /// Internal test seam for proving comment mutations commit as one transaction.
@@ -87,6 +87,7 @@ impl CommentService {
             self.fault_for_mutation(),
         )
         .await?;
+        PgSearchIndexQueueRepo::enqueue_comment_owner_in(&txn, ctx.workspace_id, owner).await?;
 
         txn.commit().await.map_err(db_err)?;
         Ok(comment)
@@ -218,6 +219,7 @@ impl CommentService {
             self.fault_for_mutation(),
         )
         .await?;
+        PgSearchIndexQueueRepo::enqueue_comment_owner_in(&txn, ctx.workspace_id, owner).await?;
 
         txn.commit().await.map_err(db_err)?;
         Ok(updated)
@@ -266,6 +268,8 @@ impl CommentService {
             )
             .await?;
         }
+
+        PgSearchIndexQueueRepo::enqueue_comment_owner_in(&txn, ctx.workspace_id, owner).await?;
 
         txn.commit().await.map_err(db_err)?;
 

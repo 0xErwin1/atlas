@@ -30,8 +30,8 @@ use crate::persistence::entities::boards_tasks::{
 };
 use crate::persistence::entities::comments::comment_attachment_draft;
 use crate::persistence::repos::{
-    CommentRepo as _, PgCommentRepo, PgDocumentLinkRepo, PgOutboxRepo, PgTaskActivityRepo,
-    PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo,
+    CommentRepo as _, PgCommentRepo, PgDocumentLinkRepo, PgOutboxRepo, PgSearchIndexQueueRepo,
+    PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo,
     TaskActivityRepo as _,
 };
 
@@ -151,6 +151,8 @@ impl TaskService {
         )
         .await?;
 
+        PgSearchIndexQueueRepo::enqueue_task_in(&txn, ctx.workspace_id, task.id).await?;
+
         txn.commit().await.map_err(db_err)?;
         Ok(CreateTaskWithReferencesResult { task, references })
     }
@@ -211,6 +213,9 @@ impl TaskService {
         )
         .await?;
 
+        PgSearchIndexQueueRepo::enqueue_task_in(&txn, ctx.workspace_id, task.id).await?;
+        PgSearchIndexQueueRepo::enqueue_task_in(&txn, ctx.workspace_id, parent.id).await?;
+
         txn.commit().await.map_err(db_err)?;
         Ok(task)
     }
@@ -241,6 +246,7 @@ impl TaskService {
         let task_project_id = ProjectId(before.project_id);
         let task_board_id = BoardId(before.board_id);
 
+        let old_parent_id = before.parent_task_id.map(TaskId);
         let old_parent = match before.parent_task_id {
             Some(p) => serde_json::Value::String(p.to_string()),
             None => {
@@ -282,6 +288,11 @@ impl TaskService {
             }),
         )
         .await?;
+
+        PgSearchIndexQueueRepo::enqueue_task_in(&txn, ctx.workspace_id, id).await?;
+        if let Some(parent_id) = old_parent_id {
+            PgSearchIndexQueueRepo::enqueue_task_in(&txn, ctx.workspace_id, parent_id).await?;
+        }
 
         txn.commit().await.map_err(db_err)?;
         Ok(crate::persistence::entities::boards_tasks::task_from(
@@ -355,6 +366,11 @@ impl TaskService {
                 }),
             )
             .await?;
+        }
+
+        PgSearchIndexQueueRepo::enqueue_task_in(&txn, ctx.workspace_id, id).await?;
+        if let Some(parent_id) = before.parent_task_id {
+            PgSearchIndexQueueRepo::enqueue_task_in(&txn, ctx.workspace_id, parent_id).await?;
         }
 
         txn.commit().await.map_err(db_err)?;
@@ -447,6 +463,8 @@ impl TaskService {
         let task_project_id = ProjectId(row.project_id);
         let task_board_id = BoardId(row.board_id);
 
+        let row_parent_task_id = row.parent_task_id.map(TaskId);
+
         let retained_draft = comment_attachment_draft::Entity::find()
             .filter(comment_attachment_draft::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .filter(comment_attachment_draft::Column::TaskId.eq(id.0))
@@ -480,6 +498,11 @@ impl TaskService {
             DomainEvent::TaskDeleted(TaskDeletedPayload { task_id: id }),
         )
         .await?;
+
+        PgSearchIndexQueueRepo::enqueue_task_in(&txn, ctx.workspace_id, id).await?;
+        if let Some(parent_id) = row_parent_task_id {
+            PgSearchIndexQueueRepo::enqueue_task_in(&txn, ctx.workspace_id, parent_id).await?;
+        }
 
         txn.commit().await.map_err(db_err)?;
         Ok(())
@@ -697,6 +720,8 @@ impl TaskService {
         )
         .await?;
 
+        PgSearchIndexQueueRepo::enqueue_task_in(&txn, ctx.workspace_id, task_id).await?;
+
         txn.commit().await.map_err(db_err)?;
         Ok(item)
     }
@@ -725,6 +750,8 @@ impl TaskService {
         )
         .await?;
 
+        PgSearchIndexQueueRepo::enqueue_task_in(&txn, ctx.workspace_id, task_id).await?;
+
         txn.commit().await.map_err(db_err)?;
         Ok(item)
     }
@@ -751,6 +778,8 @@ impl TaskService {
             },
         )
         .await?;
+
+        PgSearchIndexQueueRepo::enqueue_task_in(&txn, ctx.workspace_id, task_id).await?;
 
         txn.commit().await.map_err(db_err)?;
         Ok(())
@@ -875,6 +904,9 @@ impl TaskService {
             },
         )
         .await?;
+
+        PgSearchIndexQueueRepo::enqueue_task_in(&txn, ctx.workspace_id, child_task.id).await?;
+        PgSearchIndexQueueRepo::enqueue_task_in(&txn, ctx.workspace_id, parent_task_id).await?;
 
         txn.commit().await.map_err(db_err)?;
 

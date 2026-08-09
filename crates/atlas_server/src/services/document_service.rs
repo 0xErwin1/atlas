@@ -14,8 +14,9 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Transac
 
 use crate::persistence::entities::{comments::comment_attachment_draft, documents::document};
 use crate::persistence::repos::{
-    CommentRepo, PgCommentRepo, PgOutboxRepo, PgSecurityAuditRepo, doc_create_in,
-    doc_edit_content_in, doc_move_to_in, doc_rename_in, doc_soft_delete_in, doc_update_content_in,
+    CommentRepo, PgCommentRepo, PgOutboxRepo, PgSearchIndexQueueRepo, PgSecurityAuditRepo,
+    doc_create_in, doc_edit_content_in, doc_move_to_in, doc_rename_in, doc_soft_delete_in,
+    doc_update_content_in,
 };
 
 /// Coordinates document mutations with transactional outbox emission.
@@ -73,6 +74,7 @@ impl DocumentService {
             folder_id: doc.folder_id,
         });
         PgOutboxRepo::insert_in(&txn, ctx, doc.project_id, None, event).await?;
+        PgSearchIndexQueueRepo::enqueue_document_in(&txn, ctx.workspace_id, doc.id).await?;
 
         txn.commit().await.map_err(db_err)?;
         Ok(doc)
@@ -108,6 +110,7 @@ impl DocumentService {
             seq: doc.current_revision_seq,
         });
         PgOutboxRepo::insert_in(&txn, ctx, doc.project_id, None, event).await?;
+        PgSearchIndexQueueRepo::enqueue_document_in(&txn, ctx.workspace_id, doc.id).await?;
 
         txn.commit().await.map_err(db_err)?;
         Ok(doc)
@@ -132,6 +135,7 @@ impl DocumentService {
                 seq: doc.current_revision_seq,
             });
             PgOutboxRepo::insert_in(&txn, ctx, doc.project_id, None, event).await?;
+            PgSearchIndexQueueRepo::enqueue_document_in(&txn, ctx.workspace_id, doc.id).await?;
         }
 
         txn.commit().await.map_err(db_err)?;
@@ -147,6 +151,7 @@ impl DocumentService {
     ) -> Result<Document, DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
         let doc = doc_rename_in(&txn, ctx, id, new_title).await?;
+        PgSearchIndexQueueRepo::enqueue_document_in(&txn, ctx.workspace_id, doc.id).await?;
         txn.commit().await.map_err(db_err)?;
         Ok(doc)
     }
@@ -223,6 +228,7 @@ impl DocumentService {
 
         let event = DomainEvent::DocumentDeleted(DocumentDeletedPayload { document_id: id });
         PgOutboxRepo::insert_in(&txn, ctx, pre_project_id, None, event).await?;
+        PgSearchIndexQueueRepo::enqueue_document_in(&txn, ctx.workspace_id, id).await?;
         PgSecurityAuditRepo::append_resource_deleted_in(&txn, ctx, TrashKind::Document, id.0)
             .await?;
 
