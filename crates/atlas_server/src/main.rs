@@ -102,8 +102,31 @@ async fn main() -> Result<()> {
     ));
     let presence_agent_handle = tokio::spawn(atlas_server::presence::run_presence_agent_consumer(
         state.clone(),
-        shutdown_rx,
+        shutdown_rx.clone(),
     ));
+
+    // Spawn the semantic index worker, which drains `search_index_queue` and
+    // re-embeds dirty resources. Without an embedding provider there is nothing
+    // to embed, so the worker is not started and queue rows simply accumulate
+    // until embeddings are configured.
+    let search_index_handle = state.embedding_provider.clone().map(|provider| {
+        let writer = std::sync::Arc::new(
+            atlas_server::persistence::repos::PgSemanticIndexWriter::new(
+                (*state.db).clone(),
+                provider,
+            ),
+        );
+        let indexer = std::sync::Arc::new(
+            atlas_server::persistence::repos::PgSemanticIndexer::new((*state.db).clone(), writer),
+        );
+        let worker = atlas_server::search_indexer::SearchIndexWorker::new(
+            (*state.db).clone(),
+            indexer,
+            Duration::from_millis(state.dispatcher_config.poll_interval_ms),
+            state.dispatcher_config.batch_size,
+        );
+        tokio::spawn(worker.run(shutdown_rx))
+    });
 
     let make_service = atlas_server::app(state).into_make_service_with_connect_info::<SocketAddr>();
 
@@ -158,6 +181,11 @@ async fn main() -> Result<()> {
     }
     if let Err(e) = presence_agent_handle.await {
         tracing::error!(error = %e, "presence agent consumer task panicked during shutdown");
+    }
+    if let Some(handle) = search_index_handle
+        && let Err(e) = handle.await
+    {
+        tracing::error!(error = %e, "search index worker task panicked during shutdown");
     }
 
     Ok(())

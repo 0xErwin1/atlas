@@ -20,6 +20,7 @@ pub mod middleware;
 pub mod persistence;
 pub mod presence;
 pub mod routes;
+pub mod search_indexer;
 pub mod semantic_indexer;
 pub mod services;
 pub mod state;

@@ -68,6 +68,43 @@ impl PgSemanticIndexWriter {
         Ok(())
     }
 
+    /// Deletes chunks at or beyond `chunk_count` for this resource.
+    ///
+    /// A resource whose text shrank produces fewer chunks than the previous
+    /// pass; without this the leftover tail keeps matching queries with content
+    /// the resource no longer has. Passing `0` removes the resource entirely,
+    /// which is what a delete or an emptied body needs.
+    pub async fn prune_chunks_beyond(
+        &self,
+        workspace_id: atlas_domain::ids::WorkspaceId,
+        kind: ResourceKind,
+        resource_id: Uuid,
+        chunk_count: i32,
+    ) -> Result<(), DomainError> {
+        self.conn
+            .execute_raw(Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                r#"DELETE FROM search_embeddings
+                   WHERE workspace_id = $1
+                     AND resource_kind = $2
+                     AND resource_id = $3
+                     AND model = $4
+                     AND dimensions = $5
+                     AND chunk_ordinal >= $6"#,
+                vec![
+                    workspace_id.0.into(),
+                    kind.db_str().into(),
+                    resource_id.into(),
+                    self.provider.model().to_owned().into(),
+                    (self.provider.dimensions() as i32).into(),
+                    chunk_count.max(0).into(),
+                ],
+            ))
+            .await
+            .map_err(db_err)?;
+        Ok(())
+    }
+
     pub async fn mark_resource_stale(
         &self,
         workspace_id: atlas_domain::ids::WorkspaceId,
@@ -352,7 +389,7 @@ impl SemanticSearchRepo for PgSemanticSearchRepo {
     }
 }
 
-trait ResourceKindSql {
+pub(crate) trait ResourceKindSql {
     fn db_str(self) -> &'static str;
     fn sort_rank(self) -> i32;
 }

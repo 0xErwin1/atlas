@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use uuid::Uuid;
 
-use crate::{DomainError, WorkspaceCtx, permissions::Principal};
+use crate::{DomainError, permissions::Principal};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ResourceKind {
@@ -166,11 +166,17 @@ pub trait EmbeddingProvider: Send + Sync {
     fn dimensions(&self) -> usize;
 }
 
+/// Re-embeds a resource from its current stored content.
+///
+/// Takes a `WorkspaceId` rather than a `WorkspaceCtx`: indexing runs out of band
+/// on behalf of no one, and it deliberately reads content the enqueuing actor
+/// may not be allowed to see — permission filtering belongs to the read side,
+/// in `SemanticSearchRepo::search`.
 #[async_trait]
 pub trait SemanticIndexer: Send + Sync {
     async fn index_resource(
         &self,
-        ctx: &WorkspaceCtx,
+        workspace_id: crate::WorkspaceId,
         kind: ResourceKind,
         resource_id: Uuid,
     ) -> Result<(), DomainError>;

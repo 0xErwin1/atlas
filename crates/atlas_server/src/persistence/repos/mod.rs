@@ -27,7 +27,11 @@ mod s3_attachment_store;
 #[allow(unreachable_pub)]
 mod search;
 #[allow(unreachable_pub)]
+mod search_index_queue;
+#[allow(unreachable_pub)]
 mod security_audit;
+#[allow(unreachable_pub)]
+mod semantic_indexer;
 #[allow(unreachable_pub)]
 mod semantic_search;
 #[allow(unreachable_pub)]
@@ -76,6 +80,8 @@ mod saved_searches;
 pub use outbox::PgOutboxRepo;
 pub use saved_searches::{PgSavedSearchRepo, SavedSearchRepo};
 pub use search::PgSearchRepo;
+pub use search_index_queue::{PgSearchIndexQueueRepo, QueuedResource};
+pub use semantic_indexer::PgSemanticIndexer;
 pub use semantic_search::{PgSemanticIndexWriter, PgSemanticSearchRepo};
 pub use tags::{PgTagRepo, TagRepo};
 #[allow(unreachable_pub)]
