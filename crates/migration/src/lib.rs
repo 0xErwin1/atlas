@@ -46,6 +46,7 @@ pub mod m20260721_000043_recoverable_deletion;
 pub mod m20260725_000044_platform_status_templates;
 pub mod m20260804_000045_repair_search_embeddings;
 pub mod m20260808_000046_repair_search_embeddings;
+pub mod m20260808_000047_search_index_queue;
 
 use sea_orm_migration::prelude::*;
 
@@ -101,6 +102,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260725_000044_platform_status_templates::Migration),
             Box::new(m20260804_000045_repair_search_embeddings::Migration),
             Box::new(m20260808_000046_repair_search_embeddings::Migration),
+            Box::new(m20260808_000047_search_index_queue::Migration),
         ]
     }
 }
@@ -115,16 +117,36 @@ mod tests {
     }
 
     #[test]
-    fn semantic_search_schema_repair_migration_is_registered_last() {
+    fn semantic_search_schema_repair_migration_runs_after_every_embedding_migration() {
         let migrations = Migrator::migrations();
         let names: Vec<_> = migrations
             .iter()
             .map(|migration| migration.name())
             .collect();
 
+        let repair = names
+            .iter()
+            .position(|name| *name == "m20260808_000046_repair_search_embeddings")
+            .expect("the repair migration must stay registered");
+        let last_embedding_migration = names
+            .iter()
+            .rposition(|name| name.contains("search_embeddings"))
+            .expect("at least one embedding migration must be registered");
+
         assert_eq!(
-            names.last(),
-            Some(&"m20260808_000046_repair_search_embeddings")
+            repair, last_embedding_migration,
+            "no migration touching search_embeddings may run after the repair"
         );
+    }
+
+    #[test]
+    fn search_index_queue_migration_is_registered() {
+        let migrations = Migrator::migrations();
+        let names: Vec<_> = migrations
+            .iter()
+            .map(|migration| migration.name())
+            .collect();
+
+        assert!(names.contains(&"m20260808_000047_search_index_queue"));
     }
 }
