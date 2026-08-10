@@ -5,6 +5,8 @@ import {
   useLabelColorsStore,
 } from '@/stores/labelColors';
 import {
+  EDITOR_MODE_STORAGE_KEY,
+  EDITOR_READING_STORAGE_KEY,
   EDITOR_WIDE_STORAGE_KEY,
   TASK_VIEW_MODE_STORAGE_KEY,
   THEME_STORAGE_KEY,
@@ -16,8 +18,9 @@ import {
  *
  * The native `storage` event fires in every OTHER tab when localStorage changes,
  * which is exactly the reach we need for local-only preference state that never
- * round-trips the server (theme, editor width, task-view mode, label colors,
- * known tags). Server-backed state is already synced by the SSE live-updates
+ * round-trips the server (theme, editor width, editor reading/view mode,
+ * task-view mode, label colors, known tags). Server-backed state is already
+ * synced by the SSE live-updates
  * layer and is intentionally out of scope here.
  *
  * Incoming values are routed to each store's `applyExternal*` method, which
@@ -46,6 +49,12 @@ export function useCrossTabSync(): void {
         break;
       case EDITOR_WIDE_STORAGE_KEY:
         ui.applyExternalEditorWide(value);
+        break;
+      case EDITOR_READING_STORAGE_KEY:
+        ui.applyExternalEditorReading(value);
+        break;
+      case EDITOR_MODE_STORAGE_KEY:
+        ui.applyExternalEditorMode(value);
         break;
       case TASK_VIEW_MODE_STORAGE_KEY:
         ui.applyExternalTaskViewMode(value);

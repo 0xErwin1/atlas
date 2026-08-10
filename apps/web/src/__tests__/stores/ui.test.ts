@@ -108,4 +108,58 @@ describe('useUiStore', () => {
     const store = useUiStore();
     expect(store.taskViewMode).toBe('sidebar');
   });
+
+  describe('editor reading and view mode', () => {
+    it('default to editing in live mode', () => {
+      const store = useUiStore();
+      expect(store.editorReading).toBe(false);
+      expect(store.editorMode).toBe('live');
+    });
+
+    // A board taking over the router outlet unmounts the notes view, so the
+    // choice only survives the round trip if it outlives the store instance.
+    it('survive a fresh store instance', () => {
+      const first = useUiStore();
+      first.toggleEditorReading();
+      first.toggleEditorMode();
+
+      setActivePinia(createPinia());
+      const second = useUiStore();
+
+      expect(second.editorReading).toBe(true);
+      expect(second.editorMode).toBe('source');
+    });
+
+    it('persist a v-model write from the editor, not only a toggle', () => {
+      const first = useUiStore();
+      first.setEditorReading(true);
+      first.setEditorMode('source');
+
+      setActivePinia(createPinia());
+      const second = useUiStore();
+
+      expect(second.editorReading).toBe(true);
+      expect(second.editorMode).toBe('source');
+    });
+
+    it('fall back to live editing on an unreadable persisted value', () => {
+      localStorage.setItem('atlas:editor-reading', 'bogus');
+      localStorage.setItem('atlas:editor-mode', 'bogus');
+      const store = useUiStore();
+
+      expect(store.editorReading).toBe(false);
+      expect(store.editorMode).toBe('live');
+    });
+
+    it('mirror another tab without re-persisting', () => {
+      const store = useUiStore();
+      store.applyExternalEditorReading('1');
+      store.applyExternalEditorMode('source');
+
+      expect(store.editorReading).toBe(true);
+      expect(store.editorMode).toBe('source');
+      expect(localStorage.getItem('atlas:editor-reading')).toBeNull();
+      expect(localStorage.getItem('atlas:editor-mode')).toBeNull();
+    });
+  });
 });

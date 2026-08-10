@@ -289,17 +289,25 @@ const documentId = ref<string | null>(null);
 // cleared by the next successful save or a clean reconcile.
 const remoteChangesPending = ref(false);
 
-// Editor view mode, owned here so the toolbar's segmented control drives the
-// shared editor (which renders no in-body controls for Notes).
-const editorMode = ref<'live' | 'source'>('live');
-const editorReading = ref(false);
+// Editor view mode, held in the ui store so it survives this view being
+// unmounted (a board taking over the router outlet) and a reload. The toolbar's
+// segmented control drives the shared editor, which renders no in-body controls
+// for Notes; the writable computeds keep a v-model write persisting too.
+const editorMode = computed({
+  get: () => ui.editorMode,
+  set: (value) => ui.setEditorMode(value),
+});
+const editorReading = computed({
+  get: () => ui.editorReading,
+  set: (value) => ui.setEditorReading(value),
+});
 
 function toggleEditorSource(): void {
-  editorMode.value = editorMode.value === 'source' ? 'live' : 'source';
+  ui.toggleEditorMode();
 }
 
 function toggleEditorReading(): void {
-  editorReading.value = !editorReading.value;
+  ui.toggleEditorReading();
 }
 const noteResource = ref(createNoteResourceState());
 const hasDocumentContent = computed(() => noteResource.value.hasContent);

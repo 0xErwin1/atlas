@@ -6,6 +6,7 @@ export type InspectorTab = 'properties' | 'backlinks' | 'comments' | 'activity' 
 export type BannerType = 'error' | 'warning' | 'info' | 'success';
 export type Theme = 'dark' | 'light';
 export type TaskViewMode = 'sidebar' | 'modal' | 'full';
+export type EditorMode = 'live' | 'source';
 export type TaskBoardView = 'board' | 'list' | 'table' | 'calendar' | 'timeline';
 export type TaskGroupBy = 'status' | 'assignee' | 'priority';
 
@@ -32,6 +33,8 @@ const BANNER_TIMEOUT_MS: Record<BannerType, number> = {
 
 const INSPECTOR_STORAGE_KEY = 'atlas:inspector';
 export const EDITOR_WIDE_STORAGE_KEY = 'atlas:editor-wide';
+export const EDITOR_READING_STORAGE_KEY = 'atlas:editor-reading';
+export const EDITOR_MODE_STORAGE_KEY = 'atlas:editor-mode';
 export const THEME_STORAGE_KEY = 'atlas:theme';
 const SIDEBAR_STORAGE_KEY = 'atlas:sidebar-collapsed';
 export const TASK_VIEW_MODE_STORAGE_KEY = 'atlas.taskview.mode';
@@ -99,6 +102,31 @@ function loadEditorWide(): boolean {
   }
 }
 
+function loadEditorReading(): boolean {
+  try {
+    return localStorage.getItem(EDITOR_READING_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function loadEditorMode(): EditorMode {
+  try {
+    if (localStorage.getItem(EDITOR_MODE_STORAGE_KEY) === 'source') return 'source';
+  } catch {
+    // ignore malformed storage
+  }
+  return 'live';
+}
+
+function persistSetting(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // ignore storage errors
+  }
+}
+
 export const useUiStore = defineStore('ui', () => {
   const saved = loadInspectorState();
 
@@ -112,6 +140,12 @@ export const useUiStore = defineStore('ui', () => {
 
   // Editor reading width: false = readable column, true = full viewport width.
   const editorWide = ref(loadEditorWide());
+
+  // Editor view mode, shared by every note the user opens. Held here rather than
+  // in the notes view because that view is unmounted whenever a board takes over
+  // the router outlet, which would otherwise drop the choice on the way back.
+  const editorReading = ref(loadEditorReading());
+  const editorMode = ref<EditorMode>(loadEditorMode());
 
   const theme = ref<Theme>(loadTheme());
   applyTheme(theme.value);
@@ -182,17 +216,42 @@ export const useUiStore = defineStore('ui', () => {
 
   function toggleEditorWide() {
     editorWide.value = !editorWide.value;
-    try {
-      localStorage.setItem(EDITOR_WIDE_STORAGE_KEY, editorWide.value ? '1' : '0');
-    } catch {
-      // ignore storage errors
-    }
+    persistSetting(EDITOR_WIDE_STORAGE_KEY, editorWide.value ? '1' : '0');
   }
 
   // Mirrors an editor-width change from another tab without re-persisting. Any
   // value other than '1' is read as false, matching `loadEditorWide`.
   function applyExternalEditorWide(raw: string): void {
     editorWide.value = raw === '1';
+  }
+
+  // Setters rather than toggles alone: the editor writes both through v-model,
+  // and a write that bypassed these would leave the choice unpersisted.
+  function setEditorReading(value: boolean) {
+    editorReading.value = value;
+    persistSetting(EDITOR_READING_STORAGE_KEY, value ? '1' : '0');
+  }
+
+  function toggleEditorReading() {
+    setEditorReading(!editorReading.value);
+  }
+
+  function applyExternalEditorReading(raw: string): void {
+    editorReading.value = raw === '1';
+  }
+
+  function setEditorMode(value: EditorMode) {
+    editorMode.value = value;
+    persistSetting(EDITOR_MODE_STORAGE_KEY, value);
+  }
+
+  function toggleEditorMode() {
+    setEditorMode(editorMode.value === 'source' ? 'live' : 'source');
+  }
+
+  // Anything other than 'source' is read as 'live', matching `loadEditorMode`.
+  function applyExternalEditorMode(raw: string): void {
+    editorMode.value = raw === 'source' ? 'source' : 'live';
   }
 
   function openShare(resourceLabel: string, projectSlug?: string) {
@@ -373,6 +432,14 @@ export const useUiStore = defineStore('ui', () => {
     editorWide,
     toggleEditorWide,
     applyExternalEditorWide,
+    editorReading,
+    setEditorReading,
+    toggleEditorReading,
+    applyExternalEditorReading,
+    editorMode,
+    setEditorMode,
+    toggleEditorMode,
+    applyExternalEditorMode,
     theme,
     setTheme,
     applyExternalTheme,
