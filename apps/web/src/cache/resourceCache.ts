@@ -74,6 +74,13 @@ export interface ResourceCacheStore {
   deleteMany(keys: readonly string[]): Promise<boolean>;
   deleteScope?(scope: CacheDeleteScope): Promise<boolean>;
   clear(): Promise<boolean>;
+  /**
+   * Reports false once the backing store has proven unreachable, letting the
+   * cache tell "this store cannot be used at all" apart from "this particular
+   * write or delete was rejected". A store that omits this is always treated as
+   * reachable, so its failures stay hazards.
+   */
+  isAvailable?(): boolean;
 }
 
 export interface CacheDeleteScope {
@@ -340,15 +347,20 @@ export class ResourceCache {
 
         if (this.policy.enabled) {
           this.remember(entry);
+          // A store that cannot be reached at all degrades this cache to memory
+          // rather than disabling it: the hot entry stays, because an entry the
+          // store can never serve is not one it can serve staler than memory.
+          // A reachable store that rejected the write still evicts, since there
+          // the two tiers would genuinely disagree.
           try {
             const persisted = await this.store.putMany([entry]);
-            if (!persisted) {
+            if (!persisted && this.storeIsReachable()) {
               this.hot.delete(entry.key);
 
               return { published: false, payload: parsedPayload };
             }
           } catch {
-            this.hot.delete(entry.key);
+            if (this.storeIsReachable()) this.hot.delete(entry.key);
           }
 
           const currentPublisher = this.inflightPublishers.get(request.key);
@@ -475,7 +487,7 @@ export class ResourceCache {
     this.hot.clear();
     this.authorizationLeaseExpiresAt = 0;
     this.dropActiveCallbacks();
-    return this.finishPurge(purge, await this.store.clear());
+    return this.finishPurge(purge, this.purgeSucceeded([await this.store.clear()]));
   }
 
   async purgeWorkspace(workspaceId: string, principal?: string): Promise<boolean> {
@@ -494,8 +506,7 @@ export class ResourceCache {
     const hotDeleted = keys.length === 0 || (await this.store.deleteMany(keys));
     const coldDeleted = await (this.store.deleteScope?.({ principal, workspaceId }) ??
       Promise.resolve(false));
-    const deleted = hotDeleted && coldDeleted;
-    return this.finishPurge(purge, deleted);
+    return this.finishPurge(purge, this.purgeSucceeded([hotDeleted, coldDeleted]));
   }
 
   clear(): Promise<boolean> {
@@ -535,8 +546,7 @@ export class ResourceCache {
     const hotDeleted = keys.length === 0 || (await this.store.deleteMany(keys));
     const coldDeleted = await (this.store.deleteScope?.({ principal, workspaceId, tagsAny: tags }) ??
       Promise.resolve(false));
-    const deleted = hotDeleted && coldDeleted;
-    return this.finishPurge(purge, deleted);
+    return this.finishPurge(purge, this.purgeSucceeded([hotDeleted, coldDeleted]));
   }
 
   /**
@@ -574,6 +584,28 @@ export class ResourceCache {
 
   dispose(): void {
     this.block();
+  }
+
+  /**
+   * Whether the persistent store can be used at all. A store with no opinion is
+   * assumed reachable, so its failures keep their original weight.
+   */
+  private storeIsReachable(): boolean {
+    return this.store.isAvailable?.() !== false;
+  }
+
+  /**
+   * A purge is complete once nothing purged can still be served. Every caller
+   * drops the memory tier unconditionally before getting here, so only the
+   * store's own deletions are ever in question — and a store that cannot be
+   * reached serves nothing, which makes its refusal moot. Counting it as a
+   * failure would block the whole cache, memory tier included, for the rest of
+   * the session over data that was never reachable to begin with.
+   */
+  private purgeSucceeded(storeDeletions: readonly boolean[]): boolean {
+    if (!this.storeIsReachable()) return true;
+
+    return storeDeletions.every(Boolean);
   }
 
   private remember(entry: CacheEnvelope<unknown>): void {

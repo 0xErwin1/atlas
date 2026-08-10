@@ -33,6 +33,7 @@ export class IndexedDbCacheStore {
   private readonly limits: CacheLimits;
   private readonly now: () => number;
   private databasePromise: Promise<IDBDatabase | null> | null = null;
+  private available = true;
 
   constructor(options: IndexedDbCacheStoreOptions = {}) {
     this.activeKeys = options.activeKeys ?? (() => new Set());
@@ -228,10 +229,24 @@ export class IndexedDbCacheStore {
     return transactionResult(transaction);
   }
 
+  /**
+   * Whether this store has proven usable. Starts optimistic and only turns false
+   * once an open attempt has actually failed, so callers must read it after
+   * awaiting a store operation rather than before.
+   *
+   * A store that reports false can neither persist nor serve anything, which is
+   * what lets the resource cache keep working from memory instead of treating
+   * the failure as a correctness hazard.
+   */
+  isAvailable(): boolean {
+    return this.available;
+  }
+
   private open(): Promise<IDBDatabase | null> {
     const indexedDb = this.indexedDb;
 
     if (!indexedDb) {
+      this.available = false;
       return Promise.resolve(null);
     }
 
@@ -247,8 +262,13 @@ export class IndexedDbCacheStore {
 
         throw error;
       })
+      .then((database) => {
+        this.available = true;
+        return database;
+      })
       .catch(() => {
         this.databasePromise = null;
+        this.available = false;
         return null;
       });
 

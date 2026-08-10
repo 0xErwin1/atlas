@@ -246,4 +246,133 @@ describe('resource cache revalidation payload delivery', () => {
       ).toBeNull();
     });
   });
+
+  describe('a persistent store that cannot be reached', () => {
+    const payloadSchema = z.object({ id: z.string() });
+
+    /**
+     * A store shaped like one whose backing database never opens: every
+     * operation reports failure and it admits it is unreachable. What a webview
+     * that denies IndexedDB looks like from the cache's side.
+     */
+    function unreachableStore(): ResourceCacheStore {
+      return {
+        get: async () => null,
+        putMany: async () => false,
+        deleteMany: async () => false,
+        deleteScope: async () => false,
+        clear: async () => false,
+        isAvailable: () => false,
+      };
+    }
+
+    function boardRequest(key: string) {
+      return {
+        key,
+        payloadSchema,
+        tags: ['board:board-a'],
+        freshForMs: 120_000,
+        retentionForMs: 600_000,
+        load: async () => ({ id: 'board-a' }),
+        publish: () => {},
+        isCurrent: () => true,
+      };
+    }
+
+    function boardKey(): string {
+      const key = buildCacheKey({
+        principal,
+        workspaceId,
+        resourceKind: 'task-board',
+        resourceId: 'board-a',
+      });
+      if (key === null) throw new Error('expected a canonical cache key');
+      return key;
+    }
+
+    it('degrades to caching in memory instead of caching nothing', async () => {
+      const cache = new ResourceCache({ store: unreachableStore(), policy: DEFAULT_CACHE_POLICY });
+      cache.allow();
+      const key = boardKey();
+
+      await cache.revalidate(boardRequest(key));
+
+      // The whole point: a revisit still answers from memory, so the view paints
+      // without a spinner even though nothing could be written to disk.
+      expect(
+        cache.readFresh({
+          key,
+          payloadSchema,
+          freshForMs: 120_000,
+          publish: () => {},
+          isCurrent: () => true,
+        }),
+      ).toEqual({ id: 'board-a' });
+    });
+
+    it('stays usable after a purge it could not carry out on disk', async () => {
+      const cache = new ResourceCache({ store: unreachableStore(), policy: DEFAULT_CACHE_POLICY });
+      cache.allow();
+      const key = boardKey();
+      await cache.revalidate(boardRequest(key));
+
+      expect(await cache.purgeTags(['board:board-a'], principal, workspaceId)).toBe(true);
+      expect(cache.isAvailable()).toBe(true);
+
+      // The purge still took effect where it could: memory no longer holds it.
+      expect(
+        cache.readFresh({
+          key,
+          payloadSchema,
+          freshForMs: 120_000,
+          publish: () => {},
+          isCurrent: () => true,
+        }),
+      ).toBeNull();
+
+      // And the cache keeps working afterwards rather than being dead for good.
+      await cache.revalidate(boardRequest(key));
+      expect(
+        cache.readFresh({
+          key,
+          payloadSchema,
+          freshForMs: 120_000,
+          publish: () => {},
+          isCurrent: () => true,
+        }),
+      ).toEqual({ id: 'board-a' });
+    });
+
+    it('still treats a reachable store that rejects the write as a hazard', async () => {
+      const cache = new ResourceCache({
+        store: { ...unreachableStore(), isAvailable: () => true },
+        policy: DEFAULT_CACHE_POLICY,
+      });
+      cache.allow();
+      const key = boardKey();
+
+      await cache.revalidate(boardRequest(key));
+
+      expect(
+        cache.readFresh({
+          key,
+          payloadSchema,
+          freshForMs: 120_000,
+          publish: () => {},
+          isCurrent: () => true,
+        }),
+      ).toBeNull();
+    });
+
+    it('blocks when a reachable store fails to purge', async () => {
+      const cache = new ResourceCache({
+        store: { ...unreachableStore(), isAvailable: () => true },
+        policy: DEFAULT_CACHE_POLICY,
+      });
+      cache.allow();
+
+      expect(await cache.purgeTags(['board:board-a'], principal, workspaceId)).toBe(false);
+      expect(cache.isAvailable()).toBe(false);
+    });
+  });
 });
