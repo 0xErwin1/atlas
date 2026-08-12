@@ -80,11 +80,30 @@
                 categories = [ "Office" "Utility" ];
                 startupWMClass = "me.feuer.atlas.desktop";
               };
+
+              extracted = pkgs.appimageTools.extract {
+                pname = "atlas-desktop";
+                version = "nightly";
+                src = pkgs.fetchurl { inherit (info) url hash; };
+              };
+
+              # linuxdeploy's GTK plugin bundles the build machine's
+              # libwayland-client, and AppRun puts that copy ahead of the host's
+              # on the loader path. A libwayland-client older than the host Mesa
+              # makes EGL device enumeration come up empty, so WebKitGTK aborts
+              # with `Could not create surfaceless EGL display: EGL_BAD_ALLOC`
+              # before the window ever opens. Drop it and let Mesa bind the
+              # host's own copy.
+              contents = pkgs.runCommand "atlas-desktop-nightly-contents" { } ''
+                cp -r ${extracted} "$out"
+                chmod -R u+w "$out"
+                rm -f "$out/usr/lib/libwayland-client.so.0"
+              '';
             in
-            pkgs.appimageTools.wrapType2 {
+            pkgs.appimageTools.wrapAppImage {
               pname = "atlas-desktop";
               version = "nightly";
-              src = pkgs.fetchurl { inherit (info) url hash; };
+              src = contents;
               extraInstallCommands = ''
                 install -Dm444 ${desktopItem}/share/applications/atlas-desktop.desktop \
                   -t "$out/share/applications"
