@@ -36,9 +36,9 @@ use atlas_api::{
             AddAssigneeRequest, CreateBoardRequest, CreateChecklistItemRequest,
             CreateColumnRequest, CreateCommentRequest, CreateReferenceRequest,
             CreateSubtaskRequest, CreateTaskRequest, MoveBoardRequest, MoveTaskRequest,
-            PromoteChecklistItemRequest, RenameTaskAttachmentRequest, UpdateBoardRequest,
-            UpdateChecklistItemRequest, UpdateColumnRequest, UpdateCommentRequest,
-            UpdateTaskRequest, WorkspaceTaskQueryParams,
+            PromoteChecklistItemRequest, RenameTaskAttachmentRequest, SetTaskParentRequest,
+            UpdateBoardRequest, UpdateChecklistItemRequest, UpdateColumnRequest,
+            UpdateCommentRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
         },
         documents::{
             CreateDocumentRequest, DocumentCompactDto, DocumentContentEditRequest,
@@ -325,6 +325,7 @@ enum Case {
     ListSubtasks,
     CreateSubtask,
     PromoteSubtask,
+    SetTaskParent,
     ListActivity,
     ListTaskComments,
     AddTaskComment,
@@ -468,6 +469,7 @@ impl Case {
         Case::ListSubtasks,
         Case::CreateSubtask,
         Case::PromoteSubtask,
+        Case::SetTaskParent,
         Case::ListActivity,
         Case::ListTaskComments,
         Case::AddTaskComment,
@@ -604,6 +606,7 @@ impl Case {
             Case::ListSubtasks => ("GET", "tasks:read"),
             Case::CreateSubtask => ("POST", "tasks:create"),
             Case::PromoteSubtask => ("POST", "tasks:update"),
+            Case::SetTaskParent => ("POST", "tasks:update"),
             Case::ListActivity => ("GET", "tasks:read"),
             Case::ListTaskComments => ("GET", "tasks:read"),
             Case::AddTaskComment => ("POST", "tasks:update"),
@@ -916,6 +919,16 @@ async fn invoke(
             .map(|_| ()),
         Case::PromoteSubtask => client
             .promote_subtask(ws, &fx.task_readable_id)
+            .await
+            .map(|_| ()),
+        Case::SetTaskParent => client
+            .set_task_parent(
+                ws,
+                &fx.task_readable_id,
+                SetTaskParentRequest {
+                    parent_readable_id: fx.task_readable_id.clone(),
+                },
+            )
             .await
             .map(|_| ()),
         Case::ListActivity => client

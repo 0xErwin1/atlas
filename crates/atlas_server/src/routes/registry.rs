@@ -1086,6 +1086,13 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         capability: Some("tasks:update"),
     },
     RouteEntry {
+        method: "POST",
+        path_template: "/api/workspaces/{ws}/tasks/ATL-0/parent",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/api/workspaces/{ws}/tasks/{readable_id}/parent"),
+        capability: Some("tasks:update"),
+    },
+    RouteEntry {
         method: "GET",
         path_template: "/api/workspaces/{ws}/tasks/ATL-0/activity",
         kind: RouteKind::WorkspaceMember,
