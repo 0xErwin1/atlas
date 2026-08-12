@@ -681,9 +681,7 @@ async fn list_workspace_tasks_excludes_subtasks() {
         .create_subtask(
             &seed.ws_slug,
             &parent_rid,
-            CreateSubtaskRequest {
-                title: "A subtask".to_string(),
-            },
+            CreateSubtaskRequest::titled("A subtask"),
         )
         .await
         .expect("create subtask");

@@ -250,7 +250,8 @@ Most list endpoints return:
 | DELETE | `/v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}` | Delete checklist item. |
 | POST | `/v1/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote` | Promote checklist item to task. |
 | GET | `/v1/workspaces/{ws}/tasks/{readable_id}/subtasks` | List subtasks. |
-| POST | `/v1/workspaces/{ws}/tasks/{readable_id}/subtasks` | Create subtask. |
+| POST | `/v1/workspaces/{ws}/tasks/{readable_id}/subtasks` | Create subtask; takes the same fields as task creation. |
+| POST | `/v1/workspaces/{ws}/tasks/{readable_id}/parent` | Convert an existing task into a subtask. |
 | POST | `/v1/workspaces/{ws}/tasks/{readable_id}/promote` | Promote subtask to top-level task. |
 | GET | `/v1/workspaces/{ws}/tasks/{readable_id}/attachments` | List task attachments. |
 | POST | `/v1/workspaces/{ws}/tasks/{readable_id}/attachments` | Upload task attachment. |

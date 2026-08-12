@@ -43,7 +43,9 @@ This page records caveats backed by the current code, tests, or authoritative re
 
 ## Tasks and boards
 
-- subtasks are full tasks, not lightweight child rows; they are excluded from board listings until promoted
+- subtasks are full tasks, not lightweight child rows; they take the same fields as any task and are excluded from board listings until promoted
+- a subtask keeps its own board and column, so it may live on a different board than its parent; the parent's sub-task list then shows its status read-only, since only its own board's columns can move it
+- subtask nesting is depth-limited (`64`) and cycles are rejected
 - checklist items also still exist as a separate lighter-weight concept and can be promoted into tasks
 - column deletion is refused when the column still contains tasks
 - task assignees must still be valid for the workspace; disabled users are rejected, while pending (not yet activated) users remain assignable

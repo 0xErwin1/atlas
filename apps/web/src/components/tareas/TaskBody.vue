@@ -237,6 +237,12 @@ async function onAddSubtask(title: string): Promise<void> {
   if (!ok) fail(detail.error);
 }
 
+async function onAttachSubtask(readableId: string): Promise<void> {
+  const ok = await detail.attachSubtask(props.ws, props.task.readable_id, readableId);
+  if (ok) ui.showBanner(`${readableId} is now a sub-task`, 'success');
+  else fail(detail.error);
+}
+
 async function onPromoteSubtask(readableId: string): Promise<void> {
   const ok = await detail.promoteSubtask(props.ws, readableId);
   if (ok) ui.showBanner(`${readableId} promoted to a board task`, 'success');
@@ -636,9 +642,13 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
       />
       <SubtaskList
         v-else
+        :ws="ws"
         :subtasks="detail.subtasks"
         :columns="boards.columns"
+        :board-id="task.board_id"
+        :parent-readable-id="task.readable_id"
         @add="onAddSubtask"
+        @attach="onAttachSubtask"
         @promote="onPromoteSubtask"
         @open="onOpenSubtask"
         @set-column="onSubtaskSetColumn"

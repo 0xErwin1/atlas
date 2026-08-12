@@ -90,6 +90,23 @@ impl TaskService {
         new: NewTask,
         initial_references: Vec<InitialTaskReference>,
     ) -> Result<CreateTaskWithReferencesResult, DomainError> {
+        self.create_with_references_under(ctx, new, None, initial_references)
+            .await
+    }
+
+    /// Creates a task — or, when `parent` is given, a sub-task of it — together
+    /// with its pre-validated initial references, atomically.
+    ///
+    /// A sub-task is an ordinary task carrying a parent: it takes the same fields,
+    /// validation and activity as any other creation. The only extra work is
+    /// re-indexing the parent, whose child set changed.
+    pub async fn create_with_references_under(
+        &self,
+        ctx: &WorkspaceCtx,
+        new: NewTask,
+        parent: Option<TaskId>,
+        initial_references: Vec<InitialTaskReference>,
+    ) -> Result<CreateTaskWithReferencesResult, DomainError> {
         let txn = self.conn.begin().await.map_err(db_err)?;
 
         let target_board_id = new.board_id;
@@ -104,7 +121,7 @@ impl TaskService {
         )
         .await?;
 
-        let task = PgTaskRepo::create_in(&txn, ctx, new, None).await?;
+        let task = PgTaskRepo::create_in(&txn, ctx, new, parent).await?;
 
         let mut references = Vec::with_capacity(initial_references.len());
         for reference in initial_references {
@@ -152,48 +169,80 @@ impl TaskService {
         .await?;
 
         PgSearchIndexQueueRepo::enqueue_task_in(&txn, ctx.workspace_id, task.id).await?;
+        if let Some(parent_id) = parent {
+            PgSearchIndexQueueRepo::enqueue_task_in(&txn, ctx.workspace_id, parent_id).await?;
+        }
 
         txn.commit().await.map_err(db_err)?;
         Ok(CreateTaskWithReferencesResult { task, references })
     }
 
-    /// Creates a sub-task under `parent`, inheriting the parent's board and column,
-    /// and appends a `Created` activity in the same transaction. The sub-task is a
-    /// full task excluded from the board listing until promoted.
-    pub async fn create_subtask(
+    /// Converts an existing task into a sub-task of `parent_id`, and records the
+    /// change as a `FieldChanged` activity.
+    ///
+    /// The task keeps its own board, column and position: only the parent link
+    /// changes, so a sub-task may live on a different board than its parent (moves
+    /// already cross boards). Re-parenting to the current parent is a no-op.
+    ///
+    /// Rejects self-parenting and any link that would close a cycle, since the
+    /// parent chain is walked by both the UI and the indexer.
+    pub async fn set_parent(
         &self,
         ctx: &WorkspaceCtx,
-        parent: &Task,
-        title: String,
+        id: TaskId,
+        parent_id: TaskId,
     ) -> Result<Task, DomainError> {
+        use sea_orm::IntoActiveModel;
+
+        if id == parent_id {
+            return Err(DomainError::InvalidInput {
+                message: "a task cannot be its own parent".into(),
+            });
+        }
+
         let txn = self.conn.begin().await.map_err(db_err)?;
 
-        let new = NewTask {
-            project_id: parent.project_id,
-            board_id: parent.board_id,
-            column_id: parent.column_id,
-            title,
-            description: String::new(),
-            priority: None,
-            due_date: None,
-            estimate: None,
-            labels: vec![],
-            properties: None,
-            position: PositionBetween {
-                before: None,
-                after: None,
-            },
+        let before = live_task_in(&txn, ctx, id).await?;
+        let parent = live_task_in(&txn, ctx, parent_id).await?;
+
+        if before.parent_task_id == Some(parent.id) {
+            txn.rollback().await.map_err(db_err)?;
+            return Ok(crate::persistence::entities::boards_tasks::task_from(
+                before,
+            ));
+        }
+
+        if is_descendant_of(&txn, ctx, TaskId(parent.id), id).await? {
+            txn.rollback().await.map_err(db_err)?;
+            return Err(DomainError::InvalidInput {
+                message: "cannot re-parent a task under one of its own sub-tasks".into(),
+            });
+        }
+
+        let task_project_id = ProjectId(before.project_id);
+        let task_board_id = BoardId(before.board_id);
+        let old_parent_id = before.parent_task_id.map(TaskId);
+        let old_parent = match before.parent_task_id {
+            Some(p) => serde_json::Value::String(p.to_string()),
+            None => serde_json::Value::Null,
         };
 
-        let task = PgTaskRepo::create_in(&txn, ctx, new, Some(parent.id)).await?;
+        let mut active = before.into_active_model();
+        active.parent_task_id = Set(Some(parent.id));
+        active.updated_at = Set(Utc::now());
+        let updated = active.update(&txn).await.map_err(db_err)?;
 
         PgTaskActivityRepo::append_in(
             &txn,
             ctx,
             NewTaskActivity {
-                task_id: task.id,
-                kind: ActivityKind::Created,
-                payload: ActivityPayload::Created,
+                task_id: id,
+                kind: ActivityKind::FieldChanged,
+                payload: ActivityPayload::FieldChanged {
+                    field: "parent_task_id".into(),
+                    old_value: old_parent,
+                    new_value: serde_json::Value::String(parent.id.to_string()),
+                },
             },
         )
         .await?;
@@ -201,23 +250,25 @@ impl TaskService {
         PgOutboxRepo::insert_in(
             &txn,
             ctx,
-            Some(task.project_id),
-            Some(task.board_id),
-            DomainEvent::TaskCreated(TaskCreatedPayload {
-                task_id: task.id,
-                title: task.title.clone(),
-                project_id: task.project_id,
-                board_id: task.board_id,
-                column_id: task.column_id,
+            Some(task_project_id),
+            Some(task_board_id),
+            DomainEvent::TaskUpdated(TaskUpdatedPayload {
+                task_id: id,
+                changed_fields: vec!["parent_task_id".into()],
             }),
         )
         .await?;
 
-        PgSearchIndexQueueRepo::enqueue_task_in(&txn, ctx.workspace_id, task.id).await?;
-        PgSearchIndexQueueRepo::enqueue_task_in(&txn, ctx.workspace_id, parent.id).await?;
+        PgSearchIndexQueueRepo::enqueue_task_in(&txn, ctx.workspace_id, id).await?;
+        PgSearchIndexQueueRepo::enqueue_task_in(&txn, ctx.workspace_id, TaskId(parent.id)).await?;
+        if let Some(previous) = old_parent_id {
+            PgSearchIndexQueueRepo::enqueue_task_in(&txn, ctx.workspace_id, previous).await?;
+        }
 
         txn.commit().await.map_err(db_err)?;
-        Ok(task)
+        Ok(crate::persistence::entities::boards_tasks::task_from(
+            updated,
+        ))
     }
 
     /// Promotes a sub-task to a top-level board task by clearing its parent, and
@@ -232,16 +283,7 @@ impl TaskService {
 
         let txn = self.conn.begin().await.map_err(db_err)?;
 
-        let before = task::Entity::find_by_id(id.0)
-            .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
-            .filter(task::Column::DeletedAt.is_null())
-            .one(&txn)
-            .await
-            .map_err(db_err)?
-            .ok_or(DomainError::NotFound {
-                entity: "task",
-                id: id.0,
-            })?;
+        let before = live_task_in(&txn, ctx, id).await?;
 
         let task_project_id = ProjectId(before.project_id);
         let task_board_id = BoardId(before.board_id);
@@ -1048,6 +1090,56 @@ async fn resolve_anchor_key(
         .map_err(db_err)?;
 
     Ok(row.map(|r| r.position_key))
+}
+
+/// Loads a live (non-deleted) task of this workspace, or `NotFound`.
+async fn live_task_in(
+    conn: &impl ConnectionTrait,
+    ctx: &WorkspaceCtx,
+    id: TaskId,
+) -> Result<task::Model, DomainError> {
+    task::Entity::find_by_id(id.0)
+        .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
+        .filter(task::Column::DeletedAt.is_null())
+        .one(conn)
+        .await
+        .map_err(db_err)?
+        .ok_or(DomainError::NotFound {
+            entity: "task",
+            id: id.0,
+        })
+}
+
+/// Maximum parent links walked when checking for a cycle. Deep enough for any
+/// real hierarchy, and it keeps the walk terminating even if a cycle already
+/// exists in the data.
+const MAX_PARENT_DEPTH: usize = 64;
+
+/// Whether `candidate` is `ancestor` itself or sits anywhere below it, walking the
+/// parent chain upward from `candidate`.
+async fn is_descendant_of(
+    conn: &impl ConnectionTrait,
+    ctx: &WorkspaceCtx,
+    candidate: TaskId,
+    ancestor: TaskId,
+) -> Result<bool, DomainError> {
+    let mut current = Some(candidate);
+
+    for _ in 0..MAX_PARENT_DEPTH {
+        let Some(id) = current else { return Ok(false) };
+        if id == ancestor {
+            return Ok(true);
+        }
+
+        current = live_task_in(conn, ctx, id)
+            .await?
+            .parent_task_id
+            .map(TaskId);
+    }
+
+    Err(DomainError::InvalidInput {
+        message: format!("sub-task nesting exceeds the maximum depth of {MAX_PARENT_DEPTH}"),
+    })
 }
 
 async fn validate_column_in_board(

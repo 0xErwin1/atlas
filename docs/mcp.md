@@ -135,6 +135,7 @@ Shared behavior from `ATLAS_INSTRUCTIONS` and tool parameter docs:
 - `delete_checklist_item`
 - `promote_checklist_item`
 - `create_subtask`
+- `set_task_parent`
 - `promote_subtask`
 
 ### Document and folder write tools

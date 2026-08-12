@@ -1258,9 +1258,7 @@ async fn list_boards_reports_top_level_non_deleted_task_count() {
         .create_subtask(
             &ws.slug,
             &task_a.readable_id,
-            CreateSubtaskRequest {
-                title: "Sub of A".to_string(),
-            },
+            CreateSubtaskRequest::titled("Sub of A"),
         )
         .await
         .expect("create subtask");

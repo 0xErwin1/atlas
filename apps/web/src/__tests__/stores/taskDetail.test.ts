@@ -888,13 +888,19 @@ describe('useTaskDetailStore', () => {
 
     POST.mockResolvedValueOnce({
       data: {
-        id: 's2',
-        readable_id: 'ATL-3',
-        column_id: 'col-1',
-        title: 'New child',
-        estimate: null,
-        labels: [],
-        updated_at: '2026-01-01T00:00:00Z',
+        task: {
+          id: 's2',
+          readable_id: 'ATL-3',
+          board_id: 'board-1',
+          column_id: 'col-1',
+          board_name: 'Board',
+          column_name: 'Todo',
+          title: 'New child',
+          estimate: null,
+          labels: [],
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+        references: [],
       },
       error: undefined,
     });
@@ -904,6 +910,38 @@ describe('useTaskDetailStore', () => {
     expect(ok).toBe(true);
     expect(store.subtasks).toHaveLength(1);
     expect(store.subtasks[0]?.readable_id).toBe('ATL-3');
+    expect(store.subtasks[0]?.column_name).toBe('Todo');
+  });
+
+  it('attachSubtask converts an existing task and reloads the sub-task list', async () => {
+    const store = useTaskDetailStore();
+
+    POST.mockResolvedValueOnce({ data: { id: 's9' }, error: undefined });
+    GET.mockResolvedValueOnce({
+      data: [subtaskSummary('s9', 'ATL-9', 'Now a child')],
+      error: undefined,
+    });
+
+    const ok = await store.attachSubtask('ws', 'ATL-1', 'ATL-9');
+
+    expect(ok).toBe(true);
+    expect(POST).toHaveBeenCalledWith('/api/workspaces/{ws}/tasks/{readable_id}/parent', {
+      params: { path: { ws: 'ws', readable_id: 'ATL-9' } },
+      body: { parent_readable_id: 'ATL-1' },
+    });
+    expect(store.subtasks.map((s) => s.readable_id)).toEqual(['ATL-9']);
+  });
+
+  it('attachSubtask reports the failure and leaves the list untouched', async () => {
+    const store = useTaskDetailStore();
+    store._setForTest({ subtasks: [subtaskSummary('s1', 'ATL-2', 'Child')] });
+
+    POST.mockResolvedValueOnce({ data: undefined, error: { title: 'nope' } });
+
+    const ok = await store.attachSubtask('ws', 'ATL-1', 'ATL-9');
+
+    expect(ok).toBe(false);
+    expect(store.subtasks.map((s) => s.readable_id)).toEqual(['ATL-2']);
   });
 
   it('promoteSubtask removes the child on success', async () => {

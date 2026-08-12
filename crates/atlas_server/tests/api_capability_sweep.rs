@@ -911,11 +911,7 @@ async fn invoke(
             .await
             .map(|_| ()),
         Case::CreateSubtask => client
-            .create_subtask(
-                ws,
-                &fx.task_readable_id,
-                CreateSubtaskRequest { title: "x".into() },
-            )
+            .create_subtask(ws, &fx.task_readable_id, CreateSubtaskRequest::titled("x"))
             .await
             .map(|_| ()),
         Case::PromoteSubtask => client

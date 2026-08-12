@@ -6,8 +6,9 @@ use atlas_api::dtos::boards_tasks::{
     AddAssigneeRequest, CreateBoardRequest, CreateChecklistItemRequest, CreateColumnRequest,
     CreateCommentRequest, CreateReferenceBatchRequest, CreateReferenceBatchResultDto,
     CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest, MoveTaskRequest,
-    PromoteChecklistItemRequest, TaskPropertiesDto, UpdateBoardRequest, UpdateChecklistItemRequest,
-    UpdateColumnRequest, UpdateCommentRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
+    PromoteChecklistItemRequest, SetTaskParentRequest, TaskPropertiesDto, UpdateBoardRequest,
+    UpdateChecklistItemRequest, UpdateColumnRequest, UpdateCommentRequest, UpdateTaskRequest,
+    WorkspaceTaskQueryParams,
 };
 use atlas_api::dtos::documents::{
     CreateDocumentRequest, DocumentContentEditRequest, DocumentContentRangeQuery,
@@ -128,7 +129,10 @@ created workspaces; existing workspaces are never retro-updated.\n\
 `create_column`, `update_column`, `delete_column`, `create_tag`, `update_tag`, `delete_tag`.\n\
 - Graph writes: `add_task_reference`, `add_task_references_batch`, `remove_task_reference`, `add_checklist_item`, \
 `update_checklist_item`, `delete_checklist_item`, `promote_checklist_item`, \
-`create_subtask`, `promote_subtask`.\n\
+`create_subtask`, `set_task_parent`, `promote_subtask`.\n\
+- Sub-tasks are ordinary tasks that carry a parent: `create_subtask` takes the same fields as \
+`create_task`, `set_task_parent` converts an existing task into a sub-task, and \
+`promote_subtask` detaches it again.\n\
 - Workspace-settings writes (read the current statuses with `list_status_templates`): \
 `create_project`, `update_project`, `delete_project`, \
 `create_status_template`, `update_status_template`, `delete_status_template`, \
@@ -303,6 +307,72 @@ fn parse_optional_uuid_param(field: &str, raw: Option<&str>) -> Result<Option<uu
 
 fn require_edit_field<T: Copy>(field: Option<T>, operation: &str, name: &str) -> Result<T, String> {
     field.ok_or_else(|| format!("{operation} operation requires {name}"))
+}
+
+/// Validates the typed task properties a creation tool accepts and folds them into
+/// a `TaskPropertiesDto`, or `None` when the caller supplied none of them. Shared
+/// by `create_task` and `create_subtask`, which take the same fields.
+fn task_properties_from(
+    priority: Option<String>,
+    labels: Option<Vec<String>>,
+    estimate: Option<i32>,
+    due_date: Option<&str>,
+) -> Result<Option<TaskPropertiesDto>, String> {
+    if let Some(ref p) = priority {
+        validate_priority(p)?;
+    }
+
+    if let Some(e) = estimate {
+        validate_estimate(e)?;
+    }
+
+    let due_date = due_date
+        .map(|s| {
+            s.parse::<chrono::DateTime<chrono::Utc>>()
+                .map_err(|_| format!("due_date '{s}' is not a valid RFC 3339 timestamp"))
+        })
+        .transpose()?;
+
+    if priority.is_none() && labels.is_none() && estimate.is_none() && due_date.is_none() {
+        return Ok(None);
+    }
+
+    Ok(Some(TaskPropertiesDto {
+        priority,
+        due_date,
+        estimate,
+        labels: labels.unwrap_or_default(),
+        custom: None,
+    }))
+}
+
+/// Validates the initial references a creation tool accepts and converts them to
+/// wire requests. Shared by `create_task` and `create_subtask`.
+fn reference_requests_from(
+    references: Vec<ReferenceInputParams>,
+) -> Result<Vec<CreateReferenceRequest>, String> {
+    references
+        .into_iter()
+        .map(|reference| {
+            validate_reference_kind(&reference.kind)?;
+
+            let target_document_id = parse_optional_uuid_param(
+                "target_document_id",
+                reference.target_document_id.as_deref(),
+            )?;
+
+            validate_single_target(
+                reference.target_task_readable_id.as_deref(),
+                target_document_id.as_ref(),
+            )?;
+
+            Ok(CreateReferenceRequest {
+                kind: reference.kind,
+                target_task_readable_id: reference.target_task_readable_id,
+                target_document_id,
+            })
+        })
+        .collect()
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1677,6 +1747,39 @@ pub struct CreateSubtaskParams {
     pub readable_id: String,
     /// Title of the new subtask.
     pub title: String,
+    /// Column name on the parent's board. Defaults to the parent's column.
+    #[serde(default)]
+    pub column: Option<String>,
+    /// Optional markdown description.
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Priority: `low`, `medium`, `high`, or `urgent`.
+    #[serde(default)]
+    pub priority: Option<String>,
+    /// Labels to attach to the subtask.
+    #[serde(default)]
+    pub labels: Option<Vec<String>>,
+    /// Effort estimate in story-point units (non-negative integer).
+    #[serde(default)]
+    pub estimate: Option<i32>,
+    /// Due date in RFC 3339 format (e.g. `2024-12-31T23:59:59Z`).
+    #[serde(default)]
+    pub due_date: Option<String>,
+    /// Typed references created atomically with the subtask. At most 100 are accepted.
+    #[serde(default)]
+    #[schemars(length(max = 100))]
+    pub references: Vec<ReferenceInputParams>,
+}
+
+/// Parameters accepted by the `set_task_parent` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SetTaskParentParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Readable ID of the task to convert into a subtask.
+    pub readable_id: String,
+    /// Readable ID of the task that becomes its parent.
+    pub parent_readable_id: String,
 }
 
 /// Parameters accepted by the `promote_subtask` tool.
@@ -2958,62 +3061,14 @@ impl AtlasMcp {
 
         let column_id = resolve_column_id_on_board(&params.column, &cols)?;
 
-        if let Some(ref p) = params.priority {
-            validate_priority(p)?;
-        }
+        let properties = task_properties_from(
+            params.priority,
+            params.labels,
+            params.estimate,
+            params.due_date.as_deref(),
+        )?;
 
-        if let Some(e) = params.estimate {
-            validate_estimate(e)?;
-        }
-
-        let due_date = params
-            .due_date
-            .as_deref()
-            .map(|s| {
-                s.parse::<chrono::DateTime<chrono::Utc>>()
-                    .map_err(|_| format!("due_date '{s}' is not a valid RFC 3339 timestamp"))
-            })
-            .transpose()?;
-
-        let properties = if params.priority.is_some()
-            || params.labels.is_some()
-            || params.estimate.is_some()
-            || due_date.is_some()
-        {
-            Some(TaskPropertiesDto {
-                priority: params.priority,
-                due_date,
-                estimate: params.estimate,
-                labels: params.labels.unwrap_or_default(),
-                custom: None,
-            })
-        } else {
-            None
-        };
-
-        let references = params
-            .references
-            .into_iter()
-            .map(|reference| {
-                validate_reference_kind(&reference.kind)?;
-
-                let target_document_id = parse_optional_uuid_param(
-                    "target_document_id",
-                    reference.target_document_id.as_deref(),
-                )?;
-
-                validate_single_target(
-                    reference.target_task_readable_id.as_deref(),
-                    target_document_id.as_ref(),
-                )?;
-
-                Ok(CreateReferenceRequest {
-                    kind: reference.kind,
-                    target_task_readable_id: reference.target_task_readable_id,
-                    target_document_id,
-                })
-            })
-            .collect::<Result<Vec<_>, String>>()?;
+        let references = reference_requests_from(params.references)?;
 
         let body = CreateTaskRequest {
             column_id,
@@ -4412,22 +4467,101 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Create a subtask under a parent task.")]
+    #[tool(
+        description = "Create a subtask under a parent task. A subtask is an ordinary task, \
+                       so it takes the same fields as create_task. Board is inherited from the \
+                       parent; column defaults to the parent's column."
+    )]
     async fn create_subtask(
         &self,
         Parameters(params): Parameters<CreateSubtaskParams>,
         ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
+        if params.references.len() > 100 {
+            return Err("references may contain at most 100 items".to_string());
+        }
+
         let client = self.resolve_client(&ctx)?;
+
+        let column_id = match params.column.as_deref() {
+            Some(column) => {
+                let parent = client
+                    .get_task(&params.workspace, &params.readable_id)
+                    .await
+                    .map_err(|e| enrich_client_error(e, "get_task"))?;
+
+                let cols = client
+                    .list_columns(&params.workspace, parent.board_id)
+                    .await
+                    .map_err(|e| enrich_client_error(e, "list_columns"))?;
+
+                Some(resolve_column_id_on_board(column, &cols)?)
+            }
+            None => None,
+        };
+
+        let properties = task_properties_from(
+            params.priority,
+            params.labels,
+            params.estimate,
+            params.due_date.as_deref(),
+        )?;
+
+        let references = reference_requests_from(params.references)?;
 
         let body = CreateSubtaskRequest {
             title: params.title,
+            column_id,
+            description: params.description,
+            properties,
+            before: None,
+            after: None,
+            references,
         };
 
-        let task = client
+        let created = client
             .create_subtask(&params.workspace, &params.readable_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "create_subtask"))?;
+
+        let mut result = project_task_compact(&created.task);
+        let task = result
+            .as_object_mut()
+            .ok_or_else(|| "create_subtask result must be an object".to_string())?;
+        task.insert(
+            "references".to_string(),
+            serde_json::Value::Array(
+                created
+                    .references
+                    .into_iter()
+                    .map(response::project_manual_reference)
+                    .collect(),
+            ),
+        );
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Convert an existing task into a subtask of another task. The task keeps \
+                       its own board, column and position — only the parent link changes, so a \
+                       subtask may live on a different board than its parent. Use promote_subtask \
+                       to detach it again."
+    )]
+    async fn set_task_parent(
+        &self,
+        Parameters(params): Parameters<SetTaskParentParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
+        let body = SetTaskParentRequest {
+            parent_readable_id: params.parent_readable_id,
+        };
+
+        let task = client
+            .set_task_parent(&params.workspace, &params.readable_id, body)
+            .await
+            .map_err(|e| enrich_client_error(e, "set_task_parent"))?;
 
         let result = project_task_compact(&task);
         serde_json::to_string(&result).map_err(|e| e.to_string())

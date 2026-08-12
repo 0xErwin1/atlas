@@ -18,9 +18,9 @@ use atlas_api::{
         CreateReferenceBatchRequest, CreateReferenceBatchResultDto, CreateReferenceRequest,
         CreateSubtaskRequest, CreateTaskRequest, CreateTaskResponseDto, MoveTaskRequest,
         PromoteChecklistItemRequest, PromotionDto, ReferenceDto, ReferenceOriginDto,
-        RenameTaskAttachmentRequest, TaskAttachmentDto, TaskBacklinkDto, TaskDto, TaskSummaryDto,
-        UnifiedReferenceDto, UpdateChecklistItemRequest, UpdateCommentRequest, UpdateTaskRequest,
-        WorkspaceTaskQueryParams,
+        RenameTaskAttachmentRequest, SetTaskParentRequest, TaskAttachmentDto, TaskBacklinkDto,
+        TaskDto, TaskSummaryDto, UnifiedReferenceDto, UpdateChecklistItemRequest,
+        UpdateCommentRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
     },
     dtos::documents::{
         ActorDto, CommentAttachmentDto, CommentBacklinkParentDto, CommentBacklinkSourceDto,
@@ -996,12 +996,84 @@ pub(crate) async fn create_task(
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
 
-    validate_name("title", &body.title)?;
+    let input = validate_task_input(
+        &state,
+        &auth.principal,
+        auth.membership.clone(),
+        &auth.workspace,
+        &ctx,
+        TaskInput {
+            title: body.title,
+            description: body.description,
+            properties: body.properties,
+            references: body.references,
+        },
+    )
+    .await?;
 
-    let description = body.description.unwrap_or_default();
+    create_task_response(
+        &state,
+        &ctx,
+        NewTask {
+            project_id: board.project_id,
+            board_id: board.id,
+            column_id: ColumnId(body.column_id),
+            title: input.title,
+            description: input.description,
+            priority: input.priority,
+            due_date: input.due_date,
+            estimate: input.estimate,
+            labels: input.labels,
+            properties: input.custom,
+            position: PositionBetween {
+                before: body.before,
+                after: body.after,
+            },
+        },
+        None,
+        input.references,
+    )
+    .await
+}
+
+/// The task-shaped fields shared by task and sub-task creation.
+struct TaskInput {
+    title: String,
+    description: Option<String>,
+    properties: Option<atlas_api::dtos::boards_tasks::TaskPropertiesDto>,
+    references: Vec<CreateReferenceRequest>,
+}
+
+/// `TaskInput` after validation, with every field in its domain representation
+/// and every reference target resolved and permission-checked.
+struct ValidatedTaskInput {
+    title: String,
+    description: String,
+    priority: Option<Priority>,
+    due_date: Option<chrono::DateTime<chrono::Utc>>,
+    estimate: Option<i32>,
+    labels: Vec<String>,
+    custom: Option<serde_json::Value>,
+    references: Vec<ResolvedReferenceTarget>,
+}
+
+/// Validates the fields a task creation accepts and resolves its initial
+/// references. Shared by `create_task` and `create_subtask`: a sub-task is an
+/// ordinary task, so it takes exactly the same input under exactly the same rules.
+async fn validate_task_input(
+    state: &AppState,
+    principal: &Principal,
+    membership: Option<MemberRole>,
+    workspace: &Workspace,
+    ctx: &WorkspaceCtx,
+    input: TaskInput,
+) -> Result<ValidatedTaskInput, ApiError> {
+    validate_name("title", &input.title)?;
+
+    let description = input.description.unwrap_or_default();
     validate_description(&description)?;
 
-    let props = body.properties.unwrap_or_default();
+    let props = input.properties.unwrap_or_default();
     let priority = props
         .priority
         .as_deref()
@@ -1022,7 +1094,7 @@ pub(crate) async fn create_task(
 
     validate_labels(&props.labels)?;
 
-    if body.references.len() > 100 {
+    if input.references.len() > 100 {
         return Err(ApiError::InvalidInput {
             message: "references must contain at most 100 items".into(),
         });
@@ -1030,44 +1102,45 @@ pub(crate) async fn create_task(
 
     if let Some(ref custom) = props.custom {
         validate_custom_entry_count(custom)?;
-        let definitions = task_property_definitions(&state, &ctx).await?;
+        let definitions = task_property_definitions(state, ctx).await?;
         validate_custom_properties(custom, &definitions)?;
     }
 
-    let mut resolved_references = Vec::with_capacity(body.references.len());
-    for reference in &body.references {
-        resolved_references.push(
-            resolve_reference_target(
-                &state,
-                &auth.principal,
-                auth.membership.clone(),
-                &auth.workspace,
-                reference,
-            )
-            .await?,
+    let mut references = Vec::with_capacity(input.references.len());
+    for reference in &input.references {
+        references.push(
+            resolve_reference_target(state, principal, membership.clone(), workspace, reference)
+                .await?,
         );
     }
 
+    Ok(ValidatedTaskInput {
+        title: input.title,
+        description,
+        priority,
+        due_date: props.due_date,
+        estimate: props.estimate,
+        labels: props.labels,
+        custom: props.custom,
+        references,
+    })
+}
+
+/// Creates the task (or sub-task, when `parent` is set) with its resolved
+/// references and renders the shared 201 response.
+async fn create_task_response(
+    state: &AppState,
+    ctx: &WorkspaceCtx,
+    new: NewTask,
+    parent: Option<TaskId>,
+    resolved_references: Vec<ResolvedReferenceTarget>,
+) -> Result<(StatusCode, Json<CreateTaskResponseDto>), ApiError> {
     let created = state
         .task_service()
-        .create_with_references(
-            &ctx,
-            NewTask {
-                project_id: board.project_id,
-                board_id: board.id,
-                column_id: ColumnId(body.column_id),
-                title: body.title,
-                description,
-                priority,
-                due_date: props.due_date,
-                estimate: props.estimate,
-                labels: props.labels,
-                properties: props.custom,
-                position: PositionBetween {
-                    before: body.before,
-                    after: body.after,
-                },
-            },
+        .create_with_references_under(
+            ctx,
+            new,
+            parent,
             resolved_references
                 .iter()
                 .map(|reference| InitialTaskReference {
@@ -3554,7 +3627,7 @@ pub(crate) async fn list_subtasks(
     ),
     request_body = CreateSubtaskRequest,
     responses(
-        (status = 201, description = "Sub-task created", body = TaskDto),
+        (status = 201, description = "Sub-task created", body = CreateTaskResponseDto),
         (status = 401, description = "Unauthenticated"),
         (status = 403, description = "Insufficient permissions"),
         (status = 404, description = "Task not found"),
@@ -3566,21 +3639,100 @@ pub(crate) async fn create_subtask(
     State(state): State<AppState>,
     Json(body): Json<CreateSubtaskRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
+    let parent = &auth.resource.0;
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
 
-    validate_name("title", &body.title)?;
+    let input = validate_task_input(
+        &state,
+        &auth.principal,
+        auth.membership.clone(),
+        &auth.workspace,
+        &ctx,
+        TaskInput {
+            title: body.title,
+            description: body.description,
+            properties: body.properties,
+            references: body.references,
+        },
+    )
+    .await?;
+
+    create_task_response(
+        &state,
+        &ctx,
+        NewTask {
+            project_id: parent.project_id,
+            board_id: parent.board_id,
+            column_id: body.column_id.map_or(parent.column_id, ColumnId),
+            title: input.title,
+            description: input.description,
+            priority: input.priority,
+            due_date: input.due_date,
+            estimate: input.estimate,
+            labels: input.labels,
+            properties: input.custom,
+            position: PositionBetween {
+                before: body.before,
+                after: body.after,
+            },
+        },
+        Some(parent.id),
+        input.references,
+    )
+    .await
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/workspaces/{ws}/tasks/{readable_id}/parent",
+    tag = "tasks",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("readable_id" = String, Path, description = "Readable ID of the task to convert"),
+    ),
+    request_body = SetTaskParentRequest,
+    responses(
+        (status = 200, description = "Task converted into a sub-task", body = TaskDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Task or parent not found"),
+        (status = 422, description = "Invalid input"),
+    )
+)]
+pub(crate) async fn set_task_parent(
+    auth: Authorized<TaskRes, EditorMin, TasksUpdate>,
+    State(state): State<AppState>,
+    Json(body): Json<SetTaskParentRequest>,
+) -> Result<Json<TaskDto>, ApiError> {
+    let actor = principal_to_actor(&auth.principal);
+    let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
+
+    // Resolved through the same visibility check as a reference target, so a
+    // caller cannot attach a task to a parent on a board they cannot see.
+    let parent = resolve_reference_target(
+        &state,
+        &auth.principal,
+        auth.membership.clone(),
+        &auth.workspace,
+        &CreateReferenceRequest {
+            kind: "parent".into(),
+            target_task_readable_id: Some(body.parent_readable_id),
+            target_document_id: None,
+        },
+    )
+    .await?;
+
+    let parent_id = parent.target_task_id.ok_or(ApiError::NotFound)?;
 
     let task = state
         .task_service()
-        .create_subtask(&ctx, &auth.resource.0, body.title)
+        .set_parent(&ctx, auth.resource.0.id, parent_id)
         .await
         .map_err(ApiError::Domain)?;
 
-    Ok((
-        StatusCode::CREATED,
-        Json(task_to_dto(task, String::new(), String::new())),
-    ))
+    Ok(Json(task_to_dto(task, String::new(), String::new())))
 }
 
 #[utoipa::path(

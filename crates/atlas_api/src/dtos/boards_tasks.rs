@@ -665,10 +665,49 @@ pub enum CreateReferenceBatchResultDto {
 }
 
 /// Request body for `POST /api/workspaces/{ws}/tasks/{readable_id}/subtasks`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// A sub-task is an ordinary task that happens to carry a parent, so this accepts
+/// everything `CreateTaskRequest` accepts. The only difference is `column_id`:
+/// it is optional and defaults to the parent's column, and when given it must name
+/// a column on the parent's board.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct CreateSubtaskRequest {
     pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column_id: Option<uuid::Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub properties: Option<TaskPropertiesDto>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub references: Vec<CreateReferenceRequest>,
+}
+
+impl CreateSubtaskRequest {
+    /// A sub-task with only a title, inheriting every other field from the parent.
+    pub fn titled(title: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            ..Self::default()
+        }
+    }
+}
+
+/// Request body for `POST /api/workspaces/{ws}/tasks/{readable_id}/parent`.
+///
+/// Converts an existing task into a sub-task of `parent_readable_id`. The task
+/// keeps its own board, column and position — only the parent link changes — so a
+/// sub-task may live on a different board than its parent. Detaching is the
+/// existing `promote` endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct SetTaskParentRequest {
+    pub parent_readable_id: String,
 }
 
 /// Request body for `POST /api/workspaces/{ws}/tasks/{readable_id}/checklist`.

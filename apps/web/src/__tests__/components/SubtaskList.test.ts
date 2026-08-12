@@ -28,7 +28,9 @@ const columns = [
 ];
 
 function mountList(subtasks: ReturnType<typeof subtask>[]) {
-  return mount(SubtaskList, { props: { subtasks, columns } });
+  return mount(SubtaskList, {
+    props: { ws: 'atlas', subtasks, columns, boardId: 'board-1', parentReadableId: 'ATL-1' },
+  });
 }
 
 describe('SubtaskList', () => {
@@ -85,6 +87,55 @@ describe('SubtaskList', () => {
 
     expect(wrapper.emitted('add')).toEqual([['New child']]);
     expect((input.element as HTMLInputElement).value).toBe('');
+  });
+
+  it('reads the status of a sub-task on another board from its own summary', () => {
+    const foreign = {
+      ...subtask('t1', 'ATL-2', 'Elsewhere', 'col-other'),
+      board_id: 'board-2',
+      board_name: 'Other board',
+      column_name: 'In Progress',
+    };
+
+    const wrapper = mountList([foreign]);
+
+    const row = wrapper.get('[data-subtask="t1"]');
+    expect(row.text()).toContain('In Progress');
+    expect(row.find('input[type="checkbox"]').exists()).toBe(false);
+  });
+
+  it('does not emit setColumn for a sub-task on another board', async () => {
+    const foreign = {
+      ...subtask('t1', 'ATL-2', 'Elsewhere', 'col-other'),
+      board_id: 'board-2',
+    };
+
+    const wrapper = mountList([foreign]);
+
+    expect(wrapper.find('input[aria-label="Mark Elsewhere done"]').exists()).toBe(false);
+    expect(wrapper.emitted('setColumn')).toBeUndefined();
+  });
+
+  it('reveals the task search when linking an existing task', async () => {
+    const wrapper = mountList([]);
+
+    expect(wrapper.findComponent({ name: 'SearchPicker' }).exists()).toBe(false);
+
+    await wrapper.get('[data-subtask-attach]').trigger('click');
+
+    expect(wrapper.findComponent({ name: 'SearchPicker' }).exists()).toBe(true);
+  });
+
+  it('emits attach with the picked readable id and closes the search', async () => {
+    const wrapper = mountList([]);
+    await wrapper.get('[data-subtask-attach]').trigger('click');
+
+    const picker = wrapper.findComponent({ name: 'SearchPicker' });
+    picker.vm.$emit('pick', { id: 'u1', kind: 'task', title: 'Existing', readable_id: 'ATL-9' });
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.emitted('attach')).toEqual([['ATL-9']]);
+    expect(wrapper.findComponent({ name: 'SearchPicker' }).exists()).toBe(false);
   });
 
   it('does not emit add for a blank title', async () => {

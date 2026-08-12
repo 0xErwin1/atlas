@@ -529,6 +529,10 @@ pub fn app(state: AppState) -> Router {
             axum::routing::post(routes::tasks::promote_subtask),
         )
         .route(
+            "/api/workspaces/{ws}/tasks/{readable_id}/parent",
+            axum::routing::post(routes::tasks::set_task_parent),
+        )
+        .route(
             "/api/workspaces/{ws}/tasks/{readable_id}/activity",
             axum::routing::get(routes::tasks::list_activity),
         )

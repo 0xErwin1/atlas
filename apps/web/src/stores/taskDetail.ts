@@ -968,25 +968,60 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     }
 
     if (!isOperationCurrent(operation)) return false;
+    const created = data.task;
     subtasks.value = [
       ...subtasks.value,
       {
-        id: data.id,
-        readable_id: data.readable_id,
-        board_id: data.board_id,
-        column_id: data.column_id,
-        board_name: '',
-        column_name: '',
-        title: data.title,
-        priority: data.priority,
-        estimate: data.estimate,
-        labels: data.labels ?? [],
+        id: created.id,
+        readable_id: created.readable_id,
+        board_id: created.board_id,
+        column_id: created.column_id,
+        board_name: created.board_name,
+        column_name: created.column_name,
+        title: created.title,
+        priority: created.priority,
+        estimate: created.estimate,
+        labels: created.labels ?? [],
         assignees: [],
         subtask_count: 0,
-        updated_at: data.updated_at,
+        updated_at: created.updated_at,
       },
     ];
     await invalidateCurrentTaskCache(readableId);
+    return true;
+  }
+
+  /**
+   * Converts an existing task into a sub-task of `readableId`. The task keeps its
+   * own board and column, so the sub-task list is reloaded from the server rather
+   * than assembled locally: only the server knows the attached task's summary.
+   */
+  async function attachSubtask(ws: string, readableId: string, taskReadableId: string): Promise<boolean> {
+    const operation = beginOperation(ws, readableId);
+    if (!isOperationCurrent(operation)) return false;
+    error.value = null;
+
+    const { error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/tasks/{readable_id}/parent', {
+      params: { path: { ws, readable_id: taskReadableId } },
+      body: { parent_readable_id: readableId },
+    });
+
+    if (apiError !== undefined) {
+      publishOperationError(operation, errorHint(apiError, 'Failed to attach the task'));
+      return false;
+    }
+
+    if (!isOperationCurrent(operation)) return false;
+
+    const { data } = await wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/subtasks', {
+      params: { path: { ws, readable_id: readableId } },
+    });
+    if (data !== undefined && isOperationCurrent(operation)) subtasks.value = data;
+
+    await Promise.all([
+      invalidateCurrentTaskCache(taskReadableId),
+      invalidateCurrentTaskCache(readableId, activeTaskUuid ?? undefined),
+    ]);
     return true;
   }
 
@@ -1325,6 +1360,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     removeChecklistItem,
     addSubtask,
     moveSubtaskToColumn,
+    attachSubtask,
     promoteSubtask,
     addReference,
     removeReference,

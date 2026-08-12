@@ -18,9 +18,10 @@ use atlas_api::{
             CreateReferenceBatchRequest, CreateReferenceBatchResultDto, CreateReferenceRequest,
             CreateSubtaskRequest, CreateTaskRequest, CreateTaskResponseDto, MoveBoardRequest,
             MoveTaskRequest, PromoteChecklistItemRequest, PromotionDto, ReferenceDto,
-            RenameTaskAttachmentRequest, TaskAttachmentDto, TaskBacklinkDto, TaskDto,
-            TaskSummaryDto, UnifiedReferenceDto, UpdateBoardRequest, UpdateChecklistItemRequest,
-            UpdateColumnRequest, UpdateCommentRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
+            RenameTaskAttachmentRequest, SetTaskParentRequest, TaskAttachmentDto, TaskBacklinkDto,
+            TaskDto, TaskSummaryDto, UnifiedReferenceDto, UpdateBoardRequest,
+            UpdateChecklistItemRequest, UpdateColumnRequest, UpdateCommentRequest,
+            UpdateTaskRequest, WorkspaceTaskQueryParams,
         },
         documents::{
             AttachmentDto, BacklinkDto, CommentAttachmentDto, CommentDraftDto, ConflictProblemDto,
@@ -2818,7 +2819,7 @@ impl AtlasClient {
         ws: &str,
         readable_id: &str,
         body: CreateSubtaskRequest,
-    ) -> Result<TaskDto, ClientError> {
+    ) -> Result<CreateTaskResponseDto, ClientError> {
         let response = self
             .post(&format!(
                 "/api/workspaces/{ws}/tasks/{readable_id}/subtasks"
@@ -2842,6 +2843,22 @@ impl AtlasClient {
             .send()
             .await?;
         self.decode_response(response, "promote_subtask").await
+    }
+
+    /// `POST /api/workspaces/{ws}/tasks/{readable_id}/parent`
+    pub async fn set_task_parent(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        body: SetTaskParentRequest,
+    ) -> Result<TaskDto, ClientError> {
+        let response = self
+            .post(&format!("/api/workspaces/{ws}/tasks/{readable_id}/parent"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "set_task_parent").await
     }
 
     /// `GET /api/workspaces/{ws}/tasks/{readable_id}/activity`

@@ -153,7 +153,7 @@ atlas docs attach upload my-note ./image.png --workspace my-ws
 - `checklist list|add|update|remove|promote`
 - `activity`
 - `comments list|add|delete`
-- `subtasks list|create|promote`
+- `subtasks list|create|promote|attach`
 - `attach upload|list|download|delete`
 
 Notable behavior:

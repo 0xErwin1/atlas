@@ -13,7 +13,8 @@ use std::io::Write as _;
 use atlas_api::dtos::boards_tasks::{
     AddAssigneeRequest, CreateChecklistItemRequest, CreateCommentRequest, CreateReferenceRequest,
     CreateSubtaskRequest, CreateTaskRequest, MoveTaskRequest, PromoteChecklistItemRequest,
-    TaskPropertiesDto, UpdateChecklistItemRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
+    SetTaskParentRequest, TaskPropertiesDto, UpdateChecklistItemRequest, UpdateTaskRequest,
+    WorkspaceTaskQueryParams,
 };
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use uuid::Uuid;
@@ -1387,6 +1388,8 @@ pub(crate) enum SubtasksCmd {
     Create(SubtasksCreateArgs),
     /// Promote a subtask to a top-level task.
     Promote(SubtasksPromoteArgs),
+    /// Convert an existing task into a subtask of another task.
+    Attach(SubtasksAttachArgs),
 }
 
 /// Arguments for `atlas tasks subtasks list`.
@@ -1415,6 +1418,46 @@ pub(crate) struct SubtasksCreateArgs {
     /// Title of the new subtask (required).
     #[arg(long)]
     pub(crate) title: String,
+
+    /// Column name on the parent's board. Defaults to the parent's column.
+    #[arg(long)]
+    pub(crate) column: Option<String>,
+
+    /// Subtask description (markdown).
+    #[arg(long)]
+    pub(crate) description: Option<String>,
+
+    /// Priority: `low`, `medium`, `high`, or `urgent`.
+    #[arg(long)]
+    pub(crate) priority: Option<String>,
+
+    /// Label to attach (repeatable).
+    #[arg(long = "label")]
+    pub(crate) labels: Vec<String>,
+
+    /// Work estimate (non-negative story-point integer).
+    #[arg(long)]
+    pub(crate) estimate: Option<i32>,
+
+    /// Due date (ISO 8601, e.g. `2026-01-31T00:00:00Z`).
+    #[arg(long)]
+    pub(crate) due_date: Option<String>,
+}
+
+/// Arguments for `atlas tasks subtasks attach`.
+#[derive(Parser)]
+pub(crate) struct SubtasksAttachArgs {
+    /// Readable ID of the task to convert into a subtask, e.g. `ATL-99`.
+    #[arg(index = 1)]
+    pub(crate) readable_id: String,
+
+    /// Workspace slug.
+    #[arg(long)]
+    pub(crate) workspace: Option<String>,
+
+    /// Readable ID of the new parent task, e.g. `ATL-42`.
+    #[arg(long)]
+    pub(crate) parent: String,
 }
 
 /// Arguments for `atlas tasks subtasks promote`.
@@ -1438,6 +1481,7 @@ async fn run_subtasks(ctx: &Ctx, cmd: SubtasksCmd) -> Result<(), CliError> {
         SubtasksCmd::List(args) => run_subtasks_list(ctx, args).await,
         SubtasksCmd::Create(args) => run_subtasks_create(ctx, args).await,
         SubtasksCmd::Promote(args) => run_subtasks_promote(ctx, args).await,
+        SubtasksCmd::Attach(args) => run_subtasks_attach(ctx, args).await,
     }
 }
 
@@ -1451,10 +1495,76 @@ async fn run_subtasks_list(ctx: &Ctx, args: SubtasksListArgs) -> Result<(), CliE
 
 async fn run_subtasks_create(ctx: &Ctx, args: SubtasksCreateArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
-    let body = CreateSubtaskRequest { title: args.title };
-    let task = ctx
+
+    if let Some(pri) = &args.priority {
+        helpers::validate_priority(pri).map_err(CliError::Validation)?;
+    }
+    if let Some(est) = args.estimate {
+        helpers::validate_estimate(est).map_err(CliError::Validation)?;
+    }
+
+    let due_date = args
+        .due_date
+        .as_deref()
+        .map(|s| {
+            s.parse::<chrono::DateTime<chrono::Utc>>().map_err(|_| {
+                CliError::Validation(format!("invalid due-date '{s}'; expected ISO 8601"))
+            })
+        })
+        .transpose()?;
+
+    let parent = ctx.client.get_task(ws, &args.readable_id).await?;
+
+    let column_id = match args.column.as_deref() {
+        Some(column) => {
+            let cols = ctx.client.list_columns(ws, parent.board_id).await?;
+            Some(helpers::resolve_column_id_on_board(column, &cols).map_err(CliError::Validation)?)
+        }
+        None => None,
+    };
+
+    let properties = if args.priority.is_some()
+        || args.estimate.is_some()
+        || !args.labels.is_empty()
+        || due_date.is_some()
+    {
+        Some(TaskPropertiesDto {
+            priority: args.priority,
+            estimate: args.estimate,
+            labels: args.labels,
+            due_date,
+            custom: None,
+        })
+    } else {
+        None
+    };
+
+    let body = CreateSubtaskRequest {
+        title: args.title,
+        column_id,
+        description: args.description,
+        properties,
+        before: None,
+        after: None,
+        references: Vec::new(),
+    };
+
+    let created = ctx
         .client
         .create_subtask(ws, &args.readable_id, body)
+        .await?;
+    let proj = TaskCompactProjection::from(created.task);
+    output::emit(ctx.output, &proj)
+}
+
+async fn run_subtasks_attach(ctx: &Ctx, args: SubtasksAttachArgs) -> Result<(), CliError> {
+    let ws = ctx.require_workspace(args.workspace.as_deref())?;
+    let body = SetTaskParentRequest {
+        parent_readable_id: args.parent,
+    };
+    let task = ctx
+        .client
+        .set_task_parent(ws, &args.readable_id, body)
         .await?;
     let proj = TaskCompactProjection::from(task);
     output::emit(ctx.output, &proj)
