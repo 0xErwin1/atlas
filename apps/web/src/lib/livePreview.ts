@@ -490,6 +490,68 @@ export function isBlockActive(firstLine: number, lastLine: number, activeLines: 
   return false;
 }
 
+/** A soft line break inside a paragraph, collapsed to a single space in reading mode. */
+export interface SoftBreakRange {
+  from: number;
+  to: number;
+}
+
+/**
+ * Whether the newline at `newlineIndex` is a CommonMark hard break — the line ends
+ * in a backslash or in two or more spaces — and therefore a real line break the
+ * reader must keep.
+ */
+function isHardBreak(text: string, newlineIndex: number): boolean {
+  if (text[newlineIndex - 1] === '\\') return true;
+  return text[newlineIndex - 1] === ' ' && text[newlineIndex - 2] === ' ';
+}
+
+export interface SoftBreakOptions {
+  /**
+   * Whether a range also swallows the continuation line's blockquote markers.
+   *
+   * The rewrite that joins the lines in the document must, or a literal `>` lands
+   * in the middle of the joined sentence. The reading-mode decoration must not:
+   * the marker pass already hides `>` and its trailing space, and two overlapping
+   * replacements of the same text conflict.
+   */
+  consumeQuoteMarkers?: boolean;
+}
+
+/**
+ * Finds the soft line breaks inside one paragraph's source, as document ranges
+ * offset by the paragraph's start.
+ *
+ * CommonMark renders a single newline inside a paragraph as a space, so a
+ * hard-wrapped source must still reflow to the container width when read. Each
+ * range covers the newline plus the continuation line's indentation, so a
+ * paragraph nested in a list item joins without a gap.
+ */
+export function paragraphSoftBreaks(
+  text: string,
+  offset = 0,
+  options: SoftBreakOptions = {},
+): SoftBreakRange[] {
+  const quoted = options.consumeQuoteMarkers === true;
+  const ranges: SoftBreakRange[] = [];
+
+  for (let i = text.indexOf('\n'); i !== -1; i = text.indexOf('\n', i + 1)) {
+    if (isHardBreak(text, i)) continue;
+
+    let end = i + 1;
+    while (end < text.length) {
+      const char = text[end];
+      const skippable = char === ' ' || char === '\t' || (quoted && char === '>');
+      if (!skippable) break;
+      end += 1;
+    }
+
+    ranges.push({ from: offset + i, to: offset + end });
+  }
+
+  return ranges;
+}
+
 /**
  * Partitions a marker list into the ranges to HIDE (replace/collapse) and the
  * ranges to REVEAL (leave raw) for the current selection. This is the single

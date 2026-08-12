@@ -191,6 +191,7 @@ import EmptyState from '@/components/states/EmptyState.vue';
 import ErrorState from '@/components/states/ErrorState.vue';
 import FreshnessStatus from '@/components/states/FreshnessStatus.vue';
 import LoadingState from '@/components/states/LoadingState.vue';
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import Icon from '@/components/ui/Icon.vue';
 import PresenceAvatars from '@/components/ui/PresenceAvatars.vue';
 import { useBreakpoint } from '@/composables/useBreakpoint';
@@ -308,6 +309,15 @@ function toggleEditorSource(): void {
 
 function toggleEditorReading(): void {
   ui.toggleEditorReading();
+}
+
+// Joining every paragraph rewrites the note's source, so it asks first: a note
+// written with deliberate one-sentence-per-line breaks would lose them.
+const unwrapConfirmOpen = ref(false);
+
+function confirmUnwrapParagraphs(): void {
+  unwrapConfirmOpen.value = false;
+  editorRef.value?.unwrapParagraphs();
 }
 const noteResource = ref(createNoteResourceState());
 const hasDocumentContent = computed(() => noteResource.value.hasContent);
@@ -896,6 +906,18 @@ onBeforeRouteLeave(() => {
           </button>
         </div>
 
+        <button
+          type="button"
+          title="Unwrap paragraphs"
+          aria-label="Unwrap paragraphs"
+          class="atl-gbtn"
+          style="width: 28px; height: 28px;"
+          :disabled="editorReading"
+          @click="unwrapConfirmOpen = true"
+        >
+          <Icon name="wrap-text" :size="15" />
+        </button>
+
         <div aria-hidden="true" style="width: 1px; height: 18px; background: var(--c-border);" />
       </template>
 
@@ -1034,6 +1056,17 @@ onBeforeRouteLeave(() => {
       :segments="conflictSegments"
       @resolve="onConflictResolve"
       @cancel="onConflictCancel"
+    />
+
+    <ConfirmDialog
+      :open="unwrapConfirmOpen"
+      title="Unwrap paragraphs?"
+      message="Every paragraph becomes a single line, so the editor wraps it to the window instead of keeping the breaks written in the file."
+      note="Line breaks you meant to keep — one sentence per line, a poem, an address — are lost unless they end in a backslash or two spaces. Undo restores them."
+      confirm-label="Unwrap"
+      confirm-icon="wrap-text"
+      @confirm="confirmUnwrapParagraphs"
+      @cancel="unwrapConfirmOpen = false"
     />
   </DocsContent>
 </template>

@@ -9,6 +9,7 @@ import {
   isMarkerRevealed,
   type LineRange,
   type MarkerRange,
+  paragraphSoftBreaks,
   parseImage,
   parseTable,
   partitionMarkers,
@@ -268,6 +269,40 @@ describe('isBlockActive', () => {
   it('includes both block boundaries', () => {
     expect(isBlockActive(3, 6, new Set([3]))).toBe(true);
     expect(isBlockActive(3, 6, new Set([6]))).toBe(true);
+  });
+});
+
+describe('paragraphSoftBreaks', () => {
+  it('collapses every newline of a hard-wrapped paragraph', () => {
+    const text = 'one two\nthree four\nfive';
+    expect(paragraphSoftBreaks(text)).toEqual([
+      { from: 7, to: 8 },
+      { from: 18, to: 19 },
+    ]);
+  });
+
+  it('offsets the ranges by the paragraph start', () => {
+    expect(paragraphSoftBreaks('one\ntwo', 100)).toEqual([{ from: 103, to: 104 }]);
+  });
+
+  it('returns nothing for a single-line paragraph', () => {
+    expect(paragraphSoftBreaks('one line only')).toEqual([]);
+  });
+
+  it('keeps a two-space hard break', () => {
+    expect(paragraphSoftBreaks('one  \ntwo')).toEqual([]);
+  });
+
+  it('keeps a backslash hard break', () => {
+    expect(paragraphSoftBreaks('one\\\ntwo')).toEqual([]);
+  });
+
+  it('swallows the continuation line indentation', () => {
+    expect(paragraphSoftBreaks('one\n    two')).toEqual([{ from: 3, to: 8 }]);
+  });
+
+  it('leaves a blockquote marker for the marker pass to hide', () => {
+    expect(paragraphSoftBreaks('one\n> two')).toEqual([{ from: 3, to: 4 }]);
   });
 });
 

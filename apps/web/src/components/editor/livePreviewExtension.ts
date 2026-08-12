@@ -19,6 +19,7 @@ import {
   isBlockActive,
   type MathRange,
   type ParsedTable,
+  paragraphSoftBreaks,
   parseImage,
   parseTable,
   shouldRefreshDocRangeCache,
@@ -701,6 +702,31 @@ class MermaidWidget extends WidgetType {
 const hideDeco = Decoration.replace({});
 
 /**
+ * Widget that stands in for a paragraph's soft line break, rendering the single
+ * space CommonMark says it is. Replacing the newline itself is what makes
+ * CodeMirror join the two source lines into one visual line, so a hard-wrapped
+ * paragraph reflows to the container width instead of keeping the source's wraps.
+ */
+class SoftBreakWidget extends WidgetType {
+  eq(): boolean {
+    return true;
+  }
+
+  toDOM(): HTMLElement {
+    const span = document.createElement('span');
+    span.className = 'cm-atlas-softbreak';
+    span.textContent = ' ';
+    return span;
+  }
+
+  ignoreEvent(): boolean {
+    return true;
+  }
+}
+
+const softBreakDeco = Decoration.replace({ widget: new SoftBreakWidget() });
+
+/**
  * Milliseconds of synchronous parse work allowed to bring the syntax tree up to
  * the viewport before decorations are built. The markdown grammar parses
  * incrementally and CodeMirror's initial parse only covers the first ~3 KB of the
@@ -1296,6 +1322,11 @@ const INLINE_ONLY_BLOCKS = new Set([
  * A block is rendered as a widget unless the selection touches it, in which case
  * it is left as raw markdown for editing (reveal-on-active-block).
  *
+ * Reading mode (`reveal` false) additionally collapses every paragraph's soft line
+ * breaks, which is what lets a hard-wrapped source reflow to the container width.
+ * Edit modes never do: joining lines would move the caret away from its source
+ * position.
+ *
  * Exported for unit testing the block-discovery walk without a DOM.
  */
 export function buildBlockDecorations(
@@ -1330,7 +1361,15 @@ export function buildBlockDecorations(
 
   tree.iterate({
     enter: (node) => {
-      if (INLINE_ONLY_BLOCKS.has(node.name)) return false;
+      if (INLINE_ONLY_BLOCKS.has(node.name)) {
+        if (!reveal && node.name === 'Paragraph') {
+          const source = doc.sliceString(node.from, node.to);
+          for (const range of paragraphSoftBreaks(source, node.from)) {
+            decos.push(softBreakDeco.range(range.from, range.to));
+          }
+        }
+        return false;
+      }
 
       if (node.name === 'Table') {
         const firstLine = doc.lineAt(node.from).number;

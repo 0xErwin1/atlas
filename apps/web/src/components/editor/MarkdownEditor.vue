@@ -23,6 +23,7 @@ import { atlasHighlight } from './highlight';
 import { type ImageUploadResult, imageUploadInsertion } from './imageUpload';
 import { livePreview } from './livePreviewExtension';
 import { atlasMarkdownTheme } from './theme';
+import { unwrapParagraphs } from './unwrapParagraphs';
 
 /**
  * Shared Obsidian-style "Live Preview" markdown editor built on CodeMirror 6.
@@ -382,6 +383,16 @@ function insertAtCaret(text: string): void {
 }
 
 /**
+ * Joins every hard-wrapped paragraph into a single source line (see
+ * `unwrapParagraphs`). Returns whether the document changed. No-op while the
+ * editor is not editable, so reading mode cannot rewrite the note.
+ */
+function unwrapEditorParagraphs(): boolean {
+  if (view === null || !effectiveEditable()) return false;
+  return unwrapParagraphs(view);
+}
+
+/**
  * Stops a paste/drop the editor has taken over from also reaching an outer
  * dropzone. The task detail attaches files dropped or pasted anywhere on the
  * body, so without this an image dropped on the description would upload twice.
@@ -444,7 +455,13 @@ async function uploadAndInsertImages(images: File[], pos: number | null, generat
   view?.focus();
 }
 
-defineExpose({ currentMarkdown, insertWikilink, insertAtCaret, focus });
+defineExpose({
+  currentMarkdown,
+  insertWikilink,
+  insertAtCaret,
+  focus,
+  unwrapParagraphs: unwrapEditorParagraphs,
+});
 
 onMounted(() => {
   if (host.value === null) return;

@@ -53,7 +53,12 @@ function insertWikilink(ref: WikilinkRef): void {
   editorRef.value?.insertWikilink(ref);
 }
 
-defineExpose({ currentMarkdown, insertWikilink });
+/** Joins every hard-wrapped paragraph into one source line; see `unwrapParagraphs`. */
+function unwrapParagraphs(): boolean {
+  return editorRef.value?.unwrapParagraphs() ?? false;
+}
+
+defineExpose({ currentMarkdown, insertWikilink, unwrapParagraphs });
 </script>
 
 <template>
