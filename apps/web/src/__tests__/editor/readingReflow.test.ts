@@ -8,9 +8,9 @@ import { livePreview } from '@/components/editor/livePreviewExtension';
 
 /**
  * Reading mode renders a hard-wrapped markdown source the way CommonMark defines
- * it: a single newline inside a paragraph is a space, not a break. These tests
- * assert on the rendered `.cm-line` elements because the whole point is visual —
- * the source keeps its newlines, and only the display joins them.
+ * it: a single newline inside a paragraph is a space, not a break, and a rule is
+ * a rule rather than a rule plus its `---`. These tests assert on the rendered
+ * DOM because the whole point is visual — the source is never touched.
  */
 
 const views: EditorView[] = [];
@@ -92,5 +92,35 @@ describe('reading-mode paragraph reflow', () => {
     const view = viewFor('```\nBinary(+)\n  / \\\n```', false);
 
     expect(lineTexts(view).length).toBe(4);
+  });
+});
+
+describe('horizontal rule rendering', () => {
+  it('draws the rule without also showing its markers', () => {
+    const view = viewFor('before\n\n---\n\nafter', false);
+
+    expect(view.dom.querySelector('.cm-atlas-hr')).not.toBeNull();
+    expect(view.dom.textContent).not.toContain('---');
+  });
+
+  it('reveals the markers on the active line so they stay editable', () => {
+    const doc = 'before\n\n---\n\nafter';
+    const view = viewFor(doc, true, doc.indexOf('---'));
+
+    expect(view.dom.querySelector('.cm-atlas-hr')).not.toBeNull();
+    expect(view.dom.textContent).toContain('---');
+  });
+
+  it('keeps the markers hidden on an inactive line while editing', () => {
+    const view = viewFor('before\n\n---\n\nafter', true, 0);
+
+    expect(view.dom.textContent).not.toContain('---');
+  });
+
+  it('renders an underscore rule the same way', () => {
+    const view = viewFor('before\n\n___\n\nafter', false);
+
+    expect(view.dom.querySelector('.cm-atlas-hr')).not.toBeNull();
+    expect(view.dom.textContent).not.toContain('___');
   });
 });

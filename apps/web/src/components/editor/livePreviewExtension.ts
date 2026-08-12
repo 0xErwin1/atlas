@@ -1031,7 +1031,13 @@ function decorateSyntaxTree(
       }
 
       if (name === 'HorizontalRule') {
+        // The rule itself is the line's bottom border, so the `---` markers are
+        // syntax like any other: hiding them off the active line is what keeps the
+        // rendered rule from reading as a stray `---` sitting above a line.
         decos.push(Decoration.line({ class: 'cm-atlas-hr' }).range(view.state.doc.lineAt(node.from).from));
+        if (!activeLines.has(lineNumberAt(view, node.from))) {
+          decos.push(hideDeco.range(node.from, node.to));
+        }
         return;
       }
 
