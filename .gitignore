@@ -27,3 +27,4 @@ data/
 .codegraph/
 result
 result-*
+.atl/
