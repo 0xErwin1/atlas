@@ -150,6 +150,30 @@ impl Default for EmbeddingConfig {
     }
 }
 
+/// Tuning for the hybrid (lexical + vector) search mode.
+///
+/// Both values are exposed because the right ones depend on the corpus: the
+/// published RRF default of 60 and a 50-candidate pool are starting points to
+/// measure against real content, not constants worth hardcoding.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SearchConfig {
+    /// RRF damping constant. Smaller lets one arm's top hit dominate; larger
+    /// weighs the two arms more evenly.
+    pub rrf_k: f32,
+    /// Candidates each arm contributes before fusion. Fusion happens over these
+    /// two pools only, so this is also how deep hybrid results can be paged.
+    pub hybrid_pool: usize,
+}
+
+impl Default for SearchConfig {
+    fn default() -> Self {
+        Self {
+            rrf_k: 60.0,
+            hybrid_pool: 50,
+        }
+    }
+}
+
 /// Runtime parameters for the webhook dispatcher.
 #[derive(Clone, Debug)]
 pub struct DispatcherConfig {
@@ -240,6 +264,7 @@ pub struct ServerConfig {
     pub rate_limit: RateLimitConfig,
     pub db_pool: DbPoolConfig,
     pub embeddings: EmbeddingConfig,
+    pub search: SearchConfig,
     /// Upper bound, in seconds, on the post-signal graceful drain before the
     /// process forces termination. Guards against long-lived SSE streams
     /// blocking shutdown indefinitely.
@@ -272,6 +297,7 @@ impl ServerConfig {
 
         let db_pool = load_db_pool_config();
         let embeddings = EmbeddingConfig::from_env()?;
+        let search = load_search_config()?;
 
         if db_pool.max_connections < 1 {
             return Err("ATLAS_DB_MAX_CONNECTIONS must be >= 1".to_string());
@@ -296,6 +322,7 @@ impl ServerConfig {
             rate_limit,
             db_pool,
             embeddings,
+            search,
             shutdown_timeout_secs,
         })
     }
@@ -316,6 +343,7 @@ impl fmt::Debug for ServerConfig {
             .field("rate_limit", &self.rate_limit)
             .field("db_pool", &self.db_pool)
             .field("embeddings", &self.embeddings)
+            .field("search", &self.search)
             .field("shutdown_timeout_secs", &self.shutdown_timeout_secs)
             .finish()
     }
@@ -375,6 +403,32 @@ fn load_db_pool_config() -> DbPoolConfig {
             defaults.acquire_timeout_secs,
         ),
     }
+}
+
+fn load_search_config() -> Result<SearchConfig, String> {
+    let defaults = SearchConfig::default();
+
+    let rrf_k = match env_var_nonempty("ATLAS_SEARCH_RRF_K") {
+        Some(raw) => raw
+            .parse::<f32>()
+            .ok()
+            .filter(|value| value.is_finite() && *value >= 1.0)
+            .ok_or_else(|| format!("ATLAS_SEARCH_RRF_K must be a number >= 1, got {raw}"))?,
+        None => defaults.rrf_k,
+    };
+
+    let hybrid_pool = match env_var_nonempty("ATLAS_SEARCH_HYBRID_POOL") {
+        Some(raw) => raw
+            .parse::<usize>()
+            .ok()
+            .filter(|value| *value > 0)
+            .ok_or_else(|| {
+                format!("ATLAS_SEARCH_HYBRID_POOL must be a positive integer, got {raw}")
+            })?,
+        None => defaults.hybrid_pool,
+    };
+
+    Ok(SearchConfig { rrf_k, hybrid_pool })
 }
 
 fn load_rate_limit_config() -> RateLimitConfig {
@@ -444,6 +498,7 @@ mod tests {
             rate_limit: RateLimitConfig::default(),
             db_pool: DbPoolConfig::default(),
             embeddings: EmbeddingConfig::default(),
+            search: SearchConfig::default(),
             shutdown_timeout_secs: 20,
         };
 

@@ -20,7 +20,8 @@ use atlas_domain::{
 };
 
 use crate::{
-    authz::WorkspaceAccess, error::ApiError, persistence::repos::PgSearchRepo, state::AppState,
+    authz::WorkspaceAccess, error::ApiError, hybrid_search, persistence::repos::PgSearchRepo,
+    state::AppState,
 };
 
 /// Query parameters for `GET /api/workspaces/{ws}/search`.
@@ -39,6 +40,33 @@ pub(crate) struct SearchQueryParams {
     pub limit: Option<u32>,
     /// When true, match each query word as a prefix (typeahead). Default false.
     pub prefix: Option<bool>,
+    /// Retrieval mode: `lexical` (default), `semantic`, or `hybrid`.
+    pub mode: Option<String>,
+}
+
+/// How a search request retrieves its candidates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SearchMode {
+    Lexical,
+    Semantic,
+    Hybrid,
+}
+
+impl SearchMode {
+    fn parse(raw: Option<&str>) -> Result<Self, ApiError> {
+        match raw.map(str::trim).unwrap_or("lexical") {
+            "" | "lexical" => Ok(Self::Lexical),
+            "semantic" => Ok(Self::Semantic),
+            "hybrid" => Ok(Self::Hybrid),
+            other => Err(ApiError::InvalidInput {
+                message: format!("unknown search mode '{other}'; use lexical, semantic or hybrid"),
+            }),
+        }
+    }
+
+    fn uses_vectors(self) -> bool {
+        matches!(self, Self::Semantic | Self::Hybrid)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -58,12 +86,14 @@ pub(crate) struct SearchQueryParams {
         ("cursor" = Option<String>, Query, description = "Opaque pagination cursor; must match the sort of the issuing request"),
         ("limit" = Option<u32>, Query, description = "Page size, default 50, clamped to [1,200]"),
         ("prefix" = Option<bool>, Query, description = "When true, match each query word as a prefix (typeahead). Default false."),
+        ("mode" = Option<String>, Query, description = "Retrieval mode: lexical (default) | semantic | hybrid. semantic and hybrid rank by fused relevance and require sort=relevance; hybrid falls back to lexical results when embeddings are unavailable."),
     ),
     responses(
         (status = 200, description = "Search results page", body = inline(Page<SearchHitDto>)),
         (status = 401, description = "Unauthenticated"),
         (status = 404, description = "Workspace not found or principal has no access"),
-        (status = 422, description = "Invalid input: absent q, malformed cursor, or cursor/sort mismatch"),
+        (status = 422, description = "Invalid input: absent q, unknown mode, malformed cursor, or cursor/sort mismatch"),
+        (status = 503, description = "mode=semantic while embeddings are disabled or their schema is unavailable"),
     )
 )]
 pub(crate) async fn search(
@@ -84,6 +114,15 @@ pub(crate) async fn search(
         params.sort.as_deref(),
     );
     query.prefix = params.prefix.unwrap_or(false);
+
+    let mode = SearchMode::parse(params.mode.as_deref())?;
+    if mode.uses_vectors() && query.sort != SearchSort::Relevance {
+        return Err(ApiError::InvalidInput {
+            message: "sort=updated is only available in lexical mode; a fused ranking has no \
+                      recency order to page by"
+                .into(),
+        });
+    }
 
     let after = resolve_cursor(params.cursor.as_deref(), &query)?;
 
@@ -109,6 +148,22 @@ pub(crate) async fn search(
 
     let principal = auth.principal;
     let bypass = auth.bypass;
+
+    if mode.uses_vectors() {
+        return fused_search(
+            &state,
+            &ctx,
+            &principal,
+            &query,
+            mode,
+            limit,
+            params.cursor.as_deref(),
+            bypass,
+            may_read_docs,
+            may_read_tasks,
+        )
+        .await;
+    }
 
     let repo = PgSearchRepo::new((*state.db).clone());
     let hits = repo
@@ -147,6 +202,191 @@ pub(crate) async fn search(
     let page = Page::new_search(dtos, next_cursor, has_more);
 
     Ok(Json(page).into_response())
+}
+
+// ---------------------------------------------------------------------------
+// Fused retrieval (mode=semantic | hybrid)
+// ---------------------------------------------------------------------------
+
+/// Answers a `semantic` or `hybrid` request by fusing both arms' rankings.
+///
+/// Ranking, not score, is what crosses between the arms: a `ts_rank_cd` value
+/// and a cosine distance are not comparable, so the fused order is built with
+/// RRF over each arm's candidate pool.
+#[allow(clippy::too_many_arguments)]
+async fn fused_search(
+    state: &AppState,
+    ctx: &WorkspaceCtx,
+    principal: &atlas_domain::permissions::Principal,
+    query: &SearchQuery,
+    mode: SearchMode,
+    limit: u64,
+    cursor: Option<&str>,
+    bypass: bool,
+    may_read_docs: bool,
+    may_read_tasks: bool,
+) -> Result<axum::response::Response, ApiError> {
+    let provider = state.embedding_provider.clone();
+    let vectors_ready = match provider {
+        Some(_) => state.semantic_search_enabled_now().await.map_err(|error| {
+            ApiError::Domain(atlas_domain::DomainError::Internal {
+                message: format!("semantic search schema readiness check failed: {error}"),
+            })
+        })?,
+        None => false,
+    };
+
+    // Hybrid degrades to its lexical half rather than failing: the results it
+    // can still produce are correct, just less complete. `semantic` has no such
+    // half, so it refuses instead of silently answering from another retriever.
+    if !vectors_ready && mode == SearchMode::Semantic {
+        return Err(ApiError::ServiceUnavailable {
+            message: "semantic search embeddings are disabled".to_owned(),
+        });
+    }
+
+    let pool = state.search.hybrid_pool.max(limit as usize);
+    let lexical = if mode == SearchMode::Hybrid {
+        PgSearchRepo::new((*state.db).clone())
+            .search(
+                ctx,
+                principal,
+                query,
+                pool as u64,
+                None,
+                bypass,
+                may_read_docs,
+                may_read_tasks,
+            )
+            .await
+            .map_err(ApiError::Domain)?
+    } else {
+        Vec::new()
+    };
+
+    let semantic = match (vectors_ready, provider) {
+        (true, Some(provider)) => hybrid_search::semantic_candidates(
+            &state.db,
+            provider,
+            ctx.workspace_id,
+            principal.clone(),
+            query,
+            pool,
+            bypass,
+            may_read_docs,
+            may_read_tasks,
+        )
+        .await
+        .map_err(ApiError::Domain)?,
+        _ => Vec::new(),
+    };
+
+    let fused = hybrid_search::fuse_ranks(&lexical, &semantic, state.search.rrf_k);
+    let page = page_from_fused(state, ctx, &lexical, fused, limit, cursor).await?;
+
+    Ok(Json(page).into_response())
+}
+
+/// Applies the cursor and page size to a fused ranking, then hydrates the DTOs.
+async fn page_from_fused(
+    state: &AppState,
+    ctx: &WorkspaceCtx,
+    lexical: &[atlas_domain::search::SearchHit],
+    fused: Vec<hybrid_search::HybridHit>,
+    limit: u64,
+    cursor: Option<&str>,
+) -> Result<Page<SearchHitDto>, ApiError> {
+    let after = match cursor {
+        Some(raw) => Some(
+            SearchCursor::decode(raw).ok_or_else(|| ApiError::InvalidInput {
+                message: "cursor is malformed or has an invalid format".into(),
+            })?,
+        ),
+        None => None,
+    };
+
+    let mut remaining: Vec<hybrid_search::HybridHit> = match after {
+        Some(cursor) => {
+            let ApiSortKey::Relevance(score) = cursor.key else {
+                return Err(ApiError::InvalidInput {
+                    message: "cursor does not match the requested sort order".into(),
+                });
+            };
+            fused
+                .into_iter()
+                .skip_while(|hit| !is_after(hit, score, cursor.id))
+                .collect()
+        }
+        None => fused,
+    };
+
+    let has_more = remaining.len() as u64 > limit;
+    remaining.truncate(limit as usize);
+
+    let next_cursor = if has_more {
+        remaining.last().map(|hit| SearchCursor {
+            key: ApiSortKey::Relevance(hit.score),
+            id: hit.id,
+        })
+    } else {
+        None
+    };
+
+    let mut updated_at: std::collections::HashMap<_, _> = lexical
+        .iter()
+        .map(|hit| {
+            let kind = match hit.kind {
+                SearchKind::Document => hybrid_search::HybridKind::Document,
+                SearchKind::Task => hybrid_search::HybridKind::Task,
+            };
+            ((kind, hit.id), hit.updated_at)
+        })
+        .collect();
+
+    let (documents, tasks): (Vec<_>, Vec<_>) = remaining
+        .iter()
+        .filter(|hit| !updated_at.contains_key(&(hit.kind, hit.id)))
+        .partition(|hit| hit.kind == hybrid_search::HybridKind::Document);
+    let looked_up = hybrid_search::load_updated_at(
+        &state.db,
+        ctx,
+        &documents.iter().map(|hit| hit.id).collect::<Vec<_>>(),
+        &tasks.iter().map(|hit| hit.id).collect::<Vec<_>>(),
+    )
+    .await
+    .map_err(ApiError::Domain)?;
+    updated_at.extend(looked_up);
+
+    let dtos: Vec<SearchHitDto> = remaining
+        .into_iter()
+        .map(|hit| {
+            let timestamp = updated_at
+                .get(&(hit.kind, hit.id))
+                .copied()
+                .unwrap_or_default();
+            SearchHitDto {
+                id: hit.id,
+                kind: match hit.kind {
+                    hybrid_search::HybridKind::Document => SearchKindDto::Document,
+                    hybrid_search::HybridKind::Task => SearchKindDto::Task,
+                },
+                readable_id: hit.readable_id,
+                title: hit.title,
+                snippet: hit.snippet,
+                score: hit.score,
+                updated_at: timestamp,
+                project_slug: hit.project_slug,
+                column_name: hit.column_name,
+            }
+        })
+        .collect();
+
+    Ok(Page::new_search(dtos, next_cursor, has_more))
+}
+
+/// Whether a fused hit sits strictly past the cursor in `(score DESC, id DESC)`.
+fn is_after(hit: &hybrid_search::HybridHit, score: f32, id: uuid::Uuid) -> bool {
+    hit.score < score || (hit.score == score && hit.id < id)
 }
 
 // ---------------------------------------------------------------------------

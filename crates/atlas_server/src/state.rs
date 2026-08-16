@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use atlas_domain::{AttachmentStore, semantic_search::EmbeddingProvider};
 
-use crate::config::{DispatcherConfig, EmbeddingProviderKind, ServerConfig, env_var_nonempty};
+use crate::config::{
+    DispatcherConfig, EmbeddingProviderKind, SearchConfig, ServerConfig, env_var_nonempty,
+};
 use crate::crypto::WebhookCrypto;
 use crate::embeddings::{DeterministicEmbeddingProvider, OpenAiCompatibleEmbeddingProvider};
 use crate::live::{DEFAULT_HUB_CAPACITY, LiveEventHub};
@@ -41,6 +43,7 @@ pub struct AppState {
     /// In-memory board presence registry (who is currently viewing each board).
     pub presence: Arc<PresenceRegistry>,
     pub embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+    pub search: SearchConfig,
 }
 
 impl AppState {
@@ -85,6 +88,7 @@ impl AppState {
             live: LiveEventHub::new(DEFAULT_HUB_CAPACITY),
             presence: Arc::new(PresenceRegistry::default()),
             embedding_provider,
+            search: cfg.search.clone(),
         })
     }
 
@@ -126,6 +130,7 @@ impl AppState {
                 "atlas-test-embedding",
                 1536,
             )?)),
+            search: SearchConfig::default(),
         })
     }
 

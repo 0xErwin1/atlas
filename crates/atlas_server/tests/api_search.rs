@@ -1046,3 +1046,222 @@ async fn type_unknown_token_collapses_to_all() {
 
     db.teardown().await;
 }
+
+// ---------------------------------------------------------------------------
+// Hybrid retrieval (mode=lexical | semantic | hybrid)
+// ---------------------------------------------------------------------------
+
+/// Seeds one document each arm can find and the other cannot.
+///
+/// The lexical-only document carries the query words in its content but has no
+/// embedding; the semantic-only document is indexed under a chunk whose text is
+/// the query itself — the test provider hashes text into a vector, so identical
+/// text is the only way to guarantee a near neighbour — while its own content
+/// shares no word with the query.
+async fn seed_split_corpus(
+    db: &support::TestDb,
+    ctx: &WorkspaceCtx,
+    workspace_id: atlas_domain::ids::WorkspaceId,
+    query: &str,
+) -> (Uuid, Uuid) {
+    use atlas_domain::semantic_search::{ResourceKind, SemanticIndexChunk, SemanticSearchSource};
+    use atlas_server::persistence::repos::PgSemanticIndexWriter;
+    use std::sync::Arc;
+
+    let lexical_only = PgDocumentRepo::new(db.conn().clone(), 50)
+        .create(
+            ctx,
+            NewDocument {
+                title: "Lexical only".to_owned(),
+                slug: None,
+                content: query.to_owned(),
+                folder_id: None,
+                project_id: None,
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("seed lexical document");
+
+    let semantic_only = PgDocumentRepo::new(db.conn().clone(), 50)
+        .create(
+            ctx,
+            NewDocument {
+                title: "Semantic only".to_owned(),
+                slug: None,
+                content: "unrelated wording entirely".to_owned(),
+                folder_id: None,
+                project_id: None,
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("seed semantic document");
+
+    let provider = Arc::new(
+        atlas_server::embeddings::DeterministicEmbeddingProvider::new("atlas-test-embedding", 1536)
+            .expect("provider"),
+    );
+    PgSemanticIndexWriter::new(db.conn().clone(), provider)
+        .index_chunks(&[SemanticIndexChunk {
+            workspace_id,
+            kind: ResourceKind::Document,
+            resource_id: semantic_only.id.0,
+            source: SemanticSearchSource::Content,
+            chunk_ordinal: 0,
+            content_hash: query.to_owned(),
+            text: query.to_owned(),
+            excerpt: "conceptually related excerpt".to_owned(),
+        }])
+        .await
+        .expect("index semantic chunk");
+
+    (lexical_only.id.0, semantic_only.id.0)
+}
+
+#[tokio::test]
+async fn hybrid_mode_returns_what_neither_arm_finds_alone() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, user) =
+        support::login_user_with_workspace(&server, &db, "search-hybrid").await;
+    let token = client.token().expect("must be logged in");
+    let http = reqwest::Client::new();
+    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+
+    let query = "quarterly retention policy";
+    let (lexical_only, semantic_only) = seed_split_corpus(&db, &ctx, ws.id, query).await;
+    let encoded = query.replace(' ', "%20");
+
+    let lexical_ids = hit_ids(
+        get_search(
+            &http,
+            token,
+            server.base_url(),
+            &ws.slug,
+            &format!("q={encoded}"),
+        )
+        .await,
+    )
+    .await;
+    assert!(lexical_ids.contains(&lexical_only));
+    assert!(
+        !lexical_ids.contains(&semantic_only),
+        "the lexical arm cannot reach a document that shares no word with the query"
+    );
+
+    let semantic_ids = hit_ids(
+        get_search(
+            &http,
+            token,
+            server.base_url(),
+            &ws.slug,
+            &format!("q={encoded}&mode=semantic"),
+        )
+        .await,
+    )
+    .await;
+    assert!(semantic_ids.contains(&semantic_only));
+
+    let hybrid_ids = hit_ids(
+        get_search(
+            &http,
+            token,
+            server.base_url(),
+            &ws.slug,
+            &format!("q={encoded}&mode=hybrid"),
+        )
+        .await,
+    )
+    .await;
+    assert!(
+        hybrid_ids.contains(&lexical_only) && hybrid_ids.contains(&semantic_only),
+        "hybrid must carry both arms' findings, got: {hybrid_ids:?}"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn hybrid_mode_rejects_an_unknown_mode_and_a_recency_sort() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "search-mode-bad").await;
+    let token = client.token().expect("must be logged in");
+    let http = reqwest::Client::new();
+
+    let unknown = get_search(&http, token, server.base_url(), &ws.slug, "q=x&mode=magic").await;
+    assert_eq!(unknown.status().as_u16(), 422);
+
+    let sorted = get_search(
+        &http,
+        token,
+        server.base_url(),
+        &ws.slug,
+        "q=x&mode=hybrid&sort=updated",
+    )
+    .await;
+    assert_eq!(
+        sorted.status().as_u16(),
+        422,
+        "a fused ranking has no recency order to page by"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn hybrid_mode_falls_back_to_lexical_when_embeddings_are_unavailable() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let mut state = atlas_server::state::AppState::for_test(db.conn().clone())
+        .await
+        .expect("test state");
+    state.embedding_provider = None;
+    let server = support::TestServer::spawn_with_state(state).await;
+    let (client, ws, user) =
+        support::login_user_with_workspace(&server, &db, "search-hybrid-off").await;
+    let token = client.token().expect("must be logged in");
+    let http = reqwest::Client::new();
+    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+
+    let query = "quarterly retention policy";
+    let (lexical_only, _) = seed_split_corpus(&db, &ctx, ws.id, query).await;
+    let encoded = query.replace(' ', "%20");
+
+    let hybrid = get_search(
+        &http,
+        token,
+        server.base_url(),
+        &ws.slug,
+        &format!("q={encoded}&mode=hybrid"),
+    )
+    .await;
+    assert_eq!(hybrid.status().as_u16(), 200);
+    let ids = hit_ids(hybrid).await;
+    assert!(
+        ids.contains(&lexical_only),
+        "hybrid degrades to its lexical half instead of failing"
+    );
+
+    let semantic = get_search(
+        &http,
+        token,
+        server.base_url(),
+        &ws.slug,
+        &format!("q={encoded}&mode=semantic"),
+    )
+    .await;
+    assert_eq!(
+        semantic.status().as_u16(),
+        503,
+        "semantic mode has no half to degrade to"
+    );
+
+    db.teardown().await;
+}
+
+async fn hit_ids(response: reqwest::Response) -> Vec<Uuid> {
+    assert_eq!(response.status().as_u16(), 200);
+    let page: Page<SearchHitDto> = response.json().await.expect("search page");
+    page.items.iter().map(|hit| hit.id).collect()
+}

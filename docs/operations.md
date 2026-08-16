@@ -104,6 +104,26 @@ Workspace backfill (`/api/workspaces/{ws}/semantic-search/reindex`, workspace ad
 - `POST` returns `503` when embeddings are disabled or the pgvector schema is missing: queueing work that nothing drains would only grow a backlog an operator would read as progress.
 - Re-run it after changing `ATLAS_EMBEDDINGS_MODEL` or `ATLAS_EMBEDDINGS_DIMENSIONS`; embeddings are keyed by model and dimensions, so the old rows stay but no longer answer queries.
 
+### Hybrid search
+
+`GET /api/workspaces/{ws}/search` takes `mode`: `lexical` (default), `semantic`, or `hybrid`.
+Hybrid fuses the two arms with Reciprocal Rank Fusion, combining them by rank rather than by
+score — a `ts_rank_cd` value and a cosine distance are not comparable quantities. It is the mode
+that answers both "how do we authenticate" against a document that only says "OAuth flow" and a
+literal `ATL-1247`.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `ATLAS_SEARCH_RRF_K` | `60` | RRF damping constant (must be >= 1). Smaller lets one arm's top hit dominate; larger weighs the arms more evenly. 60 is the published default — worth measuring against a real corpus. |
+| `ATLAS_SEARCH_HYBRID_POOL` | `50` | Candidates each arm contributes before fusion. |
+
+- Both non-lexical modes rank by fused relevance, so `sort=updated` is rejected with `422`.
+- Fusion happens over the two candidate pools only, so a fused result set pages no deeper than
+  the pool: this mode is for finding the answer in the first few hits, not for scrolling a corpus.
+- `mode=hybrid` falls back to lexical results when embeddings are unavailable — those results are
+  correct, only less complete. `mode=semantic` returns `503` instead, rather than silently
+  answering from a different retriever than the one asked for.
+
 ### Rate limiting
 
 The authenticated API surface is rate-limited per principal (the resolved user or

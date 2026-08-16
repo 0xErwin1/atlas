@@ -15,6 +15,7 @@ pub mod crypto;
 pub mod dispatcher;
 pub mod embeddings;
 pub mod error;
+pub mod hybrid_search;
 pub mod live;
 pub mod middleware;
 pub mod persistence;

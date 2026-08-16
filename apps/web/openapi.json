@@ -7771,6 +7771,15 @@
             "schema": {
               "type": "boolean"
             }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "description": "Retrieval mode: lexical (default) | semantic | hybrid. semantic and hybrid rank by fused relevance and require sort=relevance; hybrid falls back to lexical results when embeddings are unavailable.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -7869,7 +7878,10 @@
             "description": "Workspace not found or principal has no access"
           },
           "422": {
-            "description": "Invalid input: absent q, malformed cursor, or cursor/sort mismatch"
+            "description": "Invalid input: absent q, unknown mode, malformed cursor, or cursor/sort mismatch"
+          },
+          "503": {
+            "description": "mode=semantic while embeddings are disabled or their schema is unavailable"
           }
         },
         "security": [
