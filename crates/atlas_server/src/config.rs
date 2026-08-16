@@ -1,6 +1,15 @@
 use base64::{Engine, engine::general_purpose::STANDARD};
 use std::fmt;
 
+/// Vector width the `search_embeddings.embedding` column is declared with.
+///
+/// The DDL (`migration::m20260708_000039_search_embeddings`) hardcodes
+/// `vector(1536)`, and Postgres rejects an insert of any other width. Nothing in
+/// the embedding pipeline reconciles the two, so a configured dimension that
+/// disagrees with the column only surfaces on the first insert — long after
+/// startup, once a document write has already been accepted.
+pub const SCHEMA_EMBEDDING_DIMENSIONS: usize = 1536;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EmbeddingProviderKind {
     Deterministic,
@@ -46,10 +55,7 @@ impl EmbeddingConfig {
         }
         let dimensions = read("ATLAS_EMBEDDINGS_DIMENSIONS")
             .and_then(|value| value.parse::<usize>().ok())
-            .unwrap_or(1536);
-        if dimensions == 0 {
-            return Err("ATLAS_EMBEDDINGS_DIMENSIONS must be greater than zero".to_owned());
-        }
+            .unwrap_or(SCHEMA_EMBEDDING_DIMENSIONS);
         let config = Self {
             enabled,
             provider,
@@ -73,8 +79,13 @@ impl EmbeddingConfig {
     }
 
     pub fn validate_for_provider(&self) -> Result<(), String> {
-        if self.dimensions == 0 {
-            return Err("ATLAS_EMBEDDINGS_DIMENSIONS must be greater than zero".to_owned());
+        if self.dimensions != SCHEMA_EMBEDDING_DIMENSIONS {
+            return Err(format!(
+                "ATLAS_EMBEDDINGS_DIMENSIONS is {} but the search_embeddings.embedding column is \
+                 vector({SCHEMA_EMBEDDING_DIMENSIONS}); use a model with \
+                 {SCHEMA_EMBEDDING_DIMENSIONS} dimensions",
+                self.dimensions
+            ));
         }
         if self.model.trim().is_empty() {
             return Err("ATLAS_EMBEDDINGS_MODEL must not be empty".to_owned());
@@ -118,7 +129,7 @@ impl Default for EmbeddingConfig {
             enabled: false,
             provider: EmbeddingProviderKind::Deterministic,
             model: "atlas-test-embedding".to_owned(),
-            dimensions: 1536,
+            dimensions: SCHEMA_EMBEDDING_DIMENSIONS,
             api_key: None,
             base_url: "https://api.openai.com/v1".to_owned(),
             batch_size: 64,

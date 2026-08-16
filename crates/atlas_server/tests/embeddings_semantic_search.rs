@@ -3,7 +3,7 @@ use atlas_domain::{
     semantic_search::{EmbeddingInput, EmbeddingProvider, ResourceKind, SemanticSearchSource},
 };
 use atlas_server::{
-    config::{EmbeddingConfig, EmbeddingProviderKind},
+    config::{EmbeddingConfig, EmbeddingProviderKind, SCHEMA_EMBEDDING_DIMENSIONS},
     embeddings::DeterministicEmbeddingProvider,
     semantic_indexer::{
         AttachmentText, ChecklistText, CommentText, DocumentIndexInput, SubtaskText,
@@ -93,6 +93,26 @@ fn semantic_search_embeddings_openai_compatible_config_requires_key_and_dimensio
     });
     assert!(bad_dimensions.is_err());
     Ok(())
+}
+
+#[test]
+fn semantic_search_embeddings_config_rejects_dimensions_the_schema_cannot_store() {
+    let mismatched = EmbeddingConfig::from_env_vars(|name| match name {
+        "ATLAS_EMBEDDINGS_ENABLED" => Some("true".to_owned()),
+        "ATLAS_EMBEDDINGS_PROVIDER" => Some("openai_compatible".to_owned()),
+        "ATLAS_EMBEDDINGS_MODEL" => Some("text-embedding-3-small".to_owned()),
+        "ATLAS_EMBEDDINGS_DIMENSIONS" => Some("768".to_owned()),
+        "ATLAS_EMBEDDINGS_API_KEY" => Some("secret".to_owned()),
+        _ => None,
+    });
+
+    let error = mismatched.err().unwrap_or_default();
+
+    assert!(
+        error.contains("768") && error.contains("search_embeddings"),
+        "startup error must name the configured width and the column it cannot fit: {error}"
+    );
+    assert_eq!(SCHEMA_EMBEDDING_DIMENSIONS, 1536);
 }
 
 #[test]

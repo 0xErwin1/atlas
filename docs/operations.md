@@ -82,7 +82,7 @@ and unchanged when embeddings are disabled.
 | `ATLAS_EMBEDDINGS_ENABLED` | `false` | Enables `/api/workspaces/{ws}/semantic-search` and the MCP `semantic_search` tool. Disabled returns `503` on semantic search only. |
 | `ATLAS_EMBEDDINGS_PROVIDER` | `deterministic` | `deterministic`/`test` for offline development, or `openai_compatible` for an OpenAI-compatible embeddings API. |
 | `ATLAS_EMBEDDINGS_MODEL` | `atlas-test-embedding` | Stored with each embedding row; changing it requires re-indexing content for the new model. |
-| `ATLAS_EMBEDDINGS_DIMENSIONS` | `1536` | Must match the provider output and the pgvector column/index size. |
+| `ATLAS_EMBEDDINGS_DIMENSIONS` | `1536` | Must match the provider output. The `search_embeddings.embedding` column is declared `vector(1536)`, so any other value fails startup with an explicit error instead of failing on the first insert. |
 | `ATLAS_EMBEDDINGS_API_KEY` | — | Required only when `ATLAS_EMBEDDINGS_ENABLED=true` and provider is `openai_compatible`. |
 | `ATLAS_EMBEDDINGS_BASE_URL` | `https://api.openai.com/v1` | Base URL for OpenAI-compatible providers. |
 | `ATLAS_EMBEDDINGS_BATCH_SIZE` | `64` | Batch size used by embedding writes/backfills. |
