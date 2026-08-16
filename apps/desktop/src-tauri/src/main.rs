@@ -2,7 +2,7 @@ use atlas_desktop::CloseBehavior;
 use atlas_desktop::{
     DesktopApiRequest, DesktopConfiguration, DesktopError, DesktopPreferences, DesktopSession,
     LifecycleAction, ReqwestTransportFactory, SecretServiceStore, SessionScope, StreamFrame,
-    StreamTermination, SurfaceableWindow, TransportFactory, TransportKind,
+    StreamTermination, SurfaceableWindow, TransportFactory, TransportKind, WindowGeometry,
     classify_workspace_stream_terminal, clear_active_identity, close_behavior, default_log_filter,
     desktop_state_directory_from, install_file_logging, load_active_identity,
     process_workspace_sse_chunk, sanitize_download_file_name, store_active_identity,
@@ -1574,6 +1574,8 @@ pub(crate) fn run_with_client(client: reqwest::Client) {
             if let Err(error) = window.set_zoom(preferences.zoom_factor()) {
                 tracing::warn!(%error, "the persisted zoom factor could not be applied at startup");
             }
+            restore_window_geometry(&window, preferences.window_geometry());
+            track_window_geometry(&window, preferences_directory.clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1603,6 +1605,105 @@ pub(crate) fn run_with_client(client: reqwest::Client) {
             tracing::error!(%error, "the desktop application host failed");
             process::exit(1);
         });
+}
+
+/// Applies a stored geometry to the window, when there is one worth applying.
+///
+/// Size before position, and maximize last: setting a size on a maximized
+/// window is what a restore-down should reveal, not what the window shows now.
+fn restore_window_geometry<R: Runtime>(
+    window: &tauri::WebviewWindow<R>,
+    stored: Option<WindowGeometry>,
+) {
+    let Some(geometry) = stored else {
+        return;
+    };
+    let Some(geometry) = geometry.restorable_on(&monitor_bounds(window)) else {
+        tracing::info!("the stored window geometry is off-screen or unusable; ignoring it");
+        return;
+    };
+
+    if let Err(error) = window.set_size(tauri::PhysicalSize::new(
+        geometry.width(),
+        geometry.height(),
+    )) {
+        tracing::warn!(%error, "the stored window size could not be applied");
+    }
+    if let Err(error) =
+        window.set_position(tauri::PhysicalPosition::new(geometry.x(), geometry.y()))
+    {
+        tracing::warn!(%error, "the stored window position could not be applied");
+    }
+    if geometry.maximized()
+        && let Err(error) = window.maximize()
+    {
+        tracing::warn!(%error, "the window could not be maximized at startup");
+    }
+}
+
+/// Every monitor as `(x, y, width, height)` in physical pixels.
+///
+/// An empty result means the query failed; the geometry check treats that as
+/// "cannot tell" rather than "no monitors", so a failed enumeration does not
+/// throw away the user's window position.
+fn monitor_bounds<R: Runtime>(window: &tauri::WebviewWindow<R>) -> Vec<(i32, i32, u32, u32)> {
+    window
+        .available_monitors()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|monitor| {
+            let position = monitor.position();
+            let size = monitor.size();
+            (position.x, position.y, size.width, size.height)
+        })
+        .collect()
+}
+
+/// Persists the window's geometry as it changes.
+///
+/// Written when the window loses focus or is closed rather than on every move
+/// and resize event: dragging a window emits those continuously, and one file
+/// write per frame is a lot of disk for a preference nobody reads until the
+/// next launch.
+fn track_window_geometry<R: Runtime>(window: &tauri::WebviewWindow<R>, directory: PathBuf) {
+    let source = window.clone();
+
+    window.on_window_event(move |event| {
+        let should_persist = matches!(
+            event,
+            tauri::WindowEvent::Focused(false)
+                | tauri::WindowEvent::CloseRequested { .. }
+                | tauri::WindowEvent::Destroyed
+        );
+        if !should_persist {
+            return;
+        }
+
+        if let Some(current) = current_window_geometry(&source) {
+            let stored = DesktopPreferences::load(&directory);
+            let geometry = WindowGeometry::to_store(stored.window_geometry(), current);
+            if let Err(error) = stored.set_window_geometry(geometry).save(&directory) {
+                tracing::warn!(?error, "the window geometry could not be persisted");
+            }
+        }
+    });
+}
+
+/// Reads the window's current geometry, or `None` when the host cannot report it.
+///
+/// What survives a maximized window is decided by `WindowGeometry::to_store`.
+fn current_window_geometry<R: Runtime>(window: &tauri::WebviewWindow<R>) -> Option<WindowGeometry> {
+    let maximized = window.is_maximized().unwrap_or(false);
+    let position = window.outer_position().ok()?;
+    let size = window.outer_size().ok()?;
+
+    Some(WindowGeometry::new(
+        position.x,
+        position.y,
+        size.width,
+        size.height,
+        maximized,
+    ))
 }
 
 fn load_desktop_origin(directory: &std::path::Path) -> Result<String, DesktopError> {

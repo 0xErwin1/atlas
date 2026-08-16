@@ -130,6 +130,119 @@ pub struct DesktopPreferences {
     start_on_login: bool,
     #[serde(default = "default_system_tray")]
     system_tray: bool,
+    /// Absent until the window has been moved or resized at least once, so a
+    /// fresh install still opens at the size `tauri.conf.json` asks for, and the
+    /// stored file keeps the exact shape it had before this preference existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    window_geometry: Option<WindowGeometry>,
+}
+
+/// The window's last position and size, in physical pixels.
+///
+/// Physical rather than logical because that is what Tauri reports and accepts
+/// without a scale factor, and a stored geometry that has to be re-scaled by a
+/// possibly different monitor is a geometry that drifts every restart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WindowGeometry {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    #[serde(default)]
+    maximized: bool,
+}
+
+/// Smallest window worth restoring. A stored size below this is treated as
+/// corrupt: restoring it would open a window the user cannot use or find.
+const MIN_RESTORED_WINDOW_SIZE: u32 = 320;
+
+impl WindowGeometry {
+    pub fn new(x: i32, y: i32, width: u32, height: u32, maximized: bool) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+            maximized,
+        }
+    }
+
+    pub fn x(&self) -> i32 {
+        self.x
+    }
+
+    pub fn y(&self) -> i32 {
+        self.y
+    }
+
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    pub fn maximized(&self) -> bool {
+        self.maximized
+    }
+
+    /// Whether this geometry is worth restoring at all.
+    fn is_usable(&self) -> bool {
+        self.width >= MIN_RESTORED_WINDOW_SIZE && self.height >= MIN_RESTORED_WINDOW_SIZE
+    }
+
+    /// Whether the window would land on one of `monitors`, each given as
+    /// `(x, y, width, height)` in physical pixels.
+    ///
+    /// Checked against the window's top-left corner plus a margin, so a window
+    /// stored on a monitor that is no longer attached — an undocked laptop, a
+    /// display swapped for another — reopens where it can be seen instead of
+    /// off-screen where it cannot be dragged back.
+    pub fn is_visible_on(&self, monitors: &[(i32, i32, u32, u32)]) -> bool {
+        const VISIBLE_MARGIN: i32 = 80;
+
+        monitors.iter().any(|&(mx, my, mw, mh)| {
+            let right = mx.saturating_add(i32::try_from(mw).unwrap_or(i32::MAX));
+            let bottom = my.saturating_add(i32::try_from(mh).unwrap_or(i32::MAX));
+
+            self.x + VISIBLE_MARGIN >= mx
+                && self.y + VISIBLE_MARGIN >= my
+                && self.x <= right.saturating_sub(VISIBLE_MARGIN)
+                && self.y <= bottom.saturating_sub(VISIBLE_MARGIN)
+        })
+    }
+
+    /// The geometry worth writing after a change.
+    ///
+    /// While the window is maximized its reported rectangle is the whole
+    /// screen, so storing it would make the next restore-down fill the display
+    /// and lose the size the user actually chose. The previously stored
+    /// rectangle is kept in that case and only the maximized flag moves.
+    pub fn to_store(previous: Option<Self>, current: Self) -> Self {
+        match (current.maximized, previous) {
+            (true, Some(previous)) if previous.is_usable() => Self {
+                maximized: true,
+                ..previous
+            },
+            _ => current,
+        }
+    }
+
+    /// The geometry to restore on this set of monitors, or `None` when the
+    /// stored one cannot be trusted.
+    pub fn restorable_on(self, monitors: &[(i32, i32, u32, u32)]) -> Option<Self> {
+        if !self.is_usable() {
+            return None;
+        }
+        // An empty monitor list means the host could not enumerate displays;
+        // trusting the stored position is better than discarding it over a
+        // failed query.
+        if !monitors.is_empty() && !self.is_visible_on(monitors) {
+            return None;
+        }
+        Some(self)
+    }
 }
 
 impl DesktopPreferences {
@@ -138,6 +251,7 @@ impl DesktopPreferences {
         zoom_factor: DEFAULT_ZOOM_FACTOR,
         start_on_login: false,
         system_tray: true,
+        window_geometry: None,
     };
 
     /// Resolves stored preference bytes to the effective value, falling back to the safe
@@ -151,6 +265,7 @@ impl DesktopPreferences {
                 zoom_factor: clamp_zoom(preferences.zoom_factor),
                 start_on_login: preferences.start_on_login,
                 system_tray: preferences.system_tray,
+                window_geometry: preferences.window_geometry,
             })
             .unwrap_or(Self::DECORATIONS_ON)
     }
@@ -161,6 +276,7 @@ impl DesktopPreferences {
             zoom_factor: DEFAULT_ZOOM_FACTOR,
             start_on_login: false,
             system_tray: true,
+            window_geometry: None,
         }
     }
 
@@ -185,6 +301,19 @@ impl DesktopPreferences {
     pub fn set_start_on_login(self, start_on_login: bool) -> Self {
         Self {
             start_on_login,
+            ..self
+        }
+    }
+
+    pub fn window_geometry(&self) -> Option<WindowGeometry> {
+        self.window_geometry
+    }
+
+    /// Returns a copy with the window geometry replaced, preserving every other
+    /// preference.
+    pub fn set_window_geometry(self, window_geometry: WindowGeometry) -> Self {
+        Self {
+            window_geometry: Some(window_geometry),
             ..self
         }
     }
@@ -1172,6 +1301,99 @@ fn hex_value(byte: u8) -> Result<u8, DesktopError> {
 #[cfg(test)]
 mod desktop_preferences_tests {
     use super::*;
+
+    fn geometry(x: i32, y: i32) -> WindowGeometry {
+        WindowGeometry::new(x, y, 1200, 800, false)
+    }
+
+    const LAPTOP: (i32, i32, u32, u32) = (0, 0, 1920, 1080);
+    const SECOND_SCREEN: (i32, i32, u32, u32) = (1920, 0, 2560, 1440);
+
+    #[test]
+    fn a_geometry_on_an_attached_monitor_is_restored() {
+        let stored = geometry(100, 100);
+
+        assert_eq!(stored.restorable_on(&[LAPTOP, SECOND_SCREEN]), Some(stored),);
+    }
+
+    #[test]
+    fn a_geometry_on_a_monitor_that_is_gone_is_dropped() {
+        // Saved on the second screen, reopened with only the laptop attached:
+        // restoring it would put the window where it cannot be dragged back.
+        let stored = geometry(2400, 300);
+
+        assert_eq!(stored.restorable_on(&[LAPTOP]), None);
+        assert_eq!(stored.restorable_on(&[LAPTOP, SECOND_SCREEN]), Some(stored));
+    }
+
+    #[test]
+    fn a_geometry_survives_a_failed_monitor_query() {
+        let stored = geometry(2400, 300);
+
+        assert_eq!(
+            stored.restorable_on(&[]),
+            Some(stored),
+            "an empty monitor list means the host could not tell, not that the position is bad"
+        );
+    }
+
+    #[test]
+    fn a_window_too_small_to_use_is_not_restored() {
+        let stored = WindowGeometry::new(100, 100, 20, 20, false);
+
+        assert_eq!(stored.restorable_on(&[LAPTOP]), None);
+    }
+
+    #[test]
+    fn maximizing_keeps_the_size_the_user_chose() {
+        let chosen = geometry(200, 150);
+        let maximized = WindowGeometry::new(0, 0, 1920, 1080, true);
+
+        let stored = WindowGeometry::to_store(Some(chosen), maximized);
+
+        assert_eq!(stored.width(), chosen.width());
+        assert_eq!(stored.height(), chosen.height());
+        assert_eq!(stored.x(), chosen.x());
+        assert!(
+            stored.maximized(),
+            "the maximized state itself is remembered"
+        );
+    }
+
+    #[test]
+    fn maximizing_without_a_previous_size_stores_what_it_has() {
+        let maximized = WindowGeometry::new(0, 0, 1920, 1080, true);
+
+        assert_eq!(WindowGeometry::to_store(None, maximized), maximized);
+    }
+
+    #[test]
+    fn an_ordinary_resize_replaces_the_stored_geometry() {
+        let previous = geometry(200, 150);
+        let resized = WindowGeometry::new(300, 250, 1000, 700, false);
+
+        assert_eq!(WindowGeometry::to_store(Some(previous), resized), resized);
+    }
+
+    #[test]
+    fn preferences_without_a_geometry_still_load() {
+        let preferences = DesktopPreferences::resolve(Some(
+            "{\"window_decorations\":true,\"zoom_factor\":1.0,\"start_on_login\":false,\"system_tray\":true}",
+        ));
+
+        assert_eq!(preferences.window_geometry(), None);
+    }
+
+    #[test]
+    fn a_stored_geometry_round_trips_through_the_preference_file() {
+        let stored = DesktopPreferences::DECORATIONS_ON.set_window_geometry(geometry(10, 20));
+        let serialized = serde_json::to_string(&stored).unwrap_or_default();
+
+        assert_eq!(
+            DesktopPreferences::resolve(Some(&serialized)).window_geometry(),
+            Some(geometry(10, 20))
+        );
+    }
 
     #[test]
     fn resolves_to_on_when_no_preference_is_stored() {
