@@ -45,7 +45,7 @@ Seven crates. The dependency direction is strict and **compiler-enforced** — `
 | `atlas_client` | Typed HTTP client speaking `atlas_api`/`atlas_domain` types | atlas_api, atlas_domain, reqwest |
 | `atlas_server` | axum binary; SeaORM **adapters** implementing the ports; auth, permissions, routing | everything |
 | `atlas_cli` | clap CLI over `atlas_client` | atlas_client |
-| `atlas_mcp` | MCP server (rmcp) over `atlas_client` | atlas_client |
+| `atlas_mcp` | MCP server (rmcp) over `atlas_client`; one tool per verb, resources resolved through `catalog.rs` | atlas_client |
 | `migration` | sea-orm-migration tool crate (run via `cargo run -p migration -- <up\|fresh>`) | — |
 
 Persistence pattern: SeaORM entities live in `atlas_server/src/persistence/entities/`, adapters in `.../repos/`, and map to/from domain types — SeaORM types never leak into `atlas_domain`.

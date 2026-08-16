@@ -194,7 +194,7 @@ mod tests {
     use super::*;
 
     const INITIALIZE_REQUEST: &str = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}"#;
-    const TOOL_CALL_REQUEST: &str = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_agent_identity","arguments":{}}}"#;
+    const TOOL_CALL_REQUEST: &str = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"identity","arguments":{"resource":"agent","params":{}}}}"#;
     const TOOLS_LIST_REQUEST: &str =
         r#"{"jsonrpc":"2.0","id":3,"method":"tools/list","params":{}}"#;
 
@@ -332,7 +332,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stateless_http_tools_list_offers_the_single_search_tool() -> anyhow::Result<()> {
+    async fn stateless_http_tools_list_offers_the_verb_shaped_catalog() -> anyhow::Result<()> {
         let backend = Router::new().route("/api/meta", get(mock_meta));
         let (backend_url, backend_server) = spawn_router(backend).await?;
         let router = build_http_router(backend_url, "127.0.0.1".to_string())?;
@@ -353,10 +353,15 @@ mod tests {
                 .iter()
                 .filter_map(|tool| tool.get("name").and_then(serde_json::Value::as_str))
                 .collect();
-            assert!(names.contains(&"search"));
+            assert!(names.contains(&"find"));
+            assert!(names.contains(&"help"));
             assert!(
                 !names.contains(&"semantic_search"),
                 "semantic_search was merged into search's mode parameter"
+            );
+            assert!(
+                !names.contains(&"list_tasks"),
+                "the catalog is verb-shaped: {names:?}"
             );
         }
 

@@ -1,5 +1,6 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+mod catalog;
 mod response;
 
 use atlas_api::dtos::boards_tasks::{
@@ -100,57 +101,34 @@ prefer it after `read_document_lines` or `search_document_content`.\n\
 new or moved item will follow (its predecessor), `after` is the position_key of the item it \
 will precede (its successor). Read them from the position_key field of the matching list tool.\n\
 \n\
-Tools by area (see each tool's own description for parameters):\n\
-- Read: `search`, `get_document`, `read_document_lines`, `search_document_content`, `list_tasks`, `get_task`.\n\
-- Structure: `list_documents`, `list_folders`, `list_boards`, `list_columns`.\n\
-- Workspace context: `list_workspaces`, `list_projects`, `list_members`, `list_tags`, \
-`list_used_labels`, `list_status_templates`, `list_saved_searches`, `list_task_views`.\n\
-- Self: `get_agent_identity` (the calling API key's own id, name, and capability scopes).\n\
-- Links and depth: `get_task_graph` (both directions at once), `get_task_references`, \
-`get_task_backlinks`, `get_document_backlinks`, \
-`list_checklist`, `list_comments`, `list_document_comments`, `list_activity`, \
-`list_workspace_activity`, `list_document_history`, `get_document_revision`, \
-`list_attachments`, `list_task_attachments`, `get_task_attachment`.\n\
-- Security audit (owner/admin only): `get_workspace_audit`, `get_platform_audit`.\n\
-- Atlas-wide default statuses (root/system-admin session only; API keys receive 403): \
-`list_platform_status_templates`, `create_platform_status_template`, \
-`update_platform_status_template`, `delete_platform_status_template`. These seed newly \
-created workspaces; existing workspaces are never retro-updated.\n\
-- Task writes: `create_task`, `update_task`, `move_task`, `delete_task`, \
-`add_task_assignee`, `remove_task_assignee`, `add_comment`, `update_comment`, \
-`delete_comment`.\n\
-- Document and folder writes: `create_document`, `update_document_metadata`, \
-`update_document_content`, `edit_document_lines`, `delete_document`, `move_document`, \
-`move_documents_batch`, `copy_document`, `add_document_comment`, `update_document_comment`, \
-`delete_document_comment`, `create_folder`, `rename_folder`, `move_folder`, `copy_folder`, \
-`delete_folder`.\n\
-- Board, column and tag writes: `create_board`, `update_board`, `delete_board`, \
-`create_column`, `update_column`, `delete_column`, `create_tag`, `update_tag`, `delete_tag`.\n\
-- Graph writes: `add_task_reference`, `add_task_references_batch`, `remove_task_reference`, `add_checklist_item`, \
-`update_checklist_item`, `delete_checklist_item`, `promote_checklist_item`, \
-`create_subtask`, `set_task_parent`, `promote_subtask`.\n\
-- Sub-tasks are ordinary tasks that carry a parent: `create_subtask` takes the same fields as \
-`create_task`, `set_task_parent` converts an existing task into a sub-task, and \
-`promote_subtask` detaches it again.\n\
-- Workspace-settings writes (read the current statuses with `list_status_templates`): \
-`create_project`, `update_project`, `delete_project`, \
-`create_status_template`, `update_status_template`, `delete_status_template`, \
-`create_saved_search`, `rename_saved_search`, `delete_saved_search`, `create_task_view`, \
-`update_task_view`, `delete_task_view`.\n\
-- Webhook management (requires the matching webhooks:* capability): `list_webhooks`, \
-`get_webhook`, `list_webhook_deliveries`, `create_webhook` (returns the one-time whsec_ \
-signing secret), `update_webhook`, `delete_webhook`. These manage workspace webhook \
-subscriptions; they do NOT change the calling key's own capability scopes.\n\
+Tools are verbs. Each takes a `resource` naming what it acts on and a `params` object \
+carrying that resource's own arguments — `find`, `get`, `create`, `update`, `delete`, `move`, \
+`document_edit`, `comment`, `attachment`, `activity`, `identity`. Call `help` for what a verb \
+accepts: with no arguments it lists every verb and its resources, with a verb it summarizes \
+that verb's resources, with both it returns the full parameter schema. An invalid call answers \
+with the accepted set, so a wrong guess costs one round trip.\n\
 \n\
+Worth knowing without a `help` call:\n\
+- `find` covers every listing and search; `get` reads one resource by its identifier.\n\
+- `document_edit` holds the whole content path: `read_lines`, `search_content`, `edit_lines`, \
+`replace_content`.\n\
+- `identity` answers `ping` and `agent` (the calling API key's own id, name, and capability \
+scopes).\n\
+- `activity` covers task and workspace activity, document history, and the owner/admin-only \
+security audits.\n\
+- Sub-tasks are ordinary tasks that carry a parent: `create` `subtask` takes the same fields as \
+`create` `task`, `move` `task_parent` converts an existing task into a sub-task, and `move` \
+`subtask_promotion` detaches it again.\n\
+- Atlas-wide default statuses (`platform_status_template` resources) need a root/system-admin \
+session; API keys receive 403. They seed newly created workspaces; existing workspaces are \
+never retro-updated.\n\
+- Creating a webhook returns its one-time whsec_ signing secret.\n\
 Trash is a root/system-admin human-session workflow. This MCP server authenticates API keys, so it intentionally exposes no Trash list, restore, purge, or purge-status tools; API-key calls to the REST Trash routes receive 403.\n\
 \n\
-Capability gating (agent keys): the tag tools (`list_tags`, `create_tag`, `update_tag`, \
-`delete_tag`) require the matching `config:*` capability; the saved-search tools \
-(`list_saved_searches`, `create_saved_search`, `rename_saved_search`, \
-`delete_saved_search`) require `saved_searches:*`; the task-view tools \
-(`list_task_views`, `create_task_view`, `update_task_view`, `delete_task_view`) require \
-`task_views:*`. Like webhooks, this is resource access control, NOT scope self-mutation: \
-none of these tools change the calling key's own capability scopes.";
+Capability gating (agent keys): `tag` resources require the matching `config:*` capability, \
+`saved_search` resources require `saved_searches:*`, `task_view` resources require \
+`task_views:*`, and `webhook` resources require `webhooks:*`. This is resource access control, \
+NOT scope self-mutation: none of it changes the calling key's own capability scopes.";
 
 /// MCP server backed by an Atlas HTTP API endpoint.
 ///
@@ -2171,21 +2149,869 @@ pub struct DeleteWebhookParams {
     pub confirm: bool,
 }
 
+/// The arguments every verb takes: which resource, and that resource's own
+/// parameters.
+///
+/// The resource's parameters are carried as an opaque object rather than a
+/// branch of a discriminated schema. A `oneOf` per resource is what a strict
+/// reading of JSON Schema would suggest, but clients flatten branch schemas
+/// inconsistently and models lose accuracy against them; validating server-side
+/// and answering with the accepted set is both smaller and more reliable.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CallParams {
+    /// The resource this call acts on. `help` lists the accepted values.
+    pub resource: String,
+    /// The resource's own arguments. `help` returns the accepted set, and an
+    /// invalid call names it in the error.
+    #[serde(default)]
+    pub params: serde_json::Value,
+}
+
+/// Parameters accepted by the `help` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct HelpParams {
+    /// Verb to describe. Omit to list every verb.
+    #[serde(default)]
+    pub verb: Option<String>,
+    /// Resource to describe within `verb`. Omit to summarize the whole verb.
+    #[serde(default)]
+    pub resource: Option<String>,
+}
+
 // ---------------------------------------------------------------------------
 // Tool implementations
 // ---------------------------------------------------------------------------
 
 #[tool_router]
 impl AtlasMcp {
-    #[tool(description = "Ping the Atlas MCP server")]
+    #[tool(
+        description = "List or search Atlas resources. Pick the collection with `resource` and put that collection's own filters in `params`. \
+                       Name the resource with `resource` and pass its own arguments in `params`; \
+                       `help` returns the accepted set, and an invalid call names it in the error."
+    )]
+    async fn find(
+        &self,
+        Parameters(call): Parameters<CallParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        match call.resource.as_str() {
+            "search" => {
+                self.search(catalog::decode("find", "search", call.params)?, ctx)
+                    .await
+            }
+            "tasks" => {
+                self.list_tasks(catalog::decode("find", "tasks", call.params)?, ctx)
+                    .await
+            }
+            "documents" => {
+                self.list_documents(catalog::decode("find", "documents", call.params)?, ctx)
+                    .await
+            }
+            "folders" => {
+                self.list_folders(catalog::decode("find", "folders", call.params)?, ctx)
+                    .await
+            }
+            "boards" => {
+                self.list_boards(catalog::decode("find", "boards", call.params)?, ctx)
+                    .await
+            }
+            "columns" => {
+                self.list_columns(catalog::decode("find", "columns", call.params)?, ctx)
+                    .await
+            }
+            "tags" => {
+                self.list_tags(catalog::decode("find", "tags", call.params)?, ctx)
+                    .await
+            }
+            "used_labels" => {
+                self.list_used_labels(catalog::decode("find", "used_labels", call.params)?, ctx)
+                    .await
+            }
+            "members" => {
+                self.list_members(catalog::decode("find", "members", call.params)?, ctx)
+                    .await
+            }
+            "workspaces" => {
+                self.list_workspaces(catalog::decode("find", "workspaces", call.params)?, ctx)
+                    .await
+            }
+            "projects" => {
+                self.list_projects(catalog::decode("find", "projects", call.params)?, ctx)
+                    .await
+            }
+            "saved_searches" => {
+                self.list_saved_searches(
+                    catalog::decode("find", "saved_searches", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "task_views" => {
+                self.list_task_views(catalog::decode("find", "task_views", call.params)?, ctx)
+                    .await
+            }
+            "checklist" => {
+                self.list_checklist(catalog::decode("find", "checklist", call.params)?, ctx)
+                    .await
+            }
+            "status_templates" => {
+                self.list_status_templates(
+                    catalog::decode("find", "status_templates", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "platform_status_templates" => self.list_platform_status_templates(ctx).await,
+            "webhooks" => {
+                self.list_webhooks(catalog::decode("find", "webhooks", call.params)?, ctx)
+                    .await
+            }
+            "webhook_deliveries" => {
+                self.list_webhook_deliveries(
+                    catalog::decode("find", "webhook_deliveries", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            other => Err(catalog::unknown_resource("find", other)),
+        }
+    }
+
+    #[tool(description = "Read one Atlas resource by its identifier. \
+                       Name the resource with `resource` and pass its own arguments in `params`; \
+                       `help` returns the accepted set, and an invalid call names it in the error.")]
+    async fn get(
+        &self,
+        Parameters(call): Parameters<CallParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        match call.resource.as_str() {
+            "document" => {
+                self.get_document(catalog::decode("get", "document", call.params)?, ctx)
+                    .await
+            }
+            "task" => {
+                self.get_task(catalog::decode("get", "task", call.params)?, ctx)
+                    .await
+            }
+            "task_references" => {
+                self.get_task_references(
+                    catalog::decode("get", "task_references", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "task_graph" => {
+                self.get_task_graph(catalog::decode("get", "task_graph", call.params)?, ctx)
+                    .await
+            }
+            "task_backlinks" => {
+                self.get_task_backlinks(catalog::decode("get", "task_backlinks", call.params)?, ctx)
+                    .await
+            }
+            "document_backlinks" => {
+                self.get_document_backlinks(
+                    catalog::decode("get", "document_backlinks", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "document_revision" => {
+                self.get_document_revision(
+                    catalog::decode("get", "document_revision", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "webhook" => {
+                self.get_webhook(catalog::decode("get", "webhook", call.params)?, ctx)
+                    .await
+            }
+            other => Err(catalog::unknown_resource("get", other)),
+        }
+    }
+
+    #[tool(description = "Create an Atlas resource. \
+                       Name the resource with `resource` and pass its own arguments in `params`; \
+                       `help` returns the accepted set, and an invalid call names it in the error.")]
+    async fn create(
+        &self,
+        Parameters(call): Parameters<CallParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        match call.resource.as_str() {
+            "task" => {
+                self.create_task(catalog::decode("create", "task", call.params)?, ctx)
+                    .await
+            }
+            "subtask" => {
+                self.create_subtask(catalog::decode("create", "subtask", call.params)?, ctx)
+                    .await
+            }
+            "document" => {
+                self.create_document(catalog::decode("create", "document", call.params)?, ctx)
+                    .await
+            }
+            "document_copy" => {
+                self.copy_document(
+                    catalog::decode("create", "document_copy", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "folder" => {
+                self.create_folder(catalog::decode("create", "folder", call.params)?, ctx)
+                    .await
+            }
+            "folder_copy" => {
+                self.copy_folder(catalog::decode("create", "folder_copy", call.params)?, ctx)
+                    .await
+            }
+            "board" => {
+                self.create_board(catalog::decode("create", "board", call.params)?, ctx)
+                    .await
+            }
+            "column" => {
+                self.create_column(catalog::decode("create", "column", call.params)?, ctx)
+                    .await
+            }
+            "tag" => {
+                self.create_tag(catalog::decode("create", "tag", call.params)?, ctx)
+                    .await
+            }
+            "project" => {
+                self.create_project(catalog::decode("create", "project", call.params)?, ctx)
+                    .await
+            }
+            "status_template" => {
+                self.create_status_template(
+                    catalog::decode("create", "status_template", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "platform_status_template" => {
+                self.create_platform_status_template(
+                    catalog::decode("create", "platform_status_template", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "saved_search" => {
+                self.create_saved_search(
+                    catalog::decode("create", "saved_search", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "task_view" => {
+                self.create_task_view(catalog::decode("create", "task_view", call.params)?, ctx)
+                    .await
+            }
+            "webhook" => {
+                self.create_webhook(catalog::decode("create", "webhook", call.params)?, ctx)
+                    .await
+            }
+            "task_assignee" => {
+                self.add_task_assignee(
+                    catalog::decode("create", "task_assignee", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "task_reference" => {
+                self.add_task_reference(
+                    catalog::decode("create", "task_reference", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "task_references_batch" => {
+                self.add_task_references_batch(
+                    catalog::decode("create", "task_references_batch", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "checklist_item" => {
+                self.add_checklist_item(
+                    catalog::decode("create", "checklist_item", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            other => Err(catalog::unknown_resource("create", other)),
+        }
+    }
+
+    #[tool(
+        description = "Update an Atlas resource. PATCH semantics: omit a field to leave it unchanged. \
+                       Name the resource with `resource` and pass its own arguments in `params`; \
+                       `help` returns the accepted set, and an invalid call names it in the error."
+    )]
+    async fn update(
+        &self,
+        Parameters(call): Parameters<CallParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        match call.resource.as_str() {
+            "task" => {
+                self.update_task(catalog::decode("update", "task", call.params)?, ctx)
+                    .await
+            }
+            "document_metadata" => {
+                self.update_document_metadata(
+                    catalog::decode("update", "document_metadata", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "board" => {
+                self.update_board(catalog::decode("update", "board", call.params)?, ctx)
+                    .await
+            }
+            "column" => {
+                self.update_column(catalog::decode("update", "column", call.params)?, ctx)
+                    .await
+            }
+            "tag" => {
+                self.update_tag(catalog::decode("update", "tag", call.params)?, ctx)
+                    .await
+            }
+            "checklist_item" => {
+                self.update_checklist_item(
+                    catalog::decode("update", "checklist_item", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "project" => {
+                self.update_project(catalog::decode("update", "project", call.params)?, ctx)
+                    .await
+            }
+            "status_template" => {
+                self.update_status_template(
+                    catalog::decode("update", "status_template", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "platform_status_template" => {
+                self.update_platform_status_template(
+                    catalog::decode("update", "platform_status_template", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "task_view" => {
+                self.update_task_view(catalog::decode("update", "task_view", call.params)?, ctx)
+                    .await
+            }
+            "webhook" => {
+                self.update_webhook(catalog::decode("update", "webhook", call.params)?, ctx)
+                    .await
+            }
+            "folder_name" => {
+                self.rename_folder(catalog::decode("update", "folder_name", call.params)?, ctx)
+                    .await
+            }
+            "saved_search_name" => {
+                self.rename_saved_search(
+                    catalog::decode("update", "saved_search_name", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            other => Err(catalog::unknown_resource("update", other)),
+        }
+    }
+
+    #[tool(
+        description = "Delete an Atlas resource. Deletion is recoverable for projects, folders, documents, comments and attachments. \
+                       Name the resource with `resource` and pass its own arguments in `params`; \
+                       `help` returns the accepted set, and an invalid call names it in the error."
+    )]
+    async fn delete(
+        &self,
+        Parameters(call): Parameters<CallParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        match call.resource.as_str() {
+            "task" => {
+                self.delete_task(catalog::decode("delete", "task", call.params)?, ctx)
+                    .await
+            }
+            "document" => {
+                self.delete_document(catalog::decode("delete", "document", call.params)?, ctx)
+                    .await
+            }
+            "folder" => {
+                self.delete_folder(catalog::decode("delete", "folder", call.params)?, ctx)
+                    .await
+            }
+            "board" => {
+                self.delete_board(catalog::decode("delete", "board", call.params)?, ctx)
+                    .await
+            }
+            "column" => {
+                self.delete_column(catalog::decode("delete", "column", call.params)?, ctx)
+                    .await
+            }
+            "tag" => {
+                self.delete_tag(catalog::decode("delete", "tag", call.params)?, ctx)
+                    .await
+            }
+            "checklist_item" => {
+                self.delete_checklist_item(
+                    catalog::decode("delete", "checklist_item", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "project" => {
+                self.delete_project(catalog::decode("delete", "project", call.params)?, ctx)
+                    .await
+            }
+            "status_template" => {
+                self.delete_status_template(
+                    catalog::decode("delete", "status_template", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "platform_status_template" => {
+                self.delete_platform_status_template(
+                    catalog::decode("delete", "platform_status_template", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "saved_search" => {
+                self.delete_saved_search(
+                    catalog::decode("delete", "saved_search", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "task_view" => {
+                self.delete_task_view(catalog::decode("delete", "task_view", call.params)?, ctx)
+                    .await
+            }
+            "webhook" => {
+                self.delete_webhook(catalog::decode("delete", "webhook", call.params)?, ctx)
+                    .await
+            }
+            "task_assignee" => {
+                self.remove_task_assignee(
+                    catalog::decode("delete", "task_assignee", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "task_reference" => {
+                self.remove_task_reference(
+                    catalog::decode("delete", "task_reference", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            other => Err(catalog::unknown_resource("delete", other)),
+        }
+    }
+
+    #[tool(
+        name = "move",
+        description = "Reparent, reorder or promote an Atlas resource. \
+                       Name the resource with `resource` and pass its own arguments in `params`; \
+                       `help` returns the accepted set, and an invalid call names it in the error."
+    )]
+    async fn move_resource(
+        &self,
+        Parameters(call): Parameters<CallParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        match call.resource.as_str() {
+            "task" => {
+                self.move_task(catalog::decode("move", "task", call.params)?, ctx)
+                    .await
+            }
+            "document" => {
+                self.move_document(catalog::decode("move", "document", call.params)?, ctx)
+                    .await
+            }
+            "documents_batch" => {
+                self.move_documents_batch(
+                    catalog::decode("move", "documents_batch", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "folder" => {
+                self.move_folder(catalog::decode("move", "folder", call.params)?, ctx)
+                    .await
+            }
+            "task_parent" => {
+                self.set_task_parent(catalog::decode("move", "task_parent", call.params)?, ctx)
+                    .await
+            }
+            "checklist_item_promotion" => {
+                self.promote_checklist_item(
+                    catalog::decode("move", "checklist_item_promotion", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "subtask_promotion" => {
+                self.promote_subtask(
+                    catalog::decode("move", "subtask_promotion", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            other => Err(catalog::unknown_resource("move", other)),
+        }
+    }
+
+    #[tool(
+        description = "Read and edit document content. Editing is compare-and-swap: read to get `head_revision_id`, then pass it as `base_revision_id`. \
+                       Name the resource with `resource` and pass its own arguments in `params`; \
+                       `help` returns the accepted set, and an invalid call names it in the error."
+    )]
+    async fn document_edit(
+        &self,
+        Parameters(call): Parameters<CallParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        match call.resource.as_str() {
+            "read_lines" => {
+                self.read_document_lines(
+                    catalog::decode("document_edit", "read_lines", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "search_content" => {
+                self.search_document_content(
+                    catalog::decode("document_edit", "search_content", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "edit_lines" => {
+                self.edit_document_lines(
+                    catalog::decode("document_edit", "edit_lines", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "replace_content" => {
+                self.update_document_content(
+                    catalog::decode("document_edit", "replace_content", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            other => Err(catalog::unknown_resource("document_edit", other)),
+        }
+    }
+
+    #[tool(description = "Read and write comments on a task or a document. \
+                       Name the resource with `resource` and pass its own arguments in `params`; \
+                       `help` returns the accepted set, and an invalid call names it in the error.")]
+    async fn comment(
+        &self,
+        Parameters(call): Parameters<CallParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        match call.resource.as_str() {
+            "task_list" => {
+                self.list_comments(catalog::decode("comment", "task_list", call.params)?, ctx)
+                    .await
+            }
+            "task_feed" => {
+                self.list_comment_feed(catalog::decode("comment", "task_feed", call.params)?, ctx)
+                    .await
+            }
+            "task_add" => {
+                self.add_comment(catalog::decode("comment", "task_add", call.params)?, ctx)
+                    .await
+            }
+            "task_update" => {
+                self.update_comment(catalog::decode("comment", "task_update", call.params)?, ctx)
+                    .await
+            }
+            "task_delete" => {
+                self.delete_comment(catalog::decode("comment", "task_delete", call.params)?, ctx)
+                    .await
+            }
+            "document_list" => {
+                self.list_document_comments(
+                    catalog::decode("comment", "document_list", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "document_feed" => {
+                self.list_document_comment_feed(
+                    catalog::decode("comment", "document_feed", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "document_add" => {
+                self.add_document_comment(
+                    catalog::decode("comment", "document_add", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "document_update" => {
+                self.update_document_comment(
+                    catalog::decode("comment", "document_update", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "document_delete" => {
+                self.delete_document_comment(
+                    catalog::decode("comment", "document_delete", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            other => Err(catalog::unknown_resource("comment", other)),
+        }
+    }
+
+    #[tool(description = "List, read, upload and delete attachments. \
+                       Name the resource with `resource` and pass its own arguments in `params`; \
+                       `help` returns the accepted set, and an invalid call names it in the error.")]
+    async fn attachment(
+        &self,
+        Parameters(call): Parameters<CallParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<Content, String> {
+        match call.resource.as_str() {
+            "document_list" => self
+                .list_attachments(
+                    catalog::decode("attachment", "document_list", call.params)?,
+                    ctx,
+                )
+                .await
+                .map(Content::text),
+            "task_list" => self
+                .list_task_attachments(
+                    catalog::decode("attachment", "task_list", call.params)?,
+                    ctx,
+                )
+                .await
+                .map(Content::text),
+            "task_get" => {
+                self.get_task_attachment(
+                    catalog::decode("attachment", "task_get", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "task_comment_upload" => self
+                .upload_task_comment_attachment(
+                    catalog::decode("attachment", "task_comment_upload", call.params)?,
+                    ctx,
+                )
+                .await
+                .map(Content::text),
+            "task_comment_list" => self
+                .list_task_comment_attachments(
+                    catalog::decode("attachment", "task_comment_list", call.params)?,
+                    ctx,
+                )
+                .await
+                .map(Content::text),
+            "task_comment_get" => self
+                .get_task_comment_attachment(
+                    catalog::decode("attachment", "task_comment_get", call.params)?,
+                    ctx,
+                )
+                .await
+                .map(Content::text),
+            "task_comment_delete" => self
+                .delete_task_comment_attachment(
+                    catalog::decode("attachment", "task_comment_delete", call.params)?,
+                    ctx,
+                )
+                .await
+                .map(Content::text),
+            "document_comment_upload" => self
+                .upload_document_comment_attachment(
+                    catalog::decode("attachment", "document_comment_upload", call.params)?,
+                    ctx,
+                )
+                .await
+                .map(Content::text),
+            "document_comment_list" => self
+                .list_document_comment_attachments(
+                    catalog::decode("attachment", "document_comment_list", call.params)?,
+                    ctx,
+                )
+                .await
+                .map(Content::text),
+            "document_comment_get" => self
+                .get_document_comment_attachment(
+                    catalog::decode("attachment", "document_comment_get", call.params)?,
+                    ctx,
+                )
+                .await
+                .map(Content::text),
+            "document_comment_delete" => self
+                .delete_document_comment_attachment(
+                    catalog::decode("attachment", "document_comment_delete", call.params)?,
+                    ctx,
+                )
+                .await
+                .map(Content::text),
+            other => Err(catalog::unknown_resource("attachment", other)),
+        }
+    }
+
+    #[tool(
+        description = "Read the activity, audit and revision history of a resource. \
+                       Name the resource with `resource` and pass its own arguments in `params`; \
+                       `help` returns the accepted set, and an invalid call names it in the error."
+    )]
+    async fn activity(
+        &self,
+        Parameters(call): Parameters<CallParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        match call.resource.as_str() {
+            "task" => {
+                self.list_activity(catalog::decode("activity", "task", call.params)?, ctx)
+                    .await
+            }
+            "workspace" => {
+                self.list_workspace_activity(
+                    catalog::decode("activity", "workspace", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "workspace_audit" => {
+                self.get_workspace_audit(
+                    catalog::decode("activity", "workspace_audit", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "platform_audit" => {
+                self.get_platform_audit(
+                    catalog::decode("activity", "platform_audit", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            "document_history" => {
+                self.list_document_history(
+                    catalog::decode("activity", "document_history", call.params)?,
+                    ctx,
+                )
+                .await
+            }
+            other => Err(catalog::unknown_resource("activity", other)),
+        }
+    }
+
+    #[tool(
+        description = "Check the connection and the identity it authenticates as. \
+                       Name the resource with `resource` and pass its own arguments in `params`; \
+                       `help` returns the accepted set, and an invalid call names it in the error."
+    )]
+    async fn identity(
+        &self,
+        Parameters(call): Parameters<CallParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        match call.resource.as_str() {
+            "ping" => Ok(self.ping()),
+            "agent" => {
+                self.get_agent_identity(catalog::decode("identity", "agent", call.params)?, ctx)
+                    .await
+            }
+            other => Err(catalog::unknown_resource("identity", other)),
+        }
+    }
+
+    #[tool(
+        description = "Describe what a verb accepts. With no arguments it lists every verb and its \
+                       resources; with a verb it summarizes that verb's resources; with both it \
+                       returns the resource's full parameter schema. A pre-consolidation tool \
+                       name passed as the verb answers with where that capability moved to."
+    )]
+    fn help(&self, Parameters(params): Parameters<HelpParams>) -> Result<String, String> {
+        let result = match (params.verb.as_deref(), params.resource.as_deref()) {
+            (None, _) => json!({
+                "verbs": catalog::VERBS
+                    .iter()
+                    .map(|verb| json!({
+                        "verb": verb,
+                        "resources": catalog::operations_for(verb)
+                            .map(|op| op.resource)
+                            .collect::<Vec<_>>(),
+                    }))
+                    .collect::<Vec<_>>(),
+            }),
+            (Some(verb), None) => {
+                let resources = catalog::operations_for(verb)
+                    .map(|op| {
+                        json!({
+                            "resource": op.resource,
+                            "summary": op.summary,
+                            "parameters": catalog::accepted_parameters(op),
+                        })
+                    })
+                    .collect::<Vec<_>>();
+
+                if resources.is_empty() {
+                    // A client that still knows a pre-consolidation tool name
+                    // is told where that capability went rather than that its
+                    // name is wrong.
+                    if let Some(op) = catalog::find_by_legacy_name(verb) {
+                        return serde_json::to_string(&json!({
+                            "moved": verb,
+                            "verb": op.verb,
+                            "resource": op.resource,
+                            "summary": op.summary,
+                            "parameters": catalog::accepted_parameters(op),
+                        }))
+                        .map_err(|e| e.to_string());
+                    }
+
+                    return Err(format!(
+                        "unknown verb `{verb}`. Accepted verbs: {}.",
+                        catalog::VERBS.join(" | ")
+                    ));
+                }
+                json!({ "verb": verb, "resources": resources })
+            }
+            (Some(verb), Some(resource)) => {
+                let op = catalog::find_operation(verb, resource)
+                    .ok_or_else(|| catalog::unknown_resource(verb, resource))?;
+
+                json!({
+                    "verb": verb,
+                    "resource": resource,
+                    "summary": op.summary,
+                    "schema": (op.schema)(),
+                })
+            }
+        };
+
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
     fn ping(&self) -> String {
         "pong".to_string()
     }
 
-    #[tool(
-        description = "Search documents and tasks across an Atlas workspace. Retrieval mode is \
-                       chosen from the query unless `mode` says otherwise."
-    )]
     async fn search(
         &self,
         Parameters(params): Parameters<SearchParams>,
@@ -2213,7 +3039,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Retrieve an Atlas document by slug or UUID")]
     async fn get_document(
         &self,
         Parameters(params): Parameters<GetDocumentParams>,
@@ -2240,7 +3065,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Read a bounded inclusive range of numbered document lines")]
     async fn read_document_lines(
         &self,
         Parameters(params): Parameters<ReadDocumentLinesParams>,
@@ -2265,7 +3089,6 @@ impl AtlasMcp {
         serde_json::to_string(&project_document_content_range(result)).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Search a bounded document line range using literal text or a Rust regex")]
     async fn search_document_content(
         &self,
         Parameters(params): Parameters<SearchDocumentContentParams>,
@@ -2301,7 +3124,6 @@ impl AtlasMcp {
         serde_json::to_string(&project_document_content_search(result)).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "List tasks across an Atlas workspace with optional filters")]
     async fn list_tasks(
         &self,
         Parameters(params): Parameters<ListTasksParams>,
@@ -2363,7 +3185,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Retrieve a single Atlas task by readable ID")]
     async fn get_task(
         &self,
         Parameters(params): Parameters<GetTaskParams>,
@@ -2404,9 +3225,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "List documents in a project within an Atlas workspace. Omit `unfiled` for any document, pass true for unfiled documents, or false for filed documents. Pass `preview: true` to add a short body preview per row, enough to tell same-titled documents apart without a full read."
-    )]
     async fn list_documents(
         &self,
         Parameters(params): Parameters<ListDocumentsParams>,
@@ -2431,7 +3249,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "List folders in a project within an Atlas workspace")]
     async fn list_folders(
         &self,
         Parameters(params): Parameters<ListFoldersParams>,
@@ -2454,7 +3271,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "List boards in a project within an Atlas workspace")]
     async fn list_boards(
         &self,
         Parameters(params): Parameters<ListBoardsParams>,
@@ -2477,7 +3293,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "List columns of a board; use column IDs in list_tasks status filters")]
     async fn list_columns(
         &self,
         Parameters(params): Parameters<ListColumnsParams>,
@@ -2496,7 +3311,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "List the registered tag registry for an Atlas workspace")]
     async fn list_tags(
         &self,
         Parameters(params): Parameters<ListTagsParams>,
@@ -2513,9 +3327,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "List labels currently applied to tasks in an Atlas workspace (may include unregistered labels)"
-    )]
     async fn list_used_labels(
         &self,
         Parameters(params): Parameters<ListUsedLabelsParams>,
@@ -2532,9 +3343,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "List workspace members and API-key principals; use IDs in assignee filters"
-    )]
     async fn list_members(
         &self,
         Parameters(params): Parameters<ListMembersParams>,
@@ -2551,7 +3359,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "List all Atlas workspaces accessible to the caller")]
     async fn list_workspaces(
         &self,
         Parameters(_params): Parameters<ListWorkspacesParams>,
@@ -2568,9 +3375,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Report the calling API key's own identity: its id, name, and the capability scopes it holds. Read-only self-inspection; returns a note when the caller is a human, not an agent key."
-    )]
     async fn get_agent_identity(
         &self,
         Parameters(_params): Parameters<GetAgentIdentityParams>,
@@ -2598,7 +3402,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "List projects in an Atlas workspace (cursor-paginated)")]
     async fn list_projects(
         &self,
         Parameters(params): Parameters<ListProjectsParams>,
@@ -2616,7 +3419,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "List saved searches for an Atlas workspace")]
     async fn list_saved_searches(
         &self,
         Parameters(params): Parameters<ListSavedSearchesParams>,
@@ -2633,7 +3435,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "List saved task views (filter presets) for an Atlas workspace")]
     async fn list_task_views(
         &self,
         Parameters(params): Parameters<ListTaskViewsParams>,
@@ -2650,9 +3451,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "List OUTBOUND references from a task — tasks and documents this task links to"
-    )]
     async fn get_task_references(
         &self,
         Parameters(params): Parameters<GetTaskReferencesParams>,
@@ -2669,10 +3467,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Graph of what a task links to: references in both directions, sub-tasks, \
-                       and linked documents, up to `depth` edges away"
-    )]
     async fn get_task_graph(
         &self,
         Parameters(params): Parameters<GetTaskGraphParams>,
@@ -2689,7 +3483,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "List INBOUND backlinks to a task — other tasks that reference this task")]
     async fn get_task_backlinks(
         &self,
         Parameters(params): Parameters<GetTaskBacklinksParams>,
@@ -2706,9 +3499,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "List documents and tasks that link to a given document (inbound backlinks)"
-    )]
     async fn get_document_backlinks(
         &self,
         Parameters(params): Parameters<GetDocumentBacklinksParams>,
@@ -2731,7 +3521,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "List checklist items for a task")]
     async fn list_checklist(
         &self,
         Parameters(params): Parameters<ListChecklistParams>,
@@ -2748,7 +3537,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "List the activity log for a task (moves, assignments, field changes)")]
     async fn list_activity(
         &self,
         Parameters(params): Parameters<ListActivityParams>,
@@ -2765,7 +3553,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "List markdown comments on a task, oldest first")]
     async fn list_comments(
         &self,
         Parameters(params): Parameters<ListCommentsParams>,
@@ -2788,9 +3575,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "List the full authorized task comment feed, including derived links and retained events, oldest first"
-    )]
     async fn list_comment_feed(
         &self,
         Parameters(params): Parameters<ListCommentsParams>,
@@ -2811,9 +3595,6 @@ impl AtlasMcp {
             .map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Upload a file owned by a task comment. Content must be strict padded standard base64."
-    )]
     async fn upload_task_comment_attachment(
         &self,
         Parameters(params): Parameters<UploadTaskCommentAttachmentParams>,
@@ -2840,7 +3621,6 @@ impl AtlasMcp {
         serde_json::to_string(&project_comment_attachment(attachment)).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "List attachment metadata for a task comment")]
     async fn list_task_comment_attachments(
         &self,
         Parameters(params): Parameters<TaskCommentAttachmentParams>,
@@ -2856,7 +3636,6 @@ impl AtlasMcp {
             .map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Download a task comment attachment as standard base64 content")]
     async fn get_task_comment_attachment(
         &self,
         Parameters(params): Parameters<TaskCommentAttachmentParams>,
@@ -2885,10 +3664,6 @@ impl AtlasMcp {
             .map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Delete a task comment attachment. Plain delete, no confirm required \
-                       (consistent with delete_comment, which removes the whole comment)."
-    )]
     async fn delete_task_comment_attachment(
         &self,
         Parameters(params): Parameters<TaskCommentAttachmentParams>,
@@ -2916,14 +3691,6 @@ impl AtlasMcp {
             .map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "List the access-filtered activity feed for an entire workspace. \
-                       Each entry shows who did what on which task (task_readable_id, kind, \
-                       actor with display_name and account_status, payload, created_at). \
-                       Server-side filtering ensures the caller only sees events for tasks \
-                       they can access. Supports actor-type (user|api_key), date range, \
-                       and cursor pagination."
-    )]
     async fn list_workspace_activity(
         &self,
         Parameters(params): Parameters<ListWorkspaceActivityParams>,
@@ -2960,7 +3727,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "List revision metadata for a document (history of edits)")]
     async fn list_document_history(
         &self,
         Parameters(params): Parameters<ListDocumentHistoryParams>,
@@ -2983,9 +3749,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Fetch the full markdown content of a specific document revision by seq number"
-    )]
     async fn get_document_revision(
         &self,
         Parameters(params): Parameters<GetDocumentRevisionParams>,
@@ -3002,7 +3765,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "List attachment metadata for a document (file name, type, size)")]
     async fn list_attachments(
         &self,
         Parameters(params): Parameters<ListAttachmentsParams>,
@@ -3025,7 +3787,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "List attachment metadata for a task (file name, type, size)")]
     async fn list_task_attachments(
         &self,
         Parameters(params): Parameters<ListTaskAttachmentsParams>,
@@ -3042,12 +3803,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Retrieve a task attachment as viewable content. Image attachments are \
-                       returned as an image; textual attachments (text/*, JSON, XML, YAML, TOML) \
-                       are returned as text. Other binary types are rejected. Pass the attachment \
-                       UUID from `list_task_attachments`."
-    )]
     async fn get_task_attachment(
         &self,
         Parameters(params): Parameters<GetTaskAttachmentParams>,
@@ -3101,7 +3856,6 @@ impl AtlasMcp {
         ))
     }
 
-    #[tool(description = "Create a task on a board. Board and column are resolved by name.")]
     async fn create_task(
         &self,
         Parameters(params): Parameters<CreateTaskParams>,
@@ -3163,10 +3917,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Update a task. PATCH semantics: omit a field to leave it unchanged; \
-                       pass JSON null to clear a clearable field (priority, due_date, estimate)."
-    )]
     async fn update_task(
         &self,
         Parameters(params): Parameters<UpdateTaskParams>,
@@ -3202,8 +3952,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Move a task to a different column (resolved by name). \
-                       Errors with the board's column list when the column is not found.")]
     async fn move_task(
         &self,
         Parameters(params): Parameters<MoveTaskParams>,
@@ -3249,8 +3997,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Delete a task permanently. Requires confirm: true. \
-                       This operation is not auto-reversible.")]
     async fn delete_task(
         &self,
         Parameters(params): Parameters<DeleteTaskParams>,
@@ -3271,7 +4017,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Add an assignee (user or API key) to a task.")]
     async fn add_task_assignee(
         &self,
         Parameters(params): Parameters<AddTaskAssigneeParams>,
@@ -3299,7 +4044,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Remove an assignee from a task by their UUID reference.")]
     async fn remove_task_assignee(
         &self,
         Parameters(params): Parameters<RemoveTaskAssigneeParams>,
@@ -3319,9 +4063,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Create a document in a project. Returns compact projection with head_revision_id."
-    )]
     async fn create_document(
         &self,
         Parameters(params): Parameters<CreateDocumentParams>,
@@ -3346,9 +4087,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Update document title or folder (metadata only). PATCH: omit fields to leave unchanged. Use update_document_content to change content."
-    )]
     async fn update_document_metadata(
         &self,
         Parameters(params): Parameters<UpdateDocumentMetadataParams>,
@@ -3372,13 +4110,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Write new content to a document using compare-and-swap. \
-                       Read with get_document detail=full to get head_revision_id + content, \
-                       edit locally, then call with base_revision_id = head_revision_id. \
-                       On revision_conflict: apply base_to_current_patch to your edit and \
-                       retry with base_revision_id = current_revision_id."
-    )]
     async fn update_document_content(
         &self,
         Parameters(params): Parameters<UpdateDocumentContentParams>,
@@ -3407,9 +4138,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Apply a CAS-protected insert, replace, or delete to document lines. Read a document first and pass its head_revision_id as base_revision_id. Insert requires position and content; replace requires start, end, and content; delete requires start and end. On revision_conflict, apply base_to_current_patch and retry with current_revision_id."
-    )]
     async fn edit_document_lines(
         &self,
         Parameters(params): Parameters<EditDocumentLinesParams>,
@@ -3425,10 +4153,6 @@ impl AtlasMcp {
         serde_json::to_string(&project_document_metadata(doc)).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Recoverably delete a document. Requires confirm: true. \
-                       Permanent removal is available only through root/system-admin human Trash purge."
-    )]
     async fn delete_document(
         &self,
         Parameters(params): Parameters<DeleteDocumentParams>,
@@ -3449,9 +4173,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Move a document to a different folder. Omit folder_id to move to the project root."
-    )]
     async fn move_document(
         &self,
         Parameters(params): Parameters<MoveDocumentParams>,
@@ -3472,9 +4193,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Move up to 100 documents independently. Results remain ordered by input and each item is either a moved compact document or a structured problem."
-    )]
     async fn move_documents_batch(
         &self,
         Parameters(params): Parameters<MoveDocumentsBatchParams>,
@@ -3529,9 +4247,6 @@ impl AtlasMcp {
         serde_json::to_string(&results).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Copy a document. Optional folder_id sets the destination; omit to copy into the same folder."
-    )]
     async fn copy_document(
         &self,
         Parameters(params): Parameters<CopyDocumentParams>,
@@ -3550,9 +4265,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Create a folder inside a project. Optional parent_folder_id nests it; omit for project root."
-    )]
     async fn create_folder(
         &self,
         Parameters(params): Parameters<CreateFolderParams>,
@@ -3577,7 +4289,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Rename a folder.")]
     async fn rename_folder(
         &self,
         Parameters(params): Parameters<RenameFolderParams>,
@@ -3601,10 +4312,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Move a folder to a new parent. Omit parent_folder_id to move to the project root. \
-                       Note: ordering within the parent is not supported."
-    )]
     async fn move_folder(
         &self,
         Parameters(params): Parameters<MoveFolderParams>,
@@ -3631,10 +4338,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Copy a folder (recursively copies sub-folders and documents). \
-                       Optional parent_folder_id sets destination; omit to copy under the same parent."
-    )]
     async fn copy_folder(
         &self,
         Parameters(params): Parameters<CopyFolderParams>,
@@ -3659,10 +4362,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Recoverably delete a folder. Requires confirm: true. Documents inside keep \
-                       their folder_id and are hidden until the folder is restored."
-    )]
     async fn delete_folder(
         &self,
         Parameters(params): Parameters<DeleteFolderParams>,
@@ -3688,11 +4387,6 @@ impl AtlasMcp {
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Create a new board in a project. A new board is auto-seeded with the \
-workspace's default columns (statuses), which are returned in the `columns` field of the \
-response — do NOT create those columns again; only add columns for statuses that are missing."
-    )]
     async fn create_board(
         &self,
         Parameters(params): Parameters<CreateBoardParams>,
@@ -3727,7 +4421,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Rename a board. Board resolved by name (partial match) or UUID.")]
     async fn update_board(
         &self,
         Parameters(params): Parameters<UpdateBoardParams>,
@@ -3753,10 +4446,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Delete a board. Requires confirm: true. Soft-deletes only the board row; \
-                       columns and tasks become unreachable from listings but their rows persist."
-    )]
     async fn delete_board(
         &self,
         Parameters(params): Parameters<DeleteBoardParams>,
@@ -3779,11 +4468,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Create a new column on a board. Optional color and ordering anchors: \
-                       before = position_key of the column this one follows, \
-                       after = position_key of the column this one precedes."
-    )]
     async fn create_column(
         &self,
         Parameters(params): Parameters<CreateColumnParams>,
@@ -3809,13 +4493,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Update a column: rename, recolor, or reorder. Column resolved by name on \
-                       the board. Color: omit to leave unchanged, pass null to clear, pass a \
-                       string to set. Reorder with the anchors: before = position_key of the \
-                       column this one follows, after = position_key of the column this one \
-                       precedes."
-    )]
     async fn update_column(
         &self,
         Parameters(params): Parameters<UpdateColumnParams>,
@@ -3850,10 +4527,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Delete a column. Requires confirm: true. The server refuses deletion \
-                       when the column still has tasks — move or delete the tasks first."
-    )]
     async fn delete_column(
         &self,
         Parameters(params): Parameters<DeleteColumnParams>,
@@ -3887,10 +4560,6 @@ response — do NOT create those columns again; only add columns for statuses th
     // below) are gated server-side by the `config:{read,create,update,delete}`
     // capabilities for agent keys. This is resource access control, NOT scope
     // self-mutation: no tag tool edits the calling key's own capability set.
-    #[tool(
-        description = "Create a workspace tag. Idempotent by case-insensitive name; \
-                       returns the existing tag when one already exists."
-    )]
     async fn create_tag(
         &self,
         Parameters(params): Parameters<CreateTagParams>,
@@ -3909,10 +4578,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Update a tag's name and/or color. Omit color to leave it unchanged. \
-                       Note: a tag color cannot be cleared once set (set a new color to change it)."
-    )]
     async fn update_tag(
         &self,
         Parameters(params): Parameters<UpdateTagParams>,
@@ -3939,9 +4604,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Soft-delete a workspace tag. Task label strings are preserved after deletion."
-    )]
     async fn delete_tag(
         &self,
         Parameters(params): Parameters<DeleteTagParams>,
@@ -3970,11 +4632,6 @@ response — do NOT create those columns again; only add columns for statuses th
     // Graph writes: references, checklist, subtasks
     // -----------------------------------------------------------------------
 
-    #[tool(
-        description = "Add a typed reference from a task to another task or document. \
-                       kind must be one of: relates, blocks, parent, spec. \
-                       Supply exactly one of target_task_readable_id or target_document_id."
-    )]
     async fn add_task_reference(
         &self,
         Parameters(params): Parameters<AddTaskReferenceParams>,
@@ -4006,10 +4663,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Add up to 100 typed references to a task. Results remain ordered by input \
-                       and each item is either a created reference or a structured problem."
-    )]
     async fn add_task_references_batch(
         &self,
         Parameters(params): Parameters<BatchAddTaskReferencesParams>,
@@ -4079,8 +4732,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&results).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Remove an outbound reference from a task. \
-                       reference_id is the UUID from get_task_references.")]
     async fn remove_task_reference(
         &self,
         Parameters(params): Parameters<RemoveTaskReferenceParams>,
@@ -4105,11 +4756,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Add a checklist item to a task. Optional ordering anchors: \
-                       before = position_key of the item this one follows, \
-                       after = position_key of the item this one precedes."
-    )]
     async fn add_checklist_item(
         &self,
         Parameters(params): Parameters<AddChecklistItemParams>,
@@ -4132,11 +4778,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Update a checklist item (PATCH). Omit title or checked to leave unchanged. \
-                       Optional ordering anchors: before = position_key of the item this one \
-                       follows, after = position_key of the item this one precedes."
-    )]
     async fn update_checklist_item(
         &self,
         Parameters(params): Parameters<UpdateChecklistItemParams>,
@@ -4165,7 +4806,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Delete a checklist item from a task.")]
     async fn delete_checklist_item(
         &self,
         Parameters(params): Parameters<DeleteChecklistItemParams>,
@@ -4190,7 +4830,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Post a markdown comment on a task (max 10 000 characters)")]
     async fn add_comment(
         &self,
         Parameters(params): Parameters<AddCommentParams>,
@@ -4209,10 +4848,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Edit a task comment's body (max 10 000 characters). Only the comment's \
-                       author may edit it; anyone else gets a permission error."
-    )]
     async fn update_comment(
         &self,
         Parameters(params): Parameters<UpdateCommentParams>,
@@ -4236,10 +4871,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Delete a task comment. The comment's author or a workspace admin/owner \
-                       may delete it; anyone else gets a permission error."
-    )]
     async fn delete_comment(
         &self,
         Parameters(params): Parameters<DeleteCommentParams>,
@@ -4264,7 +4895,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "List markdown comments on a document, oldest first")]
     async fn list_document_comments(
         &self,
         Parameters(params): Parameters<ListDocumentCommentsParams>,
@@ -4287,9 +4917,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "List the full authorized document comment feed, including derived links and retained events, oldest first"
-    )]
     async fn list_document_comment_feed(
         &self,
         Parameters(params): Parameters<ListDocumentCommentsParams>,
@@ -4310,9 +4937,6 @@ response — do NOT create those columns again; only add columns for statuses th
             .map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Upload a file owned by a document comment. Content must be strict padded standard base64."
-    )]
     async fn upload_document_comment_attachment(
         &self,
         Parameters(params): Parameters<UploadDocumentCommentAttachmentParams>,
@@ -4339,7 +4963,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&project_comment_attachment(attachment)).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "List attachment metadata for a document comment")]
     async fn list_document_comment_attachments(
         &self,
         Parameters(params): Parameters<DocumentCommentAttachmentParams>,
@@ -4355,7 +4978,6 @@ response — do NOT create those columns again; only add columns for statuses th
             .map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Download a document comment attachment as standard base64 content")]
     async fn get_document_comment_attachment(
         &self,
         Parameters(params): Parameters<DocumentCommentAttachmentParams>,
@@ -4384,10 +5006,6 @@ response — do NOT create those columns again; only add columns for statuses th
             .map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Delete a document comment attachment. Plain delete, no confirm required \
-                       (consistent with delete_document_comment, which removes the whole comment)."
-    )]
     async fn delete_document_comment_attachment(
         &self,
         Parameters(params): Parameters<DocumentCommentAttachmentParams>,
@@ -4415,7 +5033,6 @@ response — do NOT create those columns again; only add columns for statuses th
             .map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Post a markdown comment on a document (max 10 000 characters)")]
     async fn add_document_comment(
         &self,
         Parameters(params): Parameters<AddDocumentCommentParams>,
@@ -4434,10 +5051,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Edit a document comment's body (max 10 000 characters). Only the comment's \
-                       author may edit it; anyone else gets a permission error."
-    )]
     async fn update_document_comment(
         &self,
         Parameters(params): Parameters<UpdateDocumentCommentParams>,
@@ -4461,10 +5074,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Delete a document comment. The comment's author or a workspace admin/owner \
-                       may delete it; anyone else gets a permission error."
-    )]
     async fn delete_document_comment(
         &self,
         Parameters(params): Parameters<DeleteDocumentCommentParams>,
@@ -4489,10 +5098,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Promote a checklist item to a full task on the specified board and column. \
-                       Returns the new task and the updated checklist item."
-    )]
     async fn promote_checklist_item(
         &self,
         Parameters(params): Parameters<PromoteChecklistItemParams>,
@@ -4528,11 +5133,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Create a subtask under a parent task. A subtask is an ordinary task, \
-                       so it takes the same fields as create_task. Board is inherited from the \
-                       parent; column defaults to the parent's column."
-    )]
     async fn create_subtask(
         &self,
         Parameters(params): Parameters<CreateSubtaskParams>,
@@ -4602,12 +5202,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Convert an existing task into a subtask of another task. The task keeps \
-                       its own board, column and position — only the parent link changes, so a \
-                       subtask may live on a different board than its parent. Use promote_subtask \
-                       to detach it again."
-    )]
     async fn set_task_parent(
         &self,
         Parameters(params): Parameters<SetTaskParentParams>,
@@ -4628,7 +5222,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Promote a subtask to a top-level task, detaching it from its parent.")]
     async fn promote_subtask(
         &self,
         Parameters(params): Parameters<PromoteSubtaskParams>,
@@ -4649,9 +5242,6 @@ response — do NOT create those columns again; only add columns for statuses th
     // Project CRUD
     // -----------------------------------------------------------------------
 
-    #[tool(description = "Create a new project in the workspace. \
-        Returns the created project. \
-        Slug must be URL-safe and unique within the workspace.")]
     async fn create_project(
         &self,
         Parameters(params): Parameters<CreateProjectParams>,
@@ -4676,11 +5266,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Update a project's metadata (name, visibility, task_prefix). \
-        PATCH semantics: omit a field to leave it unchanged. \
-        Returns the updated project."
-    )]
     async fn update_project(
         &self,
         Parameters(params): Parameters<UpdateProjectParams>,
@@ -4704,9 +5289,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Recoverably delete a project. Requires confirm: true. \
-        Descendants are hidden until the project is restored; permanent removal is a separate \
-        root/system-admin human Trash purge workflow.")]
     async fn delete_project(
         &self,
         Parameters(params): Parameters<DeleteProjectParams>,
@@ -4728,12 +5310,6 @@ response — do NOT create those columns again; only add columns for statuses th
     // Status template CRUD
     // -----------------------------------------------------------------------
 
-    #[tool(
-        description = "List the status templates of a workspace, ordered by position. \
-        Returns each template's id, name, color, position_key and updated_at — the id is what \
-        update_status_template and delete_status_template take, and the position_key is what \
-        before/after anchors take."
-    )]
     async fn list_status_templates(
         &self,
         Parameters(params): Parameters<ListStatusTemplatesParams>,
@@ -4750,10 +5326,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Create a workspace status template. \
-        Optional color swatch and ordering anchors: before = position_key of the template this \
-        one follows, after = position_key of the template this one precedes. \
-        Returns the created template.")]
     async fn create_status_template(
         &self,
         Parameters(params): Parameters<CreateStatusTemplateParams>,
@@ -4777,13 +5349,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Update a workspace status template: rename, recolor, or reorder. \
-        name and color are optional PATCH fields; color accepts null to clear. \
-        Reorder with the anchors: before = position_key of the template this one follows, \
-        after = position_key of the template this one precedes. \
-        Returns the updated template."
-    )]
     async fn update_status_template(
         &self,
         Parameters(params): Parameters<UpdateStatusTemplateParams>,
@@ -4814,10 +5379,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Delete a workspace status template. Plain delete, no confirm required. \
-        Returns {deleted: true, id}."
-    )]
     async fn delete_status_template(
         &self,
         Parameters(params): Parameters<DeleteStatusTemplateParams>,
@@ -4843,10 +5404,6 @@ response — do NOT create those columns again; only add columns for statuses th
     // Platform status template CRUD (Atlas-wide defaults, admin session only)
     // -----------------------------------------------------------------------
 
-    #[tool(
-        description = "List the Atlas-wide default statuses new workspaces are seeded from. \
-        Requires a root/system-admin session token; API keys receive 403."
-    )]
     async fn list_platform_status_templates(
         &self,
         ctx: RequestContext<RoleServer>,
@@ -4865,9 +5422,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Create an Atlas-wide default status, appended last. \
-        Affects workspaces created afterwards, never existing ones. \
-        Requires a root/system-admin session token; API keys receive 403.")]
     async fn create_platform_status_template(
         &self,
         Parameters(params): Parameters<CreatePlatformStatusTemplateParams>,
@@ -4891,12 +5445,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Update an Atlas-wide default status (rename, recolor, reorder). \
-        color accepts null to clear. Reorder with the anchors: before = position_key of the \
-        status this one follows, after = position_key of the status this one precedes. \
-        Requires a root/system-admin session token; API keys receive 403."
-    )]
     async fn update_platform_status_template(
         &self,
         Parameters(params): Parameters<UpdatePlatformStatusTemplateParams>,
@@ -4927,12 +5475,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Delete an Atlas-wide default status. Plain delete, no confirm required. \
-        Existing workspaces keep the statuses they were seeded with. \
-        Requires a root/system-admin session token; API keys receive 403. \
-        Returns {deleted: true, id}."
-    )]
     async fn delete_platform_status_template(
         &self,
         Parameters(params): Parameters<DeletePlatformStatusTemplateParams>,
@@ -4962,8 +5504,6 @@ response — do NOT create those columns again; only add columns for statuses th
     // self-mutation: no tool here edits the calling key's own capability set.
     // -----------------------------------------------------------------------
 
-    #[tool(description = "Create a saved search in the workspace. \
-        Returns the created saved search with its id for future rename or delete.")]
     async fn create_saved_search(
         &self,
         Parameters(params): Parameters<CreateSavedSearchParams>,
@@ -4985,9 +5525,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Rename a saved search. \
-        To change the query, delete and recreate. \
-        Returns the updated saved search.")]
     async fn rename_saved_search(
         &self,
         Parameters(params): Parameters<RenameSavedSearchParams>,
@@ -5011,10 +5548,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Delete a saved search. Plain delete, no confirm required. \
-        Returns {deleted: true, id}."
-    )]
     async fn delete_saved_search(
         &self,
         Parameters(params): Parameters<DeleteSavedSearchParams>,
@@ -5044,9 +5577,6 @@ response — do NOT create those columns again; only add columns for statuses th
     // self-mutation: no tool here edits the calling key's own capability set.
     // -----------------------------------------------------------------------
 
-    #[tool(description = "Create a task view (filter preset) in the workspace. \
-        Pass an empty filters object {} for an all-workspace view. \
-        Returns the created task view.")]
     async fn create_task_view(
         &self,
         Parameters(params): Parameters<CreateTaskViewParams>,
@@ -5071,11 +5601,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Update a task view. Both name and filters are required — \
-        this is a full replacement, not a PATCH. \
-        Returns the updated task view."
-    )]
     async fn update_task_view(
         &self,
         Parameters(params): Parameters<UpdateTaskViewParams>,
@@ -5105,10 +5630,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Delete a task view. Plain delete, no confirm required. \
-        Returns {deleted: true, id}."
-    )]
     async fn delete_task_view(
         &self,
         Parameters(params): Parameters<DeleteTaskViewParams>,
@@ -5130,16 +5651,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "List the security audit log for a workspace (owner/admin only). \
-                       Returns who performed each privileged action (membership changes, \
-                       permission grants, API key lifecycle), with enriched actor details \
-                       (display_name, account_status for users; key_type for API keys). \
-                       Returns 403 if the caller is not a workspace owner or admin — \
-                       audit requires workspace owner/admin or platform admin. \
-                       Supports actor-type (user|api_key), action verb, date range, \
-                       and cursor pagination."
-    )]
     async fn get_workspace_audit(
         &self,
         Parameters(params): Parameters<GetWorkspaceAuditParams>,
@@ -5178,15 +5689,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "List the platform-wide security audit log (platform admin only). \
-                       Returns platform-scoped events (user lifecycle: created, disabled, \
-                       enabled, password reset, activation; system-admin flag changes). \
-                       Returns 403 if the caller is not a platform admin — \
-                       audit requires workspace owner/admin or platform admin. \
-                       Supports actor-type (user|api_key), action verb, date range, \
-                       and cursor pagination."
-    )]
     async fn get_platform_audit(
         &self,
         Parameters(params): Parameters<GetPlatformAuditParams>,
@@ -5234,10 +5736,6 @@ response — do NOT create those columns again; only add columns for statuses th
     // scopes.
     // -----------------------------------------------------------------------
 
-    #[tool(
-        description = "List webhook subscriptions in a workspace (cursor-paginated). \
-        Requires the webhooks:read capability."
-    )]
     async fn list_webhooks(
         &self,
         Parameters(params): Parameters<ListWebhooksParams>,
@@ -5254,10 +5752,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Retrieve a single webhook subscription by UUID (no secret). \
-        Requires the webhooks:read capability."
-    )]
     async fn get_webhook(
         &self,
         Parameters(params): Parameters<GetWebhookParams>,
@@ -5275,10 +5769,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "List delivery attempts for a webhook, newest first (cursor-paginated). \
-        Requires the webhooks:read capability."
-    )]
     async fn list_webhook_deliveries(
         &self,
         Parameters(params): Parameters<ListWebhookDeliveriesParams>,
@@ -5301,11 +5791,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Create a webhook subscription. Requires the webhooks:create capability. \
-        The response carries the one-time signing secret (whsec_…) under `secret`; it is \
-        shown exactly once and never retrievable again — store it immediately."
-    )]
     async fn create_webhook(
         &self,
         Parameters(params): Parameters<CreateWebhookParams>,
@@ -5332,11 +5817,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Update a webhook subscription (PATCH: omit a field to leave it \
-        unchanged). Requires the webhooks:update capability. The signing secret is never \
-        rotated through this tool."
-    )]
     async fn update_webhook(
         &self,
         Parameters(params): Parameters<UpdateWebhookParams>,
@@ -5366,10 +5846,6 @@ response — do NOT create those columns again; only add columns for statuses th
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
-    #[tool(
-        description = "Delete a webhook subscription. Requires confirm: true and the \
-        webhooks:delete capability. Soft-deletes the subscription."
-    )]
     async fn delete_webhook(
         &self,
         Parameters(params): Parameters<DeleteWebhookParams>,
@@ -5517,8 +5993,26 @@ mod tests {
             .collect()
     }
 
+    /// Builds a call for a capability named the way it was before the catalog
+    /// was consolidated, routing it through the verb that now carries it.
+    ///
+    /// Tests keep naming the capability, not the transport shape, so they go on
+    /// asserting behavior instead of being rewritten around the dispatcher.
     fn call_tool_params(name: &str, arguments: serde_json::Value) -> CallToolRequestParams {
-        CallToolRequestParams::new(name.to_string()).with_arguments(
+        let op = catalog::find_by_legacy_name(name)
+            .unwrap_or_else(|| panic!("`{name}` is not in the operation catalog"));
+
+        call_resource_params(op.verb, op.resource, arguments)
+    }
+
+    fn call_resource_params(
+        verb: &str,
+        resource: &str,
+        params: serde_json::Value,
+    ) -> CallToolRequestParams {
+        let arguments = serde_json::json!({ "resource": resource, "params": params });
+
+        CallToolRequestParams::new(verb.to_string()).with_arguments(
             arguments
                 .as_object()
                 .expect("tool arguments are an object")
@@ -5603,10 +6097,15 @@ mod tests {
 
         let tools = listed_tool_names(AtlasMcp::new(base_url, "atlas_test").unwrap()).await;
 
-        assert!(tools.iter().any(|name| name == "search"));
+        assert!(tools.iter().any(|name| name == "find"));
         assert!(
             !tools.iter().any(|name| name == "semantic_search"),
-            "the semantic tool was merged into search"
+            "the semantic tool was merged into search's mode parameter"
+        );
+        assert_eq!(
+            tools.len(),
+            catalog::VERBS.len() + 1,
+            "the catalog is the verbs plus help, not one tool per resource: {tools:?}"
         );
     }
 
@@ -5997,7 +6496,6 @@ mod tests {
 
     #[test]
     fn webhook_management_tools_are_registered() {
-        let router = AtlasMcp::tool_router();
         for name in [
             "list_webhooks",
             "get_webhook",
@@ -6007,15 +6505,14 @@ mod tests {
             "delete_webhook",
         ] {
             assert!(
-                router.has_route(name),
-                "expected MCP tool `{name}` to be registered"
+                catalog::find_by_legacy_name(name).is_some(),
+                "expected `{name}` to stay reachable through the consolidated catalog"
             );
         }
     }
 
     #[test]
     fn workspace_status_template_tools_are_registered() {
-        let router = AtlasMcp::tool_router();
         for name in [
             "list_status_templates",
             "create_status_template",
@@ -6023,15 +6520,14 @@ mod tests {
             "delete_status_template",
         ] {
             assert!(
-                router.has_route(name),
-                "expected MCP tool `{name}` to be registered"
+                catalog::find_by_legacy_name(name).is_some(),
+                "expected `{name}` to stay reachable through the consolidated catalog"
             );
         }
     }
 
     #[test]
     fn platform_status_template_tools_are_registered() {
-        let router = AtlasMcp::tool_router();
         for name in [
             "list_platform_status_templates",
             "create_platform_status_template",
@@ -6039,40 +6535,240 @@ mod tests {
             "delete_platform_status_template",
         ] {
             assert!(
-                router.has_route(name),
-                "expected MCP tool `{name}` to be registered"
+                catalog::find_by_legacy_name(name).is_some(),
+                "expected `{name}` to stay reachable through the consolidated catalog"
             );
         }
     }
 
-    #[test]
-    fn search_is_the_only_retrieval_tool() {
-        let router = AtlasMcp::tool_router();
-        assert!(router.has_route("search"));
+    /// The advertised catalog is what every client pays for on every session,
+    /// before it asks anything. Consolidating took it from 112 tools and ~93 KB
+    /// to 12 and ~13 KB; this bound fails if the per-resource detail creeps back
+    /// into the tool descriptions, which would spend the saving without
+    /// restoring the names.
+    #[tokio::test]
+    async fn the_advertised_catalog_stays_small() {
+        let (base_url, _requests) = serve_recording_atlas(vec![]);
+        let client =
+            start_mcp_client(AtlasMcp::new(base_url, "atlas_test").expect("server config")).await;
+
+        let tools = client.list_all_tools().await.expect("tools/list succeeds");
+        let bytes = serde_json::to_string(&tools)
+            .expect("tools/list serializes")
+            .len();
+
+        assert_eq!(tools.len(), catalog::VERBS.len() + 1);
         assert!(
-            !router.has_route("semantic_search"),
+            bytes < 20_000,
+            "the advertised catalog grew to {bytes} bytes; the per-resource detail belongs in `help`"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unknown_resource_answers_with_the_accepted_ones() {
+        let (base_url, _requests) = serve_recording_atlas(vec![]);
+        let client =
+            start_mcp_client(AtlasMcp::new(base_url, "atlas_test").expect("server config")).await;
+
+        let result = client
+            .call_tool(call_resource_params("get", "taskk", serde_json::json!({})))
+            .await
+            .expect("the call itself succeeds");
+
+        let text = tool_text(&result);
+        assert!(result.is_error.unwrap_or(false), "{text}");
+        assert!(text.contains("unknown resource `taskk`"), "{text}");
+        assert!(text.contains("task_graph"), "{text}");
+        assert!(text.contains("help"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn a_call_missing_a_required_parameter_is_told_which_one() {
+        let (base_url, _requests) = serve_recording_atlas(vec![]);
+        let client =
+            start_mcp_client(AtlasMcp::new(base_url, "atlas_test").expect("server config")).await;
+
+        let result = client
+            .call_tool(call_resource_params(
+                "get",
+                "task",
+                serde_json::json!({ "workspace": "atlas" }),
+            ))
+            .await
+            .expect("the call itself succeeds");
+
+        let text = tool_text(&result);
+        assert!(result.is_error.unwrap_or(false), "{text}");
+        assert!(text.contains("Accepted parameters"), "{text}");
+        assert!(text.contains("readable_id (required)"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn help_answers_at_every_level_of_detail() {
+        let (base_url, _requests) = serve_recording_atlas(vec![]);
+        let client =
+            start_mcp_client(AtlasMcp::new(base_url, "atlas_test").expect("server config")).await;
+
+        let call = |arguments: serde_json::Value| {
+            client.call_tool(
+                CallToolRequestParams::new("help".to_string()).with_arguments(
+                    arguments
+                        .as_object()
+                        .expect("help arguments are an object")
+                        .clone(),
+                ),
+            )
+        };
+
+        let all = call(serde_json::json!({})).await.expect("help succeeds");
+        let all: serde_json::Value =
+            serde_json::from_str(tool_text(&all)).expect("help returns JSON");
+        assert_eq!(
+            all.pointer("/verbs")
+                .and_then(serde_json::Value::as_array)
+                .map(Vec::len)
+                .unwrap_or_default(),
+            catalog::VERBS.len()
+        );
+
+        let verb = call(serde_json::json!({ "verb": "get" }))
+            .await
+            .expect("help succeeds");
+        let verb: serde_json::Value =
+            serde_json::from_str(tool_text(&verb)).expect("help returns JSON");
+        assert!(
+            verb.pointer("/resources")
+                .and_then(serde_json::Value::as_array)
+                .into_iter()
+                .flatten()
+                .any(
+                    |r| r.pointer("/resource").and_then(serde_json::Value::as_str) == Some("task")
+                ),
+            "{verb}"
+        );
+
+        let resource = call(serde_json::json!({ "verb": "get", "resource": "task" }))
+            .await
+            .expect("help succeeds");
+        let resource: serde_json::Value =
+            serde_json::from_str(tool_text(&resource)).expect("help returns JSON");
+        assert!(
+            resource
+                .pointer("/schema/properties/readable_id")
+                .is_some_and(serde_json::Value::is_object),
+            "{resource}"
+        );
+    }
+
+    #[tokio::test]
+    async fn help_tells_a_stale_client_where_its_tool_went() {
+        let (base_url, _requests) = serve_recording_atlas(vec![]);
+        let client =
+            start_mcp_client(AtlasMcp::new(base_url, "atlas_test").expect("server config")).await;
+
+        let result = client
+            .call_tool(
+                CallToolRequestParams::new("help".to_string()).with_arguments(
+                    serde_json::json!({ "verb": "list_tasks" })
+                        .as_object()
+                        .expect("object")
+                        .clone(),
+                ),
+            )
+            .await
+            .expect("help succeeds");
+
+        let moved: serde_json::Value =
+            serde_json::from_str(tool_text(&result)).expect("help returns JSON");
+
+        assert_eq!(
+            moved.pointer("/moved").and_then(serde_json::Value::as_str),
+            Some("list_tasks")
+        );
+        assert_eq!(
+            moved.pointer("/verb").and_then(serde_json::Value::as_str),
+            Some("find")
+        );
+        assert_eq!(
+            moved
+                .pointer("/resource")
+                .and_then(serde_json::Value::as_str),
+            Some("tasks")
+        );
+    }
+
+    #[tokio::test]
+    async fn help_rejects_a_verb_it_does_not_have() {
+        let (base_url, _requests) = serve_recording_atlas(vec![]);
+        let client =
+            start_mcp_client(AtlasMcp::new(base_url, "atlas_test").expect("server config")).await;
+
+        let result = client
+            .call_tool(
+                CallToolRequestParams::new("help".to_string()).with_arguments(
+                    serde_json::json!({ "verb": "frobnicate" })
+                        .as_object()
+                        .expect("object")
+                        .clone(),
+                ),
+            )
+            .await
+            .expect("the call itself succeeds");
+
+        let text = tool_text(&result);
+        assert!(result.is_error.unwrap_or(false), "{text}");
+        assert!(text.contains("unknown verb `frobnicate`"), "{text}");
+        assert!(text.contains("document_edit"), "{text}");
+    }
+
+    #[test]
+    fn search_is_the_only_retrieval_resource() {
+        assert!(catalog::find_operation("find", "search").is_some());
+        assert!(
+            catalog::find_by_legacy_name("semantic_search").is_none(),
             "semantic_search was merged into search's mode parameter"
         );
     }
 
     #[test]
-    fn bounded_document_tools_are_registered() {
+    fn the_advertised_catalog_is_the_verbs_plus_help() {
         let router = AtlasMcp::tool_router();
+
+        for verb in catalog::VERBS {
+            assert!(router.has_route(verb), "verb `{verb}` is not advertised");
+        }
+        assert!(router.has_route("help"));
+    }
+
+    #[test]
+    fn no_per_resource_tool_is_advertised() {
+        let router = AtlasMcp::tool_router();
+
+        for op in catalog::OPERATIONS {
+            assert!(
+                !router.has_route(op.legacy_name) || catalog::VERBS.contains(&op.legacy_name),
+                "`{}` is still advertised as its own tool",
+                op.legacy_name
+            );
+        }
+    }
+
+    #[test]
+    fn bounded_document_tools_are_registered() {
         for name in [
             "read_document_lines",
             "search_document_content",
             "edit_document_lines",
         ] {
             assert!(
-                router.has_route(name),
-                "expected MCP tool `{name}` to be registered"
+                catalog::find_by_legacy_name(name).is_some(),
+                "expected `{name}` to stay reachable through the consolidated catalog"
             );
         }
     }
 
     #[test]
     fn comment_attachment_tools_are_registered() {
-        let router = AtlasMcp::tool_router();
         for name in [
             "list_comment_feed",
             "list_document_comment_feed",
@@ -6086,8 +6782,8 @@ mod tests {
             "delete_document_comment_attachment",
         ] {
             assert!(
-                router.has_route(name),
-                "expected MCP tool `{name}` to be registered"
+                catalog::find_by_legacy_name(name).is_some(),
+                "expected `{name}` to stay reachable through the consolidated catalog"
             );
         }
     }
@@ -6214,6 +6910,46 @@ mod tests {
     fn parse_uri_empty_workspace_rejected() {
         let result = parse_atlas_doc_uri("atlas:////slug");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn get_info_instructions_teach_the_verb_model() {
+        let server = AtlasMcp::new("http://localhost:8080", "test-token").unwrap();
+        let info = server.get_info();
+        let instructions = info.instructions.as_deref().unwrap_or("");
+
+        for verb in catalog::VERBS {
+            assert!(
+                instructions.contains(&format!("`{verb}`")),
+                "instructions must name the `{verb}` tool"
+            );
+        }
+        assert!(
+            instructions.contains("`help`"),
+            "instructions must point at help, which is where the per-resource detail lives"
+        );
+    }
+
+    #[test]
+    fn get_info_instructions_do_not_enumerate_the_resource_catalog() {
+        let server = AtlasMcp::new("http://localhost:8080", "test-token").unwrap();
+        let info = server.get_info();
+        let instructions = info.instructions.as_deref().unwrap_or("");
+
+        // Listing every capability here would put the whole catalog back into
+        // the context of every client on every session, which is the cost the
+        // consolidation exists to remove.
+        for legacy in [
+            "list_tasks",
+            "create_document",
+            "delete_webhook",
+            "add_task_reference",
+        ] {
+            assert!(
+                !instructions.contains(legacy),
+                "instructions still enumerate `{legacy}`; that detail belongs in `help`"
+            );
+        }
     }
 
     #[test]
@@ -6686,25 +7422,6 @@ mod tests {
     }
 
     #[test]
-    fn get_info_instructions_reference_link_tools() {
-        let server = AtlasMcp::new("http://localhost:8080", "test-token").unwrap();
-        let info = server.get_info();
-        let instructions = info.instructions.as_deref().unwrap_or("");
-        assert!(
-            instructions.contains("`get_task_references`"),
-            "instructions must mention get_task_references"
-        );
-        assert!(
-            instructions.contains("`get_task_backlinks`"),
-            "instructions must mention get_task_backlinks"
-        );
-        assert!(
-            instructions.contains("`get_document_backlinks`"),
-            "instructions must mention get_document_backlinks"
-        );
-    }
-
-    #[test]
     fn list_checklist_params_deserializes() {
         let json = r#"{"workspace":"ws","readable_id":"ATL-5"}"#;
         let params: ListChecklistParams = serde_json::from_str(json).unwrap();
@@ -6851,81 +7568,6 @@ mod tests {
         assert_eq!(params.attachment_id, "018f-uuid");
     }
 
-    #[test]
-    fn get_info_instructions_reference_depth_tools() {
-        let server = AtlasMcp::new("http://localhost:8080", "test-token").unwrap();
-        let info = server.get_info();
-        let instructions = info.instructions.as_deref().unwrap_or("");
-        assert!(
-            instructions.contains("`list_checklist`"),
-            "instructions must mention list_checklist"
-        );
-        assert!(
-            instructions.contains("`list_activity`"),
-            "instructions must mention list_activity"
-        );
-        assert!(
-            instructions.contains("`list_document_history`"),
-            "instructions must mention list_document_history"
-        );
-        assert!(
-            instructions.contains("`get_document_revision`"),
-            "instructions must mention get_document_revision"
-        );
-        assert!(
-            instructions.contains("`list_attachments`"),
-            "instructions must mention list_attachments"
-        );
-        assert!(
-            instructions.contains("`list_task_attachments`"),
-            "instructions must mention list_task_attachments"
-        );
-        assert!(
-            instructions.contains("`get_task_attachment`"),
-            "instructions must mention get_task_attachment"
-        );
-        assert!(
-            instructions.contains("`list_workspace_activity`"),
-            "instructions must mention list_workspace_activity"
-        );
-        assert!(
-            instructions.contains("`get_workspace_audit`"),
-            "instructions must mention get_workspace_audit"
-        );
-        assert!(
-            instructions.contains("`get_platform_audit`"),
-            "instructions must mention get_platform_audit"
-        );
-        assert!(
-            instructions.contains("`list_platform_status_templates`"),
-            "instructions must mention list_platform_status_templates"
-        );
-        assert!(
-            instructions.contains("`list_comments`"),
-            "instructions must mention list_comments"
-        );
-        assert!(
-            instructions.contains("`add_comment`"),
-            "instructions must mention add_comment"
-        );
-        assert!(
-            instructions.contains("`delete_comment`"),
-            "instructions must mention delete_comment"
-        );
-        assert!(
-            instructions.contains("`list_document_comments`"),
-            "instructions must mention list_document_comments"
-        );
-        assert!(
-            instructions.contains("`add_document_comment`"),
-            "instructions must mention add_document_comment"
-        );
-        assert!(
-            instructions.contains("`delete_document_comment`"),
-            "instructions must mention delete_document_comment"
-        );
-    }
-
     // -----------------------------------------------------------------------
     // Document + folder write params
     // -----------------------------------------------------------------------
@@ -7043,51 +7685,8 @@ mod tests {
         assert!(params.confirm);
     }
 
-    #[test]
-    fn get_info_instructions_reference_document_write_tools() {
-        let server = AtlasMcp::new("http://localhost:8080", "test-token").unwrap();
-        let info = server.get_info();
-        let instructions = info.instructions.as_deref().unwrap_or("");
-        for name in [
-            "create_document",
-            "update_document_content",
-            "edit_document_lines",
-            "delete_document",
-            "move_document",
-            "move_documents_batch",
-            "copy_document",
-            "delete_folder",
-        ] {
-            assert!(
-                instructions.contains(&format!("`{name}`")),
-                "instructions must mention {name}"
-            );
-        }
-    }
-
     /// Guards the tool catalog in the instruction preamble against drift: a tool that is
     /// registered but never named is invisible to agents that plan from the preamble.
-    #[test]
-    fn get_info_instructions_reference_bounded_read_and_status_template_tools() {
-        let server = AtlasMcp::new("http://localhost:8080", "test-token").unwrap();
-        let info = server.get_info();
-        let instructions = info.instructions.as_deref().unwrap_or("");
-        for name in [
-            "read_document_lines",
-            "search_document_content",
-            "list_status_templates",
-            "create_status_template",
-            "update_status_template",
-            "delete_status_template",
-            "list_platform_status_templates",
-        ] {
-            assert!(
-                instructions.contains(&format!("`{name}`")),
-                "instructions must mention {name}"
-            );
-        }
-    }
-
     // -----------------------------------------------------------------------
     // Board / column / tag write params
     // -----------------------------------------------------------------------
@@ -7243,29 +7842,6 @@ mod tests {
         let json = r#"{"workspace":"ws","tag_id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234"}"#;
         let params: DeleteTagParams = serde_json::from_str(json).unwrap();
         assert_eq!(params.tag_id, "018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234");
-    }
-
-    #[test]
-    fn get_info_instructions_reference_board_write_tools() {
-        let server = AtlasMcp::new("http://localhost:8080", "test-token").unwrap();
-        let info = server.get_info();
-        let instructions = info.instructions.as_deref().unwrap_or("");
-        assert!(
-            instructions.contains("`create_board`"),
-            "instructions must mention create_board"
-        );
-        assert!(
-            instructions.contains("`delete_column`"),
-            "instructions must mention delete_column"
-        );
-        assert!(
-            instructions.contains("`create_tag`"),
-            "instructions must mention create_tag"
-        );
-        assert!(
-            instructions.contains("`delete_tag`"),
-            "instructions must mention delete_tag"
-        );
     }
 
     // -----------------------------------------------------------------------
@@ -7720,41 +8296,6 @@ mod tests {
         assert_eq!(params.readable_id, "ATL-5");
     }
 
-    #[test]
-    fn get_info_instructions_reference_graph_write_tools() {
-        let server = AtlasMcp::new("http://localhost:8080", "test-token").unwrap();
-        let info = server.get_info();
-        let instructions = info.instructions.as_deref().unwrap_or("");
-        assert!(
-            instructions.contains("`add_task_reference`"),
-            "instructions must mention add_task_reference"
-        );
-        assert!(
-            instructions.contains("`add_task_references_batch`"),
-            "instructions must mention add_task_references_batch"
-        );
-        assert!(
-            instructions.contains("`remove_task_reference`"),
-            "instructions must mention remove_task_reference"
-        );
-        assert!(
-            instructions.contains("`add_checklist_item`"),
-            "instructions must mention add_checklist_item"
-        );
-        assert!(
-            instructions.contains("`promote_checklist_item`"),
-            "instructions must mention promote_checklist_item"
-        );
-        assert!(
-            instructions.contains("`create_subtask`"),
-            "instructions must mention create_subtask"
-        );
-        assert!(
-            instructions.contains("`promote_subtask`"),
-            "instructions must mention promote_subtask"
-        );
-    }
-
     // -----------------------------------------------------------------------
     // Workspace-settings write param deserialization tests
     // -----------------------------------------------------------------------
@@ -7934,41 +8475,6 @@ mod tests {
         let json = r#"{"workspace":"acme","id":"018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234"}"#;
         let params: DeleteTaskViewParams = serde_json::from_str(json).unwrap();
         assert_eq!(params.id, "018f4a1b-2c3d-7e4f-a5b6-c7d8e9f01234");
-    }
-
-    #[test]
-    fn get_info_instructions_reference_workspace_settings_write_tools() {
-        let server = AtlasMcp::new("http://localhost:8080", "test-token").unwrap();
-        let info = server.get_info();
-        let instructions = info.instructions.as_deref().unwrap_or("");
-        assert!(
-            instructions.contains("`create_project`"),
-            "instructions must mention create_project"
-        );
-        assert!(
-            instructions.contains("`delete_project`"),
-            "instructions must mention delete_project"
-        );
-        assert!(
-            instructions.contains("`create_status_template`"),
-            "instructions must mention create_status_template"
-        );
-        assert!(
-            instructions.contains("`create_saved_search`"),
-            "instructions must mention create_saved_search"
-        );
-        assert!(
-            instructions.contains("`rename_saved_search`"),
-            "instructions must mention rename_saved_search"
-        );
-        assert!(
-            instructions.contains("`create_task_view`"),
-            "instructions must mention create_task_view"
-        );
-        assert!(
-            instructions.contains("`delete_task_view`"),
-            "instructions must mention delete_task_view"
-        );
     }
 
     #[test]
