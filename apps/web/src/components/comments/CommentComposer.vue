@@ -6,7 +6,8 @@
  * banner). On a successful submit (resolved `true`) the draft is cleared.
  */
 import { computed, ref } from 'vue';
-import MarkdownEditor from '@/components/editor/MarkdownEditor.vue';
+// biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
+import WikilinkEditor from '@/components/editor/WikilinkEditor.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { useApiImageSrc } from '@/composables/useApiImageSrc';
 import { useCommentDraftAttachments } from '@/composables/useCommentDraftAttachments';
@@ -101,8 +102,9 @@ defineExpose({ focus });
 
 <template>
   <div data-comment-composer class="atl-comment-composer" @click="focus">
-    <MarkdownEditor
+    <WikilinkEditor
       ref="editor"
+      :ws="target.ws"
       :body="draft"
       :editable="true"
       :embedded-controls="false"

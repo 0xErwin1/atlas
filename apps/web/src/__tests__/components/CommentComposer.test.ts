@@ -33,6 +33,21 @@ describe('CommentComposer', () => {
     expect(wrapper.get('[data-test="comment-submit"]').attributes('aria-label')).toBe('Post comment');
   });
 
+  it('offers the wikilink picker against the parent workspace', () => {
+    const wrapper = mount(CommentComposer, {
+      props: {
+        target: { kind: 'document', ws: 'acme', slug: 'runbook' },
+        onSubmit: vi.fn().mockResolvedValue(true),
+      },
+      global: { stubs: { MarkdownEditor: MarkdownEditorStub } },
+    });
+
+    const editor = wrapper.findComponent({ name: 'WikilinkEditor' });
+
+    expect(editor.exists()).toBe(true);
+    expect(editor.props('ws')).toBe('acme');
+  });
+
   it('rejects whitespace-only drafts without changing Markdown submitted to the host', async () => {
     const onSubmit = vi.fn().mockResolvedValue(true);
     const body = '  ```md\ncontent\n```  \n';

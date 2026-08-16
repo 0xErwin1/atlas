@@ -151,6 +151,7 @@ watch(
       <template v-for="entry in commentEntries" :key="entry.type === 'comment' ? `comment:${entry.comment.id}` : `event:${entry.id}`">
         <CommentCard
           v-if="entry.type === 'comment'"
+          :ws="ws"
           :comment="entry.comment"
           :can-edit="canEdit(entry.comment)"
           :can-delete="canDelete(entry.comment)"
@@ -171,7 +172,7 @@ watch(
           :upload-image="canEdit(entry.comment) && canDelete(entry.comment) ? (file) => uploadImage(entry.comment.id, file) : undefined"
           @navigate-link="navigateCommentTarget"
         />
-        <CommentCard v-else :event="entry" @navigate-link="navigateCommentTarget" />
+        <CommentCard v-else :ws="ws" :event="entry" @navigate-link="navigateCommentTarget" />
       </template>
     </div>
 

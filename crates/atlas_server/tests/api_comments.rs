@@ -2596,3 +2596,73 @@ async fn viewer_author_can_edit_own_comment_but_not_a_different_viewer() {
 
     db.teardown().await;
 }
+
+/// A comment can point at a task or a note the way a document body does, by the
+/// identifier a reader already knows. Until typed links existed a comment could
+/// only bind a target by pasting its UUID.
+#[tokio::test]
+async fn typed_wikilinks_in_a_comment_become_backlinks_on_their_targets() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _user) =
+        support::login_user_with_workspace(&server, &db, "comment-wikilink").await;
+
+    let readable_id = seed_task(&client, &ws.slug, "comment-wikilink-proj", "CW").await;
+    let target_readable_id = seed_task(&client, &ws.slug, "comment-wikilink-target", "CX").await;
+
+    let note = client
+        .create_document(
+            &ws.slug,
+            "comment-wikilink-proj",
+            CreateDocumentRequest {
+                title: "Incident Runbook".into(),
+                folder_id: None,
+                content: None,
+            },
+        )
+        .await
+        .expect("create note");
+    let note_slug = note.slug.clone().expect("the create route assigns a slug");
+
+    let comment = client
+        .add_comment(
+            &ws.slug,
+            &readable_id,
+            CreateCommentRequest {
+                body: format!(
+                    "blocked by [[task:{target_readable_id}|the other task]], see [[note:{note_slug}]]"
+                ),
+                draft_id: None,
+            },
+        )
+        .await
+        .expect("create comment");
+
+    let task_backlinks = client
+        .list_task_backlinks(&ws.slug, &target_readable_id)
+        .await
+        .expect("list task backlinks");
+
+    assert!(
+        task_backlinks.items.iter().any(|backlink| backlink
+            .comment_source
+            .as_ref()
+            .is_some_and(|source| source.comment_id == comment.id)),
+        "the comment must appear in the linked task's backlinks: {task_backlinks:?}"
+    );
+
+    let note_backlinks = client
+        .list_backlinks(&ws.slug, &note_slug, None, None)
+        .await
+        .expect("list note backlinks");
+
+    assert!(
+        note_backlinks.items.iter().any(|backlink| backlink
+            .comment_source
+            .as_ref()
+            .is_some_and(|source| source.comment_id == comment.id)),
+        "the comment must appear in the linked note's backlinks: {note_backlinks:?}"
+    );
+
+    db.teardown().await;
+}

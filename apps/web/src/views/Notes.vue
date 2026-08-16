@@ -183,8 +183,6 @@ import HistoryPanel from '@/components/notas/HistoryPanel.vue';
 import NoteEditor from '@/components/notas/NoteEditor.vue';
 import PropertiesEditor from '@/components/notas/PropertiesEditor.vue';
 import PropertiesPanel from '@/components/notas/PropertiesPanel.vue';
-// biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
-import WikiLinkSuggest from '@/components/notas/WikiLinkSuggest.vue';
 import SharePanel from '@/components/share/SharePanel.vue';
 import EditorToolbar from '@/components/shell/EditorToolbar.vue';
 import EmptyState from '@/components/states/EmptyState.vue';
@@ -201,14 +199,11 @@ import { useDocumentPresence } from '@/composables/useDocumentPresence';
 import { useLiveUpdates } from '@/composables/useLiveUpdates';
 import type { LoadResult } from '@/composables/useMarkdownDoc';
 import { useMarkdownDoc } from '@/composables/useMarkdownDoc';
-import { useWikilinkSuggest } from '@/composables/useWikilinkSuggest';
-import { useWikilinkTitles } from '@/composables/useWikilinkTitles';
 import { getResourceCachePrincipal, resourceCacheEpoch, resourceCacheIsPurging } from '@/cache/cacheRuntime';
 import { createBodySyncScheduler } from '@/lib/editorBodySync';
 import { EVENT_TYPE, PRESENCE_UPDATED } from '@/lib/eventTypes';
 import { routeAfterClose, routeForTab } from '@/lib/docsTabs';
 import { joinFrontmatter, splitFrontmatter } from '@/lib/frontmatter';
-import { type WikilinkRef, wikilinkHref } from '@/lib/wikilink';
 import { useDocumentsStore } from '@/stores/documents';
 import { useLastViewedStore } from '@/stores/lastViewed';
 import { type TabRef, useNotesTabsStore } from '@/stores/notesTabs';
@@ -251,7 +246,6 @@ async function onUploadImage(file: File): Promise<string | null> {
 }
 
 const editorRef = ref<InstanceType<typeof NoteEditor> | null>(null);
-const suggestRef = ref<InstanceType<typeof WikiLinkSuggest> | null>(null);
 // The scrollable note surface (title + properties + editor). It is not remounted
 // between notes, so its scroll offset must be reset on a switch.
 const scrollAreaRef = ref<HTMLElement | null>(null);
@@ -326,21 +320,6 @@ const noteFreshnessStatus = computed(() =>
   noteStatusKey.value === '' ? 'empty' : resourceStatus.statusFor(noteStatusKey.value),
 );
 let cachePrincipal = getResourceCachePrincipal();
-
-// `[[wikilink]]` autocomplete glue, shared with the task description editor.
-const {
-  query: wikilinkQuery,
-  caret: wikilinkCaret,
-  onQuery: onWikilinkQuery,
-  onSelect: onSuggestSelect,
-  onKeydown: onEditorKeydown,
-} = useWikilinkSuggest(
-  () => editorRef.value,
-  () => suggestRef.value,
-);
-
-// Resolves id-bound wikilinks' current titles so rendered links track renames.
-const wikilinkTitles = useWikilinkTitles(ws, body);
 
 // The full document content (frontmatter + body) as loaded at headRevisionId.
 // It is the 3-way merge BASE; never mutated by local edits.
@@ -705,13 +684,6 @@ function onMetaChange(newMeta: Record<string, unknown>): void {
   saveTimer = setTimeout(() => void persist(), 800);
 }
 
-function onNavigateWikilink(ref: WikilinkRef): void {
-  const href = wikilinkHref(ref);
-  if (href === null) return;
-
-  void router.push(href);
-}
-
 // Flush before the outgoing document is replaced: update fires on a note→note
 // slug change, leave fires when navigating out of Notes. Both run before the
 // route (and `slug`) updates, so the pending save still targets this document.
@@ -996,39 +968,18 @@ onBeforeRouteLeave(() => {
 
           <PropertiesEditor :ws="ws" :meta="meta" @change="onMetaChange" />
 
-          <div @keydown="onEditorKeydown">
-            <NoteEditor
-              ref="editorRef"
-              :key="slug"
-              v-model:mode="editorMode"
-              v-model:reading="editorReading"
-              :body="body"
-              :wikilink-titles="wikilinkTitles"
-              :upload-image="onUploadImage"
-              :line-numbers="ui.editorLineNumbers"
-              @change="onChange"
-              @navigate-wikilink="onNavigateWikilink"
-              @wikilink-query="onWikilinkQuery"
-            />
-
-            <div
-              v-if="wikilinkCaret"
-              :style="{
-                position: 'fixed',
-                left: `${wikilinkCaret.left}px`,
-                top: `${wikilinkCaret.top}px`,
-                zIndex: 40,
-              }"
-            >
-              <WikiLinkSuggest
-                ref="suggestRef"
-                :ws="ws"
-                :query="wikilinkQuery"
-                :attachment-owner="{ kind: 'document', slug }"
-                @select="onSuggestSelect"
-              />
-            </div>
-          </div>
+          <NoteEditor
+            ref="editorRef"
+            :key="slug"
+            v-model:mode="editorMode"
+            v-model:reading="editorReading"
+            :ws="ws"
+            :body="body"
+            :slug="slug ?? ''"
+            :upload-image="onUploadImage"
+            :line-numbers="ui.editorLineNumbers"
+            @change="onChange"
+          />
         </template>
 
         <EmptyState

@@ -1,25 +1,27 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
-import MarkdownEditor from '@/components/editor/MarkdownEditor.vue';
+import WikilinkEditor from '@/components/editor/WikilinkEditor.vue';
 import { useApiImageSrc } from '@/composables/useApiImageSrc';
-import type { WikilinkRef } from '@/lib/wikilink';
 
 /**
- * Notes editor: a thin wrapper around the shared CodeMirror 6 `MarkdownEditor`.
+ * Notes editor: a thin wrapper around the shared `WikilinkEditor`.
  *
  * It exists so `Notes.vue` keeps a stable, notes-shaped API (`currentMarkdown`,
- * `insertWikilink`, and the three editor emits) while the actual editing surface
- * is the generic markdown editor shared with Tasks. The markdown source is the
- * source of truth — `currentMarkdown()` returns exactly the editor's doc text,
- * which the CAS save path in `Notes.vue` persists.
+ * `unwrapParagraphs`, and the view-mode models) while the editing surface, the
+ * `[[` picker and wikilink navigation are the ones shared with Tasks and
+ * comments. The markdown source is the source of truth — `currentMarkdown()`
+ * returns exactly the editor's doc text, which the CAS save path in `Notes.vue`
+ * persists.
  */
 
 const props = defineProps<{
+  /** Workspace slug, for resolving and offering wikilinks. */
+  ws: string;
   /** Markdown body (frontmatter already stripped by useMarkdownDoc). */
   body: string;
-  /** Live id → current-title map for id-bound wikilinks. */
-  wikilinkTitles?: Record<string, string>;
+  /** Document slug, which scopes `[[file:` suggestions to its attachments. */
+  slug: string;
   /** Uploads a pasted/dropped image and resolves to its URL (see MarkdownEditor). */
   uploadImage?: (file: File) => Promise<string | null>;
   /** Show the line-number gutter (a user preference owned by the Notes toolbar). */
@@ -29,11 +31,6 @@ const props = defineProps<{
 defineEmits<{
   /** Emitted on every edit with the current markdown body. */
   change: [markdown: string];
-  /** Emitted when a rendered wikilink is clicked, with the parsed reference. */
-  'navigate-wikilink': [ref: WikilinkRef];
-  /** Emitted as the `[[` query changes; null clears the autocomplete. Carries
-   * the caret viewport position so the host can anchor the dropdown. */
-  'wikilink-query': [query: string | null, caret: { left: number; top: number } | null];
 }>();
 
 // View-mode models forwarded to the shared editor so the Notes toolbar owns the
@@ -45,14 +42,10 @@ const reading = defineModel<boolean>('reading', { default: false });
 // directly.
 const resolveImageSrc = useApiImageSrc();
 
-const editorRef = ref<InstanceType<typeof MarkdownEditor> | null>(null);
+const editorRef = ref<InstanceType<typeof WikilinkEditor> | null>(null);
 
 function currentMarkdown(): string {
   return editorRef.value?.currentMarkdown() ?? props.body;
-}
-
-function insertWikilink(ref: WikilinkRef): void {
-  editorRef.value?.insertWikilink(ref);
 }
 
 /** Joins every hard-wrapped paragraph into one source line; see `unwrapParagraphs`. */
@@ -60,24 +53,23 @@ function unwrapParagraphs(): boolean {
   return editorRef.value?.unwrapParagraphs() ?? false;
 }
 
-defineExpose({ currentMarkdown, insertWikilink, unwrapParagraphs });
+defineExpose({ currentMarkdown, unwrapParagraphs });
 </script>
 
 <template>
-  <MarkdownEditor
+  <WikilinkEditor
     ref="editorRef"
     v-model:mode="mode"
     v-model:reading="reading"
+    :ws="ws"
     :body="body"
-    :wikilink-titles="props.wikilinkTitles"
+    :attachment-owner="{ kind: 'document', slug }"
     :upload-image="props.uploadImage"
     :resolve-image-src="resolveImageSrc"
     :line-numbers="props.lineNumbers ?? false"
     :embedded-controls="false"
     autofocus
     placeholder="Start writing…"
-    @change="(md) => $emit('change', md)"
-    @navigate-wikilink="(ref) => $emit('navigate-wikilink', ref)"
-    @wikilink-query="(query, caret) => $emit('wikilink-query', query, caret)"
+    @change="(md: string) => $emit('change', md)"
   />
 </template>

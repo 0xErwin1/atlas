@@ -1,15 +1,9 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, toRef } from 'vue';
-import { useRouter } from 'vue-router';
+import { onBeforeUnmount, ref } from 'vue';
 import type { ImageUploadResult } from '@/components/editor/imageUpload';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
-import MarkdownEditor from '@/components/editor/MarkdownEditor.vue';
-// biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
-import WikiLinkSuggest from '@/components/notas/WikiLinkSuggest.vue';
+import WikilinkEditor from '@/components/editor/WikilinkEditor.vue';
 import { useApiImageSrc } from '@/composables/useApiImageSrc';
-import { useWikilinkSuggest } from '@/composables/useWikilinkSuggest';
-import { useWikilinkTitles } from '@/composables/useWikilinkTitles';
-import { type WikilinkRef, wikilinkHref } from '@/lib/wikilink';
 import { useTasksStore } from '@/stores/tasks';
 
 const props = defineProps<{
@@ -23,28 +17,12 @@ const props = defineProps<{
   uploadImage?: (file: File) => Promise<ImageUploadResult>;
 }>();
 
-const router = useRouter();
 const tasks = useTasksStore();
 
 // Attachment references point at the API, which the webview cannot load directly.
 const resolveImageSrc = useApiImageSrc();
 
-const wikilinkTitles = useWikilinkTitles(toRef(props, 'ws'), toRef(props, 'markdown'));
-
-const editorRef = ref<InstanceType<typeof MarkdownEditor> | null>(null);
-const suggestRef = ref<InstanceType<typeof WikiLinkSuggest> | null>(null);
-
-// `[[wikilink]]` autocomplete, shared with the note editor.
-const {
-  query: wikilinkQuery,
-  caret: wikilinkCaret,
-  onQuery: onWikilinkQuery,
-  onSelect: onSuggestSelect,
-  onKeydown: onEditorKeydown,
-} = useWikilinkSuggest(
-  () => editorRef.value,
-  () => suggestRef.value,
-);
+const editorRef = ref<InstanceType<typeof WikilinkEditor> | null>(null);
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingSave: (() => void) | null = null;
 
@@ -77,13 +55,6 @@ function flushSave(): void {
 
 onBeforeUnmount(flushSave);
 
-function onNavigateWikilink(ref: WikilinkRef): void {
-  const href = wikilinkHref(ref);
-  if (href === null) return;
-
-  void router.push(href);
-}
-
 /**
  * Places host-supplied markdown (an attachment reference) at the caret and saves
  * it on the same debounce as a keystroke, so the insertion persists on its own.
@@ -100,38 +71,17 @@ defineExpose({ insertMarkdown });
 </script>
 
 <template>
-  <div style="position: relative;" @keydown="onEditorKeydown">
-    <MarkdownEditor
-      ref="editorRef"
-      :body="markdown"
-      :wikilink-titles="wikilinkTitles"
-      :editable="true"
-      :width-toggle="false"
-      :resolve-image-src="resolveImageSrc"
-      :upload-image="uploadImage"
-      min-height="2.5rem"
-      placeholder="Add a description…"
-      @change="onChange"
-      @navigate-wikilink="onNavigateWikilink"
-      @wikilink-query="onWikilinkQuery"
-    />
-
-    <div
-      v-if="wikilinkCaret"
-      :style="{
-        position: 'fixed',
-        left: `${wikilinkCaret.left}px`,
-        top: `${wikilinkCaret.top}px`,
-        zIndex: 40,
-      }"
-    >
-      <WikiLinkSuggest
-        ref="suggestRef"
-        :ws="ws"
-        :query="wikilinkQuery"
-        :attachment-owner="{ kind: 'task', readableId }"
-        @select="onSuggestSelect"
-      />
-    </div>
-  </div>
+  <WikilinkEditor
+    ref="editorRef"
+    :ws="ws"
+    :body="markdown"
+    :attachment-owner="{ kind: 'task', readableId }"
+    :editable="true"
+    :width-toggle="false"
+    :resolve-image-src="resolveImageSrc"
+    :upload-image="uploadImage"
+    min-height="2.5rem"
+    placeholder="Add a description…"
+    @change="onChange"
+  />
 </template>

@@ -20,6 +20,7 @@ const comment = {
 function mountCard(overrides: Record<string, unknown> = {}) {
   return mount(CommentCard, {
     props: {
+      ws: 'ws',
       comment,
       canEdit: true,
       canDelete: true,

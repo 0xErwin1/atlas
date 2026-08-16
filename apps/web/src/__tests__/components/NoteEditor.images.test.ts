@@ -21,7 +21,7 @@ describe('NoteEditor inline images', () => {
     URL.revokeObjectURL = vi.fn();
 
     const wrapper = mount(NoteEditor, {
-      props: { body: 'note' },
+      props: { ws: 'ws', slug: 'note', body: 'note' },
       global: { plugins: [createPinia()] },
     });
 

@@ -339,6 +339,7 @@ watch(
 
         <CommentCard
             v-else-if="item.kind === 'comment'"
+            :ws="ws"
             :comment="item.comment"
             :can-edit="canEdit(item.comment)"
             :can-delete="canDelete(item.comment)"
@@ -359,7 +360,7 @@ watch(
             :upload-image="canEdit(item.comment) && canDelete(item.comment) ? (file) => uploadImage(item.comment.id, file) : undefined"
             @navigate-link="navigateCommentTarget"
           />
-        <CommentCard v-else :event="item.event" @navigate-link="navigateCommentTarget" />
+        <CommentCard v-else :ws="ws" :event="item.event" @navigate-link="navigateCommentTarget" />
         </template>
       </div>
 

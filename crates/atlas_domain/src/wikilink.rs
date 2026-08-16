@@ -9,6 +9,15 @@ const MAX_WIKILINK_TARGET_LEN: usize = 512;
 /// classification before it becomes a derived link.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommentLinkCandidate {
+    /// `[[task:ATL-80]]` written in a comment.
+    Task {
+        readable_id: String,
+    },
+    /// `[[note:incident-runbook]]` written in a comment.
+    Note {
+        slug: String,
+    },
+    /// The id-bound `[[<uuid>|Title]]` form, which may address either kind.
     Uuid(uuid::Uuid),
     AttachmentUrl(CommentAttachmentUrl),
 }
@@ -183,17 +192,32 @@ pub fn parse_wikilink_target(raw: &str) -> (Option<uuid::Uuid>, String) {
     (None, raw.trim().to_string())
 }
 
-/// Extracts current-compatible comment-link inputs without mutating Markdown.
+/// Extracts comment-link inputs without mutating Markdown.
 ///
-/// UUID-bound wikilinks are retained as UUID candidates. Attachment URLs must
-/// be canonical root-relative Atlas routes; resolving their workspace, parent,
-/// comment, and ownership chain is intentionally deferred to persistence.
+/// Typed `task:` and `note:` wikilinks become their own candidates; the
+/// id-bound form stays a UUID candidate, which persistence resolves against
+/// either kind. A title-only `[[Title]]` is deliberately not a candidate: in a
+/// comment it reads as prose, and guessing a target from it would link things
+/// nobody asked to link.
+///
+/// Attachment URLs must be canonical root-relative Atlas routes; resolving
+/// their workspace, parent, comment, and ownership chain is intentionally
+/// deferred to persistence.
 pub fn parse_comment_link_candidates(content: &str) -> Vec<CommentLinkCandidate> {
-    let mut candidates = parse_wikilinks(content)
-        .into_iter()
-        .filter_map(|raw| parse_wikilink_target(&raw).0)
-        .map(CommentLinkCandidate::Uuid)
-        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+
+    for raw in parse_wikilinks(content) {
+        let candidate = match classify_wikilink(&raw).target {
+            WikilinkTarget::Task { readable_id } => CommentLinkCandidate::Task { readable_id },
+            WikilinkTarget::Note { slug } => CommentLinkCandidate::Note { slug },
+            WikilinkTarget::Document { id } => CommentLinkCandidate::Uuid(id),
+            WikilinkTarget::File { .. } | WikilinkTarget::Title => continue,
+        };
+
+        if !candidates.contains(&candidate) {
+            candidates.push(candidate);
+        }
+    }
 
     for url in markdown_urls(content) {
         let Some(attachment) = parse_comment_attachment_url(url) else {
@@ -311,6 +335,48 @@ mod tests {
                     attachment_id,
                 }),
             ]
+        );
+    }
+
+    #[test]
+    fn comment_candidates_carry_typed_task_and_note_links() {
+        let content = "blocked by [[task:ATL-80|the login bug]], see [[note:incident-runbook]]";
+
+        assert_eq!(
+            parse_comment_link_candidates(content),
+            vec![
+                CommentLinkCandidate::Task {
+                    readable_id: "ATL-80".into()
+                },
+                CommentLinkCandidate::Note {
+                    slug: "incident-runbook".into()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn comment_candidates_deduplicate_repeated_typed_links() {
+        let content = "[[task:ATL-80]] and again [[task:ATL-80|same task]] and [[task:atl-80]]";
+
+        assert_eq!(
+            parse_comment_link_candidates(content),
+            vec![CommentLinkCandidate::Task {
+                readable_id: "ATL-80".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn comment_candidates_ignore_title_only_and_file_links() {
+        // A bare `[[Title]]` in a comment reads as prose; guessing a target from
+        // it would link resources nobody asked to link. `file:` is addressed by
+        // the attachment URL form instead.
+        let content = "[[Some Title]] and [[file:policy.pdf]]";
+
+        assert_eq!(
+            parse_comment_link_candidates(content),
+            Vec::<CommentLinkCandidate>::new()
         );
     }
 

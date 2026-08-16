@@ -318,6 +318,49 @@ async fn classify_candidates(
 
     for candidate in candidates {
         match candidate {
+            CommentLinkCandidate::Task { readable_id } => {
+                if let Some(task) = crate::persistence::entities::boards_tasks::task::Entity::find()
+                    .filter(
+                        crate::persistence::entities::boards_tasks::task::Column::WorkspaceId
+                            .eq(ctx.workspace_id.0),
+                    )
+                    .filter(
+                        crate::persistence::entities::boards_tasks::task::Column::ReadableId
+                            .eq(readable_id.as_str()),
+                    )
+                    .filter(
+                        crate::persistence::entities::boards_tasks::task::Column::DeletedAt
+                            .is_null(),
+                    )
+                    .one(conn)
+                    .await
+                    .map_err(db_err)?
+                {
+                    targets.push(CommentLinkTarget::Task(TaskId(task.id)));
+                }
+            }
+            CommentLinkCandidate::Note { slug } => {
+                if let Some(document) =
+                    crate::persistence::entities::documents::document::Entity::find()
+                        .filter(
+                            crate::persistence::entities::documents::document::Column::WorkspaceId
+                                .eq(ctx.workspace_id.0),
+                        )
+                        .filter(
+                            crate::persistence::entities::documents::document::Column::Slug
+                                .eq(slug.as_str()),
+                        )
+                        .filter(
+                            crate::persistence::entities::documents::document::Column::DeletedAt
+                                .is_null(),
+                        )
+                        .one(conn)
+                        .await
+                        .map_err(db_err)?
+                {
+                    targets.push(CommentLinkTarget::Document(DocumentId(document.id)));
+                }
+            }
             CommentLinkCandidate::Uuid(id) => {
                 if crate::persistence::entities::documents::document::Entity::find_by_id(id)
                     .filter(

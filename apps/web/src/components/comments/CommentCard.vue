@@ -8,7 +8,8 @@
  */
 import { computed, ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
-import MarkdownEditor from '@/components/editor/MarkdownEditor.vue';
+// biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
+import WikilinkEditor from '@/components/editor/WikilinkEditor.vue';
 import AgentBadge from '@/components/ui/AgentBadge.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
@@ -43,6 +44,8 @@ type CommentEvent = {
 };
 
 const props = defineProps<{
+  /** Workspace slug, needed to resolve and offer wikilinks in the body. */
+  ws: string;
   comment?: CommentDto;
   canEdit?: boolean;
   canDelete?: boolean;
@@ -259,7 +262,8 @@ async function confirmDelete(): Promise<void> {
 
     <div style="margin-top: 4px; margin-left: 30px;">
       <template v-if="editing">
-        <MarkdownEditor
+        <WikilinkEditor
+          :ws="ws"
           :body="editDraft"
           :editable="true"
           :embedded-controls="false"
@@ -293,8 +297,9 @@ async function confirmDelete(): Promise<void> {
           </button>
         </div>
       </template>
-      <MarkdownEditor
+      <WikilinkEditor
         v-else
+        :ws="ws"
         :body="comment.body"
         :editable="false"
         :reading="true"
