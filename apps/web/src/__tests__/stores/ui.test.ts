@@ -162,4 +162,26 @@ describe('useUiStore', () => {
       expect(localStorage.getItem('atlas:editor-mode')).toBeNull();
     });
   });
+
+  describe('editor line numbers', () => {
+    // On by default: notes are addressed by line elsewhere in Atlas, and the
+    // numbers those refer to are invisible without the gutter.
+    it('default to on and survive a fresh store instance once turned off', () => {
+      const first = useUiStore();
+      expect(first.editorLineNumbers).toBe(true);
+
+      first.toggleEditorLineNumbers();
+      setActivePinia(createPinia());
+
+      expect(useUiStore().editorLineNumbers).toBe(false);
+    });
+
+    it('mirrors another tab without re-persisting', () => {
+      const store = useUiStore();
+      store.applyExternalEditorLineNumbers('0');
+
+      expect(store.editorLineNumbers).toBe(false);
+      expect(localStorage.getItem('atlas:editor-line-numbers')).toBeNull();
+    });
+  });
 });

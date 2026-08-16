@@ -35,6 +35,7 @@ const INSPECTOR_STORAGE_KEY = 'atlas:inspector';
 export const EDITOR_WIDE_STORAGE_KEY = 'atlas:editor-wide';
 export const EDITOR_READING_STORAGE_KEY = 'atlas:editor-reading';
 export const EDITOR_MODE_STORAGE_KEY = 'atlas:editor-mode';
+export const EDITOR_LINE_NUMBERS_STORAGE_KEY = 'atlas:editor-line-numbers';
 export const THEME_STORAGE_KEY = 'atlas:theme';
 const SIDEBAR_STORAGE_KEY = 'atlas:sidebar-collapsed';
 export const TASK_VIEW_MODE_STORAGE_KEY = 'atlas.taskview.mode';
@@ -110,6 +111,17 @@ function loadEditorReading(): boolean {
   }
 }
 
+// Line numbers default on: a note is a line-addressed document elsewhere in
+// Atlas — `read_document_lines` and `edit_document_lines` speak in line numbers
+// — and without the gutter there is no way to see the numbers those refer to.
+function loadEditorLineNumbers(): boolean {
+  try {
+    return localStorage.getItem(EDITOR_LINE_NUMBERS_STORAGE_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
 function loadEditorMode(): EditorMode {
   try {
     if (localStorage.getItem(EDITOR_MODE_STORAGE_KEY) === 'source') return 'source';
@@ -146,6 +158,7 @@ export const useUiStore = defineStore('ui', () => {
   // the router outlet, which would otherwise drop the choice on the way back.
   const editorReading = ref(loadEditorReading());
   const editorMode = ref<EditorMode>(loadEditorMode());
+  const editorLineNumbers = ref(loadEditorLineNumbers());
 
   const theme = ref<Theme>(loadTheme());
   applyTheme(theme.value);
@@ -252,6 +265,20 @@ export const useUiStore = defineStore('ui', () => {
   // Anything other than 'source' is read as 'live', matching `loadEditorMode`.
   function applyExternalEditorMode(raw: string): void {
     editorMode.value = raw === 'source' ? 'source' : 'live';
+  }
+
+  function setEditorLineNumbers(value: boolean) {
+    editorLineNumbers.value = value;
+    persistSetting(EDITOR_LINE_NUMBERS_STORAGE_KEY, value ? '1' : '0');
+  }
+
+  function toggleEditorLineNumbers() {
+    setEditorLineNumbers(!editorLineNumbers.value);
+  }
+
+  // Anything other than '0' is read as on, matching `loadEditorLineNumbers`.
+  function applyExternalEditorLineNumbers(raw: string): void {
+    editorLineNumbers.value = raw !== '0';
   }
 
   function openShare(resourceLabel: string, projectSlug?: string) {
@@ -440,6 +467,10 @@ export const useUiStore = defineStore('ui', () => {
     setEditorMode,
     toggleEditorMode,
     applyExternalEditorMode,
+    editorLineNumbers,
+    setEditorLineNumbers,
+    toggleEditorLineNumbers,
+    applyExternalEditorLineNumbers,
     theme,
     setTheme,
     applyExternalTheme,

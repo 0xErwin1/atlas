@@ -5,6 +5,7 @@ import {
   useLabelColorsStore,
 } from '@/stores/labelColors';
 import {
+  EDITOR_LINE_NUMBERS_STORAGE_KEY,
   EDITOR_MODE_STORAGE_KEY,
   EDITOR_READING_STORAGE_KEY,
   EDITOR_WIDE_STORAGE_KEY,
@@ -55,6 +56,9 @@ export function useCrossTabSync(): void {
         break;
       case EDITOR_MODE_STORAGE_KEY:
         ui.applyExternalEditorMode(value);
+        break;
+      case EDITOR_LINE_NUMBERS_STORAGE_KEY:
+        ui.applyExternalEditorLineNumbers(value);
         break;
       case TASK_VIEW_MODE_STORAGE_KEY:
         ui.applyExternalTaskViewMode(value);

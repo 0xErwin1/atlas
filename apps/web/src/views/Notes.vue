@@ -918,6 +918,19 @@ onBeforeRouteLeave(() => {
           <Icon name="wrap-text" :size="15" />
         </button>
 
+        <button
+          type="button"
+          title="Line numbers"
+          aria-label="Line numbers"
+          class="atl-gbtn"
+          :class="{ on: ui.editorLineNumbers }"
+          :aria-pressed="ui.editorLineNumbers"
+          style="width: 28px; height: 28px;"
+          @click="ui.toggleEditorLineNumbers()"
+        >
+          <Icon name="list-ordered" :size="15" />
+        </button>
+
         <div aria-hidden="true" style="width: 1px; height: 18px; background: var(--c-border);" />
       </template>
 
@@ -989,6 +1002,7 @@ onBeforeRouteLeave(() => {
               :body="body"
               :wikilink-titles="wikilinkTitles"
               :upload-image="onUploadImage"
+              :line-numbers="ui.editorLineNumbers"
               @change="onChange"
               @navigate-wikilink="onNavigateWikilink"
               @wikilink-query="onWikilinkQuery"

@@ -31,6 +31,25 @@ export const atlasMarkdownTheme = EditorView.theme(
     '.cm-line': {
       padding: '0',
     },
+    // The gutter belongs to the page, not to a code block: no background, no
+    // border, and a muted number that stays out of the way of the prose it
+    // numbers. It renders only when a host opts into the `lineNumbers`
+    // extension, so there is nothing to hide when no host asked for it.
+    '.cm-gutters': {
+      backgroundColor: 'transparent',
+      border: 'none',
+      color: 'var(--c-muted-foreground)',
+    },
+    '.cm-lineNumbers .cm-gutterElement': {
+      padding: '0 12px 0 0',
+      minWidth: '2.5ch',
+      fontSize: 'var(--fs-sm)',
+      lineHeight: 'var(--lh-relaxed)',
+    },
+    '.cm-activeLineGutter': {
+      backgroundColor: 'transparent',
+      color: 'var(--c-foreground)',
+    },
     '&.cm-editor': {
       backgroundColor: 'transparent',
     },
@@ -39,9 +58,6 @@ export const atlasMarkdownTheme = EditorView.theme(
     },
     '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
       backgroundColor: 'var(--c-selection)',
-    },
-    '.cm-gutters': {
-      display: 'none',
     },
     '.cm-placeholder': {
       color: 'var(--c-muted)',

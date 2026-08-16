@@ -4,7 +4,7 @@ import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { syntaxTree } from '@codemirror/language';
 import { languages } from '@codemirror/language-data';
 import { Compartment, EditorState } from '@codemirror/state';
-import { EditorView, keymap } from '@codemirror/view';
+import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { GFM } from '@lezer/markdown';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Icon from '@/components/ui/Icon.vue';
@@ -71,6 +71,11 @@ const props = withDefaults(
      * served by the Atlas API supply one so the bytes travel the platform
      * transport instead of the webview's own origin; see `useApiImageSrc`. */
     resolveImageSrc?: (url: string) => Promise<string | null>;
+    /** Show the line-number gutter. On for hosts whose content is addressed by
+     * line elsewhere (a note, which `read_document_lines` reads by line range);
+     * off for hosts where a line number means nothing (a task description, a
+     * comment). */
+    lineNumbers?: boolean;
   }>(),
   {
     placeholder: '',
@@ -81,6 +86,7 @@ const props = withDefaults(
     minHeight: '60vh',
     embeddedControls: true,
     followCaret: true,
+    lineNumbers: false,
   },
 );
 
@@ -118,6 +124,7 @@ const placeholderCss = computed(() => JSON.stringify(props.placeholder));
 // place (mode / read-only toggles) without tearing down and rebuilding the view.
 const livePreviewCompartment = new Compartment();
 const editStateCompartment = new Compartment();
+const gutterCompartment = new Compartment();
 
 // The last markdown value this editor emitted, used to distinguish an external
 // `body` prop change (must replace the doc) from an echo of our own edit (must
@@ -272,6 +279,10 @@ function effectiveEditable(): boolean {
   return props.editable && !readonly.value;
 }
 
+function gutterExtension() {
+  return props.lineNumbers ? [lineNumbers()] : [];
+}
+
 function editStateExtension(editable: boolean) {
   return [EditorView.editable.of(editable), EditorState.readOnly.of(!editable)];
 }
@@ -286,6 +297,7 @@ function buildExtensions() {
     EditorView.lineWrapping,
     emptyDocAttributes(),
     livePreviewCompartment.of(renderExtension()),
+    gutterCompartment.of(gutterExtension()),
     atlasMarkdownTheme,
     editStateCompartment.of(editStateExtension(effectiveEditable())),
     EditorView.domEventHandlers({
@@ -331,6 +343,13 @@ function toggleReadonly(): void {
 watch(mode, () => {
   view?.dispatch({ effects: livePreviewCompartment.reconfigure(renderExtension()) });
 });
+
+watch(
+  () => props.lineNumbers,
+  () => {
+    view?.dispatch({ effects: gutterCompartment.reconfigure(gutterExtension()) });
+  },
+);
 
 watch(readonly, () => {
   view?.dispatch({

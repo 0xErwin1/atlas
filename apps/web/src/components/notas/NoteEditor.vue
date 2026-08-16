@@ -22,6 +22,8 @@ const props = defineProps<{
   wikilinkTitles?: Record<string, string>;
   /** Uploads a pasted/dropped image and resolves to its URL (see MarkdownEditor). */
   uploadImage?: (file: File) => Promise<string | null>;
+  /** Show the line-number gutter (a user preference owned by the Notes toolbar). */
+  lineNumbers?: boolean;
 }>();
 
 defineEmits<{
@@ -70,6 +72,7 @@ defineExpose({ currentMarkdown, insertWikilink, unwrapParagraphs });
     :wikilink-titles="props.wikilinkTitles"
     :upload-image="props.uploadImage"
     :resolve-image-src="resolveImageSrc"
+    :line-numbers="props.lineNumbers ?? false"
     :embedded-controls="false"
     autofocus
     placeholder="Start writing…"
