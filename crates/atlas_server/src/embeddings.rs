@@ -106,21 +106,56 @@ struct EmbeddingData {
     embedding: Vec<f32>,
 }
 
-#[async_trait]
-impl EmbeddingProvider for OpenAiCompatibleEmbeddingProvider {
-    async fn embed(&self, inputs: &[EmbeddingInput]) -> Result<Vec<Vec<f32>>, DomainError> {
-        if inputs.is_empty() {
-            return Ok(Vec::new());
-        }
+/// A failed embedding request, split by whether repeating it could help.
+///
+/// A rejected key or a malformed body fails the same way every time, so only
+/// transport failures and the provider's own temporary refusals are worth the
+/// caller's `retry_attempts`.
+enum EmbeddingAttemptError {
+    Transient(DomainError),
+    Permanent(DomainError),
+}
 
-        let api_key = self
-            .config
-            .api_key
-            .as_deref()
-            .ok_or_else(|| DomainError::InvalidInput {
+impl EmbeddingAttemptError {
+    fn into_inner(self) -> DomainError {
+        match self {
+            Self::Transient(error) | Self::Permanent(error) => error,
+        }
+    }
+}
+
+impl OpenAiCompatibleEmbeddingProvider {
+    /// Sends one batch, retrying transient failures with exponential backoff.
+    async fn embed_batch(&self, inputs: &[EmbeddingInput]) -> Result<Vec<Vec<f32>>, DomainError> {
+        const BASE_BACKOFF_MS: u64 = 200;
+
+        let mut attempt = 0;
+        loop {
+            match self.request_batch(inputs).await {
+                Ok(vectors) => return Ok(vectors),
+                Err(EmbeddingAttemptError::Permanent(error)) => return Err(error),
+                Err(error) if attempt >= self.config.retry_attempts => {
+                    return Err(error.into_inner());
+                }
+                Err(_) => {
+                    let backoff = BASE_BACKOFF_MS.saturating_mul(1 << attempt.min(5));
+                    tokio::time::sleep(Duration::from_millis(backoff)).await;
+                    attempt += 1;
+                }
+            }
+        }
+    }
+
+    async fn request_batch(
+        &self,
+        inputs: &[EmbeddingInput],
+    ) -> Result<Vec<Vec<f32>>, EmbeddingAttemptError> {
+        let api_key = self.config.api_key.as_deref().ok_or_else(|| {
+            EmbeddingAttemptError::Permanent(DomainError::InvalidInput {
                 message: "ATLAS_EMBEDDINGS_API_KEY is required for openai_compatible embeddings"
                     .to_owned(),
-            })?;
+            })
+        })?;
         let body = EmbeddingRequest {
             model: &self.config.model,
             input: inputs.iter().map(|input| input.text.as_str()).collect(),
@@ -133,41 +168,68 @@ impl EmbeddingProvider for OpenAiCompatibleEmbeddingProvider {
             .json(&body)
             .send()
             .await
-            .map_err(|e| DomainError::Internal {
-                message: format!("embedding request failed: {e}"),
+            .map_err(|e| {
+                EmbeddingAttemptError::Transient(DomainError::Internal {
+                    message: format!("embedding request failed: {e}"),
+                })
             })?;
 
-        if !response.status().is_success() {
-            return Err(DomainError::Internal {
-                message: format!("embedding provider returned {}", response.status()),
-            });
+        let status = response.status();
+        if !status.is_success() {
+            let error = DomainError::Internal {
+                message: format!("embedding provider returned {status}"),
+            };
+            return Err(
+                if status.is_server_error() || status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                    EmbeddingAttemptError::Transient(error)
+                } else {
+                    EmbeddingAttemptError::Permanent(error)
+                },
+            );
         }
 
-        let parsed: EmbeddingResponse =
-            response.json().await.map_err(|e| DomainError::Internal {
+        let parsed: EmbeddingResponse = response.json().await.map_err(|e| {
+            EmbeddingAttemptError::Transient(DomainError::Internal {
                 message: format!("parse embedding response: {e}"),
-            })?;
+            })
+        })?;
         if parsed.data.len() != inputs.len() {
-            return Err(DomainError::Internal {
+            return Err(EmbeddingAttemptError::Permanent(DomainError::Internal {
                 message: format!(
                     "embedding provider returned {} vectors for {} inputs",
                     parsed.data.len(),
                     inputs.len()
                 ),
-            });
+            }));
         }
 
         let vectors: Vec<Vec<f32>> = parsed.data.into_iter().map(|item| item.embedding).collect();
         for vector in &vectors {
             if vector.len() != self.config.dimensions {
-                return Err(DomainError::Internal {
+                return Err(EmbeddingAttemptError::Permanent(DomainError::Internal {
                     message: format!(
                         "embedding dimension mismatch: expected {}, got {}",
                         self.config.dimensions,
                         vector.len()
                     ),
-                });
+                }));
             }
+        }
+        Ok(vectors)
+    }
+}
+
+#[async_trait]
+impl EmbeddingProvider for OpenAiCompatibleEmbeddingProvider {
+    async fn embed(&self, inputs: &[EmbeddingInput]) -> Result<Vec<Vec<f32>>, DomainError> {
+        if inputs.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let batch_size = self.config.batch_size.max(1);
+        let mut vectors = Vec::with_capacity(inputs.len());
+        for batch in inputs.chunks(batch_size) {
+            vectors.extend(self.embed_batch(batch).await?);
         }
         Ok(vectors)
     }

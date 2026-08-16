@@ -80,14 +80,14 @@ and unchanged when embeddings are disabled.
 | Variable | Default | Notes |
 |---|---|---|
 | `ATLAS_EMBEDDINGS_ENABLED` | `false` | Enables `/api/workspaces/{ws}/semantic-search` and the MCP `semantic_search` tool. Disabled returns `503` on semantic search only. |
-| `ATLAS_EMBEDDINGS_PROVIDER` | `deterministic` | `deterministic`/`test` for offline development, or `openai_compatible` for an OpenAI-compatible embeddings API. |
+| `ATLAS_EMBEDDINGS_PROVIDER` | — | Required when `ATLAS_EMBEDDINGS_ENABLED=true`. `openai_compatible` for an OpenAI-compatible embeddings API, or `deterministic`/`test` for offline development — the latter hashes text into a valid-looking vector that encodes no meaning, so it must be asked for by name and is never inherited. |
 | `ATLAS_EMBEDDINGS_MODEL` | `atlas-test-embedding` | Stored with each embedding row; changing it requires re-indexing content for the new model. |
 | `ATLAS_EMBEDDINGS_DIMENSIONS` | `1536` | Must match the provider output. The `search_embeddings.embedding` column is declared `vector(1536)`, so any other value fails startup with an explicit error instead of failing on the first insert. |
 | `ATLAS_EMBEDDINGS_API_KEY` | — | Required only when `ATLAS_EMBEDDINGS_ENABLED=true` and provider is `openai_compatible`. |
 | `ATLAS_EMBEDDINGS_BASE_URL` | `https://api.openai.com/v1` | Base URL for OpenAI-compatible providers. |
-| `ATLAS_EMBEDDINGS_BATCH_SIZE` | `64` | Batch size used by embedding writes/backfills. |
+| `ATLAS_EMBEDDINGS_BATCH_SIZE` | `64` | Maximum inputs per provider request; larger sets are split across successive requests. |
 | `ATLAS_EMBEDDINGS_TIMEOUT_MS` | `30000` | Provider request timeout. |
-| `ATLAS_EMBEDDINGS_RETRY_ATTEMPTS` | `2` | Provider retry attempts. |
+| `ATLAS_EMBEDDINGS_RETRY_ATTEMPTS` | `2` | Retries per batch, with exponential backoff, for transport failures, `429`, and `5xx`. Other failures (a rejected key, a malformed response) are not retried. |
 
 Backfill/indexing behavior:
 

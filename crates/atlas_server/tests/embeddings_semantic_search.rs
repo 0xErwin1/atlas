@@ -4,14 +4,23 @@ use atlas_domain::{
 };
 use atlas_server::{
     config::{EmbeddingConfig, EmbeddingProviderKind, SCHEMA_EMBEDDING_DIMENSIONS},
-    embeddings::DeterministicEmbeddingProvider,
+    embeddings::{DeterministicEmbeddingProvider, OpenAiCompatibleEmbeddingProvider},
     semantic_indexer::{
         AttachmentText, ChecklistText, CommentText, DocumentIndexInput, SubtaskText,
         TaskIndexInput, aggregate_document_chunks, aggregate_task_chunks, chunk_semantic_text,
         document_content_hash, should_skip_embedding,
     },
 };
-use std::{error::Error, io};
+use axum::{Json, Router, extract::State, http::StatusCode, routing::post};
+use std::{
+    error::Error,
+    io,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
+};
+use tokio::net::TcpListener;
 use uuid::Uuid;
 
 #[tokio::test]
@@ -93,6 +102,189 @@ fn semantic_search_embeddings_openai_compatible_config_requires_key_and_dimensio
     });
     assert!(bad_dimensions.is_err());
     Ok(())
+}
+
+#[derive(Clone)]
+struct EmbeddingsStub {
+    batches: Arc<Mutex<Vec<usize>>>,
+    attempts: Arc<AtomicUsize>,
+    dimensions: usize,
+    fail_first: usize,
+}
+
+async fn embeddings_stub_handler(
+    State(stub): State<EmbeddingsStub>,
+    Json(body): Json<serde_json::Value>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if stub.attempts.fetch_add(1, Ordering::SeqCst) < stub.fail_first {
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({})));
+    }
+
+    let count = body
+        .get("input")
+        .and_then(serde_json::Value::as_array)
+        .map_or(0, Vec::len);
+    if let Ok(mut recorded) = stub.batches.lock() {
+        recorded.push(count);
+    }
+
+    let data: Vec<serde_json::Value> = (0..count)
+        .map(|_| serde_json::json!({ "embedding": vec![0.0_f32; stub.dimensions] }))
+        .collect();
+    (StatusCode::OK, Json(serde_json::json!({ "data": data })))
+}
+
+/// Serves the embeddings endpoint, recording each batch it is asked for and
+/// failing the first `fail_first` requests with a retryable status.
+async fn spawn_embeddings_stub(
+    dimensions: usize,
+    fail_first: usize,
+) -> Result<(String, Arc<Mutex<Vec<usize>>>), Box<dyn Error>> {
+    let batches: Arc<Mutex<Vec<usize>>> = Arc::new(Mutex::new(Vec::new()));
+    let stub = EmbeddingsStub {
+        batches: batches.clone(),
+        attempts: Arc::new(AtomicUsize::new(0)),
+        dimensions,
+        fail_first,
+    };
+
+    let app = Router::new()
+        .route("/embeddings", post(embeddings_stub_handler))
+        .with_state(stub);
+
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let base_url = format!("http://{}", listener.local_addr()?);
+    tokio::spawn(async move {
+        if let Err(error) = axum::serve(listener, app).await {
+            eprintln!("embeddings stub stopped: {error}");
+        }
+    });
+
+    Ok((base_url, batches))
+}
+
+fn stub_config(
+    base_url: String,
+    dimensions: usize,
+    batch_size: usize,
+    retries: u32,
+) -> EmbeddingConfig {
+    EmbeddingConfig {
+        enabled: true,
+        provider: EmbeddingProviderKind::OpenAiCompatible,
+        model: "stub-embedding".to_owned(),
+        dimensions,
+        api_key: Some("stub-key".to_owned()),
+        base_url,
+        batch_size,
+        timeout_ms: 5_000,
+        retry_attempts: retries,
+    }
+}
+
+fn inputs(count: usize) -> Vec<EmbeddingInput> {
+    (0..count)
+        .map(|idx| EmbeddingInput {
+            text: format!("chunk {idx}"),
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn openai_compatible_provider_splits_inputs_into_configured_batches()
+-> Result<(), Box<dyn Error>> {
+    let (base_url, batches) = spawn_embeddings_stub(SCHEMA_EMBEDDING_DIMENSIONS, 0).await?;
+    let provider = OpenAiCompatibleEmbeddingProvider::new(stub_config(
+        base_url,
+        SCHEMA_EMBEDDING_DIMENSIONS,
+        2,
+        0,
+    ))?;
+
+    let vectors = provider.embed(&inputs(5)).await?;
+
+    assert_eq!(vectors.len(), 5);
+    let recorded = batches
+        .lock()
+        .map_err(|_| io::Error::other("stub batch log poisoned"))?
+        .clone();
+    assert_eq!(
+        recorded,
+        vec![2, 2, 1],
+        "ATLAS_EMBEDDINGS_BATCH_SIZE must bound each request"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn openai_compatible_provider_retries_a_transient_provider_failure()
+-> Result<(), Box<dyn Error>> {
+    let (base_url, batches) = spawn_embeddings_stub(SCHEMA_EMBEDDING_DIMENSIONS, 2).await?;
+    let provider = OpenAiCompatibleEmbeddingProvider::new(stub_config(
+        base_url,
+        SCHEMA_EMBEDDING_DIMENSIONS,
+        64,
+        2,
+    ))?;
+
+    let vectors = provider.embed(&inputs(1)).await?;
+
+    assert_eq!(vectors.len(), 1);
+    assert_eq!(
+        batches
+            .lock()
+            .map_err(|_| io::Error::other("stub batch log poisoned"))?
+            .len(),
+        1,
+        "only the attempt that succeeded reaches the handler body"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn openai_compatible_provider_gives_up_after_the_configured_retries()
+-> Result<(), Box<dyn Error>> {
+    let (base_url, _) = spawn_embeddings_stub(SCHEMA_EMBEDDING_DIMENSIONS, 10).await?;
+    let provider = OpenAiCompatibleEmbeddingProvider::new(stub_config(
+        base_url,
+        SCHEMA_EMBEDDING_DIMENSIONS,
+        64,
+        1,
+    ))?;
+
+    assert!(provider.embed(&inputs(1)).await.is_err());
+    Ok(())
+}
+
+#[test]
+fn semantic_search_embeddings_config_requires_an_explicit_provider_when_enabled() {
+    let inherited = EmbeddingConfig::from_env_vars(|name| match name {
+        "ATLAS_EMBEDDINGS_ENABLED" => Some("true".to_owned()),
+        _ => None,
+    });
+
+    let error = inherited.err().unwrap_or_default();
+    assert!(
+        error.contains("ATLAS_EMBEDDINGS_PROVIDER"),
+        "enabling embeddings without naming a provider must fail loudly: {error}"
+    );
+
+    let asked_for_deterministic = EmbeddingConfig::from_env_vars(|name| match name {
+        "ATLAS_EMBEDDINGS_ENABLED" => Some("true".to_owned()),
+        "ATLAS_EMBEDDINGS_PROVIDER" => Some("deterministic".to_owned()),
+        _ => None,
+    });
+    assert!(
+        asked_for_deterministic
+            .is_ok_and(|cfg| cfg.provider == EmbeddingProviderKind::Deterministic),
+        "the deterministic provider stays available when it is asked for by name"
+    );
+
+    let disabled = EmbeddingConfig::from_env_vars(|_| None);
+    assert!(
+        disabled.is_ok(),
+        "a deployment with embeddings off needs no provider"
+    );
 }
 
 #[test]

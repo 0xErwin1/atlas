@@ -40,13 +40,24 @@ impl EmbeddingConfig {
     {
         let read = |name: &str| get(name);
         let enabled = read_bool(read("ATLAS_EMBEDDINGS_ENABLED"), false);
-        let provider = match read("ATLAS_EMBEDDINGS_PROVIDER")
-            .unwrap_or_else(|| "deterministic".to_owned())
-            .as_str()
-        {
-            "deterministic" | "test" => EmbeddingProviderKind::Deterministic,
-            "openai_compatible" => EmbeddingProviderKind::OpenAiCompatible,
-            other => return Err(format!("unsupported ATLAS_EMBEDDINGS_PROVIDER: {other}")),
+        let provider = match nonempty(read("ATLAS_EMBEDDINGS_PROVIDER")) {
+            Some(raw) => match raw.as_str() {
+                "deterministic" | "test" => EmbeddingProviderKind::Deterministic,
+                "openai_compatible" => EmbeddingProviderKind::OpenAiCompatible,
+                other => return Err(format!("unsupported ATLAS_EMBEDDINGS_PROVIDER: {other}")),
+            },
+            // The deterministic provider hashes text into a valid-looking vector
+            // whose nearest neighbours are arbitrary, so inheriting it silently
+            // would answer every semantic query with noise and no error.
+            None if enabled => {
+                return Err(
+                    "ATLAS_EMBEDDINGS_PROVIDER is required when ATLAS_EMBEDDINGS_ENABLED=true; \
+                     use 'openai_compatible' for real embeddings, or ask for 'deterministic' \
+                     explicitly to get the test provider that encodes no meaning"
+                        .to_owned(),
+                );
+            }
+            None => EmbeddingProviderKind::Deterministic,
         };
         let model =
             read("ATLAS_EMBEDDINGS_MODEL").unwrap_or_else(|| "atlas-test-embedding".to_owned());
