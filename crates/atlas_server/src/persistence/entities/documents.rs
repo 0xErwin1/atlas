@@ -76,6 +76,8 @@ pub mod document_link {
         pub source_document_id: Option<Uuid>,
         pub source_task_id: Option<Uuid>,
         pub target_document_id: Option<Uuid>,
+        pub target_task_id: Option<Uuid>,
+        pub target_attachment_id: Option<Uuid>,
         pub target_title: String,
         pub created_at: DateTime<Utc>,
     }
@@ -210,6 +212,8 @@ pub fn document_link_from(m: document_link::Model) -> DocumentLink {
         source_document_id: m.source_document_id.map(DocumentId),
         source_task_id: m.source_task_id.map(TaskId),
         target_document_id: m.target_document_id.map(DocumentId),
+        target_task_id: m.target_task_id.map(TaskId),
+        target_attachment_id: m.target_attachment_id.map(AttachmentId),
         target_title: m.target_title,
         created_at: m.created_at,
     }

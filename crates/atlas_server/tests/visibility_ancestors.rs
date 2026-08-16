@@ -785,6 +785,7 @@ async fn derived_path_visibility() {
             vec![ExtractedLink {
                 target_title: document.title.clone(),
                 target_document_id: Some(document.id),
+                ..Default::default()
             }],
         )
         .await
@@ -796,6 +797,7 @@ async fn derived_path_visibility() {
             vec![ExtractedLink {
                 target_title: document.title.clone(),
                 target_document_id: Some(document.id),
+                ..Default::default()
             }],
         )
         .await
@@ -1097,6 +1099,7 @@ async fn derived_path_visibility_hides_folder_descendants() {
             vec![ExtractedLink {
                 target_title: document.title.clone(),
                 target_document_id: Some(document.id),
+                ..Default::default()
             }],
         )
         .await
@@ -1108,6 +1111,7 @@ async fn derived_path_visibility_hides_folder_descendants() {
             vec![ExtractedLink {
                 target_title: document.title.clone(),
                 target_document_id: Some(document.id),
+                ..Default::default()
             }],
         )
         .await

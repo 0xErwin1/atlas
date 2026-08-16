@@ -48,6 +48,7 @@ pub mod m20260804_000045_repair_search_embeddings;
 pub mod m20260808_000046_repair_search_embeddings;
 pub mod m20260808_000047_search_index_queue;
 pub mod m20260816_000048_board_archive;
+pub mod m20260816_000049_typed_wikilink_targets;
 
 use sea_orm_migration::prelude::*;
 
@@ -105,6 +106,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260808_000046_repair_search_embeddings::Migration),
             Box::new(m20260808_000047_search_index_queue::Migration),
             Box::new(m20260816_000048_board_archive::Migration),
+            Box::new(m20260816_000049_typed_wikilink_targets::Migration),
         ]
     }
 }
@@ -150,6 +152,17 @@ mod tests {
             .collect();
 
         assert!(names.contains(&"m20260816_000048_board_archive"));
+    }
+
+    #[test]
+    fn typed_wikilink_targets_migration_is_registered() {
+        let migrations = Migrator::migrations();
+        let names: Vec<_> = migrations
+            .iter()
+            .map(|migration| migration.name())
+            .collect();
+
+        assert!(names.contains(&"m20260816_000049_typed_wikilink_targets"));
     }
 
     #[test]

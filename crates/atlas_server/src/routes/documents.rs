@@ -38,7 +38,7 @@ use atlas_domain::{
         CommentDraftMetadata, CommentLinkTarget, CommentOwner, NewCommentAttachmentDraftUpload,
         comment_draft_upload_digest_input,
     },
-    entities::documents::{AttachmentOwner, ExtractedLink, NewAttachment, NewDocument},
+    entities::documents::{AttachmentOwner, LinkSource, NewAttachment, NewDocument},
     entities::identity::MemberRole,
     ids::{AttachmentId, CommentDraftId, CommentId, DocumentId, FolderId, RevisionId, UserId},
     permissions::{Capability, CapabilityAction, CapabilityFamily, Principal, ResourceRole},
@@ -229,11 +229,10 @@ async fn persist_new_document(
         .await
         .map_err(ApiError::Domain)?;
 
-    let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
     let link_repo = PgDocumentLinkRepo {
         conn: (*state.db).clone(),
     };
-    update_document_links(ctx, &doc_repo, &link_repo, doc.id, &doc.content).await?;
+    update_document_links(ctx, &link_repo, doc.id, &doc.content).await?;
 
     Ok(doc)
 }
@@ -926,11 +925,10 @@ pub(crate) async fn update_content(
             other => ApiError::Domain(other),
         })?;
 
-    let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
     let link_repo = PgDocumentLinkRepo {
         conn: (*state.db).clone(),
     };
-    update_document_links(&ctx, &doc_repo, &link_repo, updated.id, &updated.content).await?;
+    update_document_links(&ctx, &link_repo, updated.id, &updated.content).await?;
 
     Ok(Json(document_to_dto(updated)))
 }
@@ -979,11 +977,10 @@ pub(crate) async fn edit_content_range(
             other => ApiError::Domain(other),
         })?;
     if updated.current_revision_id.0 != body.base_revision_id {
-        let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
         let link_repo = PgDocumentLinkRepo {
             conn: (*state.db).clone(),
         };
-        update_document_links(&ctx, &doc_repo, &link_repo, updated.id, &updated.content).await?;
+        update_document_links(&ctx, &link_repo, updated.id, &updated.content).await?;
     }
 
     Ok(Json(document_to_compact_dto(updated)))
@@ -2942,35 +2939,18 @@ fn derive_frontmatter(content: &str) -> serde_json::Value {
 
 async fn update_document_links(
     ctx: &WorkspaceCtx,
-    doc_repo: &PgDocumentRepo,
     link_repo: &PgDocumentLinkRepo,
     doc_id: DocumentId,
     content: &str,
 ) -> Result<(), ApiError> {
-    let raw_links = atlas_domain::parse_wikilinks(content);
-
-    let mut extracted = Vec::with_capacity(raw_links.len());
-    for raw in raw_links {
-        let (target_id, title) = atlas_domain::parse_wikilink_target(&raw);
-
-        let target_document_id = match target_id {
-            Some(id) => doc_repo
-                .get(ctx, DocumentId(id))
-                .await
-                .map_err(ApiError::Domain)?
-                .map(|d| d.id),
-            None => doc_repo
-                .find_by_slug(ctx, &slugify(&title))
-                .await
-                .map_err(ApiError::Domain)?
-                .map(|d| d.id),
-        };
-
-        extracted.push(ExtractedLink {
-            target_title: title,
-            target_document_id,
-        });
-    }
+    let extracted = PgDocumentLinkRepo::extract_links_in(
+        &link_repo.conn,
+        ctx,
+        LinkSource::Document(doc_id),
+        content,
+    )
+    .await
+    .map_err(ApiError::Domain)?;
 
     link_repo
         .replace_for_source(ctx, doc_id, extracted)

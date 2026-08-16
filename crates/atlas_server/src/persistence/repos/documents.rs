@@ -5,7 +5,7 @@ use atlas_domain::{
     entities::comments::{CommentOwner, NewCommentAttachmentDraftUpload},
     entities::documents::{
         Attachment, AttachmentOwner, AttachmentWriteIntent, Document, DocumentLink,
-        DocumentSummary, ExtractedLink, NewAttachment, NewDocument, RevisionMeta,
+        DocumentSummary, ExtractedLink, LinkSource, NewAttachment, NewDocument, RevisionMeta,
         TaskDescriptionLinks,
     },
     entities::lifecycle::TrashKind,
@@ -15,6 +15,8 @@ use atlas_domain::{
     },
     permissions::Principal,
     revision::{create_revision_patch, is_anchor_seq, reconstruct},
+    slug::slugify,
+    wikilink::WikilinkTarget,
 };
 use chrono::{DateTime, Utc};
 use sea_orm::{
@@ -27,6 +29,7 @@ use sha2::{Digest, Sha256};
 use sqlx::{Postgres, pool::PoolConnection};
 use uuid::Uuid;
 
+use crate::persistence::entities::boards_tasks::task;
 use crate::persistence::entities::comments::{
     comment_attachment_draft, comment_attachment_draft_upload,
 };
@@ -974,6 +977,33 @@ pub struct PgDocumentLinkRepo {
     pub conn: DatabaseConnection,
 }
 
+/// Builds the row for one extracted wikilink.
+///
+/// Shared by every `replace_for_*` path so a source kind cannot drift into
+/// storing a different set of target columns than the others.
+fn link_model(
+    ctx: &WorkspaceCtx,
+    source: LinkSource,
+    link: ExtractedLink,
+) -> document_link::ActiveModel {
+    let (source_document_id, source_task_id) = match source {
+        LinkSource::Document(id) => (Some(id.0), None),
+        LinkSource::Task(id) => (None, Some(id.0)),
+    };
+
+    document_link::ActiveModel {
+        id: Set(Uuid::now_v7()),
+        workspace_id: Set(ctx.workspace_id.0),
+        source_document_id: Set(source_document_id),
+        source_task_id: Set(source_task_id),
+        target_document_id: Set(link.target_document_id.map(|id| id.0)),
+        target_task_id: Set(link.target_task_id.map(|id| id.0)),
+        target_attachment_id: Set(link.target_attachment_id.map(|id| id.0)),
+        target_title: Set(link.target_title),
+        created_at: Set(Utc::now()),
+    }
+}
+
 impl PgDocumentLinkRepo {
     /// Replaces the link set for a task source inside an existing transaction.
     ///
@@ -1013,16 +1043,10 @@ impl PgDocumentLinkRepo {
             .map_err(db_err)?;
 
         for link in links {
-            let model = document_link::ActiveModel {
-                id: Set(Uuid::now_v7()),
-                workspace_id: Set(ctx.workspace_id.0),
-                source_document_id: Set(None),
-                source_task_id: Set(Some(source.0)),
-                target_document_id: Set(link.target_document_id.map(|id| id.0)),
-                target_title: Set(link.target_title),
-                created_at: Set(Utc::now()),
-            };
-            model.insert(conn).await.map_err(db_err)?;
+            link_model(ctx, LinkSource::Task(source), link)
+                .insert(conn)
+                .await
+                .map_err(db_err)?;
         }
 
         Ok(())
@@ -1068,6 +1092,108 @@ impl PgDocumentLinkRepo {
 
         Ok(row.map(|d| DocumentId(d.id)))
     }
+
+    /// Resolves a live task id by readable id inside an existing transaction.
+    async fn find_task_id_by_readable_id_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        readable_id: &str,
+    ) -> Result<Option<TaskId>, DomainError> {
+        let row = task::Entity::find()
+            .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(task::Column::ReadableId.eq(readable_id))
+            .filter(task::Column::DeletedAt.is_null())
+            .one(conn)
+            .await
+            .map_err(db_err)?;
+
+        Ok(row.map(|t| TaskId(t.id)))
+    }
+
+    /// Resolves a live attachment id by file name among the attachments of the
+    /// resource that contains the link.
+    ///
+    /// File names are not unique, so the most recently created match wins; the
+    /// picker disambiguates at insertion time rather than leaving the reader to
+    /// guess.
+    async fn find_attachment_id_by_name_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        owner: LinkSource,
+        file_name: &str,
+    ) -> Result<Option<AttachmentId>, DomainError> {
+        let scoped = match owner {
+            LinkSource::Document(id) => attachment::Column::DocumentId.eq(id.0),
+            LinkSource::Task(id) => attachment::Column::TaskId.eq(id.0),
+        };
+
+        let row = attachment::Entity::find()
+            .filter(attachment::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(scoped)
+            .filter(attachment::Column::FileName.eq(file_name))
+            .filter(attachment::Column::DeletedAt.is_null())
+            .order_by_desc(attachment::Column::CreatedAt)
+            .order_by_desc(attachment::Column::Id)
+            .one(conn)
+            .await
+            .map_err(db_err)?;
+
+        Ok(row.map(|a| AttachmentId(a.id)))
+    }
+
+    /// Parses the wikilinks in `content` and resolves each one to its target.
+    ///
+    /// `source` is the resource the content belongs to: it becomes the link's
+    /// source row and scopes `file:` addresses to that resource's attachments.
+    /// A link whose target does not exist is kept with every target id `None`
+    /// (a pending link) rather than dropped, so it starts resolving the moment
+    /// the target appears.
+    pub async fn extract_links_in(
+        conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
+        source: LinkSource,
+        content: &str,
+    ) -> Result<Vec<ExtractedLink>, DomainError> {
+        let raw_links = atlas_domain::parse_wikilinks(content);
+        let mut extracted = Vec::with_capacity(raw_links.len());
+
+        for raw in raw_links {
+            let parsed = atlas_domain::classify_wikilink(&raw);
+
+            let mut link = ExtractedLink {
+                target_title: parsed.display,
+                ..ExtractedLink::default()
+            };
+
+            match parsed.target {
+                WikilinkTarget::Task { readable_id } => {
+                    link.target_task_id =
+                        Self::find_task_id_by_readable_id_in(conn, ctx, &readable_id).await?;
+                }
+                WikilinkTarget::Note { slug } => {
+                    link.target_document_id =
+                        Self::find_document_id_by_slug_in(conn, ctx, &slug).await?;
+                }
+                WikilinkTarget::File { file_name } => {
+                    link.target_attachment_id =
+                        Self::find_attachment_id_by_name_in(conn, ctx, source, &file_name).await?;
+                }
+                WikilinkTarget::Document { id } => {
+                    link.target_document_id =
+                        Self::find_document_id_by_id_in(conn, ctx, DocumentId(id)).await?;
+                }
+                WikilinkTarget::Title => {
+                    link.target_document_id =
+                        Self::find_document_id_by_slug_in(conn, ctx, &slugify(&link.target_title))
+                            .await?;
+                }
+            }
+
+            extracted.push(link);
+        }
+
+        Ok(extracted)
+    }
 }
 
 #[async_trait]
@@ -1086,16 +1212,10 @@ impl DocumentLinkRepo for PgDocumentLinkRepo {
             .map_err(db_err)?;
 
         for link in links {
-            let model = document_link::ActiveModel {
-                id: Set(Uuid::now_v7()),
-                workspace_id: Set(ctx.workspace_id.0),
-                source_document_id: Set(Some(source.0)),
-                source_task_id: Set(None),
-                target_document_id: Set(link.target_document_id.map(|id| id.0)),
-                target_title: Set(link.target_title),
-                created_at: Set(Utc::now()),
-            };
-            model.insert(&self.conn).await.map_err(db_err)?;
+            link_model(ctx, LinkSource::Document(source), link)
+                .insert(&self.conn)
+                .await
+                .map_err(db_err)?;
         }
 
         Ok(())
@@ -1115,16 +1235,10 @@ impl DocumentLinkRepo for PgDocumentLinkRepo {
             .map_err(db_err)?;
 
         for link in links {
-            let model = document_link::ActiveModel {
-                id: Set(Uuid::now_v7()),
-                workspace_id: Set(ctx.workspace_id.0),
-                source_document_id: Set(None),
-                source_task_id: Set(Some(source.0)),
-                target_document_id: Set(link.target_document_id.map(|id| id.0)),
-                target_title: Set(link.target_title),
-                created_at: Set(Utc::now()),
-            };
-            model.insert(&self.conn).await.map_err(db_err)?;
+            link_model(ctx, LinkSource::Task(source), link)
+                .insert(&self.conn)
+                .await
+                .map_err(db_err)?;
         }
 
         Ok(())
@@ -1141,7 +1255,8 @@ impl DocumentLinkRepo for PgDocumentLinkRepo {
                 sea_orm::DatabaseBackend::Postgres,
                 format!("SELECT t.description, dl.id AS link_id, dl.workspace_id AS link_workspace_id, \
                   dl.source_document_id AS link_source_document_id, dl.source_task_id AS link_source_task_id, \
-                  dl.target_document_id AS link_target_document_id, dl.target_title AS link_target_title, \
+                  dl.target_document_id AS link_target_document_id, dl.target_task_id AS link_target_task_id, \
+                  dl.target_attachment_id AS link_target_attachment_id, dl.target_title AS link_target_title, \
                   dl.created_at AS link_created_at \
                   FROM tasks t \
                   LEFT JOIN document_links dl ON dl.workspace_id = t.workspace_id AND dl.source_task_id = t.id \
@@ -2602,6 +2717,14 @@ fn document_link_from_snapshot_row(
             .try_get::<Option<Uuid>>("", "link_target_document_id")
             .map_err(db_err)?
             .map(DocumentId),
+        target_task_id: row
+            .try_get::<Option<Uuid>>("", "link_target_task_id")
+            .map_err(db_err)?
+            .map(TaskId),
+        target_attachment_id: row
+            .try_get::<Option<Uuid>>("", "link_target_attachment_id")
+            .map_err(db_err)?
+            .map(AttachmentId),
         target_title: row.try_get("", "link_target_title").map_err(db_err)?,
         created_at: row
             .try_get::<DateTime<Utc>>("", "link_created_at")

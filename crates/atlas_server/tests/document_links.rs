@@ -4,13 +4,14 @@ mod support;
 
 use atlas_domain::{
     entities::boards_tasks::{NewBoard, NewTask, NewTaskReference, PositionBetween, ReferenceKind},
-    entities::documents::{ExtractedLink, NewDocument},
+    entities::documents::{ExtractedLink, LinkSource, NewAttachment, NewDocument},
     entities::workspace_core::NewProject,
     permissions::{Visibility, VisibilityRole},
 };
 use atlas_server::persistence::repos::{
-    BoardRepo, DocumentLinkRepo, DocumentRepo, PgBoardRepo, PgDocumentLinkRepo, PgDocumentRepo,
-    PgProjectRepo, PgTaskReferenceRepo, PgTaskRepo, ProjectRepo, TaskReferenceRepo, TaskRepo,
+    AttachmentRepo, BoardRepo, DocumentLinkRepo, DocumentRepo, PgAttachmentRepo, PgBoardRepo,
+    PgDocumentLinkRepo, PgDocumentRepo, PgProjectRepo, PgTaskReferenceRepo, PgTaskRepo,
+    ProjectRepo, TaskReferenceRepo, TaskRepo,
 };
 use chrono::{TimeDelta, Utc};
 use sea_orm::{ConnectionTrait, Statement};
@@ -120,6 +121,7 @@ async fn replace_for_task_source_stores_and_replaces_links() {
             vec![ExtractedLink {
                 target_title: "Target Doc".into(),
                 target_document_id: Some(target_doc.id),
+                ..Default::default()
             }],
         )
         .await
@@ -213,6 +215,7 @@ async fn outgoing_for_task_returns_description_and_workspace_scoped_links() {
             vec![ExtractedLink {
                 target_title: "Target Doc".into(),
                 target_document_id: Some(target),
+                ..Default::default()
             }],
         )
         .await
@@ -224,6 +227,7 @@ async fn outgoing_for_task_returns_description_and_workspace_scoped_links() {
             vec![ExtractedLink {
                 target_title: "Target Doc".into(),
                 target_document_id: Some(other_target),
+                ..Default::default()
             }],
         )
         .await
@@ -328,6 +332,145 @@ async fn task_references_are_ordered_by_created_at_then_id() {
     );
 
     db.teardown().await;
+}
+
+#[tokio::test]
+async fn typed_wikilinks_resolve_to_their_own_kind_of_target() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "typed-wikilink-user").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let doc_repo = PgDocumentRepo::new(db.conn().clone(), 10);
+    let task = seed_project_board_task(&db, &ctx).await;
+
+    let note = doc_repo
+        .create(
+            &ctx,
+            new_slugged_document("Incident Runbook", "incident-runbook"),
+        )
+        .await
+        .expect("create note");
+
+    let source = doc_repo
+        .create(&ctx, new_slugged_document("Source", "source"))
+        .await
+        .expect("create source document");
+
+    let attachment = PgAttachmentRepo {
+        conn: db.conn().clone(),
+    }
+    .record(
+        &ctx,
+        NewAttachment {
+            document_id: Some(source.id),
+            task_id: None,
+            comment_id: None,
+            file_name: "policy.pdf".into(),
+            content_type: "application/pdf".into(),
+            size_bytes: 1,
+            sha256: "policy-digest".into(),
+        },
+    )
+    .await
+    .expect("record attachment");
+
+    let content = format!(
+        "[[task:{}|the task]] [[note:{}]] [[file:policy.pdf]] [[task:NOPE-1]]",
+        task.readable_id,
+        note.slug.clone().expect("note slug")
+    );
+
+    let links = PgDocumentLinkRepo::extract_links_in(
+        db.conn(),
+        &ctx,
+        LinkSource::Document(source.id),
+        &content,
+    )
+    .await
+    .expect("extract typed links");
+
+    let resolved = links
+        .iter()
+        .map(|link| {
+            (
+                link.target_title.as_str(),
+                link.target_task_id,
+                link.target_document_id,
+                link.target_attachment_id,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        resolved,
+        vec![
+            ("the task", Some(task.id), None, None),
+            (
+                note.slug.as_deref().unwrap_or_default(),
+                None,
+                Some(note.id),
+                None
+            ),
+            ("policy.pdf", None, None, Some(attachment.id)),
+            // An address that resolves to nothing is kept pending, never dropped.
+            ("NOPE-1", None, None, None),
+        ]
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn a_note_addressed_by_slug_survives_renaming_the_note() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "wikilink-rename-user").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let doc_repo = PgDocumentRepo::new(db.conn().clone(), 10);
+
+    let note = doc_repo
+        .create(
+            &ctx,
+            new_slugged_document("Incident Runbook", "incident-runbook"),
+        )
+        .await
+        .expect("create note");
+    let source = doc_repo
+        .create(&ctx, new_slugged_document("Source", "source"))
+        .await
+        .expect("create source document");
+
+    doc_repo
+        .rename(&ctx, note.id, "Something Else Entirely".into())
+        .await
+        .expect("rename note");
+
+    let content = format!("[[note:{}]]", note.slug.clone().expect("note slug"));
+    let links = PgDocumentLinkRepo::extract_links_in(
+        db.conn(),
+        &ctx,
+        LinkSource::Document(source.id),
+        &content,
+    )
+    .await
+    .expect("extract link after rename");
+
+    assert_eq!(
+        links.first().and_then(|link| link.target_document_id),
+        Some(note.id),
+        "the slug is assigned once at creation, so a rename cannot break the address"
+    );
+
+    db.teardown().await;
+}
+
+/// Mirrors the create route, which always assigns a slug; the repo itself
+/// accepts `None` and the typed `note:` address needs a real one.
+fn new_slugged_document(title: &str, slug: &str) -> NewDocument {
+    NewDocument {
+        slug: Some(slug.into()),
+        ..new_document(title)
+    }
 }
 
 fn new_document(title: &str) -> NewDocument {

@@ -26,7 +26,9 @@ pub mod wikilink;
 pub use frontmatter::{parse_frontmatter_yaml, strip_frontmatter};
 pub use ports::attachment_store::AttachmentStore;
 pub use slug::{resolve_collision, slugify};
-pub use wikilink::{parse_wikilink_target, parse_wikilinks};
+pub use wikilink::{
+    ParsedWikilink, WikilinkTarget, classify_wikilink, parse_wikilink_target, parse_wikilinks,
+};
 
 pub use actor::{Actor, WorkspaceCtx};
 pub use error::{DomainError, RevisionConflict};

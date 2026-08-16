@@ -494,6 +494,7 @@ async fn document_link_repo_workspace_isolation() {
             vec![ExtractedLink {
                 target_document_id: Some(target_doc_b.id),
                 target_title: "Bob Target Doc".into(),
+                ..Default::default()
             }],
         )
         .await

@@ -95,14 +95,22 @@ pub struct DocumentLink {
     pub source_document_id: Option<DocumentId>,
     pub source_task_id: Option<crate::ids::TaskId>,
     pub target_document_id: Option<DocumentId>,
+    pub target_task_id: Option<crate::ids::TaskId>,
+    pub target_attachment_id: Option<AttachmentId>,
     pub target_title: String,
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone)]
+/// A wikilink found in content, with whichever target it resolved to.
+///
+/// All three target ids are `None` for a pending link — one whose target does
+/// not exist (yet). At most one is ever `Some`.
+#[derive(Debug, Clone, Default)]
 pub struct ExtractedLink {
     pub target_title: String,
     pub target_document_id: Option<DocumentId>,
+    pub target_task_id: Option<crate::ids::TaskId>,
+    pub target_attachment_id: Option<AttachmentId>,
 }
 
 #[derive(Debug, Clone)]
@@ -258,6 +266,8 @@ mod tests {
                     source_document_id: None,
                     source_task_id: Some(task),
                     target_document_id: Some(resolved),
+                    target_task_id: None,
+                    target_attachment_id: None,
                     target_title: "First Alias".into(),
                     created_at: now,
                 },
@@ -267,6 +277,8 @@ mod tests {
                     source_document_id: None,
                     source_task_id: Some(task),
                     target_document_id: Some(resolved),
+                    target_task_id: None,
+                    target_attachment_id: None,
                     target_title: "Second Alias".into(),
                     created_at: before,
                 },
@@ -296,6 +308,8 @@ mod tests {
                     source_document_id: None,
                     source_task_id: Some(task),
                     target_document_id: None,
+                    target_task_id: None,
+                    target_attachment_id: None,
                     target_title: "Missing Doc".into(),
                     created_at,
                 },
@@ -305,6 +319,8 @@ mod tests {
                     source_document_id: None,
                     source_task_id: Some(task),
                     target_document_id: None,
+                    target_task_id: None,
+                    target_attachment_id: None,
                     target_title: "Other Missing".into(),
                     created_at,
                 },

@@ -11,8 +11,8 @@ use atlas_domain::{
         DomainEvent, TaskCreatedPayload, TaskDeletedPayload, TaskMovedPayload, TaskUpdatedPayload,
     },
     ids::{
-        BoardId, ChecklistItemId, ColumnId, CommentDraftId, CommentId, DocumentId, ProjectId,
-        TaskActivityId, TaskId, TaskReferenceId,
+        BoardId, ChecklistItemId, ColumnId, CommentDraftId, CommentId, ProjectId, TaskActivityId,
+        TaskId, TaskReferenceId,
     },
 };
 use chrono::Utc;
@@ -22,7 +22,7 @@ use sea_orm::{
 };
 
 use atlas_domain::entities::documents::ExtractedLink;
-use atlas_domain::{parse_wikilink_target, parse_wikilinks, slugify};
+use atlas_domain::entities::documents::LinkSource;
 use sea_orm::ConnectionTrait;
 
 use crate::persistence::entities::boards_tasks::{
@@ -1203,26 +1203,9 @@ async fn sync_task_description_links(
             .into_iter()
             .collect();
 
-    let raw_links = parse_wikilinks(description);
-
-    let mut extracted = Vec::with_capacity(raw_links.len());
-    for raw in raw_links {
-        let (target_id, title) = parse_wikilink_target(&raw);
-
-        let target_document_id = match target_id {
-            Some(id) => {
-                PgDocumentLinkRepo::find_document_id_by_id_in(conn, ctx, DocumentId(id)).await?
-            }
-            None => {
-                PgDocumentLinkRepo::find_document_id_by_slug_in(conn, ctx, &slugify(&title)).await?
-            }
-        };
-
-        extracted.push(ExtractedLink {
-            target_title: title,
-            target_document_id,
-        });
-    }
+    let extracted =
+        PgDocumentLinkRepo::extract_links_in(conn, ctx, LinkSource::Task(task_id), description)
+            .await?;
 
     let newly_mentioned: Vec<ExtractedLink> = extracted
         .iter()

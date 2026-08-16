@@ -28,6 +28,111 @@ pub enum CommentAttachmentUrlOwner {
     Document { slug: String },
 }
 
+/// What a `[[…]]` wikilink points at, once its inner text is classified.
+///
+/// The typed forms address their target by the identifier a reader already
+/// knows — a task's readable id, a note's slug, an attachment's file name — so
+/// no UUID has to appear in the markdown a person edits. The two untyped forms
+/// are the shapes that predate typed links and keep their exact meaning.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WikilinkTarget {
+    /// `[[task:ATL-80]]`, addressed by readable id.
+    Task { readable_id: String },
+    /// `[[note:incident-runbook]]`, addressed by document slug.
+    ///
+    /// A slug is assigned once at document creation and never regenerated, so
+    /// this address survives renaming the note.
+    Note { slug: String },
+    /// `[[file:policy.pdf]]`, addressed by file name among the attachments of
+    /// whichever document or task contains the link.
+    File { file_name: String },
+    /// `[[<uuid>|Title]]`: a document bound to its id.
+    Document { id: uuid::Uuid },
+    /// `[[Title]]`: a document addressed by the slug of the given title.
+    Title,
+}
+
+/// A classified wikilink: where it points and what a reader sees.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsedWikilink {
+    pub target: WikilinkTarget,
+    /// The display half after `|`, or the address itself when there is none.
+    ///
+    /// For an untyped link this is the title the link is resolved by, which is
+    /// why the two coincide there.
+    pub display: String,
+}
+
+/// Classifies the inner text of a `[[…]]` token into a target and a display
+/// string.
+///
+/// The text is split on the FIRST `|`. A `kind:address` left half with a known
+/// kind produces a typed target; everything else falls through to the untyped
+/// rules unchanged, which is what keeps every previously written wikilink
+/// meaning exactly what it meant before.
+pub fn classify_wikilink(raw: &str) -> ParsedWikilink {
+    let (left, display) = match raw.split_once('|') {
+        Some((left, right)) => (left.trim(), Some(right.trim())),
+        None => (raw.trim(), None),
+    };
+
+    if let Some((target, address)) = typed_target(left) {
+        return ParsedWikilink {
+            target,
+            display: display.unwrap_or(address).to_string(),
+        };
+    }
+
+    if let Some(display) = display
+        && let Ok(id) = uuid::Uuid::parse_str(left)
+    {
+        return ParsedWikilink {
+            target: WikilinkTarget::Document { id },
+            display: display.to_string(),
+        };
+    }
+
+    ParsedWikilink {
+        target: WikilinkTarget::Title,
+        display: raw.trim().to_string(),
+    }
+}
+
+/// Splits a `kind:address` left half, returning the target and the raw address.
+///
+/// A colon followed by whitespace is prose — a document titled `task: rewrite
+/// the parser` must stay a title link — so the kind only binds when an address
+/// starts immediately after the colon.
+fn typed_target(left: &str) -> Option<(WikilinkTarget, &str)> {
+    let (kind, address) = left.split_once(':')?;
+
+    if address.starts_with(char::is_whitespace) {
+        return None;
+    }
+
+    let address = address.trim_end();
+    if address.is_empty() {
+        return None;
+    }
+
+    let target = match kind.to_ascii_lowercase().as_str() {
+        // Readable ids are stored uppercase and matched exactly, so `atl-80`
+        // typed by hand has to be normalized here to resolve.
+        "task" => WikilinkTarget::Task {
+            readable_id: address.to_ascii_uppercase(),
+        },
+        "note" => WikilinkTarget::Note {
+            slug: address.to_string(),
+        },
+        "file" => WikilinkTarget::File {
+            file_name: address.to_string(),
+        },
+        _ => return None,
+    };
+
+    Some((target, address))
+}
+
 /// Parses `[[Target]]` wikilinks from markdown content.
 ///
 /// Returns de-duplicated target strings in order of first appearance.
@@ -358,5 +463,131 @@ mod tests {
     #[test]
     fn target_empty_returns_none_and_empty_title() {
         assert_eq!(parse_wikilink_target(""), (None, String::new()));
+    }
+
+    #[test]
+    fn classify_typed_task_uses_the_readable_id_as_display_without_a_pipe() {
+        assert_eq!(
+            classify_wikilink("task:ATL-80"),
+            ParsedWikilink {
+                target: WikilinkTarget::Task {
+                    readable_id: "ATL-80".into()
+                },
+                display: "ATL-80".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn classify_typed_link_prefers_the_display_half() {
+        assert_eq!(
+            classify_wikilink("  note:incident-runbook  |  the runbook  "),
+            ParsedWikilink {
+                target: WikilinkTarget::Note {
+                    slug: "incident-runbook".into()
+                },
+                display: "the runbook".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn classify_normalizes_the_kind_and_the_readable_id_case() {
+        assert_eq!(
+            classify_wikilink("TASK:atl-80"),
+            ParsedWikilink {
+                target: WikilinkTarget::Task {
+                    readable_id: "ATL-80".into()
+                },
+                display: "atl-80".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn classify_keeps_file_names_verbatim() {
+        assert_eq!(
+            classify_wikilink("file:Q3 policy.pdf|the policy"),
+            ParsedWikilink {
+                target: WikilinkTarget::File {
+                    file_name: "Q3 policy.pdf".into()
+                },
+                display: "the policy".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn classify_leaves_a_title_that_merely_starts_with_a_kind_word_alone() {
+        // The space after the colon is what separates prose from an address.
+        assert_eq!(
+            classify_wikilink("task: rewrite the parser"),
+            ParsedWikilink {
+                target: WikilinkTarget::Title,
+                display: "task: rewrite the parser".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn classify_leaves_an_unknown_kind_alone() {
+        assert_eq!(
+            classify_wikilink("http://example.test"),
+            ParsedWikilink {
+                target: WikilinkTarget::Title,
+                display: "http://example.test".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn classify_rejects_a_kind_with_no_address() {
+        assert_eq!(
+            classify_wikilink("note:"),
+            ParsedWikilink {
+                target: WikilinkTarget::Title,
+                display: "note:".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn classify_keeps_the_id_bound_document_form() {
+        let id =
+            uuid::Uuid::parse_str("019ed5fa-0000-7000-8000-000000000000").expect("valid test uuid");
+
+        assert_eq!(
+            classify_wikilink(&format!("  {id}  |  Editor test  ")),
+            ParsedWikilink {
+                target: WikilinkTarget::Document { id },
+                display: "Editor test".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn classify_keeps_a_bare_uuid_without_a_pipe_as_a_title() {
+        // `parse_wikilink_target` only binds an id when a display half follows,
+        // and the classifier must not widen that.
+        let id = uuid::Uuid::now_v7().to_string();
+
+        assert_eq!(
+            classify_wikilink(&id),
+            ParsedWikilink {
+                target: WikilinkTarget::Title,
+                display: id,
+            }
+        );
+    }
+
+    #[test]
+    fn classify_keeps_a_non_uuid_before_a_pipe_as_a_title() {
+        assert_eq!(
+            classify_wikilink("Foo|Bar"),
+            ParsedWikilink {
+                target: WikilinkTarget::Title,
+                display: "Foo|Bar".into(),
+            }
+        );
     }
 }
