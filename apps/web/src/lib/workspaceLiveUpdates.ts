@@ -32,10 +32,25 @@ export interface WorkspaceLiveUpdate {
  */
 export type LiveResyncReason = 'desync' | 'reconnect';
 
+/**
+ * What the live stream is doing right now.
+ *
+ * `offline` is the state that mattered and had no way to reach the UI: the
+ * broker gives up after its retry budget, and until this existed the app simply
+ * went quiet while looking exactly as live as before.
+ */
+export type LiveConnectionState = 'connected' | 'reconnecting' | 'offline';
+
 export interface WorkspaceLiveUpdateHandlers {
   onEvent: (update: WorkspaceLiveUpdate) => void;
   onResync: (reason: LiveResyncReason) => void;
   onReconnectFailed?: () => void;
+  /**
+   * Called with the current state on subscribe, and on every transition after
+   * that — a view that mounts mid-outage must not have to wait for the next
+   * change to learn it is looking at stale data.
+   */
+  onConnectionState?: (state: LiveConnectionState) => void;
 }
 
 export interface WorkspaceLiveUpdateSubscription {
@@ -92,6 +107,7 @@ interface Lifetime {
   recoveryAttempt: symbol | null;
   foregroundReopenSourceToken: symbol | null;
   reconnectAttempts: number;
+  connectionState: LiveConnectionState;
   firstOpen: boolean;
   listenersInstalled: boolean;
   readonly onForegroundSignal: () => void;
@@ -241,10 +257,19 @@ export function createWorkspaceLiveUpdatesBroker(
       });
   }
 
+  /** Records a connection transition and tells the subscribers about it. */
+  function setConnectionState(candidate: Lifetime, state: LiveConnectionState): void {
+    if (candidate.connectionState === state) return;
+
+    candidate.connectionState = state;
+    dispatch(candidate, (subscriber) => subscriber.onConnectionState?.(state));
+  }
+
   function exhaustRecovery(candidate: Lifetime, sourceToken: symbol): void {
     const recoveryAttempt = Symbol('recovery-attempt');
     candidate.recoveryAttempt = recoveryAttempt;
     beginLiveCacheInvalidation(candidate);
+    setConnectionState(candidate, 'offline');
     observeDesktopGateStatus(candidate, 'reconnect-failed');
     dispatch(candidate, (subscriber) => subscriber.onReconnectFailed?.());
     probeAuthorization(candidate, sourceToken, recoveryAttempt);
@@ -262,6 +287,7 @@ export function createWorkspaceLiveUpdatesBroker(
     const delay = computeBackoffDelayMs(candidate.reconnectAttempts);
     candidate.reconnectAttempts += 1;
     candidate.recoveryAttempt = recoveryAttempt;
+    setConnectionState(candidate, 'reconnecting');
     observeDesktopGateStatus(candidate, 'reconnecting');
     candidate.reconnectTimer = setTimeout(() => {
       candidate.reconnectTimer = null;
@@ -317,6 +343,7 @@ export function createWorkspaceLiveUpdatesBroker(
 
       candidate.foregroundReopenSourceToken = null;
       candidate.reconnectAttempts = 0;
+      setConnectionState(candidate, 'connected');
       if (candidate.firstOpen) {
         candidate.firstOpen = false;
         return;
@@ -370,6 +397,10 @@ export function createWorkspaceLiveUpdatesBroker(
       recoveryAttempt: null,
       foregroundReopenSourceToken: null,
       reconnectAttempts: 0,
+      // Assumed live until the stream says otherwise: the source is opened
+      // immediately after this, and claiming "reconnecting" for that instant
+      // would flash a warning on every workspace switch.
+      connectionState: 'connected',
       firstOpen: true,
       listenersInstalled: false,
       onForegroundSignal: () => scheduleForegroundRecovery(candidate),
@@ -465,6 +496,7 @@ export function createWorkspaceLiveUpdatesBroker(
 
     const subscriberId = ++nextSubscriberId;
     candidate.subscribers.set(subscriberId, handlers);
+    handlers.onConnectionState?.(candidate.connectionState);
     let released = false;
 
     return {

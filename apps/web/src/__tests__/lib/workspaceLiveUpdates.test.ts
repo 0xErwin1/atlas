@@ -119,6 +119,7 @@ function handlers(
     onEvent: vi.fn(),
     onResync: vi.fn(),
     onReconnectFailed: vi.fn(),
+    onConnectionState: vi.fn(),
     ...overrides,
   };
 }
@@ -178,6 +179,43 @@ describe('workspace live updates broker', () => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it('reports the connection state through a drop, the retries, and the recovery', () => {
+    const broker = createWorkspaceLiveUpdatesBroker();
+    const subscriber = handlers();
+    const subscription = broker.acquire('acme', subscriber);
+
+    expect(subscriber.onConnectionState).toHaveBeenCalledWith('connected');
+    FakeEventSource.instances[0]?.emitOpen();
+
+    FakeEventSource.instances[0]?.emitError(FakeEventSource.CLOSED);
+    expect(subscriber.onConnectionState).toHaveBeenLastCalledWith('reconnecting');
+
+    vi.advanceTimersByTime(60_000);
+    FakeEventSource.instances.at(-1)?.emitOpen();
+    expect(subscriber.onConnectionState).toHaveBeenLastCalledWith('connected');
+
+    subscription.release();
+    vi.advanceTimersByTime(30_000);
+  });
+
+  it('tells a view that mounts during an outage what it is looking at', () => {
+    const broker = createWorkspaceLiveUpdatesBroker();
+    const first = handlers();
+    const firstSubscription = broker.acquire('acme', first);
+
+    FakeEventSource.instances[0]?.emitOpen();
+    FakeEventSource.instances[0]?.emitError(FakeEventSource.CLOSED);
+
+    const late = handlers();
+    const lateSubscription = broker.acquire('acme', late);
+
+    expect(late.onConnectionState).toHaveBeenCalledExactlyOnceWith('reconnecting');
+
+    firstSubscription.release();
+    lateSubscription.release();
+    vi.advanceTimersByTime(30_000);
   });
 
   it('shares one source across concurrent subscribers and fans events out exactly once', () => {

@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { runHardRefresh } from '@/cache/cacheRuntime';
+import LiveConnectionStatus from '@/components/shell/LiveConnectionStatus.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import Icon from '@/components/ui/Icon.vue';
@@ -165,6 +166,8 @@ async function confirmHardRefresh(): Promise<void> {
     <div style="flex: 1;" />
 
     <div class="flex flex-col items-center" style="gap: 8px; padding-bottom: 10px;">
+      <LiveConnectionStatus v-if="workspace.activeWorkspaceSlug" :ws="workspace.activeWorkspaceSlug" />
+
       <button
         type="button"
         title="Settings"
