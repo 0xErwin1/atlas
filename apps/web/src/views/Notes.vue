@@ -706,7 +706,10 @@ function onMetaChange(newMeta: Record<string, unknown>): void {
 }
 
 function onNavigateWikilink(ref: WikilinkRef): void {
-  void router.push(wikilinkHref(ref));
+  const href = wikilinkHref(ref);
+  if (href === null) return;
+
+  void router.push(href);
 }
 
 // Flush before the outgoing document is replaced: update fires on a note→note
@@ -1021,6 +1024,7 @@ onBeforeRouteLeave(() => {
                 ref="suggestRef"
                 :ws="ws"
                 :query="wikilinkQuery"
+                :attachment-owner="{ kind: 'document', slug }"
                 @select="onSuggestSelect"
               />
             </div>

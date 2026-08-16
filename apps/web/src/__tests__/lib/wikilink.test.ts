@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
-  collectWikilinkIds,
+  collectWikilinkTitleKeys,
   detectWikilinkTrigger,
   filterWikilinkCandidates,
   formatWikilink,
   parseWikilinkInner,
+  wikilinkDisplay,
   wikilinkHref,
 } from '@/lib/wikilink';
 
@@ -58,53 +59,110 @@ describe('filterWikilinkCandidates', () => {
 const UUID = '019ed5fa-6df7-7201-97ce-a99abae541c1';
 
 describe('parseWikilinkInner', () => {
-  it('parses an id-bound link into the stable id and display title', () => {
-    expect(parseWikilinkInner(`${UUID}|Editor test`)).toEqual({ id: UUID, title: 'Editor test' });
+  it('parses a typed task link, using the readable id as the display', () => {
+    expect(parseWikilinkInner('task:ATL-80')).toEqual({
+      target: { kind: 'task', readableId: 'ATL-80' },
+      display: 'ATL-80',
+    });
   });
 
-  it('trims surrounding whitespace around id and title', () => {
-    expect(parseWikilinkInner(`  ${UUID} | Editor test `)).toEqual({ id: UUID, title: 'Editor test' });
+  it('prefers the display half of a typed link and trims around the pipe', () => {
+    expect(parseWikilinkInner('  note:incident-runbook  |  the runbook  ')).toEqual({
+      target: { kind: 'note', slug: 'incident-runbook' },
+      display: 'the runbook',
+    });
+  });
+
+  it('normalizes the kind and the readable id case', () => {
+    expect(parseWikilinkInner('TASK:atl-80').target).toEqual({ kind: 'task', readableId: 'ATL-80' });
+  });
+
+  it('keeps file names verbatim', () => {
+    expect(parseWikilinkInner('file:Q3 policy.pdf').target).toEqual({
+      kind: 'file',
+      fileName: 'Q3 policy.pdf',
+    });
+  });
+
+  it('leaves a title that merely starts with a kind word alone', () => {
+    expect(parseWikilinkInner('task: rewrite the parser')).toEqual({
+      target: { kind: 'title' },
+      display: 'task: rewrite the parser',
+    });
+  });
+
+  it('parses an id-bound link into the stable id and display title', () => {
+    expect(parseWikilinkInner(`  ${UUID} | Editor test `)).toEqual({
+      target: { kind: 'document', id: UUID },
+      display: 'Editor test',
+    });
   });
 
   it('treats a plain title as a title-only link', () => {
-    expect(parseWikilinkInner('API Design')).toEqual({ id: null, title: 'API Design' });
+    expect(parseWikilinkInner('API Design')).toEqual({ target: { kind: 'title' }, display: 'API Design' });
   });
 
   it('treats a non-uuid before the pipe as a legacy title', () => {
-    expect(parseWikilinkInner('Foo|Bar')).toEqual({ id: null, title: 'Foo|Bar' });
+    expect(parseWikilinkInner('Foo|Bar')).toEqual({ target: { kind: 'title' }, display: 'Foo|Bar' });
   });
 });
 
 describe('formatWikilink', () => {
-  it('serializes an id-bound ref with the pipe', () => {
-    expect(formatWikilink({ id: UUID, title: 'Editor test' })).toBe(`[[${UUID}|Editor test]]`);
+  it('round-trips every form it can parse', () => {
+    const forms = [
+      'task:ATL-80',
+      'task:ATL-80|the login bug',
+      'note:incident-runbook',
+      'file:policy.pdf',
+      `${UUID}|Editor test`,
+      'Roadmap',
+    ];
+
+    for (const inner of forms) {
+      expect(formatWikilink(parseWikilinkInner(inner))).toBe(`[[${inner}]]`);
+    }
   });
 
-  it('serializes a title-only ref without a pipe', () => {
-    expect(formatWikilink({ id: null, title: 'Roadmap' })).toBe('[[Roadmap]]');
+  it('omits a display half that would only repeat the address', () => {
+    expect(formatWikilink({ target: { kind: 'task', readableId: 'ATL-80' }, display: 'ATL-80' })).toBe(
+      '[[task:ATL-80]]',
+    );
   });
 });
 
-describe('collectWikilinkIds', () => {
-  const A = '019ed5fa-6df7-7201-97ce-a99abae541c1';
-  const B = '019ed62e-a2b3-7dd1-8c5c-f802287647b1';
+describe('collectWikilinkTitleKeys', () => {
+  it('collects one key per resolvable target and ignores the rest', () => {
+    const md = `[[task:ATL-80]] [[note:runbook|R]] [[${UUID}|One]] [[file:a.pdf]] [[Plain]] [[task:ATL-80|again]]`;
 
-  it('collects unique ids from id-bound links and ignores title-only links', () => {
-    const md = `See [[${A}|One]] and [[${B}|Two]] and [[Plain]] and again [[${A}|One again]]`;
-    expect(collectWikilinkIds(md).sort()).toEqual([A, B].sort());
+    expect(collectWikilinkTitleKeys(md).sort()).toEqual(['task:ATL-80', 'note:runbook', UUID].sort());
   });
 
-  it('returns an empty list when there are no id-bound links', () => {
-    expect(collectWikilinkIds('just [[a title]] here')).toEqual([]);
+  it('returns an empty list when nothing addresses a titled resource', () => {
+    expect(collectWikilinkTitleKeys('just [[a title]] and [[file:x.pdf]] here')).toEqual([]);
+  });
+});
+
+describe('wikilinkDisplay', () => {
+  it('prefers the resolved live title over the text in the markdown', () => {
+    const ref = parseWikilinkInner('task:ATL-80|stale snapshot');
+
+    expect(wikilinkDisplay(ref, { 'task:ATL-80': 'Fix the login bug' })).toBe('Fix the login bug');
+  });
+
+  it('falls back to the written display when nothing resolved', () => {
+    expect(wikilinkDisplay(parseWikilinkInner('file:policy.pdf'), {})).toBe('policy.pdf');
   });
 });
 
 describe('wikilinkHref', () => {
-  it('navigates an id-bound ref by the stable uuid', () => {
-    expect(wikilinkHref({ id: UUID, title: 'Whatever the title is now' })).toBe(`/n/${UUID}`);
+  it('routes each addressable kind to its own view', () => {
+    expect(wikilinkHref(parseWikilinkInner('task:ATL-80'))).toBe('/t/task/ATL-80');
+    expect(wikilinkHref(parseWikilinkInner('note:incident-runbook'))).toBe('/n/incident-runbook');
+    expect(wikilinkHref(parseWikilinkInner(`${UUID}|Whatever`))).toBe(`/n/${UUID}`);
+    expect(wikilinkHref(parseWikilinkInner('API Design'))).toBe('/n/api-design');
   });
 
-  it('falls back to the slugified title for a title-only ref', () => {
-    expect(wikilinkHref({ id: null, title: 'API Design' })).toBe('/n/api-design');
+  it('has no destination for an attachment, which downloads rather than opens', () => {
+    expect(wikilinkHref(parseWikilinkInner('file:policy.pdf'))).toBeNull();
   });
 });

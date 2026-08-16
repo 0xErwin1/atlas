@@ -28,7 +28,7 @@ import {
   type WikilinkRange,
 } from '@/lib/livePreview';
 import { safeUrl, sanitizeMarkdownHtmlFragment } from '@/lib/sanitize';
-import { parseWikilinkInner, type WikilinkRef } from '@/lib/wikilink';
+import { formatWikilink, parseWikilinkInner, type WikilinkRef, wikilinkDisplay } from '@/lib/wikilink';
 import { documentStyleNonce } from './cspNonce';
 
 /**
@@ -89,7 +89,7 @@ export function inlineNode(token: InlineToken, ctx: InlineCtx): Node {
     const ref = parseWikilinkInner(token.value);
     const span = document.createElement('span');
     span.className = 'cm-atlas-wikilink';
-    span.textContent = ref.id !== null ? (ctx.titles[ref.id] ?? ref.title) : ref.title;
+    span.textContent = wikilinkDisplay(ref, ctx.titles);
     span.addEventListener('mousedown', (event) => {
       event.preventDefault();
       ctx.onWikilinkClick(ref);
@@ -172,9 +172,7 @@ class WikilinkWidget extends WidgetType {
   }
 
   eq(other: WikilinkWidget): boolean {
-    return (
-      other.ref.id === this.ref.id && other.ref.title === this.ref.title && other.display === this.display
-    );
+    return formatWikilink(other.ref) === formatWikilink(this.ref) && other.display === this.display;
   }
 
   toDOM(): HTMLElement {
@@ -1216,7 +1214,7 @@ function decorateWikilinks(
     }
 
     const ref = parseWikilinkInner(range.inner);
-    const display = ref.id !== null ? (titles[ref.id] ?? ref.title) : ref.title;
+    const display = wikilinkDisplay(ref, titles);
     decos.push(
       Decoration.replace({ widget: new WikilinkWidget(ref, display, callbacks.onWikilinkClick) }).range(
         range.from,

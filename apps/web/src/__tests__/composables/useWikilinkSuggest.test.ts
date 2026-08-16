@@ -34,9 +34,9 @@ describe('useWikilinkSuggest', () => {
     );
 
     onQuery('bar', { left: 1, top: 2 });
-    onSelect({ id: 'doc-1', title: 'Bar' });
+    onSelect({ target: { kind: 'note', slug: 'bar' }, display: 'Bar' });
 
-    expect(insertWikilink).toHaveBeenCalledWith({ id: 'doc-1', title: 'Bar' });
+    expect(insertWikilink).toHaveBeenCalledWith({ target: { kind: 'note', slug: 'bar' }, display: 'Bar' });
     expect(query.value).toBeNull();
     expect(caret.value).toBeNull();
   });

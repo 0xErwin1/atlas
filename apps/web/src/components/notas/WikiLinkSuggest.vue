@@ -1,49 +1,171 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
 import Icon from '@/components/ui/Icon.vue';
+import { WIKILINK_KINDS, type WikilinkKind, type WikilinkRef } from '@/lib/wikilink';
 
-type SearchHit = components['schemas']['SearchHitDto'];
+/**
+ * The resource whose attachments a `[[file:` query can address. Attachments have
+ * no workspace-wide name, so they are only offered when the host says which
+ * document or task the text being edited belongs to.
+ */
+export type AttachmentOwner = { kind: 'document'; slug: string } | { kind: 'task'; readableId: string };
 
 const props = defineProps<{
   ws: string;
   /** Active `[[` query, or null when no trigger is open. */
   query: string | null;
+  attachmentOwner?: AttachmentOwner | null;
 }>();
 
 const emit = defineEmits<{
-  /**
-   * A note was chosen. An existing hit carries its stable id (the link binds to
-   * it); a free-typed "Create" carries a null id (resolved by slug, pending).
-   */
-  select: [ref: { id: string | null; title: string }];
+  select: [ref: WikilinkRef];
 }>();
 
-const hits = ref<SearchHit[]>([]);
+interface Suggestion {
+  key: string;
+  label: string;
+  icon: string;
+  hint: string | null;
+  ref: WikilinkRef;
+}
+
+const suggestions = ref<Suggestion[]>([]);
 const degraded = ref(false);
 const activeIndex = ref(0);
 
 const open = computed(() => props.query !== null);
 
+interface Scope {
+  kind: WikilinkKind | null;
+  term: string;
+}
+
 /**
- * Fetches note candidates from `search?type=note` (REQ-W16). A network/API
- * error degrades gracefully: the dropdown still offers free-typed creation so
- * the user is never blocked.
+ * Splits an active query into the kind it is scoped to and the term to match.
+ * `note:runb` searches notes only; a bare `runb` searches notes and tasks
+ * together, which is what an author usually wants before deciding.
  */
-async function fetchNotes(q: string): Promise<void> {
+function scopeOf(query: string): Scope {
+  const colon = query.indexOf(':');
+  if (colon === -1) return { kind: null, term: query };
+
+  const kind = query.slice(0, colon).toLowerCase();
+  const known = (WIKILINK_KINDS as readonly string[]).includes(kind);
+
+  return known ? { kind: kind as WikilinkKind, term: query.slice(colon + 1) } : { kind: null, term: query };
+}
+
+const scope = computed(() => scopeOf(props.query ?? ''));
+
+/** Free-typed creation only makes sense for a note addressed by its title. */
+const createLabel = computed(() =>
+  scope.value.kind === null || scope.value.kind === 'note' ? scope.value.term.trim() : '',
+);
+const canCreate = computed(() => createLabel.value.length > 0);
+
+const itemCount = computed(() => suggestions.value.length + (canCreate.value ? 1 : 0));
+
+const listLabel = computed(() => {
+  switch (scope.value.kind) {
+    case 'task':
+      return 'Link to task';
+    case 'file':
+      return 'Link to file';
+    case 'note':
+      return 'Link to note';
+    default:
+      return 'Link to note or task';
+  }
+});
+
+async function fetchAttachments(term: string): Promise<Suggestion[]> {
+  const owner = props.attachmentOwner ?? null;
+  if (owner === null) return [];
+
+  const { data, error } =
+    owner.kind === 'document'
+      ? await wrappedClient.GET('/api/workspaces/{ws}/documents/{slug}/attachments', {
+          params: { path: { ws: props.ws, slug: owner.slug } },
+        })
+      : await wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/attachments', {
+          params: { path: { ws: props.ws, readable_id: owner.readableId } },
+        });
+
+  if (error !== undefined || data === undefined) throw new Error('attachments unavailable');
+
+  const needle = term.trim().toLowerCase();
+
+  return data
+    .filter((item) => needle.length === 0 || item.file_name.toLowerCase().includes(needle))
+    .slice(0, 8)
+    .map((item) => ({
+      key: item.id,
+      label: item.file_name,
+      icon: 'paperclip',
+      hint: null,
+      ref: { target: { kind: 'file', fileName: item.file_name }, display: item.file_name },
+    }));
+}
+
+async function fetchSearch(kind: WikilinkKind | null, term: string): Promise<Suggestion[]> {
+  const type = kind === null ? 'note,task' : kind;
+
   const { data, error } = await wrappedClient.GET('/api/workspaces/{ws}/search', {
-    params: { path: { ws: props.ws }, query: { q: q.length > 0 ? q : '*', type: 'note', limit: 8 } },
+    params: {
+      path: { ws: props.ws },
+      query: { q: term.length > 0 ? term : '*', type, limit: 8 },
+    },
   });
 
-  if (error !== undefined || data === undefined) {
-    degraded.value = true;
-    hits.value = [];
-    return;
-  }
+  if (error !== undefined || data === undefined) throw new Error('search unavailable');
 
-  degraded.value = false;
-  hits.value = data.items;
+  return data.items.flatMap((hit): Suggestion[] => {
+    if (hit.kind === 'task') {
+      const readableId = hit.readable_id ?? null;
+      if (readableId === null) return [];
+
+      return [
+        {
+          key: hit.id,
+          label: hit.title,
+          icon: 'square-check',
+          hint: readableId,
+          ref: { target: { kind: 'task', readableId }, display: hit.title },
+        },
+      ];
+    }
+
+    const slug = hit.document_slug ?? null;
+    if (slug === null) return [];
+
+    return [
+      {
+        key: hit.id,
+        label: hit.title,
+        icon: 'file',
+        hint: null,
+        ref: { target: { kind: 'note', slug }, display: hit.title },
+      },
+    ];
+  });
+}
+
+/**
+ * Loads candidates for the active query. A network/API error degrades
+ * gracefully: the dropdown still offers free-typed creation so the user is
+ * never blocked.
+ */
+async function load(): Promise<void> {
+  const { kind, term } = scope.value;
+
+  try {
+    suggestions.value = kind === 'file' ? await fetchAttachments(term) : await fetchSearch(kind, term);
+    degraded.value = false;
+  } catch {
+    degraded.value = true;
+    suggestions.value = [];
+  }
 }
 
 watch(
@@ -51,26 +173,24 @@ watch(
   (q) => {
     activeIndex.value = 0;
     if (q === null) {
-      hits.value = [];
+      suggestions.value = [];
       return;
     }
-    void fetchNotes(q);
+    void load();
   },
   { immediate: true },
 );
 
-const createLabel = computed(() => (props.query ?? '').trim());
-const canCreate = computed(() => createLabel.value.length > 0);
-
-const itemCount = computed(() => hits.value.length + (canCreate.value ? 1 : 0));
-
 function choose(index: number): void {
-  if (index < hits.value.length) {
-    const hit = hits.value[index];
-    if (hit !== undefined) emit('select', { id: hit.id, title: hit.title });
+  const suggestion = suggestions.value[index];
+  if (suggestion !== undefined) {
+    emit('select', suggestion.ref);
     return;
   }
-  if (canCreate.value) emit('select', { id: null, title: createLabel.value });
+
+  if (canCreate.value) {
+    emit('select', { target: { kind: 'title' }, display: createLabel.value });
+  }
 }
 
 function moveDown(): void {
@@ -94,7 +214,7 @@ defineExpose({ open, moveDown, moveUp, confirmActive });
   <div
     v-if="open"
     role="listbox"
-    aria-label="Link to note"
+    :aria-label="listLabel"
     style="
       position: absolute;
       z-index: 30;
@@ -116,12 +236,12 @@ defineExpose({ open, moveDown, moveUp, confirmActive });
         letter-spacing: 0.06em;
       "
     >
-      Link to note
+      {{ listLabel }}
     </div>
 
     <button
-      v-for="(hit, i) in hits"
-      :key="hit.id"
+      v-for="(suggestion, i) in suggestions"
+      :key="suggestion.key"
       type="button"
       role="option"
       :aria-selected="activeIndex === i"
@@ -138,15 +258,21 @@ defineExpose({ open, moveDown, moveUp, confirmActive });
       @mouseenter="activeIndex = i"
       @mousedown.prevent="choose(i)"
     >
-      <Icon name="file" :size="14" />
-      <span class="min-w-0 flex-1 truncate">{{ hit.title }}</span>
+      <Icon :name="suggestion.icon" :size="14" />
+      <span class="min-w-0 flex-1 truncate">{{ suggestion.label }}</span>
+      <span
+        v-if="suggestion.hint !== null"
+        style="font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--c-muted);"
+      >
+        {{ suggestion.hint }}
+      </span>
     </button>
 
     <button
       v-if="canCreate"
       type="button"
       role="option"
-      :aria-selected="activeIndex === hits.length"
+      :aria-selected="activeIndex === suggestions.length"
       class="flex items-center gap-2 w-full text-left"
       :style="`
         height: 26px;
@@ -155,10 +281,10 @@ defineExpose({ open, moveDown, moveUp, confirmActive });
         cursor: pointer;
         font-size: var(--fs-sm);
         color: var(--c-foreground);
-        background: ${activeIndex === hits.length ? 'var(--c-list-active)' : 'transparent'};
+        background: ${activeIndex === suggestions.length ? 'var(--c-list-active)' : 'transparent'};
       `"
-      @mouseenter="activeIndex = hits.length"
-      @mousedown.prevent="choose(hits.length)"
+      @mouseenter="activeIndex = suggestions.length"
+      @mousedown.prevent="choose(suggestions.length)"
     >
       <Icon name="plus" :size="14" />
       <span class="min-w-0 flex-1 truncate">

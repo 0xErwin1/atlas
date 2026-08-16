@@ -78,7 +78,10 @@ function flushSave(): void {
 onBeforeUnmount(flushSave);
 
 function onNavigateWikilink(ref: WikilinkRef): void {
-  void router.push(wikilinkHref(ref));
+  const href = wikilinkHref(ref);
+  if (href === null) return;
+
+  void router.push(href);
 }
 
 /**
@@ -126,6 +129,7 @@ defineExpose({ insertMarkdown });
         ref="suggestRef"
         :ws="ws"
         :query="wikilinkQuery"
+        :attachment-owner="{ kind: 'task', readableId }"
         @select="onSuggestSelect"
       />
     </div>
