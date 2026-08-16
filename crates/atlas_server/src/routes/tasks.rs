@@ -19,8 +19,9 @@ use atlas_api::{
         CreateSubtaskRequest, CreateTaskRequest, CreateTaskResponseDto, MoveTaskRequest,
         PromoteChecklistItemRequest, PromotionDto, ReferenceDto, ReferenceOriginDto,
         RenameTaskAttachmentRequest, SetTaskParentRequest, TaskAttachmentDto, TaskBacklinkDto,
-        TaskDto, TaskSummaryDto, UnifiedReferenceDto, UpdateChecklistItemRequest,
-        UpdateCommentRequest, UpdateTaskRequest, WorkspaceTaskQueryParams,
+        TaskDto, TaskGraphDto, TaskGraphEdgeDto, TaskGraphNodeDto, TaskSummaryDto,
+        UnifiedReferenceDto, UpdateChecklistItemRequest, UpdateCommentRequest, UpdateTaskRequest,
+        WorkspaceTaskQueryParams,
     },
     dtos::documents::{
         ActorDto, CommentAttachmentDto, CommentBacklinkParentDto, CommentBacklinkSourceDto,
@@ -92,6 +93,7 @@ use crate::{
     },
     services::CommentDraftService,
     state::AppState,
+    task_graph::{self, GraphEdge, GraphNodeKind, TaskGraphExplorer},
 };
 
 // ---------------------------------------------------------------------------
@@ -3141,6 +3143,181 @@ async fn comment_attachment_response(
         .map_err(|error| ApiError::Internal {
             message: error.to_string(),
         })
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/workspaces/{ws}/tasks/{readable_id}/graph
+// ---------------------------------------------------------------------------
+
+/// Query parameters for the task graph read.
+#[derive(Debug, Deserialize)]
+pub(crate) struct TaskGraphQuery {
+    /// Traversal depth in edges. Default 2, clamped to [1, 5].
+    pub depth: Option<u32>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/workspaces/{ws}/tasks/{readable_id}/graph",
+    operation_id = "get_task_graph",
+    tag = "tasks",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("readable_id" = String, Path, description = "Task readable ID"),
+        ("depth" = Option<u32>, Query, description = "Traversal depth in edges. Default 2, clamped to [1,5]"),
+    ),
+    responses(
+        (status = 200, description = "Reachable references, subtasks and linked documents", body = TaskGraphDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Task not found"),
+    )
+)]
+pub(crate) async fn get_task_graph(
+    auth: Authorized<TaskRes, ViewerMin, TasksRead>,
+    State(state): State<AppState>,
+    Query(params): Query<TaskGraphQuery>,
+) -> Result<Json<TaskGraphDto>, ApiError> {
+    let depth = task_graph::resolve_depth(params.depth);
+    let root = auth.resource.0.id.0;
+    let explorer = TaskGraphExplorer::new((*state.db).clone());
+
+    let mut depths: std::collections::HashMap<uuid::Uuid, u32> =
+        std::collections::HashMap::from([(root, 0)]);
+    let mut visible: std::collections::HashSet<uuid::Uuid> =
+        std::collections::HashSet::from([root]);
+    let mut tasks = vec![root];
+    let mut documents: Vec<uuid::Uuid> = Vec::new();
+    let mut edges: Vec<GraphEdge> = Vec::new();
+    let mut frontier = vec![root];
+    let mut truncated = false;
+
+    for level in 1..=depth {
+        if frontier.is_empty() {
+            break;
+        }
+
+        let found = explorer
+            .expand(auth.workspace.id, &frontier)
+            .await
+            .map_err(ApiError::Domain)?;
+        edges.extend(found.edges);
+
+        let fresh_tasks = only_new(&found.tasks, &visible);
+        let fresh_documents = only_new(&found.documents, &visible);
+        let (allowed_tasks, allowed_documents) =
+            authorize_graph_nodes(&state, &auth, &fresh_tasks, &fresh_documents).await?;
+
+        // The budget is checked before admitting a level, so a huge fan-out
+        // reports truncation instead of returning a partial level that reads
+        // like the whole neighbourhood.
+        if visible.len() + allowed_tasks.len() + allowed_documents.len() > task_graph::MAX_NODES {
+            truncated = true;
+            break;
+        }
+
+        for id in allowed_tasks.iter().chain(allowed_documents.iter()) {
+            visible.insert(*id);
+            depths.entry(*id).or_insert(level);
+        }
+        tasks.extend(allowed_tasks.iter().copied());
+        documents.extend(allowed_documents.iter().copied());
+        frontier = allowed_tasks;
+    }
+
+    let nodes = explorer
+        .hydrate(auth.workspace.id, &depths, &tasks, &documents)
+        .await
+        .map_err(ApiError::Domain)?;
+    // Hydration is also a liveness filter: a node deleted between traversal and
+    // read has no row, and an edge to it must not survive either.
+    let hydrated: std::collections::HashSet<uuid::Uuid> =
+        nodes.iter().map(|node| node.id).collect();
+
+    Ok(Json(TaskGraphDto {
+        root,
+        edges: task_graph::retain_edges_within(edges, &hydrated)
+            .into_iter()
+            .map(|edge| TaskGraphEdgeDto {
+                from: edge.from,
+                to: edge.to,
+                kind: edge.kind,
+            })
+            .collect(),
+        nodes: nodes
+            .into_iter()
+            .map(|node| TaskGraphNodeDto {
+                id: node.id,
+                kind: match node.kind {
+                    GraphNodeKind::Task => "task".to_owned(),
+                    GraphNodeKind::Document => "document".to_owned(),
+                },
+                readable_id: node.readable_id,
+                document_slug: node.document_slug,
+                title: node.title,
+                column_name: node.column_name,
+                depth: node.depth,
+            })
+            .collect(),
+        truncated,
+    }))
+}
+
+fn only_new(
+    candidates: &[uuid::Uuid],
+    seen: &std::collections::HashSet<uuid::Uuid>,
+) -> Vec<uuid::Uuid> {
+    let mut fresh: Vec<uuid::Uuid> = candidates
+        .iter()
+        .copied()
+        .filter(|id| !seen.contains(id))
+        .collect();
+    fresh.sort_unstable();
+    fresh.dedup();
+    fresh
+}
+
+/// Keeps only the discovered nodes this caller may read.
+///
+/// A reference is visible to whoever can read the referencing task; its target
+/// carries its own authority. Without this the graph would disclose the
+/// existence, title and status of tasks in projects the caller has no access to.
+async fn authorize_graph_nodes(
+    state: &AppState,
+    auth: &Authorized<TaskRes, ViewerMin, TasksRead>,
+    tasks: &[uuid::Uuid],
+    documents: &[uuid::Uuid],
+) -> Result<(Vec<uuid::Uuid>, Vec<uuid::Uuid>), ApiError> {
+    if tasks.is_empty() && documents.is_empty() {
+        return Ok((Vec::new(), Vec::new()));
+    }
+
+    let subjects: Vec<ProjectionSubject> = tasks
+        .iter()
+        .map(|id| ProjectionSubject::Task(*id))
+        .chain(documents.iter().map(|id| ProjectionSubject::Document(*id)))
+        .collect();
+
+    let decisions =
+        BatchAuthorizationService::new(PgBatchAuthorizationSource::new((*state.db).clone()))
+            .authorize(auth.projection_context(), &subjects)
+            .await
+            .map_err(ApiError::Domain)?;
+
+    let mut allowed_tasks = Vec::new();
+    let mut allowed_documents = Vec::new();
+    for (subject, allowed) in subjects.into_iter().zip(decisions) {
+        if !allowed {
+            continue;
+        }
+        match subject {
+            ProjectionSubject::Task(id) => allowed_tasks.push(id),
+            ProjectionSubject::Document(id) => allowed_documents.push(id),
+            _ => {}
+        }
+    }
+    Ok((allowed_tasks, allowed_documents))
 }
 
 // ---------------------------------------------------------------------------

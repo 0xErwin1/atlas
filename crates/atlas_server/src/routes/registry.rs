@@ -960,6 +960,13 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
     },
     RouteEntry {
         method: "GET",
+        path_template: "/api/workspaces/{ws}/tasks/ATL-0/graph",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/api/workspaces/{ws}/tasks/{readable_id}/graph"),
+        capability: Some("tasks:read"),
+    },
+    RouteEntry {
+        method: "GET",
         path_template: "/api/workspaces/{ws}/tasks/ATL-0/backlinks",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/api/workspaces/{ws}/tasks/{readable_id}/backlinks"),

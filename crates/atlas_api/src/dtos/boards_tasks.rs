@@ -288,6 +288,50 @@ pub struct TaskBacklinkDto {
     pub comment_source: Option<CommentBacklinkSourceDto>,
 }
 
+/// One resource in a task's dependency graph.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct TaskGraphNodeDto {
+    pub id: uuid::Uuid,
+    /// "task" | "document"
+    pub kind: String,
+    /// Task readable ID. Present only when `kind = task`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub readable_id: Option<String>,
+    /// Document slug. Present only when `kind = document`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub document_slug: Option<String>,
+    pub title: String,
+    /// Current column (status) name; present only for task nodes on a board.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub column_name: Option<String>,
+    /// Traversal distance from the root, in edges.
+    pub depth: u32,
+}
+
+/// One directed link between two nodes of a task graph.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct TaskGraphEdgeDto {
+    pub from: uuid::Uuid,
+    pub to: uuid::Uuid,
+    /// "relates" | "blocks" | "parent" | "spec" | "docs" | "subtask"
+    pub kind: String,
+}
+
+/// The graph of what a task depends on, blocks, and is composed of.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct TaskGraphDto {
+    /// Id of the task the traversal started from.
+    pub root: uuid::Uuid,
+    pub nodes: Vec<TaskGraphNodeDto>,
+    pub edges: Vec<TaskGraphEdgeDto>,
+    /// True when the node budget stopped the traversal before the requested
+    /// depth, so the graph is a subgraph rather than the whole reachable set.
+    pub truncated: bool,
+}
+
 // ---------------------------------------------------------------------------
 // Checklist DTOs
 // ---------------------------------------------------------------------------

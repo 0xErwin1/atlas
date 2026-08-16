@@ -25,6 +25,7 @@ pub mod search_indexer;
 pub mod semantic_indexer;
 pub mod services;
 pub mod state;
+pub mod task_graph;
 pub mod webhook_url;
 
 /// Test-only server assembly for the desktop integration gate.
@@ -506,6 +507,10 @@ pub fn app(state: AppState) -> Router {
         .route(
             "/api/workspaces/{ws}/tasks/{readable_id}/backlinks",
             axum::routing::get(routes::tasks::list_backlinks),
+        )
+        .route(
+            "/api/workspaces/{ws}/tasks/{readable_id}/graph",
+            axum::routing::get(routes::tasks::get_task_graph),
         )
         .route(
             "/api/workspaces/{ws}/tasks/{readable_id}/checklist",

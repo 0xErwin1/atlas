@@ -317,6 +317,7 @@ enum Case {
     RenameTaskAttachment,
     DeleteTaskAttachment,
     ListTaskBacklinks,
+    GetTaskGraph,
     ListChecklist,
     CreateChecklistItem,
     UpdateChecklistItem,
@@ -464,6 +465,7 @@ impl Case {
         Case::RenameTaskAttachment,
         Case::DeleteTaskAttachment,
         Case::ListTaskBacklinks,
+        Case::GetTaskGraph,
         Case::ListChecklist,
         Case::CreateChecklistItem,
         Case::UpdateChecklistItem,
@@ -603,6 +605,7 @@ impl Case {
             Case::RenameTaskAttachment => ("PATCH", "tasks:update"),
             Case::DeleteTaskAttachment => ("DELETE", "tasks:update"),
             Case::ListTaskBacklinks => ("GET", "tasks:read"),
+            Case::GetTaskGraph => ("GET", "tasks:read"),
             Case::ListChecklist => ("GET", "tasks:read"),
             Case::CreateChecklistItem => ("POST", "tasks:update"),
             Case::UpdateChecklistItem => ("PATCH", "tasks:update"),
@@ -872,6 +875,10 @@ async fn invoke(
         }
         Case::ListTaskBacklinks => client
             .list_task_backlinks(ws, &fx.task_readable_id)
+            .await
+            .map(|_| ()),
+        Case::GetTaskGraph => client
+            .get_task_graph(ws, &fx.task_readable_id, None)
             .await
             .map(|_| ()),
         Case::ListChecklist => client

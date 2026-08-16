@@ -10941,6 +10941,71 @@
         ]
       }
     },
+    "/api/workspaces/{ws}/tasks/{readable_id}/graph": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "get_task_graph",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "readable_id",
+            "in": "path",
+            "description": "Task readable ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "depth",
+            "in": "query",
+            "description": "Traversal depth in edges. Default 2, clamped to [1,5]",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reachable references, subtasks and linked documents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskGraphDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Task not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/api/workspaces/{ws}/tasks/{readable_id}/move": {
       "post": {
         "tags": [
@@ -17285,6 +17350,112 @@
           "workspace_id": {
             "type": "string",
             "format": "uuid"
+          }
+        }
+      },
+      "TaskGraphDto": {
+        "type": "object",
+        "description": "The graph of what a task depends on, blocks, and is composed of.",
+        "required": [
+          "root",
+          "nodes",
+          "edges",
+          "truncated"
+        ],
+        "properties": {
+          "edges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskGraphEdgeDto"
+            }
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskGraphNodeDto"
+            }
+          },
+          "root": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Id of the task the traversal started from."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when the node budget stopped the traversal before the requested\ndepth, so the graph is a subgraph rather than the whole reachable set."
+          }
+        }
+      },
+      "TaskGraphEdgeDto": {
+        "type": "object",
+        "description": "One directed link between two nodes of a task graph.",
+        "required": [
+          "from",
+          "to",
+          "kind"
+        ],
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "description": "\"relates\" | \"blocks\" | \"parent\" | \"spec\" | \"docs\" | \"subtask\""
+          },
+          "to": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "TaskGraphNodeDto": {
+        "type": "object",
+        "description": "One resource in a task's dependency graph.",
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "depth"
+        ],
+        "properties": {
+          "column_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Current column (status) name; present only for task nodes on a board."
+          },
+          "depth": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Traversal distance from the root, in edges.",
+            "minimum": 0
+          },
+          "document_slug": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Document slug. Present only when `kind = document`."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "description": "\"task\" | \"document\""
+          },
+          "readable_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Task readable ID. Present only when `kind = task`."
+          },
+          "title": {
+            "type": "string"
           }
         }
       },

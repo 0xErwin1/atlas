@@ -64,9 +64,9 @@ use response::{
     project_platform_status_template, project_principal, project_project, project_promotion,
     project_reference, project_revision_content, project_revision_meta, project_saved_search,
     project_search_hit, project_status_template, project_tag, project_task_attachment,
-    project_task_backlink, project_task_compact, project_task_full, project_task_row,
-    project_task_view, project_webhook, project_webhook_created, project_webhook_delivery,
-    project_workspace, project_workspace_activity_entry, require_confirm,
+    project_task_backlink, project_task_compact, project_task_full, project_task_graph,
+    project_task_row, project_task_view, project_webhook, project_webhook_created,
+    project_webhook_delivery, project_workspace, project_workspace_activity_entry, require_confirm,
     resolve_column_id_on_board, validate_assignee_type, validate_estimate, validate_estimate_value,
     validate_priority, validate_reference_kind, validate_single_target, wrap_vec,
 };
@@ -106,7 +106,8 @@ Tools by area (see each tool's own description for parameters):\n\
 - Workspace context: `list_workspaces`, `list_projects`, `list_members`, `list_tags`, \
 `list_used_labels`, `list_status_templates`, `list_saved_searches`, `list_task_views`.\n\
 - Self: `get_agent_identity` (the calling API key's own id, name, and capability scopes).\n\
-- Links and depth: `get_task_references`, `get_task_backlinks`, `get_document_backlinks`, \
+- Links and depth: `get_task_graph` (both directions at once), `get_task_references`, \
+`get_task_backlinks`, `get_document_backlinks`, \
 `list_checklist`, `list_comments`, `list_document_comments`, `list_activity`, \
 `list_workspace_activity`, `list_document_history`, `get_document_revision`, \
 `list_attachments`, `list_task_attachments`, `get_task_attachment`.\n\
@@ -870,6 +871,18 @@ pub struct GetTaskReferencesParams {
     /// Task readable ID, e.g. `ATL-42`. Returns OUTBOUND references — links this task creates
     /// to other tasks or documents. Use `get_task_backlinks` to find tasks that point TO this one.
     pub readable_id: String,
+}
+
+/// Parameters accepted by the `get_task_graph` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetTaskGraphParams {
+    /// Workspace slug.
+    pub workspace: String,
+    /// Task readable ID, e.g. `ATL-42`.
+    pub readable_id: String,
+    /// Traversal depth in edges. Default 2, clamped to [1, 5].
+    #[serde(default)]
+    pub depth: Option<u32>,
 }
 
 /// Parameters accepted by the `get_task_backlinks` tool.
@@ -2653,6 +2666,26 @@ impl AtlasMcp {
             .map_err(|e| enrich_client_error(e, "get_task_references"))?;
 
         let result = wrap_vec(refs, project_reference);
+        serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    #[tool(
+        description = "Graph of what a task links to: references in both directions, sub-tasks, \
+                       and linked documents, up to `depth` edges away"
+    )]
+    async fn get_task_graph(
+        &self,
+        Parameters(params): Parameters<GetTaskGraphParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
+        let graph = client
+            .get_task_graph(&params.workspace, &params.readable_id, params.depth)
+            .await
+            .map_err(|e| enrich_client_error(e, "get_task_graph"))?;
+
+        let result = project_task_graph(graph);
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 

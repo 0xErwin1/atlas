@@ -19,7 +19,7 @@ use atlas_api::{
             CreateSubtaskRequest, CreateTaskRequest, CreateTaskResponseDto, MoveBoardRequest,
             MoveTaskRequest, PromoteChecklistItemRequest, PromotionDto, ReferenceDto,
             RenameTaskAttachmentRequest, SetTaskParentRequest, TaskAttachmentDto, TaskBacklinkDto,
-            TaskDto, TaskSummaryDto, UnifiedReferenceDto, UpdateBoardRequest,
+            TaskDto, TaskGraphDto, TaskSummaryDto, UnifiedReferenceDto, UpdateBoardRequest,
             UpdateChecklistItemRequest, UpdateColumnRequest, UpdateCommentRequest,
             UpdateTaskRequest, WorkspaceTaskQueryParams,
         },
@@ -2700,6 +2700,21 @@ impl AtlasClient {
             .send()
             .await?;
         self.decode_response(response, "list_task_backlinks").await
+    }
+
+    /// `GET /api/workspaces/{ws}/tasks/{readable_id}/graph`
+    pub async fn get_task_graph(
+        &self,
+        ws: &str,
+        readable_id: &str,
+        depth: Option<u32>,
+    ) -> Result<TaskGraphDto, ClientError> {
+        let path = match depth {
+            Some(depth) => format!("/api/workspaces/{ws}/tasks/{readable_id}/graph?depth={depth}"),
+            None => format!("/api/workspaces/{ws}/tasks/{readable_id}/graph"),
+        };
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "get_task_graph").await
     }
 
     /// `GET /api/workspaces/{ws}/tasks/{readable_id}/checklist`

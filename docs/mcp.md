@@ -106,6 +106,7 @@ Shared behavior from `ATLAS_INSTRUCTIONS` and tool parameter docs:
 - `list_status_templates`
 - `list_saved_searches`
 - `list_task_views`
+- `get_task_graph`
 - `get_task_references`
 - `get_task_backlinks`
 - `get_document_backlinks`

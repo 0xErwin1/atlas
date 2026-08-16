@@ -8060,3 +8060,285 @@ async fn revoked_api_key_assignee_is_hidden_after_revoke() {
 
     db.teardown().await;
 }
+
+// ---------------------------------------------------------------------------
+// Task graph
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn task_graph_walks_references_subtasks_and_documents_both_ways() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "graph-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("graph-proj", "GR"))
+        .await
+        .expect("create project");
+    let board = client
+        .create_board(
+            &ws.slug,
+            "graph-proj",
+            CreateBoardRequest {
+                folder_id: None,
+                name: "Board".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+    let col = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Todo".to_string(),
+                before: None,
+                after: None,
+                color: None,
+            },
+        )
+        .await
+        .expect("create column");
+
+    let task = |title: &str| {
+        let client = &client;
+        let ws_slug = ws.slug.clone();
+        let title = title.to_string();
+        async move {
+            client
+                .create_task(
+                    &ws_slug,
+                    board.id,
+                    CreateTaskRequest {
+                        references: vec![],
+                        column_id: col.id,
+                        title,
+                        description: None,
+                        properties: None,
+                        before: None,
+                        after: None,
+                    },
+                )
+                .await
+                .expect("create task")
+        }
+    };
+
+    let root = task("Root").await;
+    let blocked = task("Blocked by root").await;
+    let blocker = task("Blocks root").await;
+    let far = task("Two hops away").await;
+
+    let spec = client
+        .create_document(
+            &ws.slug,
+            "graph-proj",
+            CreateDocumentRequest {
+                title: "Graph Spec".to_string(),
+                folder_id: None,
+                content: Some("spec body".to_string()),
+            },
+        )
+        .await
+        .expect("create document");
+
+    let child = client
+        .create_subtask(
+            &ws.slug,
+            &root.readable_id,
+            CreateSubtaskRequest::titled("Child"),
+        )
+        .await
+        .expect("create subtask");
+
+    for (source, kind, target_task, target_document) in [
+        (&root, "blocks", Some(&blocked), None),
+        (&blocker, "blocks", Some(&root), None),
+        (&blocked, "relates", Some(&far), None),
+        (&root, "spec", None, Some(spec.id)),
+    ] {
+        client
+            .create_reference(
+                &ws.slug,
+                &source.readable_id,
+                CreateReferenceRequest {
+                    kind: kind.to_string(),
+                    target_task_readable_id: target_task.map(|t| t.readable_id.clone()),
+                    target_document_id: target_document,
+                },
+            )
+            .await
+            .expect("create reference");
+    }
+
+    let graph = client
+        .get_task_graph(&ws.slug, &root.readable_id, Some(1))
+        .await
+        .expect("depth 1 graph");
+    let ids: Vec<String> = graph
+        .nodes
+        .iter()
+        .filter_map(|node| node.readable_id.clone())
+        .collect();
+    assert!(ids.contains(&root.readable_id));
+    assert!(
+        ids.contains(&blocked.readable_id),
+        "an outbound reference is part of the graph"
+    );
+    assert!(
+        ids.contains(&blocker.readable_id),
+        "an inbound reference is part of the graph too — a blocker is a dependency"
+    );
+    assert!(ids.contains(&child.task.readable_id), "sub-tasks are edges");
+    assert!(
+        !ids.contains(&far.readable_id),
+        "two hops away is outside depth 1"
+    );
+    assert!(
+        graph
+            .nodes
+            .iter()
+            .any(|node| node.kind == "document" && node.document_slug == spec.slug),
+        "a referenced document is a node addressed by slug"
+    );
+    assert!(
+        graph.edges.iter().any(|edge| edge.kind == "subtask"),
+        "hierarchy edges are labelled apart from references"
+    );
+    assert!(!graph.truncated);
+
+    let deeper = client
+        .get_task_graph(&ws.slug, &root.readable_id, Some(2))
+        .await
+        .expect("depth 2 graph");
+    assert!(
+        deeper
+            .nodes
+            .iter()
+            .any(|node| node.readable_id.as_deref() == Some(far.readable_id.as_str())),
+        "depth 2 reaches the second hop"
+    );
+    assert!(
+        deeper
+            .nodes
+            .iter()
+            .any(|node| node.depth == 2 && node.readable_id.as_deref() == Some(&far.readable_id)),
+        "the second hop is reported at depth 2"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn task_graph_omits_nodes_the_caller_cannot_read() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (owner, ws, _) = support::login_user_with_workspace(&server, &db, "graph-owner").await;
+
+    owner
+        .create_project(&ws.slug, project_req("graph-open", "GO"))
+        .await
+        .expect("create open project");
+    owner
+        .create_project(
+            &ws.slug,
+            CreateProjectRequest {
+                name: "Private".to_string(),
+                slug: "graph-private".to_string(),
+                task_prefix: "GP".to_string(),
+                visibility: Some("private".to_string()),
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create private project");
+
+    let mut boards = Vec::new();
+    for project in ["graph-open", "graph-private"] {
+        let board = owner
+            .create_board(
+                &ws.slug,
+                project,
+                CreateBoardRequest {
+                    folder_id: None,
+                    name: format!("{project} board"),
+                },
+            )
+            .await
+            .expect("create board");
+        let column = owner
+            .create_column(
+                &ws.slug,
+                board.id,
+                CreateColumnRequest {
+                    name: "Todo".to_string(),
+                    before: None,
+                    after: None,
+                    color: None,
+                },
+            )
+            .await
+            .expect("create column");
+        let task = owner
+            .create_task(
+                &ws.slug,
+                board.id,
+                CreateTaskRequest {
+                    references: vec![],
+                    column_id: column.id,
+                    title: format!("{project} task"),
+                    description: None,
+                    properties: None,
+                    before: None,
+                    after: None,
+                },
+            )
+            .await
+            .expect("create task");
+        boards.push(task);
+    }
+    let open_task = &boards[0];
+    let private_task = &boards[1];
+
+    owner
+        .create_reference(
+            &ws.slug,
+            &open_task.readable_id,
+            CreateReferenceRequest {
+                kind: "blocks".to_string(),
+                target_task_readable_id: Some(private_task.readable_id.clone()),
+                target_document_id: None,
+            },
+        )
+        .await
+        .expect("create cross-project reference");
+
+    let (member, member_user) = support::login_user(&server, &db, "graph-plain-member").await;
+    db.membership_repo()
+        .add(
+            &WorkspaceCtx::new(ws.id, Actor::User(member_user.id)),
+            member_user.id,
+            MemberRole::Member,
+        )
+        .await
+        .expect("add plain member");
+
+    let graph = member
+        .get_task_graph(&ws.slug, &open_task.readable_id, Some(2))
+        .await
+        .expect("member reads the graph of a task they can see");
+
+    assert!(
+        !graph
+            .nodes
+            .iter()
+            .any(|node| node.readable_id.as_deref() == Some(&private_task.readable_id)),
+        "a task in a private project must not appear through a reference"
+    );
+    assert!(
+        graph.edges.is_empty(),
+        "an edge to an invisible node is dropped whole, not left dangling"
+    );
+
+    db.teardown().await;
+}

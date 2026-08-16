@@ -10,7 +10,7 @@ use atlas_api::{
         boards_tasks::{
             ActivityEntryDto, AssigneeDto, BoardSummaryDto, ChecklistItemDto, ColumnDto,
             CommentDto, CommentFeedEntryDto, CommentLinkTargetDto, ReferenceDto, TaskAttachmentDto,
-            TaskBacklinkDto, TaskDto, TaskSummaryDto, UnifiedReferenceDto,
+            TaskBacklinkDto, TaskDto, TaskGraphDto, TaskSummaryDto, UnifiedReferenceDto,
         },
         documents::{
             ActorDto, AttachmentDto, BacklinkDto, CommentAttachmentDto, DocumentCompactDto,
@@ -667,6 +667,74 @@ pub(crate) fn project_task_backlink(b: TaskBacklinkDto) -> Value {
             "comment_source".into(),
             project_comment_backlink_source(source),
         );
+    }
+    Value::Object(map)
+}
+
+// ---------------------------------------------------------------------------
+// Task graph projection (get_task_graph)
+// ---------------------------------------------------------------------------
+
+/// Projects a task dependency graph, addressing every node by name.
+///
+/// Edges arrive keyed by UUID because that is the only identifier both families
+/// share. They are rewritten to readable ids and slugs here, so the payload
+/// carries each address once instead of a uuid per node plus a uuid per edge
+/// endpoint — and an agent can act on an edge without a lookup table.
+pub(crate) fn project_task_graph(graph: TaskGraphDto) -> Value {
+    let address: std::collections::HashMap<uuid::Uuid, String> = graph
+        .nodes
+        .iter()
+        .map(|node| {
+            let address = node
+                .readable_id
+                .clone()
+                .or_else(|| node.document_slug.clone())
+                .unwrap_or_else(|| node.id.to_string());
+            (node.id, address)
+        })
+        .collect();
+
+    let nodes: Vec<Value> = graph
+        .nodes
+        .iter()
+        .map(|node| {
+            let mut map = serde_json::Map::new();
+            map.insert("kind".into(), json!(node.kind));
+            map.insert(
+                "id".into(),
+                json!(address.get(&node.id).cloned().unwrap_or_default()),
+            );
+            map.insert("title".into(), json!(node.title));
+            map.insert("depth".into(), json!(node.depth));
+            if let Some(column) = node.column_name.clone() {
+                map.insert("column_name".into(), json!(column));
+            }
+            Value::Object(map)
+        })
+        .collect();
+
+    let edges: Vec<Value> = graph
+        .edges
+        .iter()
+        .map(|edge| {
+            json!({
+                "from": address.get(&edge.from).cloned().unwrap_or_default(),
+                "to": address.get(&edge.to).cloned().unwrap_or_default(),
+                "kind": edge.kind,
+            })
+        })
+        .collect();
+
+    let mut map = serde_json::Map::new();
+    map.insert(
+        "root".into(),
+        json!(address.get(&graph.root).cloned().unwrap_or_default()),
+    );
+    map.insert("nodes".into(), Value::Array(nodes));
+    map.insert("edges".into(), Value::Array(edges));
+    if graph.truncated {
+        map.insert("truncated".into(), json!(true));
     }
     Value::Object(map)
 }
@@ -1762,6 +1830,76 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
+    // project_task_graph
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn task_graph_projection_addresses_nodes_and_edges_by_name() {
+        let root = Uuid::from_u128(1);
+        let blocked = Uuid::from_u128(2);
+        let spec = Uuid::from_u128(3);
+        let graph = TaskGraphDto {
+            root,
+            nodes: vec![
+                TaskGraphNodeDto {
+                    id: root,
+                    kind: "task".into(),
+                    readable_id: Some("ATL-1".into()),
+                    document_slug: None,
+                    title: "Root".into(),
+                    column_name: Some("In Progress".into()),
+                    depth: 0,
+                },
+                TaskGraphNodeDto {
+                    id: blocked,
+                    kind: "task".into(),
+                    readable_id: Some("ATL-2".into()),
+                    document_slug: None,
+                    title: "Blocked".into(),
+                    column_name: None,
+                    depth: 1,
+                },
+                TaskGraphNodeDto {
+                    id: spec,
+                    kind: "document".into(),
+                    readable_id: None,
+                    document_slug: Some("the-spec".into()),
+                    title: "Spec".into(),
+                    column_name: None,
+                    depth: 1,
+                },
+            ],
+            edges: vec![
+                TaskGraphEdgeDto {
+                    from: root,
+                    to: blocked,
+                    kind: "blocks".into(),
+                },
+                TaskGraphEdgeDto {
+                    from: root,
+                    to: spec,
+                    kind: "spec".into(),
+                },
+            ],
+            truncated: false,
+        };
+
+        let val = project_task_graph(graph);
+
+        assert_eq!(val["root"], "ATL-1");
+        assert_eq!(val["edges"][0]["from"], "ATL-1");
+        assert_eq!(val["edges"][0]["to"], "ATL-2");
+        assert_eq!(val["edges"][1]["to"], "the-spec");
+        assert_eq!(val["nodes"][0]["id"], "ATL-1");
+        assert_eq!(val["nodes"][2]["id"], "the-spec");
+        assert!(
+            val.get("truncated").is_none(),
+            "an untruncated graph says nothing about truncation"
+        );
+        assert!(val["nodes"][1].get("column_name").is_none());
+    }
+
+    // -----------------------------------------------------------------------
     // project_document_compact / full
     // -----------------------------------------------------------------------
 
@@ -2448,7 +2586,7 @@ mod tests {
     // project_task_backlink
     // -----------------------------------------------------------------------
 
-    use atlas_api::dtos::boards_tasks::TaskBacklinkDto;
+    use atlas_api::dtos::boards_tasks::{TaskBacklinkDto, TaskGraphEdgeDto, TaskGraphNodeDto};
 
     fn make_task_backlink(kind: &str) -> TaskBacklinkDto {
         TaskBacklinkDto {
