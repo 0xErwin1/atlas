@@ -16,6 +16,7 @@ export interface BoardInput {
   name: string;
   folder_id?: string | null;
   task_count?: number;
+  archived_at?: string | null;
 }
 
 /**
@@ -62,6 +63,8 @@ export interface TreeBoard {
   id: string;
   name: string;
   taskCount: number;
+  /** An archived board still shows in the tree; it is read-only, not hidden. */
+  archived: boolean;
 }
 
 export interface NotesTree {
@@ -142,6 +145,7 @@ export function buildNotesTree(
       id: board.id,
       name: board.name,
       taskCount: board.task_count ?? 0,
+      archived: board.archived_at !== null && board.archived_at !== undefined,
     };
 
     const folderId = board.folder_id ?? null;

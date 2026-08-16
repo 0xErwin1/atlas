@@ -24,8 +24,9 @@ use atlas_domain::{
 
 use crate::{
     authz::{
-        Authorized, BoardRes, BoardsCreate, BoardsDelete, BoardsRead, BoardsUpdate, EditorMin,
-        MinRole, ProjectRes, ViewerMin, authorize_folder_destination, resolve_folder_ancestry,
+        ArchivableBoardRes, Authorized, BoardRes, BoardsCreate, BoardsDelete, BoardsRead,
+        BoardsUpdate, EditorMin, MinRole, ProjectRes, ViewerMin, authorize_folder_destination,
+        resolve_folder_ancestry,
     },
     error::ApiError,
     persistence::repos::{BoardRepo, PgBoardRepo},
@@ -62,6 +63,7 @@ fn board_to_dto(b: Board) -> BoardDto {
         Actor::ApiKey(kid) => ("api_key".into(), kid.0),
     };
     BoardDto {
+        archived_at: b.archived_at,
         id: b.id.0,
         workspace_id: b.workspace_id.0,
         project_id: b.project_id.0,
@@ -218,6 +220,7 @@ pub(crate) async fn list_boards(
     let dtos = all
         .into_iter()
         .map(|b| BoardSummaryDto {
+            archived_at: b.archived_at,
             id: b.id.0,
             name: b.name,
             folder_id: b.folder_id.map(|id| id.0),
@@ -347,6 +350,88 @@ pub(crate) async fn move_board(
 
     let board = repo
         .move_board(&ctx, auth.resource.0.id, body.folder_id.map(FolderId))
+        .await
+        .map_err(ApiError::Domain)?;
+
+    Ok(Json(board_to_dto(board)))
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/workspaces/{ws}/boards/{board_id}/archive
+// POST /api/workspaces/{ws}/boards/{board_id}/unarchive
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    post,
+    path = "/api/workspaces/{ws}/boards/{board_id}/archive",
+    tag = "boards",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("board_id" = String, Path, description = "Board UUID"),
+    ),
+    responses(
+        (status = 200, description = "Board archived; it stays readable and refuses writes", body = BoardDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Board not found"),
+    )
+)]
+pub(crate) async fn archive_board(
+    auth: Authorized<ArchivableBoardRes, EditorMin, BoardsUpdate>,
+    State(state): State<AppState>,
+) -> Result<Json<BoardDto>, ApiError> {
+    set_archived(
+        &state,
+        &auth.principal,
+        auth.workspace.id,
+        auth.resource.0.id,
+        true,
+    )
+    .await
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/workspaces/{ws}/boards/{board_id}/unarchive",
+    tag = "boards",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+        ("board_id" = String, Path, description = "Board UUID"),
+    ),
+    responses(
+        (status = 200, description = "Board reopened for writes", body = BoardDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Insufficient permissions"),
+        (status = 404, description = "Board not found"),
+    )
+)]
+pub(crate) async fn unarchive_board(
+    auth: Authorized<ArchivableBoardRes, EditorMin, BoardsUpdate>,
+    State(state): State<AppState>,
+) -> Result<Json<BoardDto>, ApiError> {
+    set_archived(
+        &state,
+        &auth.principal,
+        auth.workspace.id,
+        auth.resource.0.id,
+        false,
+    )
+    .await
+}
+
+async fn set_archived(
+    state: &AppState,
+    principal: &Principal,
+    workspace_id: atlas_domain::ids::WorkspaceId,
+    board_id: BoardId,
+    archived: bool,
+) -> Result<Json<BoardDto>, ApiError> {
+    let ctx = WorkspaceCtx::new(workspace_id, principal_to_actor(principal));
+
+    let board = PgBoardRepo::new((*state.db).clone())
+        .set_board_archived(&ctx, board_id, archived)
         .await
         .map_err(ApiError::Domain)?;
 

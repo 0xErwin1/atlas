@@ -2285,6 +2285,7 @@ mod tests {
 
     fn make_board_summary() -> BoardSummaryDto {
         BoardSummaryDto {
+            archived_at: None,
             id: fixed_uuid(),
             name: "Sprint Board".into(),
             folder_id: None,

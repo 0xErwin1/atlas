@@ -27,6 +27,7 @@ pub mod board {
         pub created_at: DateTime<Utc>,
         pub updated_at: DateTime<Utc>,
         pub deleted_at: Option<DateTime<Utc>>,
+        pub archived_at: Option<DateTime<Utc>>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -216,6 +217,7 @@ pub fn board_from(m: board::Model) -> Board {
         created_at: m.created_at,
         updated_at: m.updated_at,
         deleted_at: m.deleted_at,
+        archived_at: m.archived_at,
     }
 }
 

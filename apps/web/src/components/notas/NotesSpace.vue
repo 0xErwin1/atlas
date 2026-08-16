@@ -452,6 +452,17 @@ async function renameBoard(boardId: string, name: string): Promise<void> {
   }
 }
 
+async function setBoardArchived(boardId: string, archived: boolean): Promise<void> {
+  if (ws.value === '') return;
+
+  const ok = await boards.setBoardArchived(ws.value, props.project.slug, boardId, archived);
+  if (ok) {
+    await invalidateCatalog();
+  } else if (boards.error) {
+    ui.showBanner(boards.error, 'error');
+  }
+}
+
 async function removeBoard(boardId: string): Promise<void> {
   if (ws.value === '') return;
 
@@ -932,6 +943,7 @@ defineExpose({
         @create-board="createBoard"
         @rename-board="renameBoard"
         @remove-board="removeBoard"
+        @set-board-archived="setBoardArchived"
         @move-nodes="moveNodes"
         @request-move="requestMove"
         @request-copy="requestCopy"

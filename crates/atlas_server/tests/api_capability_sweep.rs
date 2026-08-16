@@ -380,6 +380,8 @@ enum Case {
     GetBoard,
     UpdateBoard,
     MoveBoard,
+    ArchiveBoard,
+    UnarchiveBoard,
     DeleteBoard,
     CreateColumn,
     ListColumns,
@@ -526,6 +528,8 @@ impl Case {
         Case::GetBoard,
         Case::UpdateBoard,
         Case::MoveBoard,
+        Case::ArchiveBoard,
+        Case::UnarchiveBoard,
         Case::DeleteBoard,
         Case::CreateColumn,
         Case::ListColumns,
@@ -668,6 +672,8 @@ impl Case {
             Case::GetBoard => ("GET", "boards:read"),
             Case::UpdateBoard => ("PATCH", "boards:update"),
             Case::MoveBoard => ("PATCH", "boards:update"),
+            Case::ArchiveBoard => ("POST", "boards:update"),
+            Case::UnarchiveBoard => ("POST", "boards:update"),
             Case::DeleteBoard => ("DELETE", "boards:delete"),
             Case::CreateColumn => ("POST", "boards:update"),
             Case::ListColumns => ("GET", "boards:read"),
@@ -1320,6 +1326,14 @@ async fn invoke(
             .move_board(ws, fx.board_id, MoveBoardRequest::default())
             .await
             .map(|_| ()),
+        // Unarchive runs first so the board is left writable for every later
+        // case in the sweep, whatever order they run in.
+        Case::UnarchiveBoard => client.unarchive_board(ws, fx.board_id).await.map(|_| ()),
+        Case::ArchiveBoard => {
+            let archived = client.archive_board(ws, fx.board_id).await.map(|_| ());
+            let _ = client.unarchive_board(ws, fx.board_id).await;
+            archived
+        }
         Case::DeleteBoard => client.delete_board(ws, fx.board_id).await,
         Case::CreateColumn => client
             .create_column(

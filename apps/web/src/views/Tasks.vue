@@ -509,6 +509,10 @@ watch(
       <span class="flex-1 truncate" style="font-size: var(--fs-lg); font-weight: var(--fw-bold); color: var(--c-foreground);">
         {{ boards.board?.name ?? 'Board' }}
       </span>
+      <span v-if="boards.boardArchived" class="atl-archived-chip" title="Archived — this board is read-only">
+        <Icon name="lock" :size="11" />
+        Archived
+      </span>
       <button type="button" class="atl-gbtn" :title="`Search ${commandPaletteShortcut}`" aria-label="Search" @click="ui.openPalette()">
         <Icon name="search" :size="15" />
       </button>
@@ -516,6 +520,14 @@ watch(
 
     <EditorToolbar v-else :breadcrumbs="breadcrumbs" :dirty="false">
       <template #lead>
+        <span
+          v-if="boards.boardArchived"
+          class="atl-archived-chip"
+          title="Archived — this board is read-only until you unarchive it"
+        >
+          <Icon name="lock" :size="11" />
+          Archived
+        </span>
         <BoardViewMenu v-if="!isView" />
         <Popover v-if="!isView && !isBoardView" placement="bottom-start" width="180px">
           <template #trigger="{ open, toggle }">
@@ -684,6 +696,22 @@ watch(
 </template>
 
 <style scoped>
+.atl-archived-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--c-border);
+  border-radius: 9999px;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+  white-space: nowrap;
+}
+
 .atl-board-dimmed {
   filter: saturate(0.7) brightness(0.82);
   transition: filter 0.2s;

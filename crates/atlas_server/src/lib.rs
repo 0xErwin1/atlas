@@ -402,6 +402,14 @@ pub fn app(state: AppState) -> Router {
             axum::routing::patch(routes::boards::move_board),
         )
         .route(
+            "/api/workspaces/{ws}/boards/{board_id}/archive",
+            axum::routing::post(routes::boards::archive_board),
+        )
+        .route(
+            "/api/workspaces/{ws}/boards/{board_id}/unarchive",
+            axum::routing::post(routes::boards::unarchive_board),
+        )
+        .route(
             "/api/workspaces/{ws}/boards/{board_id}/columns",
             axum::routing::post(routes::boards::create_column).get(routes::boards::list_columns),
         )

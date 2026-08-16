@@ -2717,6 +2717,7 @@ mod tests {
 
     fn make_board_summary_dto() -> BoardSummaryDto {
         BoardSummaryDto {
+            archived_at: None,
             id: Uuid::now_v7(),
             name: "Dev Board".to_owned(),
             folder_id: None,

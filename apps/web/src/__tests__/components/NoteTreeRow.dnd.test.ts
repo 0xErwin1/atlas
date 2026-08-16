@@ -33,7 +33,7 @@ function folderWithBoard(): TreeFolder {
     name: 'Specs',
     folders: [],
     docs: [],
-    boards: [{ kind: 'board', id: 'b1', name: 'Roadmap', taskCount: 12 }],
+    boards: [{ kind: 'board', id: 'b1', name: 'Roadmap', taskCount: 12, archived: false }],
   };
 }
 

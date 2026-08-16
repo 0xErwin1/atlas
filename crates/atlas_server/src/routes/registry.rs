@@ -766,6 +766,20 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
     },
     RouteEntry {
         method: "POST",
+        path_template: "/api/workspaces/{ws}/boards/00000000-0000-0000-0000-000000000001/archive",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/api/workspaces/{ws}/boards/{board_id}/archive"),
+        capability: Some("boards:update"),
+    },
+    RouteEntry {
+        method: "POST",
+        path_template: "/api/workspaces/{ws}/boards/00000000-0000-0000-0000-000000000001/unarchive",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/api/workspaces/{ws}/boards/{board_id}/unarchive"),
+        capability: Some("boards:update"),
+    },
+    RouteEntry {
+        method: "POST",
         path_template: "/api/workspaces/{ws}/boards/00000000-0000-0000-0000-000000000001/columns",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/api/workspaces/{ws}/boards/{board_id}/columns"),

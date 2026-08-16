@@ -154,6 +154,13 @@ capability_marker!(TaskViewsDelete, TaskViews, Delete);
 pub trait ResolvedResource: Sized + Send {
     type PathParams: DeserializeOwned + Send;
 
+    /// Whether a mutating request may reach this resource on an archived board.
+    ///
+    /// False everywhere except the route that lifts the archive: an archived
+    /// board is read-only, and the guard that enforces it would otherwise also
+    /// block the only action that can undo it.
+    const ALLOWS_ARCHIVED_WRITES: bool = false;
+
     fn resolve(
         db: &sea_orm::DatabaseConnection,
         ws: &Workspace,
@@ -312,11 +319,33 @@ pub async fn build_folder_chain(
 /// deleted boards surface as `ApiError::NotFound` (no existence disclosure).
 pub struct BoardRes(pub Board);
 
+/// The same board as `BoardRes`, resolved for the archive/unarchive routes.
+///
+/// A separate type rather than a flag on the request: the exemption from the
+/// read-only guard is a property of those two handlers, and tying it to the
+/// resource they extract makes it impossible to acquire by accident.
+pub struct ArchivableBoardRes(pub Board);
+
 /// Proof of identity for a task resource, resolved via `{readable_id}` path param.
 ///
 /// Resolves the task → board → project → workspace permission chain via the
 /// task's owning board. Cross-tenant or deleted tasks surface as `ApiError::NotFound`.
 pub struct TaskRes(pub Task);
+
+impl ResolvedResource for ArchivableBoardRes {
+    type PathParams = HashMap<String, String>;
+
+    const ALLOWS_ARCHIVED_WRITES: bool = true;
+
+    async fn resolve(
+        db: &sea_orm::DatabaseConnection,
+        ws: &Workspace,
+        params: Self::PathParams,
+    ) -> Result<(Self, ResourceChain), ApiError> {
+        let (BoardRes(board), chain) = BoardRes::resolve(db, ws, params).await?;
+        Ok((ArchivableBoardRes(board), chain))
+    }
+}
 
 impl ResolvedResource for BoardRes {
     type PathParams = HashMap<String, String>;
@@ -389,6 +418,58 @@ impl ResolvedResource for TaskRes {
 /// by the permission engine and the grant-loader SQL. The Folder segments mirror
 /// `build_document_chain`, so a folder-scoped grant reaches boards filed under that folder
 /// exactly like it already reaches documents.
+/// Whether the request intends to change something.
+///
+/// Read-only by method rather than by required role: a route's role floor says
+/// who may act, not whether the act writes, and some writes are open to a
+/// viewer. The HTTP method is the one signal that is always right about it.
+fn is_mutating(method: &axum::http::Method) -> bool {
+    !matches!(
+        *method,
+        axum::http::Method::GET | axum::http::Method::HEAD | axum::http::Method::OPTIONS
+    )
+}
+
+/// Refuses a write whose resource chain passes through an archived board.
+///
+/// Enforced here, once, rather than in each of the ~40 board/column/task write
+/// handlers: an archived board is read-only, and a rule spread across that many
+/// call sites is a rule with a hole in it.
+async fn reject_archived_board(
+    db: &sea_orm::DatabaseConnection,
+    chain: &ResourceChain,
+) -> Result<(), ApiError> {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+    let Some(board_id) = chain
+        .segments
+        .iter()
+        .find_map(|segment| match segment.resource {
+            ResourceRef::Board(id) => Some(id),
+            _ => None,
+        })
+    else {
+        return Ok(());
+    };
+
+    let archived = board::Entity::find_by_id(board_id.0)
+        .filter(board::Column::ArchivedAt.is_not_null())
+        .one(db)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?
+        .is_some();
+
+    if archived {
+        return Err(ApiError::Archived {
+            message: "this board is archived and does not accept changes".to_owned(),
+        });
+    }
+
+    Ok(())
+}
+
 pub async fn build_board_chain(
     db: &sea_orm::DatabaseConnection,
     ws: &Workspace,
@@ -1022,6 +1103,10 @@ where
             })?;
 
         let (resource, chain) = R::resolve(&state.db, &workspace, params).await?;
+
+        if !R::ALLOWS_ARCHIVED_WRITES && is_mutating(&parts.method) {
+            reject_archived_board(&state.db, &chain).await?;
+        }
 
         let effective_role = if let Principal::ApiKey(_) = &domain_principal {
             // Reuse the key loaded above rather than letting

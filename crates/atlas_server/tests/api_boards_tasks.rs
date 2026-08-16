@@ -8342,3 +8342,222 @@ async fn task_graph_omits_nodes_the_caller_cannot_read() {
 
     db.teardown().await;
 }
+
+// ---------------------------------------------------------------------------
+// Board archive (read-only)
+// ---------------------------------------------------------------------------
+
+fn archived_problem(error: ClientError) -> ProblemDetails {
+    match error {
+        ClientError::Api(problem) if problem.status == 409 => problem,
+        other => panic!("expected a 409 archived problem, got: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn an_archived_board_reads_but_refuses_every_write() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "archive-1").await;
+
+    client
+        .create_project(&ws.slug, project_req("archive-proj", "ARC"))
+        .await
+        .expect("create project");
+    let board = client
+        .create_board(
+            &ws.slug,
+            "archive-proj",
+            CreateBoardRequest {
+                folder_id: None,
+                name: "Archivable".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+    let column = client
+        .create_column(
+            &ws.slug,
+            board.id,
+            CreateColumnRequest {
+                name: "Todo".to_string(),
+                before: None,
+                after: None,
+                color: None,
+            },
+        )
+        .await
+        .expect("create column");
+    let task = client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                references: vec![],
+                column_id: column.id,
+                title: "Before archiving".to_string(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("create task");
+
+    let archived = client
+        .archive_board(&ws.slug, board.id)
+        .await
+        .expect("archive board");
+    assert!(archived.archived_at.is_some());
+
+    // Reads keep working: archiving closes the board, it does not hide it.
+    let read_back = client
+        .get_board(&ws.slug, board.id)
+        .await
+        .expect("an archived board still reads");
+    assert!(read_back.archived_at.is_some());
+    assert!(
+        client
+            .list_tasks(&ws.slug, board.id, None, None)
+            .await
+            .expect("tasks still list")
+            .items
+            .iter()
+            .any(|t| t.readable_id == task.readable_id)
+    );
+
+    let problem = archived_problem(
+        client
+            .create_task(
+                &ws.slug,
+                board.id,
+                CreateTaskRequest {
+                    references: vec![],
+                    column_id: column.id,
+                    title: "After archiving".to_string(),
+                    description: None,
+                    properties: None,
+                    before: None,
+                    after: None,
+                },
+            )
+            .await
+            .expect_err("creating a task on an archived board must fail"),
+    );
+    assert_eq!(problem.r#type, "urn:atlas:error:archived");
+
+    // The guard covers the whole board, not just the route that created it:
+    // a task update and a column rename go through different resources.
+    assert_eq!(
+        archived_problem(
+            client
+                .update_task(
+                    &ws.slug,
+                    &task.readable_id,
+                    UpdateTaskRequest {
+                        title: Some("Renamed".to_string()),
+                        ..UpdateTaskRequest::default()
+                    },
+                )
+                .await
+                .expect_err("updating a task on an archived board must fail"),
+        )
+        .status,
+        409
+    );
+    assert_eq!(
+        archived_problem(
+            client
+                .update_column(
+                    &ws.slug,
+                    board.id,
+                    column.id,
+                    UpdateColumnRequest {
+                        name: Some("Renamed".to_string()),
+                        ..UpdateColumnRequest::default()
+                    },
+                )
+                .await
+                .expect_err("renaming a column on an archived board must fail"),
+        )
+        .status,
+        409
+    );
+
+    let reopened = client
+        .unarchive_board(&ws.slug, board.id)
+        .await
+        .expect("unarchive board");
+    assert!(reopened.archived_at.is_none());
+
+    client
+        .create_task(
+            &ws.slug,
+            board.id,
+            CreateTaskRequest {
+                references: vec![],
+                column_id: column.id,
+                title: "After unarchiving".to_string(),
+                description: None,
+                properties: None,
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("an unarchived board accepts writes again");
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn archiving_twice_keeps_the_original_timestamp() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "archive-2").await;
+
+    client
+        .create_project(&ws.slug, project_req("archive-idem", "AID"))
+        .await
+        .expect("create project");
+    let board = client
+        .create_board(
+            &ws.slug,
+            "archive-idem",
+            CreateBoardRequest {
+                folder_id: None,
+                name: "Idempotent".to_string(),
+            },
+        )
+        .await
+        .expect("create board");
+
+    let first = client
+        .archive_board(&ws.slug, board.id)
+        .await
+        .expect("archive board");
+    let second = client
+        .archive_board(&ws.slug, board.id)
+        .await
+        .expect("archiving an archived board is not an error");
+
+    assert_eq!(
+        first.archived_at, second.archived_at,
+        "a repeated archive must not restamp when the board was archived"
+    );
+
+    let summaries = client
+        .list_boards(&ws.slug, "archive-idem", None, None)
+        .await
+        .expect("list boards");
+    assert!(
+        summaries
+            .items
+            .iter()
+            .any(|b| b.id == board.id && b.archived_at.is_some()),
+        "an archived board stays in the listing, flagged"
+    );
+
+    db.teardown().await;
+}

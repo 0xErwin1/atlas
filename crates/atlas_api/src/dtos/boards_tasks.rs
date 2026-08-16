@@ -22,6 +22,10 @@ pub struct BoardDto {
     pub created_by: ActorDto,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
+    /// When present, the board is archived: readable and listed, but closed to
+    /// writes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub archived_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// Lightweight board summary for list endpoints.
@@ -36,6 +40,10 @@ pub struct BoardSummaryDto {
     pub task_count: i64,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
+    /// When present, the board is archived: readable and listed, but closed to
+    /// writes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub archived_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// Column representation (always returned in board context).

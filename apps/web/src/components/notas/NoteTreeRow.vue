@@ -10,6 +10,7 @@ import {
   docKey,
   folderKey,
   parseNodeKey,
+  type TreeBoard,
   type TreeFolder,
   type TreeNodeRef,
 } from '@/lib/notesTree';
@@ -39,6 +40,7 @@ const emit = defineEmits<{
   'create-board': [name: string, folderId?: string];
   'rename-board': [boardId: string, name: string];
   'remove-board': [boardId: string];
+  'set-board-archived': [boardId: string, archived: boolean];
   'move-nodes': [nodes: TreeNodeRef[], targetFolderId: string | null];
   'request-move': [nodes: TreeNodeRef[]];
   'request-copy': [nodes: TreeNodeRef[]];
@@ -124,7 +126,7 @@ const { open: menuOpen, x: menuX, y: menuY, openAt, close: closeMenu } = useCont
 type ContextState =
   | { kind: 'folder-root' }
   | { kind: 'doc'; slug: string; currentTitle: string }
-  | { kind: 'board'; boardId: string; currentName: string };
+  | { kind: 'board'; boardId: string; currentName: string; archived: boolean };
 const contextState = ref<ContextState>({ kind: 'folder-root' });
 
 type EditCtx =
@@ -223,21 +225,30 @@ const boardMenuItems = computed<MenuItem[]>(() => {
   const state = contextState.value;
   if (state.kind !== 'board') return [];
 
-  const { boardId, currentName } = state;
+  const { boardId, currentName, archived } = state;
   return [
-    { header: true, label: currentName },
+    { header: true, label: archived ? `${currentName} · archived` : currentName },
     { label: 'Open', icon: 'external-link', kbd: ['↵'], action: () => emit('select-board', boardId) },
     { sep: true },
     {
       label: 'Rename',
       icon: 'pencil',
       kbd: ['F2'],
+      // An archived board refuses writes server-side; offering the rename would
+      // only produce an error the user cannot act on from here.
+      disabled: archived,
       action: () => startEdit({ kind: 'rename-board', boardId }, currentName, true),
     },
     {
       label: 'Move to…',
       icon: 'arrow-right',
+      disabled: archived,
       action: () => emit('request-move', dragPayload({ type: 'board', id: boardId })),
+    },
+    {
+      label: archived ? 'Unarchive' : 'Archive',
+      icon: archived ? 'archive-restore' : 'archive',
+      action: () => emit('set-board-archived', boardId, !archived),
     },
     { sep: true },
     {
@@ -266,8 +277,13 @@ function openDocMenu(event: MouseEvent, slug: string, title: string): void {
   openAt(event);
 }
 
-function openBoardMenu(event: MouseEvent, boardId: string, name: string): void {
-  contextState.value = { kind: 'board', boardId, currentName: name };
+function openBoardMenu(event: MouseEvent, board: TreeBoard): void {
+  contextState.value = {
+    kind: 'board',
+    boardId: board.id,
+    currentName: board.name,
+    archived: board.archived,
+  };
   openAt(event);
 }
 
@@ -429,14 +445,16 @@ const inlinePaddingLeft = computed(() => `${8 + (props.depth + 2) * treeDepthSte
           <Row
             :label="board.name"
             icon="columns-3"
+            :lock="board.archived"
+            :muted="board.archived"
             :depth="depth + 2"
             :depth-step="treeDepthStep"
             :active="activeBoardId !== null && board.id === activeBoardId"
             :right="String(board.taskCount)"
             menu
             @click="(event: MouseEvent) => onBoardClick(event, board.id)"
-            @menu="(event: MouseEvent) => openBoardMenu(event, board.id, board.name)"
-            @contextmenu.prevent.stop="(event: MouseEvent) => openBoardMenu(event, board.id, board.name)"
+            @menu="(event: MouseEvent) => openBoardMenu(event, board)"
+            @contextmenu.prevent.stop="(event: MouseEvent) => openBoardMenu(event, board)"
           />
         </div>
       </template>

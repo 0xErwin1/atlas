@@ -2702,6 +2702,34 @@ impl AtlasClient {
         self.decode_response(response, "list_task_backlinks").await
     }
 
+    /// `POST /api/workspaces/{ws}/boards/{board_id}/archive`
+    pub async fn archive_board(
+        &self,
+        ws: &str,
+        board_id: uuid::Uuid,
+    ) -> Result<BoardDto, ClientError> {
+        let response = self
+            .post(&format!("/api/workspaces/{ws}/boards/{board_id}/archive"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        self.decode_response(response, "archive_board").await
+    }
+
+    /// `POST /api/workspaces/{ws}/boards/{board_id}/unarchive`
+    pub async fn unarchive_board(
+        &self,
+        ws: &str,
+        board_id: uuid::Uuid,
+    ) -> Result<BoardDto, ClientError> {
+        let response = self
+            .post(&format!("/api/workspaces/{ws}/boards/{board_id}/unarchive"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        self.decode_response(response, "unarchive_board").await
+    }
+
     /// `GET /api/workspaces/{ws}/tasks/{readable_id}/graph`
     pub async fn get_task_graph(
         &self,

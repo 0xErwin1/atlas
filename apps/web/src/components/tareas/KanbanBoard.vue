@@ -146,6 +146,7 @@ const menuItems = computed(() => {
         :fluid="isMobile"
         :is-first="index === 0"
         :is-last="index === boards.columns.length - 1"
+        :read-only="boards.boardArchived"
         @drop="onDrop"
         @create="onCreate"
         @select="(id) => emit('select', id)"

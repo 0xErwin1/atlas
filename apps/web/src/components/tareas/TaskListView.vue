@@ -56,7 +56,9 @@ const { move } = useKanbanMove(props.ws);
  * column_id that the move API accepts. For assignee/priority grouping the key is
  * not a column_id, so we suppress the draggable wrapper entirely in those modes.
  */
-const isDragEnabled = computed(() => ui.taskGroupBy === 'status');
+// Reordering is a write; an archived board takes none, so the rows stay put and
+// the inline add-row disappears rather than producing a refusal on submit.
+const isDragEnabled = computed(() => ui.taskGroupBy === 'status' && !boards.boardArchived);
 
 // Inline create, only offered under status grouping where a group's key IS a
 // real column_id; the ctx threaded through the input is that target column.
@@ -560,7 +562,10 @@ const rowHandlers = {
           </div>
         </div>
 
-        <div v-if="ui.taskGroupBy === 'status' && !isGroupCollapsed(group.key)" class="atl-tl-add-row">
+        <div
+          v-if="ui.taskGroupBy === 'status' && !isGroupCollapsed(group.key) && !boards.boardArchived"
+          class="atl-tl-add-row"
+        >
           <template v-if="adding === group.key">
             <input
               ref="inputRef"

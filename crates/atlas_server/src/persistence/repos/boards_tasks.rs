@@ -63,6 +63,7 @@ impl BoardRepo for PgBoardRepo {
         let board_project_id = new.project_id;
         let board_name = new.name.clone();
         let board_model = board::ActiveModel {
+            archived_at: Set(None),
             id: Set(BoardId::new().0),
             workspace_id: Set(ctx.workspace_id.0),
             project_id: Set(new.project_id.0),
@@ -294,6 +295,55 @@ impl BoardRepo for PgBoardRepo {
         Ok(board_from(updated))
     }
 
+    async fn set_board_archived(
+        &self,
+        ctx: &WorkspaceCtx,
+        id: BoardId,
+        archived: bool,
+    ) -> Result<Board, DomainError> {
+        let txn = self.conn.begin().await.map_err(db_err)?;
+
+        let row = board::Entity::find_by_id(id.0)
+            .filter(board::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(board::Column::DeletedAt.is_null())
+            .one(&txn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "board",
+                id: id.0,
+            })?;
+
+        // Already in the requested state: return it unchanged rather than
+        // restamping `archived_at`, so "when was this archived" survives a
+        // repeated call.
+        if row.archived_at.is_some() == archived {
+            txn.rollback().await.map_err(db_err)?;
+            return Ok(board_from(row));
+        }
+
+        let project_id = ProjectId(row.project_id);
+        let mut active = row.into_active_model();
+        active.archived_at = Set(archived.then(Utc::now));
+        active.updated_at = Set(Utc::now());
+        let updated = active.update(&txn).await.map_err(db_err)?;
+
+        PgOutboxRepo::insert_in(
+            &txn,
+            ctx,
+            Some(project_id),
+            Some(id),
+            DomainEvent::BoardUpdated(BoardUpdatedPayload {
+                board_id: id,
+                changed_fields: vec!["archived_at".to_string()],
+            }),
+        )
+        .await?;
+
+        txn.commit().await.map_err(db_err)?;
+        Ok(board_from(updated))
+    }
+
     async fn copy_board(
         &self,
         ctx: &WorkspaceCtx,
@@ -327,6 +377,7 @@ impl BoardRepo for PgBoardRepo {
         let board_name = source_row.name.clone();
 
         let board_model = board::ActiveModel {
+            archived_at: Set(None),
             id: Set(BoardId::new().0),
             workspace_id: Set(ctx.workspace_id.0),
             project_id: Set(source_row.project_id),

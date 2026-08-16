@@ -146,6 +146,8 @@ use atlas_api::{
         crate::routes::boards::get_board,
         crate::routes::boards::update_board,
         crate::routes::boards::move_board,
+        crate::routes::boards::archive_board,
+        crate::routes::boards::unarchive_board,
         crate::routes::boards::delete_board,
         crate::routes::boards::create_column,
         crate::routes::boards::list_columns,

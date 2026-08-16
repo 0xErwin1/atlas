@@ -118,6 +118,18 @@ pub trait BoardRepo: Send + Sync {
         folder: Option<FolderId>,
     ) -> Result<Board, DomainError>;
 
+    /// Archives or unarchives a board.
+    ///
+    /// An archived board stays listed and readable; every write to it or to
+    /// anything on it is refused until it is unarchived. Idempotent: archiving
+    /// an already-archived board keeps its original timestamp.
+    async fn set_board_archived(
+        &self,
+        ctx: &WorkspaceCtx,
+        id: BoardId,
+        archived: bool,
+    ) -> Result<Board, DomainError>;
+
     /// Creates a structural copy of `source` (board row + columns, no tasks)
     /// inside `folder`, keeping the source's project and name.
     async fn copy_board(

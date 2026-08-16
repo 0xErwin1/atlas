@@ -47,6 +47,7 @@ pub mod m20260725_000044_platform_status_templates;
 pub mod m20260804_000045_repair_search_embeddings;
 pub mod m20260808_000046_repair_search_embeddings;
 pub mod m20260808_000047_search_index_queue;
+pub mod m20260816_000048_board_archive;
 
 use sea_orm_migration::prelude::*;
 
@@ -103,6 +104,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260804_000045_repair_search_embeddings::Migration),
             Box::new(m20260808_000046_repair_search_embeddings::Migration),
             Box::new(m20260808_000047_search_index_queue::Migration),
+            Box::new(m20260816_000048_board_archive::Migration),
         ]
     }
 }
@@ -137,6 +139,17 @@ mod tests {
             repair, last_embedding_migration,
             "no migration touching search_embeddings may run after the repair"
         );
+    }
+
+    #[test]
+    fn board_archive_migration_is_registered() {
+        let migrations = Migrator::migrations();
+        let names: Vec<_> = migrations
+            .iter()
+            .map(|migration| migration.name())
+            .collect();
+
+        assert!(names.contains(&"m20260816_000048_board_archive"));
     }
 
     #[test]

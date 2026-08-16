@@ -2621,6 +2621,60 @@
         ]
       }
     },
+    "/api/workspaces/{ws}/boards/{board_id}/archive": {
+      "post": {
+        "tags": [
+          "boards"
+        ],
+        "operationId": "archive_board",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "board_id",
+            "in": "path",
+            "description": "Board UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Board archived; it stays readable and refuses writes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Board not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/api/workspaces/{ws}/boards/{board_id}/columns": {
       "get": {
         "tags": [
@@ -3169,6 +3223,60 @@
           },
           "422": {
             "description": "Invalid input"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/api/workspaces/{ws}/boards/{board_id}/unarchive": {
+      "post": {
+        "tags": [
+          "boards"
+        ],
+        "operationId": "unarchive_board",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "board_id",
+            "in": "path",
+            "description": "Board UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Board reopened for writes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Board not found"
           }
         },
         "security": [
@@ -12598,6 +12706,14 @@
           "updated_at"
         ],
         "properties": {
+          "archived_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When present, the board is archived: readable and listed, but closed to\nwrites."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -12659,6 +12775,14 @@
           "updated_at"
         ],
         "properties": {
+          "archived_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When present, the board is archived: readable and listed, but closed to\nwrites."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -15359,6 +15483,14 @@
                 "updated_at"
               ],
               "properties": {
+                "archived_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time",
+                  "description": "When present, the board is archived: readable and listed, but closed to\nwrites."
+                },
                 "created_at": {
                   "type": "string",
                   "format": "date-time"

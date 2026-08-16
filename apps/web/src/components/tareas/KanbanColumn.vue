@@ -28,6 +28,8 @@ const props = defineProps<{
   // Position within the board, used to disable move-left/right at the edges.
   isFirst?: boolean;
   isLast?: boolean;
+  /** The board is archived: it takes no writes, so this column offers none. */
+  readOnly?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -182,6 +184,7 @@ function onSortableMove(event: DragAutoScrollMoveEvent, originalEvent: Event): v
         <Icon name="ellipsis" :size="14" />
       </button>
       <button
+        v-if="!readOnly"
         type="button"
         class="atl-gbtn"
         title="Add task"
@@ -259,6 +262,7 @@ function onSortableMove(event: DragAutoScrollMoveEvent, originalEvent: Event): v
     <VueDraggable
       v-model="model"
       :group="'kanban'"
+      :disabled="readOnly"
       :animation="150"
       v-bind="dragAutoScrollOptions"
       :on-move="onSortableMove"

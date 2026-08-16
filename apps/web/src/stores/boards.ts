@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { z } from 'zod';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
@@ -460,6 +460,40 @@ export const useBoardsStore = defineStore('boards', () => {
     await loadBoardsForProject(ws, projectSlug);
     return true;
   }
+
+  /**
+   * Archives or unarchives a board.
+   *
+   * An archived board stays listed and readable and refuses every write, so the
+   * project's bucket is re-fetched to pick up the new state, and the open board
+   * is re-read when it is the one that changed.
+   */
+  async function setBoardArchived(
+    ws: string,
+    projectSlug: string,
+    boardId: string,
+    archived: boolean,
+  ): Promise<boolean> {
+    const path = archived
+      ? '/api/workspaces/{ws}/boards/{board_id}/archive'
+      : '/api/workspaces/{ws}/boards/{board_id}/unarchive';
+
+    const { error: apiError } = await wrappedClient.POST(path, {
+      params: { path: { ws, board_id: boardId } },
+    });
+
+    if (apiError !== undefined) {
+      error.value = errorHint(apiError, archived ? 'Failed to archive board' : 'Failed to unarchive board');
+      return false;
+    }
+
+    await loadBoardsForProject(ws, projectSlug);
+    if (board.value?.id === boardId) await loadBoard(ws, boardId);
+    return true;
+  }
+
+  /** Whether the open board is archived, and therefore refuses every write. */
+  const boardArchived = computed(() => board.value?.archived_at != null);
 
   async function removeBoard(ws: string, projectSlug: string, boardId: string): Promise<boolean> {
     const { error: apiError } = await wrappedClient.DELETE('/api/workspaces/{ws}/boards/{board_id}', {
@@ -1744,6 +1778,8 @@ export const useBoardsStore = defineStore('boards', () => {
     createBoard,
     renameBoard,
     moveBoard,
+    boardArchived,
+    setBoardArchived,
     removeBoard,
     createTask,
     loadBoard,

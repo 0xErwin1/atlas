@@ -32,6 +32,13 @@ pub enum ApiError {
     Conflict,
     /// CAS revision conflict with full patch payload for the 409 response body.
     RevisionConflict(RevisionConflict),
+    /// The target is archived, so it accepts reads but refuses this write.
+    ///
+    /// Distinct from `Forbidden`: the caller's permissions are fine, the
+    /// resource's own state is what refuses.
+    Archived {
+        message: String,
+    },
     /// The requested operation would remove the last owner from a workspace.
     ///
     /// A workspace must keep at least one owner at all times. This check applies
@@ -159,6 +166,12 @@ impl IntoResponse for ApiError {
                 }
                 return response;
             }
+            ApiError::Archived { message } => (
+                StatusCode::CONFLICT,
+                ProblemDetails::new("urn:atlas:error:archived", "Archived", 409)
+                    .with_detail(message)
+                    .with_hint("Unarchive the board to make changes to it again."),
+            ),
             ApiError::LastOwner { message } => (
                 StatusCode::CONFLICT,
                 ProblemDetails::new(
