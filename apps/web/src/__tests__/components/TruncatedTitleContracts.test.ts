@@ -11,6 +11,12 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ resolve: () => ({ href: '/tasks/ATL-96' }) }),
 }));
 
+// The timeline renders a window around *today*, so a fixture pinned to a fixed
+// calendar date stops producing a bar as soon as that date leaves the window —
+// and the assertion below would fail for a reason that has nothing to do with
+// truncated titles. Both dates are therefore relative to the run.
+const TODAY = new Date().toISOString();
+
 const task: TaskSummaryDto = {
   id: 'task-96',
   readable_id: 'ATL-96',
@@ -23,7 +29,7 @@ const task: TaskSummaryDto = {
   subtask_count: 0,
   labels: [],
   assignees: [],
-  updated_at: '2026-07-27T00:00:00Z',
+  updated_at: TODAY,
 };
 
 const column: ColumnDto = {
@@ -50,7 +56,7 @@ describe('truncated title contracts', () => {
     const boards = useBoardsStore();
     boards.columns = [column];
     boards._setTasksForTest({ [column.id]: [task] });
-    vi.spyOn(boards, 'taskDetail').mockReturnValue({ due_date: '2026-07-27T00:00:00Z' } as TaskDto);
+    vi.spyOn(boards, 'taskDetail').mockReturnValue({ due_date: TODAY } as TaskDto);
   });
 
   it('renders the complete task title on each confirmed ellipsized task view surface', () => {
