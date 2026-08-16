@@ -24,6 +24,7 @@ import { useTaskInteractions } from '@/composables/useTaskInteractions';
 import { resolveColumnSwatchId } from '@/lib/columnColor';
 import { relativeTime } from '@/lib/relativeTime';
 import { defaultSwatchId, swatchById } from '@/lib/swatches';
+import { defaultDirectionFor, type SortDirection, sortTasks, type TaskSortKey } from '@/lib/taskSort';
 import type { ColumnDto, TaskSummaryDto } from '@/stores/boards';
 import { useBoardsStore } from '@/stores/boards';
 import { useLabelColorsStore } from '@/stores/labelColors';
@@ -84,6 +85,50 @@ function assigneeForTask(task: TaskSummaryDto): { name: string; agent: boolean }
 }
 
 const isEmpty = computed(() => props.tasks.length === 0);
+
+// Column sort, held per mounted view: it answers "show me this feed another
+// way" for as long as the user is looking at it, and outliving that would mean
+// re-explaining an order they set once and forgot.
+const sortKey = ref<TaskSortKey | null>(null);
+const sortDirection = ref<SortDirection>('asc');
+
+const COLUMNS: { key: TaskSortKey; label: string; className: string }[] = [
+  { key: 'name', label: 'Name', className: '' },
+  { key: 'board', label: 'Board', className: '' },
+  { key: 'id', label: 'ID', className: 'atl-tl-h-id' },
+  { key: 'assignee', label: 'Assignee', className: 'atl-tl-h-center' },
+  { key: 'priority', label: 'Priority', className: '' },
+  { key: 'status', label: 'Status', className: '' },
+  { key: 'estimate', label: 'Estimate', className: 'atl-tl-h-id' },
+  { key: 'updated', label: 'Updated', className: 'atl-tl-h-id' },
+];
+
+const sortedTasks = computed(() => sortTasks(props.tasks, sortKey.value, sortDirection.value));
+
+/**
+ * Cycles a column: first click sorts the way that column is usually asked
+ * about, the second reverses it, the third returns the feed to the order it
+ * arrived in — so a sort is always undoable without reloading the view.
+ */
+function toggleSort(key: TaskSortKey): void {
+  if (sortKey.value !== key) {
+    sortKey.value = key;
+    sortDirection.value = defaultDirectionFor(key);
+    return;
+  }
+
+  if (sortDirection.value === defaultDirectionFor(key)) {
+    sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc';
+    return;
+  }
+
+  sortKey.value = null;
+}
+
+function ariaSortFor(key: TaskSortKey): 'ascending' | 'descending' | 'none' {
+  if (sortKey.value !== key) return 'none';
+  return sortDirection.value === 'asc' ? 'ascending' : 'descending';
+}
 
 const menuTaskColumns = ref<ColumnDto[]>([]);
 
@@ -221,20 +266,29 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
 <template>
   <div class="atl-tl-scroll" @scroll="closePickers">
     <div class="atl-tl-inner">
-      <div v-if="!isEmpty" class="atl-tl-colhead">
+      <div v-if="!isEmpty" class="atl-tl-colhead" role="row">
         <span />
-        <span class="atl-tl-h">Name</span>
-        <span class="atl-tl-h">Board</span>
-        <span class="atl-tl-h atl-tl-h-id">ID</span>
-        <span class="atl-tl-h atl-tl-h-center">Assignee</span>
-        <span class="atl-tl-h">Priority</span>
-        <span class="atl-tl-h">Status</span>
-        <span class="atl-tl-h atl-tl-h-id">Estimate</span>
-        <span class="atl-tl-h atl-tl-h-id">Updated</span>
+        <button
+          v-for="column in COLUMNS"
+          :key="column.key"
+          type="button"
+          class="atl-tl-h atl-tl-hbtn"
+          :class="[column.className, { sorted: sortKey === column.key }]"
+          :aria-sort="ariaSortFor(column.key)"
+          :title="`Sort by ${column.label.toLowerCase()}`"
+          @click="toggleSort(column.key)"
+        >
+          <span class="atl-tl-h-label">{{ column.label }}</span>
+          <Icon
+            v-if="sortKey === column.key"
+            :name="sortDirection === 'asc' ? 'chevron-up' : 'chevron-down'"
+            :size="12"
+          />
+        </button>
       </div>
 
       <button
-        v-for="task in tasks"
+        v-for="task in sortedTasks"
         :key="task.id"
         type="button"
         class="atl-tl-row"
@@ -420,8 +474,41 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
   white-space: nowrap;
 }
 
+.atl-tl-hbtn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.atl-tl-hbtn:hover,
+.atl-tl-hbtn.sorted {
+  color: var(--c-foreground);
+}
+
+.atl-tl-hbtn .atl-tl-h-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .atl-tl-h-id {
   text-align: right;
+}
+
+.atl-tl-hbtn.atl-tl-h-id {
+  justify-content: flex-end;
+}
+
+.atl-tl-hbtn.atl-tl-h-center {
+  justify-content: center;
 }
 
 .atl-tl-h-center {
