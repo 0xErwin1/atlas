@@ -34,6 +34,7 @@ import { PRIORITY_COLOR, priorityLabel } from '@/lib/taskPriority';
 import type { ColumnDto, TaskSummaryDto } from '@/stores/boards';
 import { useBoardsStore } from '@/stores/boards';
 import { type TaskViewMode, useUiStore } from '@/stores/ui';
+import { useUiStateStore } from '@/stores/uiState';
 import { useWorkspaceStore } from '@/stores/workspace';
 
 const props = defineProps<{ ws: string; selectedReadableId: string | null }>();
@@ -43,6 +44,7 @@ const emit = defineEmits<{
 }>();
 
 const boards = useBoardsStore();
+const uiState = useUiStateStore();
 const workspace = useWorkspaceStore();
 const ui = useUiStore();
 const menu = useContextMenu();
@@ -212,20 +214,34 @@ function statusNameForTask(task: TaskSummaryDto): string {
   return column?.name ?? task.column_name;
 }
 
-// Session-only collapse state per group; v-show (not v-if) keeps the rows mounted
-// so later drag-drop zones survive a collapse toggle.
-const collapsedGroups = ref<Set<string>>(new Set());
+// Collapse state per group, persisted per board through the server-backed UI
+// state so it survives navigation and reloads. Until the board resolves there is
+// nothing to key it by, so those first renders fall back to session state.
+const sessionCollapsedGroups = ref<Set<string>>(new Set());
 const listScrollRef = ref<HTMLElement | null>(null);
 
+const collapseBoardId = computed<string | null>(() => boards.board?.id ?? null);
+
 function isGroupCollapsed(key: string): boolean {
-  return collapsedGroups.value.has(key);
+  const boardId = collapseBoardId.value;
+  return boardId === null
+    ? sessionCollapsedGroups.value.has(key)
+    : uiState.isListGroupCollapsed(boardId, key);
 }
 
 function toggleGroup(key: string): void {
-  const next = new Set(collapsedGroups.value);
-  if (next.has(key)) next.delete(key);
-  else next.add(key);
-  collapsedGroups.value = next;
+  const collapsed = !isGroupCollapsed(key);
+  const boardId = collapseBoardId.value;
+
+  if (boardId === null) {
+    const next = new Set(sessionCollapsedGroups.value);
+    if (collapsed) next.add(key);
+    else next.delete(key);
+    sessionCollapsedGroups.value = next;
+    return;
+  }
+
+  uiState.setListGroupCollapsed(boardId, key, collapsed);
 }
 
 async function copyId(task: TaskSummaryDto): Promise<void> {
@@ -488,9 +504,8 @@ const rowHandlers = {
         </button>
 
         <VueDraggable
-          v-if="isDragEnabled"
+          v-if="isDragEnabled && !isGroupCollapsed(group.key)"
           :model-value="group.tasks"
-          v-show="!isGroupCollapsed(group.key)"
           :group="'kanban'"
           :animation="150"
           v-bind="dragAutoScrollOptions"
@@ -525,7 +540,7 @@ const rowHandlers = {
           </div>
         </VueDraggable>
 
-        <div v-else v-show="!isGroupCollapsed(group.key)">
+        <div v-else-if="!isGroupCollapsed(group.key)">
           <div v-for="task in group.tasks" :key="task.id" class="atl-tl-item">
             <TaskListRow
               v-bind="rowProps(task)"
@@ -545,11 +560,7 @@ const rowHandlers = {
           </div>
         </div>
 
-        <div
-          v-if="ui.taskGroupBy === 'status'"
-          v-show="!isGroupCollapsed(group.key)"
-          class="atl-tl-add-row"
-        >
+        <div v-if="ui.taskGroupBy === 'status' && !isGroupCollapsed(group.key)" class="atl-tl-add-row">
           <template v-if="adding === group.key">
             <input
               ref="inputRef"

@@ -188,6 +188,32 @@ export const useUiStateStore = defineStore('uiState', () => {
     scheduleSave();
   }
 
+  // Which list-view groups the user has collapsed, keyed by board id. Server
+  // backed like the sidebar's collapse state: a collapsed group is a statement
+  // about how the user reads that board, and losing it on every navigation is
+  // what made the collapse feel like it did not stick.
+  function collapsedListGroups(): Record<string, string[]> {
+    const v = data.value.collapsedListGroups;
+    return v !== null && typeof v === 'object' ? (v as Record<string, string[]>) : {};
+  }
+
+  function isListGroupCollapsed(boardId: string, groupKey: string): boolean {
+    return (collapsedListGroups()[boardId] ?? []).includes(groupKey);
+  }
+
+  function setListGroupCollapsed(boardId: string, groupKey: string, collapsed: boolean): void {
+    const groups = collapsedListGroups();
+    const next = new Set(groups[boardId] ?? []);
+    if (collapsed) next.add(groupKey);
+    else next.delete(groupKey);
+
+    data.value = {
+      ...data.value,
+      collapsedListGroups: { ...groups, [boardId]: [...next] },
+    };
+    scheduleSave();
+  }
+
   // A layout pinned from settings, applied to every board the user opens. Absence
   // means no preference, so each board falls back to its own remembered layout.
   function defaultBoardView(): TaskBoardView | null {
@@ -215,6 +241,8 @@ export const useUiStateStore = defineStore('uiState', () => {
     setProjectCollapsed,
     isFolderCollapsed,
     setFolderCollapsed,
+    isListGroupCollapsed,
+    setListGroupCollapsed,
     boardViewFor,
     setBoardView,
     defaultBoardView,
