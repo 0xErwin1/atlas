@@ -117,12 +117,16 @@ pub(crate) async fn semantic_search(
         hits.truncate(limit as usize);
     }
 
+    let seen = after
+        .map_or(0, |after| after.seen)
+        .saturating_add(hits.len() as u64);
     let next_cursor = if has_more {
         hits.last().map(|hit| {
             SemanticSearchCursor {
                 similarity: hit.similarity,
                 kind: kind_to_dto(hit.kind),
                 id: hit.id,
+                seen: u32::try_from(seen).unwrap_or(u32::MAX),
             }
             .encode()
         })
@@ -167,14 +171,17 @@ fn resolve_cursor(raw: Option<&str>) -> Result<Option<SemanticSearchAfter>, ApiE
     let cursor = SemanticSearchCursor::decode(raw).ok_or_else(|| ApiError::InvalidInput {
         message: "cursor is malformed or has an invalid format".into(),
     })?;
-    Ok(Some(SemanticSearchAfter::new(
-        cursor.similarity,
-        match cursor.kind {
-            SemanticSearchKindDto::Document => ResourceKind::Document,
-            SemanticSearchKindDto::Task => ResourceKind::Task,
-        },
-        cursor.id,
-    )))
+    Ok(Some(
+        SemanticSearchAfter::new(
+            cursor.similarity,
+            match cursor.kind {
+                SemanticSearchKindDto::Document => ResourceKind::Document,
+                SemanticSearchKindDto::Task => ResourceKind::Task,
+            },
+            cursor.id,
+        )
+        .with_seen(u64::from(cursor.seen)),
+    ))
 }
 
 fn hit_to_dto(hit: SemanticSearchHit) -> SemanticSearchHitDto {

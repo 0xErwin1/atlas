@@ -82,7 +82,7 @@ pub use saved_searches::{PgSavedSearchRepo, SavedSearchRepo};
 pub use search::PgSearchRepo;
 pub use search_index_queue::{PgSearchIndexQueueRepo, QueuedResource};
 pub use semantic_indexer::PgSemanticIndexer;
-pub use semantic_search::{PgSemanticIndexWriter, PgSemanticSearchRepo};
+pub use semantic_search::{PgSemanticIndexWriter, PgSemanticSearchRepo, semantic_search_sql};
 pub use tags::{PgTagRepo, TagRepo};
 #[allow(unreachable_pub)]
 mod task_views;

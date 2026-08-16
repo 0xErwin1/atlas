@@ -67,6 +67,13 @@ pub struct SemanticSearchAfter {
     pub similarity: f32,
     pub resource_kind: ResourceKind,
     pub resource_id: Uuid,
+    /// Hits already delivered by the previous pages of this scroll.
+    ///
+    /// The vector arm ranks a bounded candidate pool rather than the whole
+    /// workspace, so a page deeper in the scroll needs a pool wide enough to
+    /// still contain results below the cursor. Carrying the running total is
+    /// what lets the pool grow with the scroll instead of truncating it.
+    pub seen: u64,
 }
 
 impl SemanticSearchAfter {
@@ -75,7 +82,12 @@ impl SemanticSearchAfter {
             similarity,
             resource_kind,
             resource_id,
+            seen: 0,
         }
+    }
+
+    pub const fn with_seen(self, seen: u64) -> Self {
+        Self { seen, ..self }
     }
 
     pub const fn sort_tuple(self) -> SemanticCursorSortTuple {

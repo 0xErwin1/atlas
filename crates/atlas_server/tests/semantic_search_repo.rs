@@ -22,13 +22,14 @@ use atlas_server::{
     persistence::repos::{
         BoardRepo, DocumentRepo, MembershipRepo, PgBoardRepo, PgDocumentRepo, PgMembershipRepo,
         PgProjectRepo, PgSemanticIndexWriter, PgSemanticSearchRepo, PgTaskRepo, ProjectRepo,
-        TaskRepo, UserRepo,
+        TaskRepo, UserRepo, semantic_search_sql,
     },
     semantic_indexer::{
         AttachmentText, ChecklistText, CommentText, SubtaskText, TaskIndexInput,
         aggregate_task_chunks,
     },
 };
+use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait};
 use std::{error::Error, io, sync::Arc};
 use uuid::Uuid;
 
@@ -396,6 +397,103 @@ async fn semantic_search_returns_task_from_inherited_visible_task_text()
 
     db.teardown().await;
     Ok(())
+}
+
+#[tokio::test]
+async fn semantic_search_vector_arm_is_planned_through_the_ann_index() -> Result<(), Box<dyn Error>>
+{
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (workspace, owner) = support::seed_workspace(&db, "semantic-plan-owner").await;
+
+    let query = SemanticSearchQuery::new(
+        workspace.id,
+        Principal::User(owner.id),
+        "alpha".to_owned(),
+        SemanticSearchTypeFilter::all(),
+        10,
+        None,
+        false,
+        true,
+        true,
+    );
+
+    let plan = explain(
+        &db,
+        &semantic_search_sql(&query),
+        workspace.id.0,
+        owner.id.0,
+    )
+    .await?;
+
+    assert!(
+        plan.contains("search_embeddings_ann_idx"),
+        "the vector arm must be planned through the ANN index, got:\n{plan}"
+    );
+
+    db.teardown().await;
+    Ok(())
+}
+
+/// Returns the plan of `sql`, with the alternatives to an ANN index scan priced
+/// out for the vector arm.
+///
+/// A test workspace holds too few embedding rows for the planner to ever prefer
+/// an index over scanning and sorting them, so cost alone would never exercise
+/// the shape this asserts on. Disabling the alternatives leaves the plan honest
+/// about the only thing under test: whether the vector arm can reach the ANN
+/// index at all — a query that lost its `ORDER BY … LIMIT` cannot, at any cost.
+async fn explain(
+    db: &support::TestDb,
+    sql: &str,
+    workspace_id: Uuid,
+    principal_id: Uuid,
+) -> Result<String, Box<dyn Error>> {
+    #[derive(Debug, FromQueryResult)]
+    struct PlanRow {
+        #[sea_orm(alias = "QUERY PLAN")]
+        query_plan: String,
+    }
+
+    let txn = db.conn().begin().await?;
+    for setting in [
+        "SET LOCAL enable_seqscan = off",
+        "SET LOCAL enable_sort = off",
+    ] {
+        txn.execute_raw(Statement::from_string(DatabaseBackend::Postgres, setting))
+            .await?;
+    }
+
+    let rows = PlanRow::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        format!("EXPLAIN {sql}"),
+        vec![
+            workspace_id.into(),
+            principal_id.into(),
+            vector_literal(&vector_for("alpha")).into(),
+            "seeded-semantic-test".into(),
+            1536_i32.into(),
+            10_i64.into(),
+            50_i64.into(),
+        ],
+    ))
+    .all(&txn)
+    .await?;
+    txn.rollback().await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| row.query_plan)
+        .collect::<Vec<_>>()
+        .join("\n"))
+}
+
+fn vector_literal(values: &[f32]) -> String {
+    let body = values
+        .iter()
+        .map(|value| value.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("[{body}]")
 }
 
 fn chunk(

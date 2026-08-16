@@ -5,7 +5,14 @@ use uuid::Uuid;
 #[cfg(feature = "openapi")]
 use utoipa::ToSchema;
 
-const SEMANTIC_CURSOR_BYTES: usize = 21;
+const SEMANTIC_CURSOR_BYTES: usize = 25;
+
+/// Layout of the cursors minted before the `seen` counter existed.
+///
+/// They stay decodable so a scroll in flight across a deploy keeps working; the
+/// missing counter reads as zero, which only makes the next page's candidate
+/// pool narrower than it would otherwise be.
+const SEMANTIC_CURSOR_BYTES_LEGACY: usize = 21;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -50,6 +57,8 @@ pub struct SemanticSearchCursor {
     pub similarity: f32,
     pub kind: SemanticSearchKindDto,
     pub id: Uuid,
+    /// Hits already delivered by the previous pages of this scroll.
+    pub seen: u32,
 }
 
 impl SemanticSearchCursor {
@@ -64,12 +73,13 @@ impl SemanticSearchCursor {
         buf[0..4].copy_from_slice(&score);
         buf[4] = kind;
         buf[5..21].copy_from_slice(id);
+        buf[21..25].copy_from_slice(&self.seen.to_be_bytes());
         URL_SAFE_NO_PAD.encode(buf)
     }
 
     pub fn decode(raw: &str) -> Option<Self> {
         let bytes = URL_SAFE_NO_PAD.decode(raw).ok()?;
-        if bytes.len() != SEMANTIC_CURSOR_BYTES {
+        if bytes.len() != SEMANTIC_CURSOR_BYTES && bytes.len() != SEMANTIC_CURSOR_BYTES_LEGACY {
             return None;
         }
         let similarity = f32::from_be_bytes(bytes.get(0..4)?.try_into().ok()?);
@@ -79,10 +89,15 @@ impl SemanticSearchCursor {
             _ => return None,
         };
         let id = Uuid::from_bytes(bytes.get(5..21)?.try_into().ok()?);
+        let seen = match bytes.get(21..25) {
+            Some(raw) => u32::from_be_bytes(raw.try_into().ok()?),
+            None => 0,
+        };
         Some(Self {
             similarity,
             kind,
             id,
+            seen,
         })
     }
 }
@@ -148,11 +163,29 @@ mod tests {
             similarity: 0.625,
             kind: SemanticSearchKindDto::Task,
             id,
+            seen: 40,
         };
         let encoded = cursor.encode();
         let decoded = SemanticSearchCursor::decode(&encoded).expect("valid cursor");
         assert_eq!(decoded.kind, SemanticSearchKindDto::Task);
         assert_eq!(decoded.id, id);
+        assert_eq!(decoded.seen, 40);
         assert!((decoded.similarity - 0.625).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn semantic_cursor_decodes_pre_seen_layout_as_zero_seen() {
+        let id = Uuid::now_v7();
+        let mut legacy = [0_u8; SEMANTIC_CURSOR_BYTES_LEGACY];
+        legacy[0..4].copy_from_slice(&0.5_f32.to_be_bytes());
+        legacy[4] = 0;
+        legacy[5..21].copy_from_slice(id.as_bytes());
+
+        let decoded = SemanticSearchCursor::decode(&URL_SAFE_NO_PAD.encode(legacy))
+            .expect("pre-seen cursors stay decodable");
+
+        assert_eq!(decoded.kind, SemanticSearchKindDto::Document);
+        assert_eq!(decoded.id, id);
+        assert_eq!(decoded.seen, 0);
     }
 }

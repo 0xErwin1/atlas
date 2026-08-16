@@ -273,36 +273,91 @@ impl SemanticSearchRepo for PgSemanticSearchRepo {
             });
         }
 
-        let (principal_col, principal_id, owner_admin_clause, member_clause) =
-            principal_sql(&query.principal, query.bypass);
-        let doc_perm = build_doc_permission(&owner_admin_clause, &member_clause, principal_col);
-        let task_perm = build_task_permission(&owner_admin_clause, &member_clause, principal_col);
-        let kind_cond = match (emit_docs, emit_tasks) {
-            (true, true) => String::new(),
-            (true, false) => "AND ranked.resource_kind = 'document'".to_owned(),
-            (false, true) => "AND ranked.resource_kind = 'task'".to_owned(),
-            (false, false) => unreachable!(),
-        };
-        let cursor_cond = if let Some(after) = query.after {
-            let kind_rank = after.resource_kind.sort_rank();
-            format!(
-                "AND (ranked.similarity < {similarity} OR \
-                 (ranked.similarity = {similarity} AND ranked.kind_rank > {kind_rank}) OR \
-                 (ranked.similarity = {similarity} AND ranked.kind_rank = {kind_rank} \
-                  AND ranked.resource_id < '{resource_id}'))",
-                similarity = after.similarity,
-                resource_id = after.resource_id
-            )
-        } else {
-            String::new()
-        };
-
+        let (_, principal_id, _, _) = principal_sql(&query.principal, query.bypass);
+        let sql = semantic_search_sql(query);
         let limit = query.limit as i64;
-        let document_live_project = project_is_live_sql("d.project_id");
-        let document_live_folder = folder_chain_is_live_sql("d.folder_id");
-        let task_live_board = board_chain_is_live_sql("t.board_id");
-        let sql = format!(
-            r#"WITH nearest AS (
+        let candidate_pool = candidate_pool_size(query.limit, query.after.map_or(0, |a| a.seen));
+
+        let rows = SemanticSearchRow::find_by_statement(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            sql,
+            vec![
+                query.workspace_id.0.into(),
+                principal_id.into(),
+                vector_literal(query_vector).into(),
+                self.provider.model().to_owned().into(),
+                (self.provider.dimensions() as i32).into(),
+                limit.into(),
+                candidate_pool.into(),
+            ],
+        ))
+        .all(&self.conn)
+        .await
+        .map_err(db_err)?;
+
+        rows.into_iter().map(row_to_hit).collect()
+    }
+}
+
+/// Number of embedding rows the vector arm ranks before permissions are applied.
+///
+/// The arm reads the ANN index, which can only be used by `ORDER BY … LIMIT k`,
+/// so the top-k is taken before the permission joins, the per-resource dedup and
+/// the cursor filter have run. Any of those can discard a candidate, so the pool
+/// is over-fetched well past the page size; the floor keeps a small first page
+/// from ranking a pool too narrow to survive the filtering, and the ceiling
+/// bounds the work a deep (or forged) cursor can ask for.
+fn candidate_pool_size(limit: u64, seen: u64) -> i64 {
+    const OVERFETCH: u64 = 5;
+    const MIN_POOL: u64 = 50;
+    const MAX_POOL: u64 = 5_000;
+
+    let pool = seen
+        .saturating_add(limit)
+        .saturating_mul(OVERFETCH)
+        .clamp(MIN_POOL, MAX_POOL);
+
+    i64::try_from(pool).unwrap_or(MAX_POOL as i64)
+}
+
+/// Builds the semantic-search statement for `query`.
+///
+/// Public so a test can `EXPLAIN` the exact statement the repository runs and
+/// assert the vector arm still reaches `search_embeddings_ann_idx`: the plan
+/// silently degrades to a sequential scan the moment the `ORDER BY … LIMIT`
+/// shape is lost, and nothing about the results would reveal it.
+pub fn semantic_search_sql(query: &SemanticSearchQuery) -> String {
+    let emit_docs = query.type_filter.documents && query.may_read_documents;
+    let emit_tasks = query.type_filter.tasks && query.may_read_tasks;
+    let (principal_col, _, owner_admin_clause, member_clause) =
+        principal_sql(&query.principal, query.bypass);
+    let doc_perm = build_doc_permission(&owner_admin_clause, &member_clause, principal_col);
+    let task_perm = build_task_permission(&owner_admin_clause, &member_clause, principal_col);
+    let kind_cond = match (emit_docs, emit_tasks) {
+        (true, false) => "AND ranked.resource_kind = 'document'".to_owned(),
+        (false, true) => "AND ranked.resource_kind = 'task'".to_owned(),
+        _ => String::new(),
+    };
+    let cursor_cond = if let Some(after) = query.after {
+        let kind_rank = after.resource_kind.sort_rank();
+        format!(
+            "AND (ranked.similarity < {similarity} OR \
+             (ranked.similarity = {similarity} AND ranked.kind_rank > {kind_rank}) OR \
+             (ranked.similarity = {similarity} AND ranked.kind_rank = {kind_rank} \
+              AND ranked.resource_id < '{resource_id}'))",
+            similarity = after.similarity,
+            resource_id = after.resource_id
+        )
+    } else {
+        String::new()
+    };
+
+    let document_live_project = project_is_live_sql("d.project_id");
+    let document_live_folder = folder_chain_is_live_sql("d.folder_id");
+    let task_live_board = board_chain_is_live_sql("t.board_id");
+
+    format!(
+        r#"WITH nearest AS (
                    SELECT se.resource_kind,
                           se.resource_id,
                           se.source_field,
@@ -315,6 +370,8 @@ impl SemanticSearchRepo for PgSemanticSearchRepo {
                      AND se.model = $4
                      AND se.dimensions = $5
                      AND se.stale_at IS NULL
+                   ORDER BY se.embedding <=> $3::vector
+                   LIMIT $7
                ), ranked AS (
                    SELECT *, row_number() OVER (
                        PARTITION BY resource_kind, resource_id
@@ -366,27 +423,8 @@ impl SemanticSearchRepo for PgSemanticSearchRepo {
                  {cursor_cond}
                  AND ({task_perm})
                ORDER BY similarity DESC, kind ASC, id DESC
-               LIMIT $6"#,
-        );
-
-        let rows = SemanticSearchRow::find_by_statement(Statement::from_sql_and_values(
-            sea_orm::DatabaseBackend::Postgres,
-            sql,
-            vec![
-                query.workspace_id.0.into(),
-                principal_id.into(),
-                vector_literal(query_vector).into(),
-                self.provider.model().to_owned().into(),
-                (self.provider.dimensions() as i32).into(),
-                limit.into(),
-            ],
-        ))
-        .all(&self.conn)
-        .await
-        .map_err(db_err)?;
-
-        rows.into_iter().map(row_to_hit).collect()
-    }
+               LIMIT $6"#
+    )
 }
 
 pub(crate) trait ResourceKindSql {
