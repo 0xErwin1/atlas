@@ -118,6 +118,8 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "SemanticSearchHitDto",
     "SemanticSearchKindDto",
     "SemanticSearchSourceDto",
+    "SemanticReindexPlanDto",
+    "SemanticReindexStartedDto",
     "CreateFolderRequest",
     "RenameFolderRequest",
     "MoveFolderRequest",

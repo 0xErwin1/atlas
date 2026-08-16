@@ -423,6 +423,9 @@ enum Case {
     DeletePropertyDefinition,
     // ---- config: workspace rename (1) ----
     RenameWorkspace,
+    // ---- config: semantic reindex (2) ----
+    SemanticReindexPlan,
+    SemanticReindexStart,
     // ---- grants: read-only list reads (2) ----
     ListProjectGrants,
     ListWorkspaceGrants,
@@ -560,6 +563,8 @@ impl Case {
         Case::CreatePropertyDefinition,
         Case::DeletePropertyDefinition,
         Case::RenameWorkspace,
+        Case::SemanticReindexPlan,
+        Case::SemanticReindexStart,
         Case::ListProjectGrants,
         Case::ListWorkspaceGrants,
         Case::ListSavedSearches,
@@ -704,6 +709,8 @@ impl Case {
             Case::DeletePropertyDefinition => ("DELETE", "config:delete"),
 
             Case::RenameWorkspace => ("PATCH", "config:update"),
+            Case::SemanticReindexPlan => ("GET", "config:read"),
+            Case::SemanticReindexStart => ("POST", "config:update"),
 
             Case::ListProjectGrants => ("GET", "grants:read"),
             Case::ListWorkspaceGrants => ("GET", "grants:read"),
@@ -1499,6 +1506,26 @@ async fn invoke(
         // handler param) before any secondary `Path<...>` or JSON body is read,
         // so the wrong/zero-scope passes are denied even though `raw_call` sends
         // no body and the tag/property ids are throwaway nils.
+        Case::SemanticReindexPlan => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "GET",
+                &format!("/api/workspaces/{ws}/semantic-search/reindex"),
+            )
+            .await
+        }
+        Case::SemanticReindexStart => {
+            raw_call(
+                http,
+                base_url,
+                token,
+                "POST",
+                &format!("/api/workspaces/{ws}/semantic-search/reindex"),
+            )
+            .await
+        }
         Case::ListTags => {
             raw_call(
                 http,

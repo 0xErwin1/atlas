@@ -24,7 +24,7 @@ use crate::semantic_indexer::{
 /// Sized well below the token window of the common embedding models so a chunk
 /// never gets silently truncated provider-side, where the dropped tail would be
 /// indistinguishable from content that was simply never written.
-const MAX_CHUNK_CHARS: usize = 1_500;
+pub const MAX_CHUNK_CHARS: usize = 1_500;
 
 /// Reads a resource's full indexable text and re-embeds it.
 ///

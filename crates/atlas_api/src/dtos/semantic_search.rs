@@ -55,6 +55,39 @@ pub struct SemanticSearchHitDto {
     pub excerpt: String,
 }
 
+/// What a workspace-wide reindex would embed, and how far it already is.
+///
+/// `estimated_chunks` and `estimated_tokens` are approximations from the stored
+/// character counts, not a provider quote: they exist so an operator can tell
+/// whether embedding this corpus costs cents or hundreds of dollars before
+/// starting it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct SemanticReindexPlanDto {
+    pub documents: i64,
+    pub tasks: i64,
+    pub characters: i64,
+    pub estimated_chunks: i64,
+    pub estimated_tokens: i64,
+    /// Resources holding a live embedding for the configured model.
+    pub indexed_resources: i64,
+    /// Resources waiting in the index queue — the remaining work.
+    pub queued_resources: i64,
+    /// Embedding model the plan is measured against.
+    pub model: String,
+    /// Whether embeddings are configured and the schema can store them.
+    pub enabled: bool,
+}
+
+/// Result of starting a workspace-wide reindex.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct SemanticReindexStartedDto {
+    /// Resources newly added to the queue; already-queued ones are not counted.
+    pub enqueued: i64,
+    pub plan: SemanticReindexPlanDto,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SemanticSearchCursor {
     pub similarity: f32,

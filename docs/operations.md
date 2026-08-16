@@ -95,7 +95,14 @@ Backfill/indexing behavior:
 - Re-indexing hashes normalized chunk text and skips unchanged chunks for the active model/dimensions.
 - Task indexing includes readable ID, title, description, labels, visible comments, attachment file names, checklist items, and direct visible subtask text.
 - Document indexing includes title, content, visible comments, and attachment file names.
-- Deferred scope: durable background queue automation and HNSW tuning are not part of this slice; run explicit backfill/re-index flows when changing model or dimensions.
+- Deferred scope: HNSW tuning is not part of this slice.
+
+Workspace backfill (`/api/workspaces/{ws}/semantic-search/reindex`, workspace admin or owner):
+
+- `GET` returns what a reindex would embed — documents, tasks, characters, estimated chunks and tokens — plus how far the workspace already is (`indexed_resources`, `queued_resources`). It queues nothing, so it is the read to take before paying a provider to embed a corpus. The chunk and token figures are approximations from stored character counts (~4 characters per token), not a provider quote.
+- `POST` queues every live document and task, then returns the same plan alongside how many resources were newly queued. The running indexer worker drains the queue; content whose hash is unchanged is not re-embedded, so re-running the backfill costs queue rows rather than embeddings, and an interrupted run resumes by simply running it again.
+- `POST` returns `503` when embeddings are disabled or the pgvector schema is missing: queueing work that nothing drains would only grow a backlog an operator would read as progress.
+- Re-run it after changing `ATLAS_EMBEDDINGS_MODEL` or `ATLAS_EMBEDDINGS_DIMENSIONS`; embeddings are keyed by model and dimensions, so the old rows stay but no longer answer queries.
 
 ### Rate limiting
 

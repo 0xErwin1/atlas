@@ -724,6 +724,11 @@ pub fn app(state: AppState) -> Router {
             "/api/workspaces/{ws}/semantic-search",
             get(routes::semantic_search::semantic_search),
         )
+        .route(
+            "/api/workspaces/{ws}/semantic-search/reindex",
+            get(routes::semantic_search::semantic_reindex_plan)
+                .post(routes::semantic_search::semantic_reindex_start),
+        )
         .layer(axum_middleware::from_fn(
             crate::auth::csrf::require_csrf_for_cookie_mutations,
         ))

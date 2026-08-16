@@ -8042,6 +8042,97 @@
         ]
       }
     },
+    "/api/workspaces/{ws}/semantic-search/reindex": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "operationId": "semantic_reindex_plan",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What a reindex would cost and how far it already is",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SemanticReindexPlanDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Caller is not a workspace admin or owner"
+          },
+          "404": {
+            "description": "Workspace not found or caller is not a member"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "search"
+        ],
+        "operationId": "semantic_reindex_start",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Every live document and task is queued for embedding",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SemanticReindexStartedDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Caller is not a workspace admin or owner"
+          },
+          "404": {
+            "description": "Workspace not found or caller is not a member"
+          },
+          "503": {
+            "description": "Semantic search is disabled or its schema is unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/api/workspaces/{ws}/status-templates": {
       "get": {
         "tags": [
@@ -16702,6 +16793,79 @@
           "document",
           "task"
         ]
+      },
+      "SemanticReindexPlanDto": {
+        "type": "object",
+        "description": "What a workspace-wide reindex would embed, and how far it already is.\n\n`estimated_chunks` and `estimated_tokens` are approximations from the stored\ncharacter counts, not a provider quote: they exist so an operator can tell\nwhether embedding this corpus costs cents or hundreds of dollars before\nstarting it.",
+        "required": [
+          "documents",
+          "tasks",
+          "characters",
+          "estimated_chunks",
+          "estimated_tokens",
+          "indexed_resources",
+          "queued_resources",
+          "model",
+          "enabled"
+        ],
+        "properties": {
+          "characters": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "documents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether embeddings are configured and the schema can store them."
+          },
+          "estimated_chunks": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "estimated_tokens": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "indexed_resources": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Resources holding a live embedding for the configured model."
+          },
+          "model": {
+            "type": "string",
+            "description": "Embedding model the plan is measured against."
+          },
+          "queued_resources": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Resources waiting in the index queue — the remaining work."
+          },
+          "tasks": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "SemanticReindexStartedDto": {
+        "type": "object",
+        "description": "Result of starting a workspace-wide reindex.",
+        "required": [
+          "enqueued",
+          "plan"
+        ],
+        "properties": {
+          "enqueued": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Resources newly added to the queue; already-queued ones are not counted."
+          },
+          "plan": {
+            "$ref": "#/components/schemas/SemanticReindexPlanDto"
+          }
+        }
       },
       "SemanticSearchHitDto": {
         "type": "object",

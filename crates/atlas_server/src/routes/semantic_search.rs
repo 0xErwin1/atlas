@@ -1,17 +1,20 @@
 use axum::{
     Json,
     extract::{Query, State},
+    http::StatusCode,
     response::IntoResponse,
 };
 use serde::Deserialize;
 
 use atlas_api::{
     dtos::semantic_search::{
-        SemanticSearchCursor, SemanticSearchHitDto, SemanticSearchKindDto, SemanticSearchSourceDto,
+        SemanticReindexPlanDto, SemanticReindexStartedDto, SemanticSearchCursor,
+        SemanticSearchHitDto, SemanticSearchKindDto, SemanticSearchSourceDto,
     },
     pagination::Page,
 };
 use atlas_domain::{
+    ids::WorkspaceId,
     permissions::CapabilityFamily,
     semantic_search::{
         ResourceKind, SemanticSearchAfter, SemanticSearchHit, SemanticSearchQuery,
@@ -20,7 +23,11 @@ use atlas_domain::{
 };
 
 use crate::{
-    authz::WorkspaceAccess, error::ApiError, persistence::repos::PgSemanticSearchRepo,
+    authz::{
+        AdminMinAgentEditor, Authorized, ConfigRead, ConfigUpdate, WorkspaceAccess, WorkspaceRes,
+    },
+    error::ApiError,
+    persistence::repos::{MAX_CHUNK_CHARS, PgSearchIndexQueueRepo, PgSemanticSearchRepo},
     state::AppState,
 };
 
@@ -139,6 +146,116 @@ pub(crate) async fn semantic_search(
         has_more,
     };
     Ok(Json(page).into_response())
+}
+
+// ---------------------------------------------------------------------------
+// GET|POST /api/workspaces/{ws}/semantic-search/reindex
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    get,
+    path = "/api/workspaces/{ws}/semantic-search/reindex",
+    tag = "search",
+    security(("bearer_auth" = [])),
+    params(("ws" = String, Path, description = "Workspace slug")),
+    responses(
+        (status = 200, description = "What a reindex would cost and how far it already is", body = SemanticReindexPlanDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Caller is not a workspace admin or owner"),
+        (status = 404, description = "Workspace not found or caller is not a member"),
+    )
+)]
+pub(crate) async fn semantic_reindex_plan(
+    auth: Authorized<WorkspaceRes, AdminMinAgentEditor, ConfigRead>,
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, ApiError> {
+    let plan = load_plan(&state, auth.workspace.id).await?;
+    Ok(Json(plan))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/workspaces/{ws}/semantic-search/reindex",
+    tag = "search",
+    security(("bearer_auth" = [])),
+    params(("ws" = String, Path, description = "Workspace slug")),
+    responses(
+        (status = 202, description = "Every live document and task is queued for embedding", body = SemanticReindexStartedDto),
+        (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "Caller is not a workspace admin or owner"),
+        (status = 404, description = "Workspace not found or caller is not a member"),
+        (status = 503, description = "Semantic search is disabled or its schema is unavailable"),
+    )
+)]
+pub(crate) async fn semantic_reindex_start(
+    auth: Authorized<WorkspaceRes, AdminMinAgentEditor, ConfigUpdate>,
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, ApiError> {
+    // Queuing against a disabled provider would pile up work nothing drains,
+    // and the operator would read the growing backlog as progress.
+    if !semantic_search_ready(&state).await? {
+        return Err(ApiError::ServiceUnavailable {
+            message: "semantic search embeddings are unavailable; nothing would drain the queue"
+                .to_owned(),
+        });
+    }
+
+    let enqueued = PgSearchIndexQueueRepo::enqueue_workspace(&*state.db, auth.workspace.id)
+        .await
+        .map_err(ApiError::Domain)?;
+    let plan = load_plan(&state, auth.workspace.id).await?;
+
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(SemanticReindexStartedDto {
+            enqueued: i64::try_from(enqueued).unwrap_or(i64::MAX),
+            plan,
+        }),
+    ))
+}
+
+async fn load_plan(
+    state: &AppState,
+    workspace_id: WorkspaceId,
+) -> Result<SemanticReindexPlanDto, ApiError> {
+    let model = state
+        .embedding_provider
+        .as_ref()
+        .map_or_else(|| "-".to_owned(), |provider| provider.model().to_owned());
+    let dimensions = state
+        .embedding_provider
+        .as_ref()
+        .map_or(0, |provider| provider.dimensions());
+
+    let plan = PgSearchIndexQueueRepo::workspace_plan(
+        &*state.db,
+        workspace_id,
+        &model,
+        i32::try_from(dimensions).unwrap_or(0),
+        i64::try_from(MAX_CHUNK_CHARS).unwrap_or(i64::MAX),
+    )
+    .await
+    .map_err(ApiError::Domain)?;
+
+    Ok(SemanticReindexPlanDto {
+        documents: plan.documents,
+        tasks: plan.tasks,
+        characters: plan.characters,
+        estimated_chunks: plan.estimated_chunks,
+        estimated_tokens: plan.estimated_tokens,
+        indexed_resources: plan.indexed_resources,
+        queued_resources: plan.queued_resources,
+        model,
+        enabled: semantic_search_ready(state).await?,
+    })
+}
+
+async fn semantic_search_ready(state: &AppState) -> Result<bool, ApiError> {
+    state.semantic_search_enabled_now().await.map_err(|error| {
+        ApiError::Domain(atlas_domain::DomainError::Internal {
+            message: format!("semantic search schema readiness check failed: {error}"),
+        })
+    })
 }
 
 fn parse_type_filter(raw: Option<&str>) -> SemanticSearchTypeFilter {

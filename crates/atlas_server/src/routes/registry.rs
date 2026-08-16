@@ -1196,6 +1196,20 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
         openapi_path: Some("/api/workspaces/{ws}/semantic-search"),
         capability: None,
     },
+    RouteEntry {
+        method: "GET",
+        path_template: "/api/workspaces/{ws}/semantic-search/reindex",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/api/workspaces/{ws}/semantic-search/reindex"),
+        capability: Some("config:read"),
+    },
+    RouteEntry {
+        method: "POST",
+        path_template: "/api/workspaces/{ws}/semantic-search/reindex",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/api/workspaces/{ws}/semantic-search/reindex"),
+        capability: Some("config:update"),
+    },
     // ---- Tags (config family; human floor unchanged, agents gated on config:{action}) ----
     RouteEntry {
         method: "GET",

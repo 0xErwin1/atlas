@@ -263,6 +263,241 @@ async fn semantic_search_returns_compact_page_without_lexical_route_change() {
     db.teardown().await;
 }
 
+fn reindex_url(base: &str, ws: &str) -> String {
+    format!("{base}/api/workspaces/{ws}/semantic-search/reindex")
+}
+
+/// Seeds one document and one task, then empties the queue the seeding filled.
+///
+/// Ordinary writes enqueue their own resource, so a freshly seeded workspace is
+/// already queued; clearing it is what leaves the backfill something to find.
+async fn seed_corpus_with_empty_queue(
+    db: &support::TestDb,
+    client: &atlas_client::AtlasClient,
+    ws: &atlas_domain::entities::identity::Workspace,
+    user: &atlas_domain::entities::identity::User,
+) {
+    let ctx = WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(user.id));
+
+    PgDocumentRepo::new(db.conn().clone(), 50)
+        .create(
+            &ctx,
+            NewDocument {
+                title: "Backfill Runbook".to_owned(),
+                slug: None,
+                content: "content worth embedding".to_owned(),
+                folder_id: None,
+                project_id: None,
+                frontmatter: None,
+            },
+        )
+        .await
+        .expect("seed document");
+
+    let project = client
+        .create_project(
+            &ws.slug,
+            CreateProjectRequest {
+                name: "Backfill Project".to_owned(),
+                slug: "backfill-project".to_owned(),
+                task_prefix: "BFL".to_owned(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("seed project");
+    let project_id = atlas_domain::ids::ProjectId(project.id);
+    let board = PgBoardRepo::new(db.conn().clone())
+        .create_board(
+            &ctx,
+            NewBoard {
+                folder_id: None,
+                project_id,
+                name: "Backfill Board".to_owned(),
+            },
+        )
+        .await
+        .expect("seed board");
+    let column = PgBoardRepo::new(db.conn().clone())
+        .add_column(
+            &ctx,
+            board.id,
+            "Todo".to_owned(),
+            None,
+            PositionBetween {
+                before: None,
+                after: None,
+            },
+        )
+        .await
+        .expect("seed column");
+    PgTaskRepo::new(db.conn().clone())
+        .create(
+            &ctx,
+            NewTask {
+                project_id,
+                board_id: board.id,
+                column_id: column.id,
+                title: "Backfill task".to_owned(),
+                description: "description worth embedding".to_owned(),
+                priority: None,
+                due_date: None,
+                estimate: None,
+                labels: vec![],
+                properties: None,
+                position: PositionBetween {
+                    before: None,
+                    after: None,
+                },
+            },
+        )
+        .await
+        .expect("seed task");
+
+    db.conn()
+        .execute_unprepared("DELETE FROM search_index_queue")
+        .await
+        .expect("clear the queue the seeding writes filled");
+}
+
+#[tokio::test]
+async fn semantic_reindex_reports_the_corpus_before_queueing_anything() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, user) = support::login_user_with_workspace(&server, &db, "sem-plan").await;
+    let token = client.token().expect("must be logged in").to_owned();
+    let http = reqwest::Client::new();
+    seed_corpus_with_empty_queue(&db, &client, &ws, &user).await;
+
+    let plan: Value = http
+        .get(reindex_url(server.base_url(), &ws.slug))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .expect("plan request")
+        .json()
+        .await
+        .expect("plan body");
+
+    assert_eq!(plan.get("documents").and_then(Value::as_i64), Some(1));
+    assert_eq!(plan.get("tasks").and_then(Value::as_i64), Some(1));
+    assert_eq!(
+        plan.get("indexed_resources").and_then(Value::as_i64),
+        Some(0)
+    );
+    assert_eq!(
+        plan.get("queued_resources").and_then(Value::as_i64),
+        Some(0),
+        "reading the plan must not queue work"
+    );
+    assert_eq!(
+        plan.get("estimated_chunks").and_then(Value::as_i64),
+        Some(2),
+        "two short resources are one chunk each"
+    );
+    let characters = plan
+        .get("characters")
+        .and_then(Value::as_i64)
+        .expect("characters");
+    assert_eq!(
+        plan.get("estimated_tokens").and_then(Value::as_i64),
+        Some(characters / 4)
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn semantic_reindex_queues_every_live_resource_and_repeats_cleanly() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, user) = support::login_user_with_workspace(&server, &db, "sem-backfill").await;
+    let token = client.token().expect("must be logged in").to_owned();
+    let http = reqwest::Client::new();
+    seed_corpus_with_empty_queue(&db, &client, &ws, &user).await;
+
+    let started = http
+        .post(reindex_url(server.base_url(), &ws.slug))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .expect("reindex request");
+    assert_eq!(started.status().as_u16(), 202);
+    let body: Value = started.json().await.expect("reindex body");
+    assert_eq!(body.get("enqueued").and_then(Value::as_i64), Some(2));
+    assert_eq!(
+        body.pointer("/plan/queued_resources")
+            .and_then(Value::as_i64),
+        Some(2)
+    );
+
+    let repeated: Value = http
+        .post(reindex_url(server.base_url(), &ws.slug))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .expect("second reindex request")
+        .json()
+        .await
+        .expect("second reindex body");
+    assert_eq!(
+        repeated.get("enqueued").and_then(Value::as_i64),
+        Some(0),
+        "a resource already waiting is not queued twice"
+    );
+    assert_eq!(
+        repeated
+            .pointer("/plan/queued_resources")
+            .and_then(Value::as_i64),
+        Some(2)
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn semantic_reindex_is_refused_when_nothing_would_drain_the_queue() {
+    let db = support::TestDb::create().await.expect("TestDb");
+    let mut state = atlas_server::state::AppState::for_test(db.conn().clone())
+        .await
+        .expect("test state");
+    state.embedding_provider = None;
+    let server = support::TestServer::spawn_with_state(state).await;
+    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "sem-nobackfill").await;
+    let token = client.token().expect("must be logged in").to_owned();
+
+    let response = reqwest::Client::new()
+        .post(reindex_url(server.base_url(), &ws.slug))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .expect("reindex request");
+
+    assert_eq!(response.status(), reqwest::StatusCode::SERVICE_UNAVAILABLE);
+    let queued: i64 = sea_orm::FromQueryResult::from_query_result(
+        &db.conn()
+            .query_one_raw(sea_orm::Statement::from_string(
+                sea_orm::DatabaseBackend::Postgres,
+                "SELECT count(*)::bigint AS count FROM search_index_queue",
+            ))
+            .await
+            .expect("count query")
+            .expect("count row"),
+        "",
+    )
+    .map(|row: CountRow| row.count)
+    .expect("count value");
+    assert_eq!(queued, 0, "a refused reindex must queue nothing");
+
+    db.teardown().await;
+}
+
+#[derive(Debug, sea_orm::FromQueryResult)]
+struct CountRow {
+    count: i64,
+}
+
 #[tokio::test]
 async fn semantic_search_api_key_scope_filters_hit_families() {
     let db = support::TestDb::create().await.expect("TestDb");

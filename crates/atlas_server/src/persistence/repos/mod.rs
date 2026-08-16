@@ -80,8 +80,8 @@ mod saved_searches;
 pub use outbox::PgOutboxRepo;
 pub use saved_searches::{PgSavedSearchRepo, SavedSearchRepo};
 pub use search::PgSearchRepo;
-pub use search_index_queue::{PgSearchIndexQueueRepo, QueuedResource};
-pub use semantic_indexer::PgSemanticIndexer;
+pub use search_index_queue::{PgSearchIndexQueueRepo, QueuedResource, WorkspaceIndexPlan};
+pub use semantic_indexer::{MAX_CHUNK_CHARS, PgSemanticIndexer};
 pub use semantic_search::{PgSemanticIndexWriter, PgSemanticSearchRepo, semantic_search_sql};
 pub use tags::{PgTagRepo, TagRepo};
 #[allow(unreachable_pub)]
