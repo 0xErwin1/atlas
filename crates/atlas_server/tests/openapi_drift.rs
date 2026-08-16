@@ -40,6 +40,7 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "CreateDocumentRequest",
     "UpdateDocumentRequest",
     "UpdateContentRequest",
+    "DocumentBacklinkSourceDto",
     "DocumentContentEditRequest",
     "DocumentLineEditRequest",
     "MoveDocumentRequest",

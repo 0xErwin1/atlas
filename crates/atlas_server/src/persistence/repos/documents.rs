@@ -1299,6 +1299,25 @@ impl DocumentLinkRepo for PgDocumentLinkRepo {
             .map(|rows| rows.into_iter().map(document_link_from).collect())
             .map_err(db_err)
     }
+
+    async fn backlinks_for_task(
+        &self,
+        ctx: &WorkspaceCtx,
+        target: TaskId,
+    ) -> Result<Vec<DocumentLink>, DomainError> {
+        document_link::Entity::find()
+            .filter(document_link::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(document_link::Column::TargetTaskId.eq(target.0))
+            .filter(live_document_chain("document_links.source_document_id"))
+            .filter(live_task_chain("document_links.source_task_id"))
+            .filter(live_task_chain("document_links.target_task_id"))
+            .order_by_asc(document_link::Column::CreatedAt)
+            .order_by_asc(document_link::Column::Id)
+            .all(&self.conn)
+            .await
+            .map(|rows| rows.into_iter().map(document_link_from).collect())
+            .map_err(db_err)
+    }
 }
 
 pub struct PgAttachmentRepo {

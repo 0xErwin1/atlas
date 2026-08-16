@@ -290,10 +290,26 @@ pub struct TaskBacklinkDto {
     pub source_task_id: uuid::Uuid,
     pub source_readable_id: String,
     pub source_title: String,
-    /// "relates" | "blocks" | "parent" | "spec" | "docs"
+    /// "relates" | "blocks" | "parent" | "spec" | "docs" | "comment" | "wikilink"
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub comment_source: Option<CommentBacklinkSourceDto>,
+    /// Present when the backlink is a `[[task:…]]` wikilink written in a
+    /// document rather than in another task. The `source_*` fields describe a
+    /// task source and carry no meaning here.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub document_source: Option<DocumentBacklinkSourceDto>,
+}
+
+/// The document a wikilink backlink was written in.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct DocumentBacklinkSourceDto {
+    pub document_id: uuid::Uuid,
+    /// Absent for a document that predates slugs; such a source is not linkable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slug: Option<String>,
+    pub title: String,
 }
 
 /// One resource in a task's dependency graph.

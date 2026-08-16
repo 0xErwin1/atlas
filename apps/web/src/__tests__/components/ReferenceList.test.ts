@@ -135,6 +135,45 @@ describe('ReferenceList', () => {
     expect(row.text()).not.toContain('hidden-note');
   });
 
+  it('links a wikilink backlink written in a document to that document', () => {
+    const wrapper = mountList(
+      [],
+      [
+        {
+          source_task_id: 'note-9',
+          source_readable_id: '',
+          source_title: '',
+          kind: 'wikilink',
+          document_source: { document_id: 'note-9', slug: 'runbook', title: 'Incident runbook' },
+        },
+      ],
+    );
+
+    const row = wrapper.get('[data-backlink-id="note-9"]');
+    expect(row.text()).toContain('Incident runbook');
+    expect(row.get('a.atl-ref-target').attributes('href')).toBe('/n/runbook');
+  });
+
+  it('renders an unavailable document source as the exact non-navigable sentinel', () => {
+    const wrapper = mountList(
+      [],
+      [
+        {
+          source_task_id: 'note-10',
+          source_readable_id: '',
+          source_title: '',
+          kind: 'wikilink',
+          document_source: { document_id: 'note-10', slug: null, title: 'Hidden note' },
+        },
+      ],
+    );
+
+    const row = wrapper.get('[data-backlink-id="note-10"]');
+    expect(row.find('a.atl-ref-target').exists()).toBe(false);
+    expect(row.get('[data-backlink-unavailable]').text()).toBe('Recurso no disponible');
+    expect(row.text()).not.toContain('Hidden note');
+  });
+
   it('labels merged and broken wikilinks and emits only an actionable manual reference id', async () => {
     const wrapper = mountList([
       reference({

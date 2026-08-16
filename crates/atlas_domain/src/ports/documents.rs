@@ -164,6 +164,16 @@ pub trait DocumentLinkRepo: Send + Sync {
         ctx: &WorkspaceCtx,
         target: DocumentId,
     ) -> Result<Vec<DocumentLink>, DomainError>;
+
+    /// Wikilinks pointing at a task, from any document or task description.
+    ///
+    /// Distinct from `task_references`: those are typed relations created
+    /// deliberately, these are `[[task:…]]` links written in prose.
+    async fn backlinks_for_task(
+        &self,
+        ctx: &WorkspaceCtx,
+        target: TaskId,
+    ) -> Result<Vec<DocumentLink>, DomainError>;
 }
 
 #[async_trait]

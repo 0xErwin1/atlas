@@ -464,6 +464,54 @@ async fn a_note_addressed_by_slug_survives_renaming_the_note() {
     db.teardown().await;
 }
 
+#[tokio::test]
+async fn a_task_sees_the_wikilinks_pointing_at_it() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "task-backlink-user").await;
+    let ctx = support::ctx(&ws, &user);
+
+    let doc_repo = PgDocumentRepo::new(db.conn().clone(), 10);
+    let link_repo = PgDocumentLinkRepo {
+        conn: db.conn().clone(),
+    };
+
+    let task = seed_project_board_task(&db, &ctx).await;
+    let source = doc_repo
+        .create(&ctx, new_slugged_document("Source", "source"))
+        .await
+        .expect("create source document");
+
+    let content = format!("[[task:{}|the task]]", task.readable_id);
+    let links = PgDocumentLinkRepo::extract_links_in(
+        db.conn(),
+        &ctx,
+        LinkSource::Document(source.id),
+        &content,
+    )
+    .await
+    .expect("extract link");
+
+    link_repo
+        .replace_for_source(&ctx, source.id, links)
+        .await
+        .expect("store link");
+
+    let backlinks = link_repo
+        .backlinks_for_task(&ctx, task.id)
+        .await
+        .expect("read task backlinks");
+
+    assert_eq!(
+        backlinks
+            .iter()
+            .map(|link| (link.source_document_id, link.target_task_id))
+            .collect::<Vec<_>>(),
+        vec![(Some(source.id), Some(task.id))]
+    );
+
+    db.teardown().await;
+}
+
 /// Mirrors the create route, which always assigns a slug; the repo itself
 /// accepts `None` and the typed `note:` address needs a real one.
 fn new_slugged_document(title: &str, slug: &str) -> NewDocument {

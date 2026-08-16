@@ -93,18 +93,53 @@ function commentBacklinkRow(commentSource: NonNullable<TaskBacklinkDto['comment_
   };
 }
 
+function documentBacklinkRow(
+  kind: string,
+  documentSource: NonNullable<TaskBacklinkDto['document_source']>,
+): BacklinkRow {
+  const { slug } = documentSource;
+
+  if (slug === null || slug === undefined) {
+    return {
+      id: documentSource.document_id,
+      kind,
+      readableId: 'Recurso no disponible',
+      title: 'Recurso no disponible',
+      to: null,
+    };
+  }
+
+  return {
+    id: documentSource.document_id,
+    kind,
+    readableId: slug,
+    title: documentSource.title,
+    to: { name: 'notes', params: { slug } },
+  };
+}
+
+function taskBacklinkRow(b: TaskBacklinkDto): BacklinkRow {
+  return {
+    id: b.source_task_id,
+    kind: b.kind,
+    readableId: b.source_readable_id,
+    title: b.source_title,
+    to: { name: 'task-detail', params: { readableId: b.source_readable_id } },
+  };
+}
+
 const backlinkRows = computed<BacklinkRow[]>(() =>
-  props.backlinks.map((b) => ({
-    ...(b.comment_source === null || b.comment_source === undefined
-      ? {
-          id: b.source_task_id,
-          kind: b.kind,
-          readableId: b.source_readable_id,
-          title: b.source_title,
-          to: { name: 'task-detail', params: { readableId: b.source_readable_id } },
-        }
-      : commentBacklinkRow(b.comment_source)),
-  })),
+  props.backlinks.map((b) => {
+    if (b.comment_source !== null && b.comment_source !== undefined) {
+      return commentBacklinkRow(b.comment_source);
+    }
+
+    if (b.document_source !== null && b.document_source !== undefined) {
+      return documentBacklinkRow(b.kind, b.document_source);
+    }
+
+    return taskBacklinkRow(b);
+  }),
 );
 
 const isEmpty = computed(() => rows.value.length === 0 && backlinkRows.value.length === 0);

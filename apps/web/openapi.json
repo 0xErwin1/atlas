@@ -14017,6 +14017,30 @@
           }
         }
       },
+      "DocumentBacklinkSourceDto": {
+        "type": "object",
+        "description": "The document a wikilink backlink was written in.",
+        "required": [
+          "document_id",
+          "title"
+        ],
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "slug": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Absent for a document that predates slugs; such a source is not linkable."
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
       "DocumentCompactDto": {
         "type": "object",
         "description": "Compact document metadata that deliberately excludes the full content body.",
@@ -15991,9 +16015,20 @@
                     }
                   ]
                 },
+                "document_source": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DocumentBacklinkSourceDto",
+                      "description": "Present when the backlink is a `[[task:…]]` wikilink written in a\ndocument rather than in another task. The `source_*` fields describe a\ntask source and carry no meaning here."
+                    }
+                  ]
+                },
                 "kind": {
                   "type": "string",
-                  "description": "\"relates\" | \"blocks\" | \"parent\" | \"spec\" | \"docs\""
+                  "description": "\"relates\" | \"blocks\" | \"parent\" | \"spec\" | \"docs\" | \"comment\" | \"wikilink\""
                 },
                 "source_readable_id": {
                   "type": "string"
@@ -17365,9 +17400,20 @@
               }
             ]
           },
+          "document_source": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DocumentBacklinkSourceDto",
+                "description": "Present when the backlink is a `[[task:…]]` wikilink written in a\ndocument rather than in another task. The `source_*` fields describe a\ntask source and carry no meaning here."
+              }
+            ]
+          },
           "kind": {
             "type": "string",
-            "description": "\"relates\" | \"blocks\" | \"parent\" | \"spec\" | \"docs\""
+            "description": "\"relates\" | \"blocks\" | \"parent\" | \"spec\" | \"docs\" | \"comment\" | \"wikilink\""
           },
           "source_readable_id": {
             "type": "string"

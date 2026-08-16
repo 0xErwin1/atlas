@@ -957,10 +957,19 @@ pub(crate) struct TaskBacklinkProjection {
 
 impl From<TaskBacklinkDto> for TaskBacklinkProjection {
     fn from(b: TaskBacklinkDto) -> Self {
-        Self {
-            source_readable_id: b.source_readable_id,
-            source_title: b.source_title,
-            kind: b.kind,
+        // A wikilink written in a document has no source task, so its address
+        // is the document slug; the task fields are blank for that row.
+        match b.document_source {
+            Some(source) => Self {
+                source_readable_id: source.slug.unwrap_or_default(),
+                source_title: source.title,
+                kind: b.kind,
+            },
+            None => Self {
+                source_readable_id: b.source_readable_id,
+                source_title: b.source_title,
+                kind: b.kind,
+            },
         }
     }
 }
@@ -2965,6 +2974,7 @@ mod tests {
             source_readable_id: "ATL-5".to_owned(),
             source_title: "Blocker task".to_owned(),
             kind: "blocks".to_owned(),
+            document_source: None,
             comment_source: None,
         }
     }

@@ -668,6 +668,13 @@ pub(crate) fn project_task_backlink(b: TaskBacklinkDto) -> Value {
             project_comment_backlink_source(source),
         );
     }
+    if let Some(source) = b.document_source {
+        // Addressed by slug, like every other document the agent is handed.
+        map.insert(
+            "document_source".into(),
+            json!({ "slug": source.slug, "title": source.title }),
+        );
+    }
     Value::Object(map)
 }
 
@@ -2595,6 +2602,7 @@ mod tests {
             source_readable_id: "ATL-7".into(),
             source_title: "Blocker task".into(),
             kind: kind.into(),
+            document_source: None,
             comment_source: None,
         }
     }

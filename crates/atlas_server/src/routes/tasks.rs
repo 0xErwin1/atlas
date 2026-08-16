@@ -16,10 +16,10 @@ use atlas_api::{
         ActivityEntryDto, AddAssigneeRequest, AssigneeDto, ChecklistItemDto, CommentDto,
         CommentListResponseDto, CreateChecklistItemRequest, CreateCommentRequest,
         CreateReferenceBatchRequest, CreateReferenceBatchResultDto, CreateReferenceRequest,
-        CreateSubtaskRequest, CreateTaskRequest, CreateTaskResponseDto, MoveTaskRequest,
-        PromoteChecklistItemRequest, PromotionDto, ReferenceDto, ReferenceOriginDto,
-        RenameTaskAttachmentRequest, SetTaskParentRequest, TaskAttachmentDto, TaskBacklinkDto,
-        TaskDto, TaskGraphDto, TaskGraphEdgeDto, TaskGraphNodeDto, TaskSummaryDto,
+        CreateSubtaskRequest, CreateTaskRequest, CreateTaskResponseDto, DocumentBacklinkSourceDto,
+        MoveTaskRequest, PromoteChecklistItemRequest, PromotionDto, ReferenceDto,
+        ReferenceOriginDto, RenameTaskAttachmentRequest, SetTaskParentRequest, TaskAttachmentDto,
+        TaskBacklinkDto, TaskDto, TaskGraphDto, TaskGraphEdgeDto, TaskGraphNodeDto, TaskSummaryDto,
         UnifiedReferenceDto, UpdateChecklistItemRequest, UpdateCommentRequest, UpdateTaskRequest,
         WorkspaceTaskQueryParams,
     },
@@ -72,6 +72,7 @@ use crate::{
     },
     error::ApiError,
     persistence::entities::boards_tasks::task,
+    persistence::entities::documents::document,
     persistence::repos::{
         ApiKeyRepo, AttachmentRepo, DocumentRepo, MembershipRepo, PgApiKeyRepo,
         PgAttachmentLifecycle, PgAttachmentRepo, PgBoardRepo, PgCommentLinkRepo, PgCommentRepo,
@@ -3402,6 +3403,7 @@ pub(crate) async fn list_backlinks(
                 source_title: t.title.clone(),
                 kind: r.kind.as_str().to_string(),
                 comment_source: None,
+                document_source: None,
             });
         }
     }
@@ -3448,10 +3450,124 @@ pub(crate) async fn list_backlinks(
                 comment_id: link.comment_id.0,
                 parent,
             }),
+            document_source: None,
         });
     }
 
+    dtos.extend(wikilink_backlinks(&state, &ctx, auth.resource.0.id).await?);
+
     Ok(Json(Page::new(dtos, next_cursor, has_more)))
+}
+
+/// Builds the `[[task:…]]` wikilink backlinks pointing at a task.
+///
+/// Like the comment-sourced rows above, these are appended outside the
+/// reference cursor: the endpoint paginates over typed references only.
+async fn wikilink_backlinks(
+    state: &AppState,
+    ctx: &WorkspaceCtx,
+    target: TaskId,
+) -> Result<Vec<TaskBacklinkDto>, ApiError> {
+    let links = PgDocumentLinkRepo {
+        conn: (*state.db).clone(),
+    }
+    .backlinks_for_task(ctx, target)
+    .await
+    .map_err(ApiError::Domain)?;
+
+    let task_sources = load_task_sources(state, ctx, &links).await?;
+    let document_sources = load_document_sources(state, ctx, &links).await?;
+
+    let mut dtos = Vec::with_capacity(links.len());
+    for link in links {
+        if let Some(source) = link.source_task_id.and_then(|id| task_sources.get(&id.0)) {
+            dtos.push(TaskBacklinkDto {
+                source_task_id: source.id,
+                source_readable_id: source.readable_id.clone(),
+                source_title: source.title.clone(),
+                kind: "wikilink".into(),
+                comment_source: None,
+                document_source: None,
+            });
+            continue;
+        }
+
+        if let Some(source) = link
+            .source_document_id
+            .and_then(|id| document_sources.get(&id.0))
+        {
+            dtos.push(TaskBacklinkDto {
+                source_task_id: source.id,
+                source_readable_id: String::new(),
+                source_title: String::new(),
+                kind: "wikilink".into(),
+                comment_source: None,
+                document_source: Some(DocumentBacklinkSourceDto {
+                    document_id: source.id,
+                    slug: source.slug.clone(),
+                    title: source.title.clone(),
+                }),
+            });
+        }
+    }
+
+    Ok(dtos)
+}
+
+async fn load_task_sources(
+    state: &AppState,
+    ctx: &WorkspaceCtx,
+    links: &[atlas_domain::entities::documents::DocumentLink],
+) -> Result<std::collections::HashMap<uuid::Uuid, task::Model>, ApiError> {
+    let ids = links
+        .iter()
+        .filter_map(|link| link.source_task_id.map(|id| id.0))
+        .collect::<Vec<_>>();
+
+    if ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    Ok(task::Entity::find()
+        .filter(task::Column::WorkspaceId.eq(ctx.workspace_id.0))
+        .filter(task::Column::DeletedAt.is_null())
+        .filter(task::Column::Id.is_in(ids))
+        .all(&*state.db)
+        .await
+        .map_err(|error| ApiError::Internal {
+            message: error.to_string(),
+        })?
+        .into_iter()
+        .map(|source| (source.id, source))
+        .collect())
+}
+
+async fn load_document_sources(
+    state: &AppState,
+    ctx: &WorkspaceCtx,
+    links: &[atlas_domain::entities::documents::DocumentLink],
+) -> Result<std::collections::HashMap<uuid::Uuid, document::Model>, ApiError> {
+    let ids = links
+        .iter()
+        .filter_map(|link| link.source_document_id.map(|id| id.0))
+        .collect::<Vec<_>>();
+
+    if ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    Ok(document::Entity::find()
+        .filter(document::Column::WorkspaceId.eq(ctx.workspace_id.0))
+        .filter(document::Column::DeletedAt.is_null())
+        .filter(document::Column::Id.is_in(ids))
+        .all(&*state.db)
+        .await
+        .map_err(|error| ApiError::Internal {
+            message: error.to_string(),
+        })?
+        .into_iter()
+        .map(|source| (source.id, source))
+        .collect())
 }
 
 // ---------------------------------------------------------------------------
