@@ -151,6 +151,8 @@ const bars = computed<Bar[]>(() => {
     if (idx === null) continue;
 
     const start = idx - PRESENTATIONAL_LEAD_DAYS;
+    // A task due before the window opens or after it closes has no place on the
+    // axis; `offWindowCount` reports it instead of dropping it in silence.
     if (idx < 0 || start > WINDOW_DAYS - 1) continue;
 
     const clampedStart = Math.max(start, 0);
@@ -172,10 +174,44 @@ const bars = computed<Bar[]>(() => {
   return placed.sort((a, b) => a.idx - b.idx).map((p) => p.bar);
 });
 
+/**
+ * What the axis cannot show.
+ *
+ * `overdue` is the one that matters: a task due before the window opens is the
+ * task a timeline is most often opened to find, and until it is counted here it
+ * simply vanishes from the view.
+ */
 const offWindowCount = computed(() => {
   const total = taskDueIndices.value.length;
-  const withDue = taskDueIndices.value.filter((t) => t.idx !== null).length;
-  return { undated: total - withDue, total };
+  let undated = 0;
+  let overdue = 0;
+  let upcoming = 0;
+
+  for (const { idx } of taskDueIndices.value) {
+    if (idx === null) undated += 1;
+    else if (idx < 0) overdue += 1;
+    else if (idx - PRESENTATIONAL_LEAD_DAYS > WINDOW_DAYS - 1) upcoming += 1;
+  }
+
+  return { undated, overdue, upcoming, total };
+});
+
+/** The off-window tallies as sentence fragments, in the order they matter. */
+const offWindowNotes = computed<string[]>(() => {
+  const counts = offWindowCount.value;
+  const notes: string[] = [];
+
+  if (counts.overdue > 0) {
+    notes.push(`${counts.overdue} overdue task${counts.overdue === 1 ? '' : 's'} before this range`);
+  }
+  if (counts.upcoming > 0) {
+    notes.push(`${counts.upcoming} due after it`);
+  }
+  if (counts.undated > 0) {
+    notes.push(`${counts.undated} with no due date`);
+  }
+
+  return notes;
 });
 </script>
 
@@ -242,8 +278,8 @@ const offWindowCount = computed(() => {
         </div>
       </div>
 
-      <div v-if="offWindowCount.undated > 0" class="atl-tm-note">
-        {{ offWindowCount.undated }} task{{ offWindowCount.undated === 1 ? '' : 's' }} with no due date are not shown.
+      <div v-if="offWindowNotes.length > 0" class="atl-tm-note" :class="{ overdue: offWindowCount.overdue > 0 }">
+        Not shown: {{ offWindowNotes.join(', ') }}.
       </div>
     </div>
 
@@ -439,5 +475,9 @@ const offWindowCount = computed(() => {
   padding: 8px 14px;
   font-size: var(--fs-xs);
   color: var(--c-muted);
+}
+
+.atl-tm-note.overdue {
+  color: var(--c-danger);
 }
 </style>
