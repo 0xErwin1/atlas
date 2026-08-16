@@ -148,6 +148,10 @@ pub(crate) struct SearchArgs {
     /// Pagination cursor returned by a previous search.
     #[arg(long)]
     pub(crate) cursor: Option<String>,
+
+    /// Retrieval mode: `lexical` (default), `semantic`, or `hybrid`.
+    #[arg(long)]
+    pub(crate) mode: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

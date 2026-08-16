@@ -52,7 +52,7 @@ fn semantic_search_hit_is_compact_and_hydration_friendly() {
         kind: ResourceKind::Document,
         id: id.0,
         readable_id: None,
-        slug: Some("retention-policy".to_owned()),
+        document_slug: Some("retention-policy".to_owned()),
         title: "Policy".to_owned(),
         project_slug: Some("ops".to_owned()),
         column_name: None,

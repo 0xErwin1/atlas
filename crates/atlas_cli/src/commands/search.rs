@@ -33,6 +33,7 @@ pub(crate) async fn run(ctx: &Ctx, args: SearchArgs) -> Result<(), CliError> {
             Some(&args.sort),
             args.cursor.as_deref(),
             Some(limit),
+            args.mode.as_deref(),
         )
         .await?;
 

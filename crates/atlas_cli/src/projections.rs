@@ -2207,6 +2207,7 @@ mod tests {
             id: Uuid::now_v7(),
             kind,
             readable_id: readable_id.map(str::to_owned),
+            document_slug: None,
             title: "Test hit".to_owned(),
             snippet: None,
             score: 0.9,

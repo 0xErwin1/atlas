@@ -20,7 +20,6 @@ use atlas_api::{
         folders::FolderDto,
         saved_searches::SavedSearchDto,
         search::SearchHitDto,
-        semantic_search::SemanticSearchHitDto,
         status_templates::{PlatformStatusTemplateDto, StatusTemplateDto},
         tags::TagDto,
         task_views::TaskViewDto,
@@ -107,72 +106,48 @@ where
 // Search hit projection
 // ---------------------------------------------------------------------------
 
-/// Compact projection of a search hit.
-///
-/// The `kind` enum is lowercased to a plain string (`"document"`, `"task"`).
-/// `readable_id`, `snippet`, and `project_slug` are absent when `None`. The
-/// `<mark>` markers the server wraps matched terms in are stripped here rather
-/// than at the source: they carry the highlight the web UI renders, and cost 13
-/// characters per term to a reader that cannot display them.
-pub(crate) fn project_search_hit(hit: SearchHitDto) -> Value {
-    let kind = format!("{:?}", hit.kind).to_lowercase();
-
-    let mut map = serde_json::Map::new();
-    map.insert("id".into(), json!(hit.id));
-    map.insert("kind".into(), json!(kind));
-    map.insert("title".into(), json!(hit.title));
-    map.insert("score".into(), json!(hit.score));
-    map.insert("updated_at".into(), json!(hit.updated_at));
-
-    if let Some(rid) = hit.readable_id {
-        map.insert("readable_id".into(), json!(rid));
-    }
-    if let Some(snip) = hit.snippet {
-        map.insert("snippet".into(), json!(strip_highlight_markers(&snip)));
-    }
-    if let Some(slug) = hit.project_slug {
-        map.insert("project_slug".into(), json!(slug));
-    }
-    if let Some(col) = hit.column_name {
-        map.insert("column_name".into(), json!(col));
-    }
-
-    Value::Object(map)
-}
-
-/// Compact projection of a semantic search hit.
+/// Compact projection of a search hit, whatever mode produced it.
 ///
 /// A hit is a discovery result, not a resource read: everything here exists to
-/// let an agent decide whether to fetch the resource. So the projection carries
-/// one address rather than every address (`id` is dropped whenever the readable
-/// id or slug already identifies the hit), a similarity rounded to what a
-/// ranking decision can actually use, and a short excerpt. `source` is never
-/// emitted: the indexer only ever produces `aggregate` for tasks and `content`
-/// for documents, so it restates `kind`.
-pub(crate) fn project_semantic_search_hit(hit: SemanticSearchHitDto) -> Value {
-    const MAX_EXCERPT_CHARS: usize = 140;
+/// let an agent decide whether to fetch the resource. So it carries one address
+/// rather than every address (`id` is dropped whenever the readable id or slug
+/// already identifies the hit), a score rounded to what a ranking decision can
+/// act on, and a bounded snippet with the `<mark>` markers stripped — those
+/// carry the highlight the web UI renders and cost 13 characters per term to a
+/// reader that cannot display them.
+pub(crate) fn project_search_hit(hit: SearchHitDto) -> Value {
+    const MAX_SNIPPET_CHARS: usize = 140;
 
-    let kind = serde_json::to_value(hit.kind).unwrap_or(Value::Null);
-    let address = hit.readable_id.clone().or_else(|| hit.slug.clone());
+    let kind = format!("{:?}", hit.kind).to_lowercase();
+    let address = hit
+        .readable_id
+        .clone()
+        .or_else(|| hit.document_slug.clone());
 
     let mut map = serde_json::Map::new();
-    map.insert("kind".into(), kind);
+    map.insert("kind".into(), json!(kind));
     if let Some(rid) = hit.readable_id {
         map.insert("readable_id".into(), json!(rid));
     }
-    if let Some(slug) = hit.slug {
-        map.insert("slug".into(), json!(slug));
+    if let Some(slug) = hit.document_slug {
+        map.insert("document_slug".into(), json!(slug));
     }
     if address.is_none() {
         map.insert("id".into(), json!(hit.id));
     }
     map.insert("title".into(), json!(hit.title));
-    map.insert("similarity".into(), json!(round_similarity(hit.similarity)));
-    map.insert(
-        "excerpt".into(),
-        json!(truncate_chars(&hit.excerpt, MAX_EXCERPT_CHARS)),
-    );
+    map.insert("score".into(), json!(round_score(hit.score)));
+    map.insert("updated_at".into(), json!(hit.updated_at));
 
+    if let Some(snip) = hit.snippet {
+        map.insert(
+            "snippet".into(),
+            json!(truncate_chars(
+                &strip_highlight_markers(&snip),
+                MAX_SNIPPET_CHARS
+            )),
+        );
+    }
     if let Some(slug) = hit.project_slug {
         map.insert("project_slug".into(), json!(slug));
     }
@@ -183,13 +158,13 @@ pub(crate) fn project_semantic_search_hit(hit: SemanticSearchHitDto) -> Value {
     Value::Object(map)
 }
 
-/// Rounds a similarity to three decimals.
+/// Rounds a relevance score to three decimals.
 ///
 /// The raw `f32` serializes as its full decimal expansion
 /// (`0.8734567165374756`), and every digit past the third is noise no ranking
 /// decision can act on.
-fn round_similarity(similarity: f32) -> f64 {
-    (f64::from(similarity) * 1000.0).round() / 1000.0
+fn round_score(score: f32) -> f64 {
+    (f64::from(score) * 1000.0).round() / 1000.0
 }
 
 fn truncate_chars(text: &str, max_chars: usize) -> String {
@@ -1366,7 +1341,6 @@ mod tests {
         folders::FolderDto,
         saved_searches::SavedSearchDto,
         search::{SearchHitDto, SearchKindDto},
-        semantic_search::{SemanticSearchHitDto, SemanticSearchKindDto, SemanticSearchSourceDto},
         tags::TagDto,
         task_views::{TaskViewDto, TaskViewFiltersDto},
     };
@@ -1636,6 +1610,7 @@ mod tests {
             id: fixed_uuid(),
             kind: SearchKindDto::Task,
             readable_id: Some("ATL-5".into()),
+            document_slug: None,
             title: "Test task".into(),
             snippet: Some("<mark>test</mark>".into()),
             score: 0.8,
@@ -1661,6 +1636,7 @@ mod tests {
             id: fixed_uuid(),
             kind: SearchKindDto::Document,
             readable_id: None,
+            document_slug: Some("doc".into()),
             title: "Doc".into(),
             snippet: None,
             score: 0.5,
@@ -1681,6 +1657,7 @@ mod tests {
             id: fixed_uuid(),
             kind: SearchKindDto::Task,
             readable_id: Some("ATL-7".into()),
+            document_slug: None,
             title: "Task in column".into(),
             snippet: None,
             score: 0.9,
@@ -1698,6 +1675,7 @@ mod tests {
             id: fixed_uuid(),
             kind: SearchKindDto::Document,
             readable_id: None,
+            document_slug: Some("doc".into()),
             title: "Doc".into(),
             snippet: None,
             score: 0.5,
@@ -1713,116 +1691,74 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // project_semantic_search_hit
+    // project_search_hit: addressing and compaction
     // -----------------------------------------------------------------------
 
     #[test]
-    fn semantic_search_hit_projection_is_hydration_friendly_and_compact() {
-        let hit = SemanticSearchHitDto {
+    fn search_hit_addresses_a_document_by_slug_and_drops_the_uuid() {
+        let hit = SearchHitDto {
             id: fixed_uuid(),
-            kind: SemanticSearchKindDto::Task,
-            readable_id: Some("ATL-42".into()),
-            slug: None,
-            title: "Investigate incident".into(),
-            project_slug: Some("ops".into()),
-            column_name: Some("In Progress".into()),
-            similarity: 0.873_456_7,
-            source: SemanticSearchSourceDto::Comment,
-            excerpt: "customer-impact discussion".into(),
-        };
-
-        let val = project_semantic_search_hit(hit);
-
-        assert_eq!(val["kind"], "task");
-        assert_eq!(val["readable_id"], "ATL-42");
-        assert_eq!(val["title"], "Investigate incident");
-        assert_eq!(val["project_slug"], "ops");
-        assert_eq!(val["column_name"], "In Progress");
-        assert_eq!(val["similarity"], 0.873);
-        assert_eq!(val["excerpt"], "customer-impact discussion");
-        assert!(
-            val.get("id").is_none(),
-            "the readable id already addresses the task"
-        );
-        assert!(val.get("source").is_none());
-        assert!(val.get("content").is_none());
-        assert!(val.get("body").is_none());
-        assert!(val.get("comments").is_none());
-        assert!(val.get("updated_at").is_none());
-        assert!(val.get("created_at").is_none());
-    }
-
-    #[test]
-    fn semantic_search_hit_projection_addresses_documents_by_slug() {
-        let hit = SemanticSearchHitDto {
-            id: fixed_uuid(),
-            kind: SemanticSearchKindDto::Document,
+            kind: SearchKindDto::Document,
             readable_id: None,
-            slug: Some("incident-runbook".into()),
+            document_slug: Some("incident-runbook".into()),
             title: "Runbook".into(),
+            snippet: None,
+            score: 0.5,
+            updated_at: now(),
             project_slug: None,
             column_name: None,
-            similarity: 0.73,
-            source: SemanticSearchSourceDto::Content,
-            excerpt: "recovery steps".into(),
         };
 
-        let val = project_semantic_search_hit(hit);
+        let val = project_search_hit(hit);
 
-        assert_eq!(val["kind"], "document");
-        assert_eq!(val["slug"], "incident-runbook");
+        assert_eq!(val["document_slug"], "incident-runbook");
         assert!(val.get("id").is_none());
     }
 
     #[test]
-    fn semantic_search_hit_projection_omits_absent_optionals() {
-        let hit = SemanticSearchHitDto {
+    fn search_hit_keeps_the_uuid_when_nothing_else_addresses_it() {
+        let hit = SearchHitDto {
             id: fixed_uuid(),
-            kind: SemanticSearchKindDto::Document,
+            kind: SearchKindDto::Document,
             readable_id: None,
-            slug: None,
-            title: "Runbook".into(),
+            document_slug: None,
+            title: "Slugless".into(),
+            snippet: None,
+            score: 0.5,
+            updated_at: now(),
             project_slug: None,
             column_name: None,
-            similarity: 0.73,
-            source: SemanticSearchSourceDto::Content,
-            excerpt: "recovery steps".into(),
         };
 
-        let val = project_semantic_search_hit(hit);
+        let val = project_search_hit(hit);
 
-        assert_eq!(val["kind"], "document");
-        assert_eq!(val["excerpt"], "recovery steps");
-        assert_eq!(
-            val["id"],
-            fixed_uuid().to_string(),
-            "a hit with no slug still needs one address"
-        );
-        assert!(val.get("readable_id").is_none());
-        assert!(val.get("slug").is_none());
-        assert!(val.get("project_slug").is_none());
-        assert!(val.get("column_name").is_none());
+        assert_eq!(val["id"], fixed_uuid().to_string());
     }
 
     #[test]
-    fn semantic_search_hit_projection_truncates_the_excerpt() {
-        let hit = SemanticSearchHitDto {
+    fn search_hit_rounds_the_score_and_bounds_the_snippet() {
+        let hit = SearchHitDto {
             id: fixed_uuid(),
-            kind: SemanticSearchKindDto::Document,
-            readable_id: None,
-            slug: Some("long-note".into()),
-            title: "Long note".into(),
+            kind: SearchKindDto::Task,
+            readable_id: Some("ATL-9".into()),
+            document_slug: None,
+            title: "Long".into(),
+            snippet: Some("é".repeat(400)),
+            score: 0.873_456_7,
+            updated_at: now(),
             project_slug: None,
             column_name: None,
-            similarity: 0.5,
-            source: SemanticSearchSourceDto::Content,
-            excerpt: "é".repeat(400),
         };
 
-        let val = project_semantic_search_hit(hit);
+        let val = project_search_hit(hit);
 
-        let excerpt = val["excerpt"].as_str().expect("excerpt string");
-        assert_eq!(excerpt.chars().count(), 140);
+        assert_eq!(val["score"], 0.873);
+        assert_eq!(
+            val["snippet"]
+                .as_str()
+                .map(|snippet| snippet.chars().count()),
+            Some(140)
+        );
     }
 
     // -----------------------------------------------------------------------

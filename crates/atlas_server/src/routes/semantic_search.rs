@@ -306,7 +306,7 @@ fn hit_to_dto(hit: SemanticSearchHit) -> SemanticSearchHitDto {
         id: hit.id,
         kind: kind_to_dto(hit.kind),
         readable_id: hit.readable_id,
-        slug: hit.slug,
+        document_slug: hit.document_slug,
         title: hit.title,
         project_slug: hit.project_slug,
         column_name: hit.column_name,

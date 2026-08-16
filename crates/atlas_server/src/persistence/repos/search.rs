@@ -72,6 +72,7 @@ struct SearchRow {
     kind: String,
     id: uuid::Uuid,
     readable_id: Option<String>,
+    document_slug: Option<String>,
     project_slug: Option<String>,
     title: String,
     snippet: Option<String>,
@@ -325,6 +326,7 @@ impl SearchRepo for PgSearchRepo {
                 page.kind,
                 page.id,
                 page.readable_id,
+                page.document_slug,
                 page.project_slug,
                 page.title,
                 {snippet_expr} AS snippet,
@@ -332,7 +334,7 @@ impl SearchRepo for PgSearchRepo {
                 page.updated_at,
                 page.column_name
             FROM (
-                SELECT kind, id, readable_id, project_slug, title, snippet_source, score, updated_at, column_name
+                SELECT kind, id, readable_id, document_slug, project_slug, title, snippet_source, score, updated_at, column_name
                 FROM ({union_sql}) combined
                 WHERE 1=1
                 {cursor_cond}
@@ -425,6 +427,7 @@ fn build_doc_arm(
             'document'::text AS kind,
             d.id,
             NULL::text AS readable_id,
+            d.slug AS document_slug,
             p.slug AS project_slug,
             d.title,
             {snippet_source_expr} AS snippet_source,
@@ -609,6 +612,7 @@ fn build_task_arm(
             'task'::text AS kind,
             t.id,
             t.readable_id AS readable_id,
+            NULL::text AS document_slug,
             p.slug AS project_slug,
             t.title,
             {snippet_source_expr} AS snippet_source,
@@ -840,6 +844,7 @@ fn row_to_hit(row: SearchRow) -> Result<SearchHit, DomainError> {
         kind,
         id: row.id,
         readable_id: row.readable_id,
+        document_slug: row.document_slug,
         title: row.title,
         snippet,
         score: row.score,

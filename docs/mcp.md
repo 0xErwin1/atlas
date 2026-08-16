@@ -88,8 +88,7 @@ Shared behavior from `ATLAS_INSTRUCTIONS` and tool parameter docs:
 ### Discovery and read tools
 
 - `ping`
-- `search`
-- `semantic_search`
+- `search` (`mode`: auto | lexical | semantic | hybrid)
 - `get_document`
 - `read_document_lines`
 - `search_document_content`
@@ -181,7 +180,7 @@ Shared behavior from `ATLAS_INSTRUCTIONS` and tool parameter docs:
 
 ## Recommended agent workflow
 
-1. use `search` for exact lexical discovery, or `semantic_search` for embedding-backed concept discovery when embeddings are enabled
+1. use `search` for discovery; it reads the query and picks lexical retrieval for filter tokens or a quoted phrase and hybrid (lexical + embeddings) for prose, and `mode` overrides that when you know better
 2. use task readable IDs and document slugs in follow-up calls
 3. before implementing a task, call `get_task` with `detail=full` and `list_task_attachments` so descriptions and attached screenshots/files are considered
 4. to locate a passage inside a large document, call `search_document_content` for matching line ranges, then `read_document_lines` to pull only those lines; both return `head_revision_id`

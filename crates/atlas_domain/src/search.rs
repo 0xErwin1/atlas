@@ -155,6 +155,9 @@ pub struct SearchHit {
     pub id: Uuid,
     /// Present only for tasks.
     pub readable_id: Option<String>,
+    /// Present only for documents, which are addressed by slug. Named apart
+    /// from `project_slug` so the two are never read for one another.
+    pub document_slug: Option<String>,
     pub title: String,
     /// Highlighted snippet; `None` when the match is title-only or on filter-only queries.
     pub snippet: Option<String>,

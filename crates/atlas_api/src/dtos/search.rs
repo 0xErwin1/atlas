@@ -22,6 +22,10 @@ pub struct SearchHitDto {
     /// Task readable ID (e.g. `"ATL-42"`). Present only when `kind = task`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub readable_id: Option<String>,
+    /// Document slug. Present only when `kind = document`. Deliberately not a
+    /// bare `slug`: the shape already carries `project_slug`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub document_slug: Option<String>,
     pub title: String,
     /// Highlighted snippet with `<mark>…</mark>` markers.
     /// Absent for title-only matches and filter-only queries.
@@ -55,6 +59,7 @@ mod tests {
             id: Uuid::now_v7(),
             kind: SearchKindDto::Task,
             readable_id: Some(readable_id.to_string()),
+            document_slug: None,
             title: "Test".to_string(),
             snippet: None,
             score: 0.9,
@@ -69,6 +74,7 @@ mod tests {
             id: Uuid::now_v7(),
             kind: SearchKindDto::Document,
             readable_id: None,
+            document_slug: Some("test-doc".to_string()),
             title: "Test".to_string(),
             snippet: None,
             score: 0.9,
@@ -143,7 +149,8 @@ mod tests {
         let json = serde_json::to_value(&dto).unwrap();
         assert!(
             json.get("slug").is_none(),
-            "bare 'slug' must not appear in the wire shape; spec uses 'project_slug'"
+            "bare 'slug' must not appear in the wire shape; a document slug is \
+             'document_slug' and a project's is 'project_slug'"
         );
     }
 }

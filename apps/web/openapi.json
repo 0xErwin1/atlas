@@ -7818,6 +7818,13 @@
                             ],
                             "description": "Current column (status) name. Present only when `kind = task`."
                           },
+                          "document_slug": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "Document slug. Present only when `kind = document`. Deliberately not a\nbare `slug`: the shape already carries `project_slug`."
+                          },
                           "id": {
                             "type": "string",
                             "format": "uuid"
@@ -7981,6 +7988,13 @@
                               "null"
                             ]
                           },
+                          "document_slug": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "Slug of the hit document; absent for tasks, which carry `readable_id`.\nDeliberately not a bare `slug`: the shape already carries `project_slug`."
+                          },
                           "excerpt": {
                             "type": "string"
                           },
@@ -8006,13 +8020,6 @@
                           "similarity": {
                             "type": "number",
                             "format": "float"
-                          },
-                          "slug": {
-                            "type": [
-                              "string",
-                              "null"
-                            ],
-                            "description": "Slug of the hit document; absent for tasks, which carry `readable_id`."
                           },
                           "source": {
                             "$ref": "#/components/schemas/SemanticSearchSourceDto"
@@ -16757,6 +16764,13 @@
             ],
             "description": "Current column (status) name. Present only when `kind = task`."
           },
+          "document_slug": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Document slug. Present only when `kind = document`. Deliberately not a\nbare `slug`: the shape already carries `project_slug`."
+          },
           "id": {
             "type": "string",
             "format": "uuid"
@@ -16896,6 +16910,13 @@
               "null"
             ]
           },
+          "document_slug": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Slug of the hit document; absent for tasks, which carry `readable_id`.\nDeliberately not a bare `slug`: the shape already carries `project_slug`."
+          },
           "excerpt": {
             "type": "string"
           },
@@ -16921,13 +16942,6 @@
           "similarity": {
             "type": "number",
             "format": "float"
-          },
-          "slug": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Slug of the hit document; absent for tasks, which carry `readable_id`."
           },
           "source": {
             "$ref": "#/components/schemas/SemanticSearchSourceDto"

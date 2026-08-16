@@ -985,6 +985,7 @@ impl AtlasClient {
     /// Calls the unified full-text search endpoint. `q` is required; the
     /// remaining parameters are optional and map directly to the query-string
     /// parameters accepted by the server.
+    #[allow(clippy::too_many_arguments)]
     pub async fn search(
         &self,
         ws: &str,
@@ -993,8 +994,9 @@ impl AtlasClient {
         sort: Option<&str>,
         cursor: Option<&str>,
         limit: Option<u32>,
+        mode: Option<&str>,
     ) -> Result<Page<SearchHitDto>, ClientError> {
-        let path = build_search_path(ws, q, type_filter, sort, cursor, limit);
+        let path = build_search_path(ws, q, type_filter, sort, cursor, limit, mode);
         let response = self.get(&path).send().await?;
         self.decode_response(response, "search").await
     }
@@ -3600,10 +3602,14 @@ fn build_search_path(
     sort: Option<&str>,
     cursor: Option<&str>,
     limit: Option<u32>,
+    mode: Option<&str>,
 ) -> String {
     let mut params = search_params(q, type_filter, cursor, limit);
     if let Some(s) = sort {
         params.insert(2.min(params.len()), format!("sort={s}"));
+    }
+    if let Some(mode) = mode {
+        params.push(format!("mode={mode}"));
     }
 
     format!("/api/workspaces/{ws}/search?{}", params.join("&"))
@@ -4025,7 +4031,7 @@ mod tests {
 
     #[test]
     fn build_search_path_includes_required_q() {
-        let path = build_search_path("my-ws", "hello world", None, None, None, None);
+        let path = build_search_path("my-ws", "hello world", None, None, None, None, None);
         assert!(path.starts_with("/api/workspaces/my-ws/search?q="));
         assert!(
             path.contains("hello%20world")
@@ -4043,20 +4049,23 @@ mod tests {
             Some("updated"),
             Some("abc"),
             Some(10),
+            Some("hybrid"),
         );
         assert!(path.contains("type=task"));
         assert!(path.contains("sort=updated"));
         assert!(path.contains("cursor=abc"));
         assert!(path.contains("limit=10"));
+        assert!(path.contains("mode=hybrid"));
     }
 
     #[test]
     fn build_search_path_omits_optional_params_when_none() {
-        let path = build_search_path("ws1", "query", None, None, None, None);
+        let path = build_search_path("ws1", "query", None, None, None, None, None);
         assert!(!path.contains("type="));
         assert!(!path.contains("sort="));
         assert!(!path.contains("cursor="));
         assert!(!path.contains("limit="));
+        assert!(!path.contains("mode="));
     }
 
     #[test]

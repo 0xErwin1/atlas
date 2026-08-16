@@ -30,9 +30,9 @@ use rmcp::{
     ErrorData as McpError, ServerHandler,
     handler::server::wrapper::Parameters,
     model::{
-        AnnotateAble, Content, Implementation, ListResourceTemplatesResult, ListToolsResult,
-        RawResourceTemplate, ReadResourceRequestParams, ReadResourceResult, ResourceContents,
-        ServerCapabilities, ServerInfo,
+        AnnotateAble, Content, Implementation, ListResourceTemplatesResult, RawResourceTemplate,
+        ReadResourceRequestParams, ReadResourceResult, ResourceContents, ServerCapabilities,
+        ServerInfo,
     },
     service::{RequestContext, RoleServer},
     tool, tool_handler, tool_router,
@@ -40,8 +40,6 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
-
-const SERVER_META_DISCOVERY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Preserves the distinction between an absent field and an explicit JSON `null`.
 ///
@@ -65,10 +63,10 @@ use response::{
     project_document_metadata, project_document_summary, project_folder,
     project_platform_status_template, project_principal, project_project, project_promotion,
     project_reference, project_revision_content, project_revision_meta, project_saved_search,
-    project_search_hit, project_semantic_search_hit, project_status_template, project_tag,
-    project_task_attachment, project_task_backlink, project_task_compact, project_task_full,
-    project_task_row, project_task_view, project_webhook, project_webhook_created,
-    project_webhook_delivery, project_workspace, project_workspace_activity_entry, require_confirm,
+    project_search_hit, project_status_template, project_tag, project_task_attachment,
+    project_task_backlink, project_task_compact, project_task_full, project_task_row,
+    project_task_view, project_webhook, project_webhook_created, project_webhook_delivery,
+    project_workspace, project_workspace_activity_entry, require_confirm,
     resolve_column_id_on_board, validate_assignee_type, validate_estimate, validate_estimate_value,
     validate_priority, validate_reference_kind, validate_single_target, wrap_vec,
 };
@@ -80,10 +78,10 @@ tools. Each tool's own description is authoritative; this preamble covers the \
 conventions shared across all of them.\n\
 \n\
 Conventions:\n\
-- Discover before acting: use `search` (keyword plus filters like status:open, tag:rust) \
-for lexical matches. Use `semantic_search` for concept matches only when it is advertised. \
-Then list tools to find resources first. Identify tasks by readable_id (e.g. ATL-42) and \
-documents by slug.\n\
+- Discover before acting: use `search`, then list tools to find resources first. It picks \
+lexical or hybrid retrieval from the query (`mode` overrides); filters like status:open or \
+tag:rust work in every mode. Identify tasks by readable_id (e.g. ATL-42) and documents by \
+slug.\n\
 - Pass names, not UUIDs, for boards / columns / assignees; on a miss the error lists the \
 valid options.\n\
 - List responses are paginated as {items, next_cursor, has_more}; reads are compact by \
@@ -303,6 +301,54 @@ fn search_limit(requested: Option<u32>) -> u32 {
     const MAX_LIMIT: u32 = 50;
 
     requested.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT)
+}
+
+/// Resolves the retrieval mode of a search call.
+///
+/// `auto` is the default because the choice is a property of the query, not of
+/// the caller's intent, and an agent asked to pick between "lexical" and
+/// "semantic" every time will get it wrong often enough to cost a second search.
+/// A query carrying filter tokens or a quoted phrase is asking for exact
+/// matching; anything else is prose, where the vector arm is what closes the
+/// vocabulary gap, and hybrid keeps the exact matches alongside it.
+fn resolve_search_mode(requested: Option<&str>, query: &str) -> Result<&'static str, String> {
+    match requested.map(str::trim).unwrap_or("auto") {
+        "" | "auto" => Ok(if is_exact_match_query(query) {
+            "lexical"
+        } else {
+            "hybrid"
+        }),
+        "lexical" => Ok("lexical"),
+        "semantic" => Ok("semantic"),
+        "hybrid" => Ok("hybrid"),
+        other => Err(format!(
+            "search: unknown mode '{other}'; use auto, lexical, semantic or hybrid"
+        )),
+    }
+}
+
+/// Whether a query is asking for exact matching rather than meaning.
+fn is_exact_match_query(query: &str) -> bool {
+    const FILTER_PREFIXES: [&str; 7] = [
+        "status:",
+        "tag:",
+        "priority:",
+        "assignee:",
+        "type:",
+        "updated_after:",
+        "updated_before:",
+    ];
+
+    if query.contains('"') {
+        return true;
+    }
+
+    query.split_whitespace().any(|token| {
+        let token = token.to_ascii_lowercase();
+        FILTER_PREFIXES
+            .iter()
+            .any(|prefix| token.starts_with(prefix))
+    })
 }
 
 /// Parses a required UUID tool parameter, naming the field in the error.
@@ -579,24 +625,11 @@ pub struct SearchParams {
     /// Page size (default 10, max 50). Page further with `next_cursor`.
     #[serde(default)]
     pub limit: Option<u32>,
-}
-
-/// Parameters accepted by the `semantic_search` tool.
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct SemanticSearchParams {
-    /// Workspace slug to search in.
-    pub workspace: String,
-    /// Natural-language concept query.
-    pub query: String,
-    /// Kind: `all` (default), `document`/`note`, or `task`.
-    #[serde(default, rename = "type")]
-    pub type_filter: Option<String>,
-    /// Pass `next_cursor` from the previous response to fetch the next page.
+    /// Retrieval: `auto` (default), `lexical`, `semantic`, or `hybrid`. `auto`
+    /// reads the query — filter tokens or a quoted phrase go lexical, plain
+    /// prose goes hybrid. `semantic` and `hybrid` require `sort=relevance`.
     #[serde(default)]
-    pub cursor: Option<String>,
-    /// Page size (default 10, max 50). Page further with `next_cursor`.
-    #[serde(default)]
-    pub limit: Option<u32>,
+    pub mode: Option<String>,
 }
 
 /// Parameters accepted by the `get_document` tool.
@@ -2136,7 +2169,10 @@ impl AtlasMcp {
         "pong".to_string()
     }
 
-    #[tool(description = "Search documents and tasks across an Atlas workspace")]
+    #[tool(
+        description = "Search documents and tasks across an Atlas workspace. Retrieval mode is \
+                       chosen from the query unless `mode` says otherwise."
+    )]
     async fn search(
         &self,
         Parameters(params): Parameters<SearchParams>,
@@ -2144,6 +2180,8 @@ impl AtlasMcp {
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
         let limit = search_limit(params.limit);
+
+        let mode = resolve_search_mode(params.mode.as_deref(), &params.query)?;
 
         let page = client
             .search(
@@ -2153,35 +2191,12 @@ impl AtlasMcp {
                 params.sort.as_deref(),
                 params.cursor.as_deref(),
                 Some(limit),
+                Some(mode),
             )
             .await
             .map_err(|e| enrich_client_error(e, "search"))?;
 
         let result = envelope_page(page, project_search_hit);
-        serde_json::to_string(&result).map_err(|e| e.to_string())
-    }
-
-    #[tool(description = "Semantic search documents and tasks across an Atlas workspace")]
-    async fn semantic_search(
-        &self,
-        Parameters(params): Parameters<SemanticSearchParams>,
-        ctx: RequestContext<RoleServer>,
-    ) -> Result<String, String> {
-        let client = self.resolve_client(&ctx)?;
-        let limit = search_limit(params.limit);
-
-        let page = client
-            .semantic_search(
-                &params.workspace,
-                &params.query,
-                params.type_filter.as_deref(),
-                params.cursor.as_deref(),
-                Some(limit),
-            )
-            .await
-            .map_err(|e| enrich_client_error(e, "semantic_search"))?;
-
-        let result = envelope_page(page, project_semantic_search_hit);
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
@@ -5354,51 +5369,6 @@ impl ServerHandler for AtlasMcp {
         .with_instructions(ATLAS_INSTRUCTIONS)
     }
 
-    async fn list_tools(
-        &self,
-        _request: Option<rmcp::model::PaginatedRequestParams>,
-        ctx: RequestContext<RoleServer>,
-    ) -> Result<ListToolsResult, McpError> {
-        let mut tools = Self::tool_router().list_all();
-
-        let client = match self.resolve_client(&ctx) {
-            Ok(client) => client,
-            Err(error) => {
-                tracing::warn!(
-                    error = %error,
-                    "server capability discovery failed; retaining optional MCP tools"
-                );
-                return Ok(ListToolsResult::with_all_items(tools));
-            }
-        };
-
-        match tokio::time::timeout(SERVER_META_DISCOVERY_TIMEOUT, client.server_meta()).await {
-            Ok(Ok(meta)) if meta.semantic_search_enabled == Some(false) => {
-                tools.retain(|tool| tool.name.as_ref() != "semantic_search");
-            }
-            Ok(Ok(meta)) if meta.semantic_search_enabled.is_none() => {
-                tracing::warn!(
-                    "server capability metadata is unavailable; retaining optional MCP tools"
-                );
-            }
-            Ok(Ok(_)) => {}
-            Ok(Err(error)) => {
-                tracing::warn!(
-                    error = %error,
-                    "server capability discovery failed; retaining optional MCP tools"
-                );
-            }
-            Err(_) => {
-                tracing::warn!(
-                    timeout_ms = SERVER_META_DISCOVERY_TIMEOUT.as_millis(),
-                    "server capability discovery timed out; retaining optional MCP tools"
-                );
-            }
-        }
-
-        Ok(ListToolsResult::with_all_items(tools))
-    }
-
     async fn list_resource_templates(
         &self,
         _request: Option<rmcp::model::PaginatedRequestParams>,
@@ -5591,96 +5561,20 @@ mod tests {
         (format!("http://{address}"), request_rx)
     }
 
-    fn serve_hanging_meta() -> (
-        String,
-        std::sync::mpsc::Receiver<String>,
-        std::sync::mpsc::Sender<()>,
-    ) {
-        use std::io::Read;
-        use std::net::TcpListener;
-
-        let listener = TcpListener::bind("127.0.0.1:0").expect("recording server binds");
-        let address = listener.local_addr().expect("recording server has address");
-        let (request_tx, request_rx) = std::sync::mpsc::channel();
-        let (release_tx, release_rx) = std::sync::mpsc::channel();
-
-        std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().expect("recording server accepts request");
-            let mut request = [0_u8; 8192];
-            let length = stream
-                .read(&mut request)
-                .expect("recording server reads request");
-            request_tx
-                .send(
-                    String::from_utf8_lossy(request.get(..length).unwrap_or_default()).into_owned(),
-                )
-                .expect("recording server records request");
-            match release_rx.recv() {
-                Ok(()) | Err(_) => {}
-            }
-        });
-
-        (format!("http://{address}"), request_rx, release_tx)
-    }
-
     #[tokio::test]
-    async fn tools_list_hides_semantic_search_only_when_explicitly_disabled() {
-        for (body, expected) in [
-            (
-                r#"{"version":"1","build":null,"semantic_search_enabled":false}"#,
-                false,
-            ),
-            (
-                r#"{"version":"1","build":null,"semantic_search_enabled":true}"#,
-                true,
-            ),
-            (r#"{"version":"1","build":null}"#, true),
-        ] {
-            let (base_url, requests) = serve_recording_atlas(vec![("200 OK", body.to_string())]);
-            let tools = listed_tool_names(AtlasMcp::new(base_url, "atlas_test").unwrap()).await;
+    async fn the_single_search_tool_is_offered_regardless_of_server_capabilities() {
+        let (base_url, _requests) = serve_recording_atlas(vec![(
+            "200 OK",
+            r#"{"version":"1","build":null,"semantic_search_enabled":false}"#.to_string(),
+        )]);
 
-            assert_eq!(tools.iter().any(|name| name == "semantic_search"), expected);
-            assert!(
-                requests
-                    .recv()
-                    .expect("metadata request")
-                    .starts_with("GET /api/meta ")
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn tools_list_retains_semantic_search_when_metadata_request_fails() {
-        let (base_url, requests) = serve_transport_failing_meta();
         let tools = listed_tool_names(AtlasMcp::new(base_url, "atlas_test").unwrap()).await;
 
-        assert!(tools.iter().any(|name| name == "semantic_search"));
+        assert!(tools.iter().any(|name| name == "search"));
         assert!(
-            requests
-                .recv()
-                .expect("metadata request")
-                .starts_with("GET /api/meta ")
+            !tools.iter().any(|name| name == "semantic_search"),
+            "the semantic tool was merged into search"
         );
-    }
-
-    #[tokio::test]
-    async fn tools_list_times_out_hanging_metadata_and_retains_semantic_search() {
-        let (base_url, requests, release) = serve_hanging_meta();
-        let tools = tokio::time::timeout(
-            std::time::Duration::from_secs(3),
-            listed_tool_names(AtlasMcp::new(base_url, "atlas_test").unwrap()),
-        )
-        .await
-        .expect("tools/list capability discovery must be bounded");
-
-        assert!(tools.iter().any(|name| name == "semantic_search"));
-        assert!(
-            requests
-                .recv()
-                .expect("metadata request")
-                .starts_with("GET /api/meta ")
-        );
-        drop(release);
     }
 
     #[tokio::test]
@@ -6054,14 +5948,18 @@ mod tests {
     }
 
     #[test]
-    fn get_info_recommends_semantic_search_only_when_advertised() {
+    fn get_info_points_at_one_search_tool() {
         let server = AtlasMcp::new("http://localhost:8080", "test-token").unwrap();
         let instructions = server
             .get_info()
             .instructions
             .expect("instructions are present");
 
-        assert!(instructions.contains("when it is advertised"));
+        assert!(instructions.contains("It picks"));
+        assert!(
+            !instructions.contains("semantic_search"),
+            "the preamble no longer teaches a choice the server makes"
+        );
     }
 
     #[test]
@@ -6115,11 +6013,12 @@ mod tests {
     }
 
     #[test]
-    fn semantic_search_tool_is_registered() {
+    fn search_is_the_only_retrieval_tool() {
         let router = AtlasMcp::tool_router();
+        assert!(router.has_route("search"));
         assert!(
-            router.has_route("semantic_search"),
-            "expected MCP semantic_search tool to be registered"
+            !router.has_route("semantic_search"),
+            "semantic_search was merged into search's mode parameter"
         );
     }
 
@@ -6324,23 +6223,32 @@ mod tests {
     }
 
     #[test]
-    fn semantic_search_params_deserializes_minimal() {
-        let json = r#"{"workspace":"my-ws","query":"incident response"}"#;
-        let params: SemanticSearchParams = serde_json::from_str(json).unwrap();
-        assert_eq!(params.workspace, "my-ws");
-        assert_eq!(params.query, "incident response");
-        assert!(params.type_filter.is_none());
-        assert!(params.cursor.is_none());
-        assert!(params.limit.is_none());
+    fn search_params_carry_an_explicit_mode() {
+        let json = r#"{"workspace":"ws","query":"q","mode":"semantic"}"#;
+        let params: SearchParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.mode.as_deref(), Some("semantic"));
     }
 
     #[test]
-    fn semantic_search_params_deserializes_type_cursor_and_limit() {
-        let json = r#"{"workspace":"ws","query":"q","type":"task","cursor":"next","limit":7}"#;
-        let params: SemanticSearchParams = serde_json::from_str(json).unwrap();
-        assert_eq!(params.type_filter.as_deref(), Some("task"));
-        assert_eq!(params.cursor.as_deref(), Some("next"));
-        assert_eq!(params.limit, Some(7));
+    fn auto_mode_reads_the_query_and_explicit_modes_pass_through() {
+        assert_eq!(
+            resolve_search_mode(None, "how do we authenticate users"),
+            Ok("hybrid")
+        );
+        assert_eq!(
+            resolve_search_mode(Some("auto"), "status:open retention"),
+            Ok("lexical"),
+            "a filter token is asking for exact matching"
+        );
+        assert_eq!(
+            resolve_search_mode(Some("auto"), "\"exact phrase\""),
+            Ok("lexical")
+        );
+        assert_eq!(
+            resolve_search_mode(Some("semantic"), "anything"),
+            Ok("semantic")
+        );
+        assert!(resolve_search_mode(Some("magic"), "anything").is_err());
     }
 
     #[test]
