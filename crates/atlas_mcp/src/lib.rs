@@ -292,6 +292,19 @@ pub fn parse_bearer_atlas_token(header_value: &str) -> Result<&str, String> {
     Ok(token)
 }
 
+/// Resolves the page size of a search tool.
+///
+/// Clamped harder than the HTTP route behind it: the web UI can afford to paint
+/// 200 hits, but every hit an agent receives is context it pays for, and one
+/// call at the HTTP maximum is tens of thousands of characters. The cursor
+/// covers the rare case that genuinely needs more.
+fn search_limit(requested: Option<u32>) -> u32 {
+    const DEFAULT_LIMIT: u32 = 10;
+    const MAX_LIMIT: u32 = 50;
+
+    requested.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT)
+}
+
 /// Parses a required UUID tool parameter, naming the field in the error.
 fn parse_uuid_param(field: &str, raw: &str) -> Result<uuid::Uuid, String> {
     raw.parse()
@@ -563,7 +576,7 @@ pub struct SearchParams {
     /// Pass `next_cursor` from the previous response to fetch the next page.
     #[serde(default)]
     pub cursor: Option<String>,
-    /// Page size (default 20, max 200).
+    /// Page size (default 10, max 50). Page further with `next_cursor`.
     #[serde(default)]
     pub limit: Option<u32>,
 }
@@ -581,7 +594,7 @@ pub struct SemanticSearchParams {
     /// Pass `next_cursor` from the previous response to fetch the next page.
     #[serde(default)]
     pub cursor: Option<String>,
-    /// Page size (default 20, max 200).
+    /// Page size (default 10, max 50). Page further with `next_cursor`.
     #[serde(default)]
     pub limit: Option<u32>,
 }
@@ -2130,7 +2143,7 @@ impl AtlasMcp {
         ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
-        let limit = params.limit.unwrap_or(20).clamp(1, 200);
+        let limit = search_limit(params.limit);
 
         let page = client
             .search(
@@ -2155,7 +2168,7 @@ impl AtlasMcp {
         ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
-        let limit = params.limit.unwrap_or(20).clamp(1, 200);
+        let limit = search_limit(params.limit);
 
         let page = client
             .semantic_search(

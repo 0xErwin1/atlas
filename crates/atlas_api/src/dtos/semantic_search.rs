@@ -42,6 +42,9 @@ pub struct SemanticSearchHitDto {
     pub kind: SemanticSearchKindDto,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub readable_id: Option<String>,
+    /// Slug of the hit document; absent for tasks, which carry `readable_id`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slug: Option<String>,
     pub title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_slug: Option<String>,
@@ -111,6 +114,7 @@ mod tests {
             id: Uuid::now_v7(),
             kind: SemanticSearchKindDto::Document,
             readable_id: None,
+            slug: Some("incident-response".to_owned()),
             title: "Incident response".to_owned(),
             project_slug: Some("ops".to_owned()),
             column_name: None,
@@ -125,6 +129,7 @@ mod tests {
             id: Uuid::now_v7(),
             kind: SemanticSearchKindDto::Task,
             readable_id: Some("ATL-42".to_owned()),
+            slug: None,
             title: "Review outage".to_owned(),
             project_slug: Some("ops".to_owned()),
             column_name: Some("In Progress".to_owned()),
@@ -138,6 +143,7 @@ mod tests {
     fn semantic_hit_serializes_compact_document_shape() {
         let json = serde_json::to_value(document_hit()).unwrap();
         assert_eq!(json["kind"], "document");
+        assert_eq!(json["slug"], "incident-response");
         assert_eq!(json["source"], "content");
         assert_eq!(json["excerpt"], "recovery runbook excerpt");
         assert!(json.get("readable_id").is_none());
@@ -153,6 +159,7 @@ mod tests {
         assert_eq!(json["kind"], "task");
         assert_eq!(json["readable_id"], "ATL-42");
         assert_eq!(json["column_name"], "In Progress");
+        assert!(json.get("slug").is_none());
         assert_eq!(json["source"], "comment");
     }
 

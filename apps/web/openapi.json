@@ -7995,6 +7995,13 @@
                             "type": "number",
                             "format": "float"
                           },
+                          "slug": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "Slug of the hit document; absent for tasks, which carry `readable_id`."
+                          },
                           "source": {
                             "$ref": "#/components/schemas/SemanticSearchSourceDto"
                           },
@@ -16738,6 +16745,13 @@
           "similarity": {
             "type": "number",
             "format": "float"
+          },
+          "slug": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Slug of the hit document; absent for tasks, which carry `readable_id`."
           },
           "source": {
             "$ref": "#/components/schemas/SemanticSearchSourceDto"

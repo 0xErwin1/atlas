@@ -110,7 +110,10 @@ where
 /// Compact projection of a search hit.
 ///
 /// The `kind` enum is lowercased to a plain string (`"document"`, `"task"`).
-/// `readable_id`, `snippet`, and `project_slug` are absent when `None`.
+/// `readable_id`, `snippet`, and `project_slug` are absent when `None`. The
+/// `<mark>` markers the server wraps matched terms in are stripped here rather
+/// than at the source: they carry the highlight the web UI renders, and cost 13
+/// characters per term to a reader that cannot display them.
 pub(crate) fn project_search_hit(hit: SearchHitDto) -> Value {
     let kind = format!("{:?}", hit.kind).to_lowercase();
 
@@ -125,7 +128,7 @@ pub(crate) fn project_search_hit(hit: SearchHitDto) -> Value {
         map.insert("readable_id".into(), json!(rid));
     }
     if let Some(snip) = hit.snippet {
-        map.insert("snippet".into(), json!(snip));
+        map.insert("snippet".into(), json!(strip_highlight_markers(&snip)));
     }
     if let Some(slug) = hit.project_slug {
         map.insert("project_slug".into(), json!(slug));
@@ -137,21 +140,39 @@ pub(crate) fn project_search_hit(hit: SearchHitDto) -> Value {
     Value::Object(map)
 }
 
+/// Compact projection of a semantic search hit.
+///
+/// A hit is a discovery result, not a resource read: everything here exists to
+/// let an agent decide whether to fetch the resource. So the projection carries
+/// one address rather than every address (`id` is dropped whenever the readable
+/// id or slug already identifies the hit), a similarity rounded to what a
+/// ranking decision can actually use, and a short excerpt. `source` is never
+/// emitted: the indexer only ever produces `aggregate` for tasks and `content`
+/// for documents, so it restates `kind`.
 pub(crate) fn project_semantic_search_hit(hit: SemanticSearchHitDto) -> Value {
+    const MAX_EXCERPT_CHARS: usize = 140;
+
     let kind = serde_json::to_value(hit.kind).unwrap_or(Value::Null);
-    let source = serde_json::to_value(hit.source).unwrap_or(Value::Null);
+    let address = hit.readable_id.clone().or_else(|| hit.slug.clone());
 
     let mut map = serde_json::Map::new();
     map.insert("kind".into(), kind);
-    map.insert("id".into(), json!(hit.id));
-    map.insert("title".into(), json!(hit.title));
-    map.insert("similarity".into(), json!(hit.similarity));
-    map.insert("source".into(), source);
-    map.insert("excerpt".into(), json!(hit.excerpt));
-
     if let Some(rid) = hit.readable_id {
         map.insert("readable_id".into(), json!(rid));
     }
+    if let Some(slug) = hit.slug {
+        map.insert("slug".into(), json!(slug));
+    }
+    if address.is_none() {
+        map.insert("id".into(), json!(hit.id));
+    }
+    map.insert("title".into(), json!(hit.title));
+    map.insert("similarity".into(), json!(round_similarity(hit.similarity)));
+    map.insert(
+        "excerpt".into(),
+        json!(truncate_chars(&hit.excerpt, MAX_EXCERPT_CHARS)),
+    );
+
     if let Some(slug) = hit.project_slug {
         map.insert("project_slug".into(), json!(slug));
     }
@@ -160,6 +181,23 @@ pub(crate) fn project_semantic_search_hit(hit: SemanticSearchHitDto) -> Value {
     }
 
     Value::Object(map)
+}
+
+/// Rounds a similarity to three decimals.
+///
+/// The raw `f32` serializes as its full decimal expansion
+/// (`0.8734567165374756`), and every digit past the third is noise no ranking
+/// decision can act on.
+fn round_similarity(similarity: f32) -> f64 {
+    (f64::from(similarity) * 1000.0).round() / 1000.0
+}
+
+fn truncate_chars(text: &str, max_chars: usize) -> String {
+    text.chars().take(max_chars).collect()
+}
+
+fn strip_highlight_markers(snippet: &str) -> String {
+    snippet.replace("<mark>", "").replace("</mark>", "")
 }
 
 // ---------------------------------------------------------------------------
@@ -1608,7 +1646,10 @@ mod tests {
         let val = project_search_hit(hit);
         assert_eq!(val["kind"], "task");
         assert_eq!(val["readable_id"], "ATL-5");
-        assert_eq!(val["snippet"], "<mark>test</mark>");
+        assert_eq!(
+            val["snippet"], "test",
+            "highlight markers are stripped for a reader that cannot render them"
+        );
         assert_eq!(val["project_slug"], "my-project");
         // must NOT include workspace_id or other heavy fields
         assert!(val.get("workspace_id").is_none());
@@ -1681,10 +1722,11 @@ mod tests {
             id: fixed_uuid(),
             kind: SemanticSearchKindDto::Task,
             readable_id: Some("ATL-42".into()),
+            slug: None,
             title: "Investigate incident".into(),
             project_slug: Some("ops".into()),
             column_name: Some("In Progress".into()),
-            similarity: 0.91,
+            similarity: 0.873_456_7,
             source: SemanticSearchSourceDto::Comment,
             excerpt: "customer-impact discussion".into(),
         };
@@ -1692,15 +1734,17 @@ mod tests {
         let val = project_semantic_search_hit(hit);
 
         assert_eq!(val["kind"], "task");
-        assert_eq!(val["id"], fixed_uuid().to_string());
         assert_eq!(val["readable_id"], "ATL-42");
         assert_eq!(val["title"], "Investigate incident");
         assert_eq!(val["project_slug"], "ops");
         assert_eq!(val["column_name"], "In Progress");
-        let similarity = val["similarity"].as_f64().expect("similarity number");
-        assert!((similarity - 0.91).abs() < 0.000_001);
-        assert_eq!(val["source"], "comment");
+        assert_eq!(val["similarity"], 0.873);
         assert_eq!(val["excerpt"], "customer-impact discussion");
+        assert!(
+            val.get("id").is_none(),
+            "the readable id already addresses the task"
+        );
+        assert!(val.get("source").is_none());
         assert!(val.get("content").is_none());
         assert!(val.get("body").is_none());
         assert!(val.get("comments").is_none());
@@ -1709,11 +1753,12 @@ mod tests {
     }
 
     #[test]
-    fn semantic_search_hit_projection_omits_absent_optionals() {
+    fn semantic_search_hit_projection_addresses_documents_by_slug() {
         let hit = SemanticSearchHitDto {
             id: fixed_uuid(),
             kind: SemanticSearchKindDto::Document,
             readable_id: None,
+            slug: Some("incident-runbook".into()),
             title: "Runbook".into(),
             project_slug: None,
             column_name: None,
@@ -1725,11 +1770,59 @@ mod tests {
         let val = project_semantic_search_hit(hit);
 
         assert_eq!(val["kind"], "document");
-        assert_eq!(val["source"], "content");
+        assert_eq!(val["slug"], "incident-runbook");
+        assert!(val.get("id").is_none());
+    }
+
+    #[test]
+    fn semantic_search_hit_projection_omits_absent_optionals() {
+        let hit = SemanticSearchHitDto {
+            id: fixed_uuid(),
+            kind: SemanticSearchKindDto::Document,
+            readable_id: None,
+            slug: None,
+            title: "Runbook".into(),
+            project_slug: None,
+            column_name: None,
+            similarity: 0.73,
+            source: SemanticSearchSourceDto::Content,
+            excerpt: "recovery steps".into(),
+        };
+
+        let val = project_semantic_search_hit(hit);
+
+        assert_eq!(val["kind"], "document");
         assert_eq!(val["excerpt"], "recovery steps");
+        assert_eq!(
+            val["id"],
+            fixed_uuid().to_string(),
+            "a hit with no slug still needs one address"
+        );
         assert!(val.get("readable_id").is_none());
+        assert!(val.get("slug").is_none());
         assert!(val.get("project_slug").is_none());
         assert!(val.get("column_name").is_none());
+    }
+
+    #[test]
+    fn semantic_search_hit_projection_truncates_the_excerpt() {
+        let hit = SemanticSearchHitDto {
+            id: fixed_uuid(),
+            kind: SemanticSearchKindDto::Document,
+            readable_id: None,
+            slug: Some("long-note".into()),
+            title: "Long note".into(),
+            project_slug: None,
+            column_name: None,
+            similarity: 0.5,
+            source: SemanticSearchSourceDto::Content,
+            excerpt: "é".repeat(400),
+        };
+
+        let val = project_semantic_search_hit(hit);
+
+        let excerpt = val["excerpt"].as_str().expect("excerpt string");
+        assert_eq!(excerpt.chars().count(), 140);
     }
 
     // -----------------------------------------------------------------------

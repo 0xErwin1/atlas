@@ -144,6 +144,9 @@ pub struct SemanticSearchHit {
     pub kind: ResourceKind,
     pub id: Uuid,
     pub readable_id: Option<String>,
+    /// Slug of the hit document; always absent for tasks, which are addressed
+    /// by `readable_id`.
+    pub slug: Option<String>,
     pub title: String,
     pub project_slug: Option<String>,
     pub column_name: Option<String>,
