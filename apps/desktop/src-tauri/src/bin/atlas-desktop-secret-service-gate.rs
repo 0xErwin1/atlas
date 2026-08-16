@@ -36,7 +36,7 @@ fn main() -> ExitCode {
         "store" if bearer.is_empty() => ExitCode::FAILURE,
         "store" => finish(store.store(&scope, &bearer)),
         "load" => match store.load(&scope) {
-            Ok(value) if !bearer.is_empty() && value == *bearer => ExitCode::SUCCESS,
+            Ok(value) if !bearer.is_empty() && *value == *bearer => ExitCode::SUCCESS,
             Ok(_) => ExitCode::FAILURE,
             Err(error) => finish(Err(error)),
         },

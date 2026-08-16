@@ -756,7 +756,10 @@ fn restart_returns_the_stored_bearer_for_revalidation() {
     let scope = SessionScope::new(ORIGIN, "user-1").expect("valid scope");
     let store = InMemorySecretStore::with_session(scope.clone(), BEARER);
 
-    assert_eq!(store.load(&scope), Ok(BEARER.to_owned()));
+    assert_eq!(
+        store.load(&scope).map(|bearer| bearer.to_string()),
+        Ok(BEARER.to_owned())
+    );
 }
 
 #[test]
@@ -803,7 +806,10 @@ fn lifecycle_purge_action_is_scoped_to_the_expired_identity() {
         lifecycle.take_action(),
         Some(LifecycleAction::CancelTransportAndPurgeScopedCache(first))
     );
-    assert_eq!(store.load(&second), Ok("other-bearer-material".to_owned()));
+    assert_eq!(
+        store.load(&second).map(|bearer| bearer.to_string()),
+        Ok("other-bearer-material".to_owned())
+    );
 }
 
 #[derive(Default)]

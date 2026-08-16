@@ -26,6 +26,7 @@ use tauri::{
 use tauri_plugin_autostart::ManagerExt;
 #[cfg(target_os = "linux")]
 use webkit2gtk::{SettingsExt, WebViewExt};
+use zeroize::{Zeroize, Zeroizing};
 
 /// Registry key for a running workspace stream: the session scope
 /// (`origin:identity`) plus the workspace slug, so a late stop for one
@@ -130,6 +131,17 @@ struct IpcSessionAction {
 struct LoginCredentials {
     username: String,
     password: String,
+}
+
+/// Wipes the password on every exit path, including the early returns.
+///
+/// The password crosses the IPC boundary as plain text and is copied again into
+/// the request body; this only clears the copy the host owns, which is the part
+/// this process can control.
+impl Drop for LoginCredentials {
+    fn drop(&mut self) {
+        self.password.zeroize();
+    }
 }
 
 #[derive(Serialize)]
@@ -745,7 +757,14 @@ async fn desktop_auth_login<R: Runtime>(
             Err(_) => IpcResult::error("desktop authentication failed"),
         };
     }
-    let body: serde_json::Value = match response.json().await {
+    // Read as text into a wiped buffer first: the parsed value is dropped as
+    // soon as the two fields are out, so the response body carrying the bearer
+    // does not sit in freed memory for the rest of the session.
+    let raw_body = match response.text().await {
+        Ok(body) => Zeroizing::new(body),
+        Err(_) => return IpcResult::error("desktop authentication failed"),
+    };
+    let body: serde_json::Value = match serde_json::from_str(&raw_body) {
         Ok(body) => body,
         Err(_) => return IpcResult::error("desktop authentication failed"),
     };
@@ -753,9 +772,11 @@ async fn desktop_auth_login<R: Runtime>(
         body.get("token").and_then(serde_json::Value::as_str),
         body.pointer("/user/id").and_then(serde_json::Value::as_str),
     ) {
-        (Some(bearer), Some(identity)) => (bearer, identity),
+        (Some(bearer), Some(identity)) => (Zeroizing::new(bearer.to_owned()), identity.to_owned()),
         _ => return IpcResult::error("desktop authentication failed"),
     };
+    drop(body);
+    let identity = identity.as_str();
     let scope = match SessionScope::new(&origin, identity) {
         Ok(scope) => scope,
         Err(_) => return IpcResult::error("desktop session is invalid"),
@@ -764,7 +785,7 @@ async fn desktop_auth_login<R: Runtime>(
         .session
         .lock()
         .ok()
-        .and_then(|mut session| session.store_session(&scope, bearer).ok());
+        .and_then(|mut session| session.store_session(&scope, &bearer).ok());
     if stored.is_none() {
         if invalidate_scope(&state, &app, &scope).is_err() {
             return IpcResult::error("desktop session action delivery failed");

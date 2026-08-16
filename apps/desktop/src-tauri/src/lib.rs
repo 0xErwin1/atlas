@@ -12,6 +12,7 @@ use std::{
     time::Duration,
 };
 use thiserror::Error;
+use zeroize::Zeroizing;
 
 #[cfg(feature = "desktop-gate")]
 pub mod gate;
@@ -604,7 +605,12 @@ impl LifecycleAction {
 
 pub trait SecretStore {
     fn store(&mut self, scope: &SessionScope, bearer: &str) -> Result<(), SecretStoreError>;
-    fn load(&self, scope: &SessionScope) -> Result<String, SecretStoreError>;
+    /// Loads the stored bearer.
+    ///
+    /// Returned in a `Zeroizing` wrapper so the copy this process makes of the
+    /// token is wiped when the caller drops it, instead of lingering in freed
+    /// heap memory for the rest of the session.
+    fn load(&self, scope: &SessionScope) -> Result<Zeroizing<String>, SecretStoreError>;
     fn remove(&mut self, scope: &SessionScope) -> Result<(), SecretStoreError>;
 }
 
@@ -626,11 +632,12 @@ impl SecretStore for SecretServiceStore {
             .map_err(|_| SecretStoreError::Unavailable)
     }
 
-    fn load(&self, scope: &SessionScope) -> Result<String, SecretStoreError> {
+    fn load(&self, scope: &SessionScope) -> Result<Zeroizing<String>, SecretStoreError> {
         let entry = keyring::Entry::new(KEYRING_SERVICE, &scope.key())
             .map_err(|_| SecretStoreError::Unavailable)?;
         entry
             .get_password()
+            .map(Zeroizing::new)
             .map_err(|_| SecretStoreError::Unavailable)
     }
 
@@ -723,7 +730,7 @@ impl SecretStore for InMemorySecretStore {
         Ok(())
     }
 
-    fn load(&self, scope: &SessionScope) -> Result<String, SecretStoreError> {
+    fn load(&self, scope: &SessionScope) -> Result<Zeroizing<String>, SecretStoreError> {
         if self.locked {
             return Err(SecretStoreError::Unavailable);
         }
@@ -733,6 +740,7 @@ impl SecretStore for InMemorySecretStore {
             .map_err(|_| SecretStoreError::Unavailable)?
             .get(&scope.key())
             .cloned()
+            .map(Zeroizing::new)
             .ok_or(SecretStoreError::Unavailable)
     }
 
