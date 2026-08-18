@@ -2163,7 +2163,15 @@ pub struct CallParams {
     pub resource: String,
     /// The resource's own arguments. `help` returns the accepted set, and an
     /// invalid call names it in the error.
+    ///
+    /// The schema is written out as an object rather than left untyped: a
+    /// client that sees no `type` here serializes the argument as a JSON string
+    /// and every call fails to deserialize.
     #[serde(default)]
+    #[schemars(
+        with = "serde_json::Map<String, serde_json::Value>",
+        default = "serde_json::Map::new"
+    )]
     pub params: serde_json::Value,
 }
 
@@ -6738,6 +6746,38 @@ mod tests {
             assert!(router.has_route(verb), "verb `{verb}` is not advertised");
         }
         assert!(router.has_route("help"));
+    }
+
+    /// A client that sees no `type` on `params` serializes the argument as a
+    /// JSON string, and every verb but `help` becomes uncallable.
+    #[test]
+    fn every_verb_advertises_params_as_an_object() {
+        let router = AtlasMcp::tool_router();
+
+        for verb in catalog::VERBS {
+            let tool = router
+                .list_all()
+                .into_iter()
+                .find(|tool| tool.name == *verb)
+                .unwrap_or_else(|| unreachable!("verb `{verb}` is not advertised"));
+
+            let params = tool
+                .input_schema
+                .get("properties")
+                .and_then(|properties| properties.get("params"))
+                .unwrap_or_else(|| unreachable!("verb `{verb}` has no `params` property"));
+
+            assert_eq!(
+                params.get("type").and_then(serde_json::Value::as_str),
+                Some("object"),
+                "verb `{verb}` leaves `params` untyped"
+            );
+            assert_eq!(
+                params.get("default"),
+                Some(&serde_json::json!({})),
+                "verb `{verb}` advertises a default that its own type rejects"
+            );
+        }
     }
 
     #[test]

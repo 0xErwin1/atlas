@@ -931,6 +931,21 @@ pub(crate) fn accepted_parameters(op: &Operation) -> String {
         .join(", ")
 }
 
+/// Normalizes the two shapes a client sends that are not the object the schema
+/// asks for.
+///
+/// An omitted `params` arrives as JSON null, which no parameter struct accepts
+/// even when every one of its fields is optional. A client that treats an
+/// untyped schema as free-form sends the object serialized as a string. Both
+/// carry the caller's real intent, so they are repaired rather than rejected.
+fn normalize_params(params: Value) -> Value {
+    match params {
+        Value::Null => Value::Object(serde_json::Map::new()),
+        Value::String(ref text) => serde_json::from_str(text).unwrap_or(params),
+        other => other,
+    }
+}
+
 /// Deserializes a call's `params` into the resource's own parameter type.
 ///
 /// A failure answers with the accepted parameter set rather than a bare serde
@@ -941,7 +956,7 @@ pub(crate) fn decode<T: DeserializeOwned + JsonSchema>(
     resource: &str,
     params: Value,
 ) -> Result<Parameters<T>, String> {
-    serde_json::from_value(params).map(Parameters).map_err(|error| {
+    serde_json::from_value(normalize_params(params)).map(Parameters).map_err(|error| {
         let accepted = find_operation(verb, resource)
             .map(accepted_parameters)
             .unwrap_or_else(|| "unknown".to_owned());
@@ -1205,5 +1220,35 @@ mod tests {
 
         assert!(error.contains("Accepted parameters"), "{error}");
         assert!(error.contains("readable_id (required)"), "{error}");
+    }
+
+    #[test]
+    fn params_serialized_as_a_string_still_decode() {
+        let Parameters(params) = decode::<crate::GetTaskParams>(
+            "get",
+            "task",
+            serde_json::json!(r#"{"workspace":"atlas","readable_id":"ATL-42"}"#),
+        )
+        .unwrap_or_else(|error| unreachable!("{error}"));
+
+        assert_eq!(params.workspace, "atlas");
+        assert_eq!(params.readable_id, "ATL-42");
+    }
+
+    #[test]
+    fn omitted_params_decode_as_an_empty_object() {
+        assert!(
+            decode::<crate::ListWorkspacesParams>("find", "workspaces", Value::Null).is_ok(),
+            "an omitted `params` must reach a resource that takes none"
+        );
+    }
+
+    #[test]
+    fn a_string_that_is_not_json_keeps_its_own_error() {
+        let error = decode::<crate::GetTaskParams>("get", "task", serde_json::json!("ATL-42"))
+            .err()
+            .unwrap_or_default();
+
+        assert!(error.contains("invalid type: string"), "{error}");
     }
 }
