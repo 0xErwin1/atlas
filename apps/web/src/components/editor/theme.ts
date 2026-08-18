@@ -56,8 +56,12 @@ export const atlasMarkdownTheme = EditorView.theme(
     '.cm-cursor, .cm-dropCursor': {
       borderLeftColor: 'var(--c-primary)',
     },
+    // Text selection needs its own token: `--c-selection` is the opaque
+    // active-row background used across the UI, too close to the editor surface
+    // to read as a selection. This one is translucent so it also stays visible
+    // over code chips and fenced blocks.
     '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
-      backgroundColor: 'var(--c-selection)',
+      backgroundColor: 'var(--c-text-selection)',
     },
     '.cm-placeholder': {
       color: 'var(--c-muted)',

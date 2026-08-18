@@ -46,6 +46,7 @@
   --c-muted-foreground: var(--c-muted);
   --c-border: #1F2430;
   --c-selection: #273747;
+  --c-text-selection: rgba(89, 194, 255, 0.45);
 
   /* Primary (amber) */
   --c-primary: #FFB454;
@@ -163,6 +164,7 @@
   --c-muted-foreground: var(--c-muted);
   --c-border: #E1E4E8;
   --c-selection: #D6E5F3;
+  --c-text-selection: rgba(57, 158, 230, 0.4);
 
   --c-primary: #F2922A;
   --c-primary-hover: #E3851F;
