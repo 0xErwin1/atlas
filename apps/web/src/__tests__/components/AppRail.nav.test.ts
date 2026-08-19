@@ -50,6 +50,28 @@ describe('AppRail unified navigation', () => {
     expect(wrapper.find('[aria-label="Tasks"]').exists()).toBe(false);
   });
 
+  // Search is a route inside Acta, so the rail has to keep saying which product
+  // you are in while you are there — it is the only way back to the space tree.
+  it.each([
+    'notes',
+    'tasks',
+    'task-view',
+    'task-detail',
+    'search',
+  ])('marks the Acta entry current on the %s route', (name) => {
+    routeState.name = name;
+    const wrapper = mount(AppRail);
+
+    expect(wrapper.get('[aria-label="Acta"]').attributes('aria-current')).toBe('page');
+  });
+
+  it('leaves the rail with no current product outside Acta', () => {
+    routeState.name = 'settings';
+    const wrapper = mount(AppRail);
+
+    expect(wrapper.get('[aria-label="Acta"]').attributes('aria-current')).toBeUndefined();
+  });
+
   it('navigates the unified entry to the notes route', async () => {
     const wrapper = mount(AppRail);
 

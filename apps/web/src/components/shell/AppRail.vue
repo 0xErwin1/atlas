@@ -31,7 +31,7 @@ const items: RailItem[] = [
     name: 'Acta',
     icon: 'files',
     routeName: 'notes',
-    activeRoutes: ['notes', 'tasks', 'task-view', 'task-detail'],
+    activeRoutes: ['notes', 'tasks', 'task-view', 'task-detail', 'search'],
   },
 ];
 
