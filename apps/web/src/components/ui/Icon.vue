@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import * as lucide from 'lucide-vue-next';
 import { computed } from 'vue';
+import { LUCIDE_ICONS } from '@/components/ui/lucideIcons';
 
 const props = withDefaults(
   defineProps<{
@@ -33,14 +33,7 @@ for (const [filePath, svg] of Object.entries(CUSTOM_SVGS)) {
 const customSvg = computed(() => CUSTOM_BY_NAME[props.name] ?? '');
 const isCustom = computed(() => props.name in CUSTOM_BY_NAME);
 
-const lucideIcon = computed(() => {
-  if (isCustom.value) return null;
-  const key = props.name
-    .split('-')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join('');
-  return (lucide as Record<string, unknown>)[key] ?? null;
-});
+const lucideIcon = computed(() => (isCustom.value ? null : (LUCIDE_ICONS[props.name] ?? null)));
 </script>
 
 <template>
