@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, ref } from 'vue';
 import KanbanColumn from '@/components/tareas/KanbanColumn.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import ContextMenu from '@/components/ui/ContextMenu.vue';
@@ -44,11 +44,39 @@ const columnDeleteTarget = ref<ColumnDto | null>(null);
 
 const menu = useContextMenu();
 
-function onBoardScroll(): void {
+// One pass over the board per change instead of one filter pass per column on
+// every render: the template reads a column's tasks out of this map.
+const tasksByColumn = computed(
+  () => new Map(boards.columns.map((column) => [column.id, boards.filteredTasksByColumn(column.id)])),
+);
+
+// The dot strip is the only consumer of the scroll position, and only the mobile
+// layout renders it. Reading scrollLeft/scrollWidth/clientWidth forces a reflow,
+// so the handler stays inert on every viewport that shows no strip, and reads at
+// most once per frame on the ones that do.
+const showsDotStrip = computed(() => isMobile.value && boards.columns.length > 1);
+
+let pendingScrollFrame: number | null = null;
+
+function measureActiveColumn(): void {
   const el = scrollEl.value;
   if (el === null) return;
+
   activeColumn.value = activeDotIndex(el.scrollLeft, el.scrollWidth - el.clientWidth, boards.columns.length);
 }
+
+function onBoardScroll(): void {
+  if (!showsDotStrip.value || pendingScrollFrame !== null) return;
+
+  pendingScrollFrame = requestAnimationFrame(() => {
+    pendingScrollFrame = null;
+    measureActiveColumn();
+  });
+}
+
+onBeforeUnmount(() => {
+  if (pendingScrollFrame !== null) cancelAnimationFrame(pendingScrollFrame);
+});
 
 function scrollToColumn(index: number): void {
   const el = scrollEl.value;
@@ -135,13 +163,13 @@ const menuItems = computed(() => {
       ref="scrollEl"
       class="flex flex-1 overflow-x-auto min-w-0"
       :style="`gap: 22px; padding: 18px 16px; ${isMobile ? 'scroll-snap-type: x mandatory; scroll-padding-left: 16px;' : ''}`"
-      @scroll="onBoardScroll"
+      @scroll.passive="onBoardScroll"
     >
       <KanbanColumn
         v-for="(column, index) in boards.columns"
         :key="column.id"
         :column="column"
-        :tasks="boards.filteredTasksByColumn(column.id)"
+        :tasks="tasksByColumn.get(column.id) ?? []"
         :selected-readable-id="selectedReadableId"
         :fluid="isMobile"
         :is-first="index === 0"
@@ -177,7 +205,7 @@ const menuItems = computed(() => {
     </div>
 
     <div
-      v-if="isMobile && boards.columns.length > 1"
+      v-if="showsDotStrip"
       class="flex items-center justify-center"
       style="gap: 7px; padding: 8px 0 10px;"
       aria-hidden="true"
