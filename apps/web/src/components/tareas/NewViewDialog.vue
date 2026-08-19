@@ -155,7 +155,7 @@ function submit(): void {
     <div
       role="dialog"
       :aria-label="isEdit ? 'Edit view' : 'New view'"
-      style="width: 440px; max-width: calc(100vw - 32px); background-color: var(--c-panel); border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); overflow: visible;"
+      style="width: 440px; max-width: calc(100vw - 32px); background-color: var(--c-panel); border: 1px solid var(--c-border-strong); border-radius: var(--r-lg); overflow: visible;"
     >
       <div
         class="flex items-center"
@@ -302,9 +302,10 @@ function submit(): void {
 }
 
 .atl-nv-label {
-  font-size: 10px;
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.06em;
+  letter-spacing: var(--ls-label);
+  font-family: var(--font-mono);
   text-transform: uppercase;
   color: var(--c-muted);
   margin-bottom: 5px;
@@ -317,14 +318,12 @@ function submit(): void {
   padding: 2px;
   background: var(--c-input);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
 }
 
 .atl-nv-segbtn {
   height: 24px;
   padding: 0 12px;
   border: none;
-  border-radius: var(--r-sm);
   background: transparent;
   color: var(--c-muted);
   font-size: var(--fs-sm);
@@ -351,9 +350,8 @@ function submit(): void {
   padding: 0 8px;
   background: var(--c-input);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-lg);
   color: var(--c-foreground);
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   cursor: pointer;
 }
 
@@ -362,7 +360,6 @@ function submit(): void {
   align-items: center;
   height: 26px;
   padding: 0 8px;
-  border-radius: 3px;
   font-size: var(--fs-sm);
   color: var(--c-foreground);
   white-space: nowrap;

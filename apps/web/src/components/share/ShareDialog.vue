@@ -220,8 +220,8 @@ async function invite(): Promise<void> {
       role="dialog"
       aria-label="Share"
       :style="isMobile
-        ? 'width: 100%; max-height: 90vh; overflow-y: auto; background-color: var(--c-panel); border-top: 1px solid var(--c-border); border-radius: var(--r-lg) var(--r-lg) 0 0; box-shadow: var(--shadow-lg);'
-        : 'width: 580px; max-width: calc(100vw - 32px); background-color: var(--c-panel); border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); overflow: visible;'"
+        ? 'width: 100%; max-height: 90vh; overflow-y: auto; background-color: var(--c-panel); border-top: 1px solid var(--c-border-strong); border-radius: var(--r-lg) var(--r-lg) 0 0; '
+        : 'width: 580px; max-width: calc(100vw - 32px); background-color: var(--c-panel); border: 1px solid var(--c-border-strong); border-radius: var(--r-lg); overflow: visible;'"
     >
       <div v-if="isMobile" class="flex justify-center" style="padding: 8px 0 0;" aria-hidden="true">
         <div style="width: 36px; height: 4px; border-radius: 9999px; background: var(--c-border);" />
@@ -307,7 +307,6 @@ async function invite(): Promise<void> {
               background-color: var(--c-panel);
               border: 1px solid var(--c-border);
               border-radius: var(--r-lg);
-              box-shadow: var(--shadow-lg);
               padding: 4px;
               z-index: 10;
             "
@@ -365,7 +364,7 @@ async function invite(): Promise<void> {
             border-radius: var(--r-md);
             padding: 8px 11px;
             margin-bottom: 14px;
-            font-size: var(--fs-sm);
+            font-size: var(--fs-label);
             color: var(--c-banner-err-fg);
           "
         >
@@ -373,7 +372,8 @@ async function invite(): Promise<void> {
         </div>
 
         <div
-          style="font-size: 10px; font-weight: var(--fw-semibold); letter-spacing: 0.06em; text-transform: uppercase; color: var(--c-muted); margin-bottom: 4px;"
+          style="font-size: 10px; font-weight: var(--fw-semibold); letter-spacing: var(--ls-label); font-family: var(--font-mono);
+  text-transform: uppercase; color: var(--c-muted); margin-bottom: 4px;"
         >
           People, groups &amp; agents with access
         </div>
@@ -398,7 +398,7 @@ async function invite(): Promise<void> {
           <div class="flex-1 min-w-0">
             <div
               class="flex items-center"
-              style="gap: 6px; font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--c-foreground);"
+              style="gap: 6px; font-size: var(--fs-label); font-weight: var(--fw-semibold); color: var(--c-foreground);"
             >
               <span class="truncate">{{ principalLabel(g) }}</span>
               <AgentBadge v-if="badgeFor(g)" :label="badgeFor(g) ?? 'AGENT'" />
@@ -435,7 +435,7 @@ async function invite(): Promise<void> {
         <div style="height: 1px; background-color: var(--c-border); margin: 14px 0;" />
 
         <div
-          style="font-size: 10px; font-weight: var(--fw-semibold); letter-spacing: 0.06em; text-transform: uppercase; color: var(--c-muted); margin-bottom: 6px;"
+          style="font-size: 10px; font-weight: var(--fw-semibold); letter-spacing: var(--ls-label); text-transform: uppercase; color: var(--c-muted); margin-bottom: 6px;"
         >
           General access
         </div>

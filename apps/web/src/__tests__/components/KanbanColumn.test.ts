@@ -56,6 +56,33 @@ function menuItems(wrapper: ReturnType<typeof mountColumn>): MenuItem[] {
   return (wrapper.vm as unknown as { menuItems: MenuItem[] }).menuItems;
 }
 
+describe('KanbanColumn layout', () => {
+  it('is a fixed 208px column on the desktop board', () => {
+    const style = mountColumn().get('div').attributes('style') ?? '';
+
+    expect(style).toContain('width: 208px');
+    expect(style).toContain('flex: 0 0 208px');
+  });
+
+  // The status colour rides on a rule across the top of the column instead of a
+  // dot: the same information, carried by an element that survives greyscale.
+  it('carries the status colour on a rule above the head, not on a dot', () => {
+    const wrapper = mountColumn();
+    const rule = wrapper.get('.atl-col-rule');
+
+    expect(rule.attributes('style')).toContain('height: 3px');
+    expect(wrapper.find('.atl-col-dot').exists()).toBe(false);
+  });
+
+  it('sets the name and the count in the data family', () => {
+    const wrapper = mountColumn({ column: column('c1', 'Todo') });
+    const head = wrapper.get('.atl-col-head');
+
+    expect(head.get('.atl-col-name').attributes('style')).toContain('font-family: var(--font-mono)');
+    expect(head.get('.atl-col-count').attributes('style')).toContain('font-family: var(--font-mono)');
+  });
+});
+
 describe('KanbanColumn editing', () => {
   it('double-clicking the name enters edit mode and Enter emits save-column with the draft', async () => {
     const col = column('c1', 'Todo');

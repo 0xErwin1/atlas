@@ -143,7 +143,6 @@ defineExpose({ focus: (): void => inputRef.value?.focus() });
   padding: 0 10px;
   background: var(--c-input);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
 }
 
 .atl-refadd-input {
@@ -163,7 +162,6 @@ defineExpose({ focus: (): void => inputRef.value?.focus() });
 .atl-refadd-results {
   margin-top: 6px;
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   background: var(--c-panel);
   overflow: hidden;
   max-height: 220px;

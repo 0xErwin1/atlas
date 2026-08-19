@@ -317,13 +317,13 @@ const unscheduled = computed<TaskSummaryDto[]>(() =>
 }
 
 .atl-cal-month {
-  font-size: 15px;
+  font-size: var(--fs-lg);
   font-weight: var(--fw-bold);
   color: var(--c-foreground);
 }
 
 .atl-cal-note {
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--c-muted);
 }
 
@@ -340,14 +340,15 @@ const unscheduled = computed<TaskSummaryDto[]>(() =>
   padding: 0 8px;
   font-size: 10.5px;
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.04em;
+  letter-spacing: var(--ls-label);
+  font-family: var(--font-mono);
   text-transform: uppercase;
   color: var(--c-muted);
   border-right: 1px solid var(--c-border);
 }
 
 .atl-cal-weekday.weekend {
-  color: rgba(179, 177, 173, 0.45);
+  color: color-mix(in srgb, var(--c-foreground) 45%, transparent);
 }
 
 .atl-cal-weekday.last {
@@ -392,7 +393,7 @@ const unscheduled = computed<TaskSummaryDto[]>(() =>
 }
 
 .atl-cal-cell.today {
-  background: rgba(255, 180, 84, 0.05);
+  background: color-mix(in srgb, var(--c-warning) 5%, transparent);
 }
 
 .atl-cal-daynum-row {
@@ -408,14 +409,14 @@ const unscheduled = computed<TaskSummaryDto[]>(() =>
   height: 20px;
   border-radius: var(--r-full);
   padding: 0 5px;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: var(--fw-medium);
   font-family: var(--font-mono);
   color: var(--c-muted);
 }
 
 .atl-cal-daynum.out {
-  color: rgba(179, 177, 173, 0.35);
+  color: color-mix(in srgb, var(--c-foreground) 35%, transparent);
 }
 
 .atl-cal-daynum.today {
@@ -431,7 +432,6 @@ const unscheduled = computed<TaskSummaryDto[]>(() =>
   height: 19px;
   padding: 0 6px;
   border: none;
-  border-radius: 3px;
   min-width: 0;
   cursor: pointer;
   text-align: left;
@@ -469,9 +469,10 @@ const unscheduled = computed<TaskSummaryDto[]>(() =>
 }
 
 .atl-cal-unsched-label {
-  font-size: 10px;
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.06em;
+  letter-spacing: var(--ls-label);
+  font-family: var(--font-mono);
   text-transform: uppercase;
   color: var(--c-muted);
 }

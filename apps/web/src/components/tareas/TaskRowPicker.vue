@@ -109,7 +109,6 @@ function choose(option: PickerOption, close: () => void): void {
   height: 30px;
   padding: 0 8px;
   border: none;
-  border-radius: var(--r-sm);
   background: transparent;
   text-align: left;
   font-size: var(--fs-sm);

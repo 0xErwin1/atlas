@@ -78,10 +78,11 @@ async function onSubmitView(payload: { name: string; filters: TaskViewFiltersDto
       <div style="padding: 5px 0;">
         <div
           style="
-            font-size: var(--fs-xs);
+            font-size: var(--fs-label);
             font-weight: var(--fw-semibold);
-            letter-spacing: 0.06em;
-            text-transform: uppercase;
+            letter-spacing: var(--ls-label);
+            font-family: var(--font-mono);
+  text-transform: uppercase;
             color: var(--c-muted);
             padding: 4px 12px 5px;
           "

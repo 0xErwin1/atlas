@@ -102,8 +102,7 @@ const assigneeModel = facetModel('assigneeIds');
           padding: '2px 5px',
           background: 'transparent',
           border: 'none',
-          borderRadius: 'var(--r-sm)',
-          fontSize: '11px',
+          fontSize: 'var(--fs-xs)',
           color: 'var(--c-muted)',
         }"
         @click="ui.clearTaskFilter()"
@@ -137,7 +136,7 @@ const assigneeModel = facetModel('assigneeIds');
 
 <style scoped>
 .atl-clear-filters:hover {
-  background: rgba(179, 177, 173, 0.06);
+  background: color-mix(in srgb, var(--c-foreground) 6%, transparent);
   color: var(--c-foreground);
 }
 </style>

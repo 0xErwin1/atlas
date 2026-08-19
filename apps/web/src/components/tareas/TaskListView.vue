@@ -662,9 +662,10 @@ const rowHandlers = {
   column-gap: 10px;
   padding: 0 12px 0 10px;
   height: 28px;
-  font-size: var(--fs-xs);
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.04em;
+  letter-spacing: var(--ls-label);
+  font-family: var(--font-mono);
   text-transform: uppercase;
   color: var(--c-muted);
   border-bottom: 1px solid var(--c-border);
@@ -719,14 +720,14 @@ const rowHandlers = {
 }
 
 .atl-tl-groupname {
-  font-size: var(--fs-sm);
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
   color: var(--c-foreground);
 }
 
 .atl-tl-count {
   font-family: var(--font-mono);
-  font-size: var(--fs-xs);
+  font-size: var(--fs-label);
   color: var(--c-muted);
 }
 
@@ -754,7 +755,6 @@ const rowHandlers = {
   height: 32px;
   padding: 0 5px;
   border: none;
-  border-radius: 3px;
   background: transparent;
   text-align: left;
   color: var(--c-muted);
@@ -774,7 +774,6 @@ const rowHandlers = {
   padding: 0 8px;
   background: var(--c-raised);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-sm);
   outline: none;
   color: var(--c-foreground);
   font-family: var(--font-ui);
@@ -793,7 +792,6 @@ const rowHandlers = {
   width: 30px;
   height: 30px;
   border: none;
-  border-radius: var(--r-sm);
   background: transparent;
   color: var(--c-muted);
   cursor: pointer;

@@ -150,9 +150,7 @@ useOverlayEscape(
   display: flex;
   flex-direction: column;
   background: var(--c-panel);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--c-border-strong);
   font-family: var(--font-ui);
 }
 
@@ -204,7 +202,6 @@ useOverlayEscape(
   padding: 0 10px;
   background: var(--c-secondary);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   color: var(--c-foreground);
   font-family: var(--font-ui);
   font-size: var(--fs-sm);
@@ -225,9 +222,10 @@ useOverlayEscape(
 }
 
 .atl-askai-label {
-  font-size: var(--fs-xs);
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.06em;
+  letter-spacing: var(--ls-label);
+  font-family: var(--font-mono);
   text-transform: uppercase;
   color: var(--c-muted);
   margin-bottom: 6px;
@@ -240,7 +238,6 @@ useOverlayEscape(
   padding: 12px;
   background: var(--c-raised);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   color: var(--c-foreground);
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
@@ -260,7 +257,6 @@ useOverlayEscape(
   padding: 8px 10px;
   background: var(--c-raised);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   color: var(--c-foreground);
   font-family: var(--font-ui);
   font-size: var(--fs-sm);

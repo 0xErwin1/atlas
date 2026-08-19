@@ -31,7 +31,6 @@ defineEmits<{
       backgroundColor: selected ? 'var(--c-selected, var(--c-raised))' : 'var(--c-raised)',
       border: `1px solid ${selected ? 'var(--c-primary)' : 'var(--c-border)'}`,
       boxShadow: selected ? 'inset 0 0 0 1px var(--c-primary)' : 'none',
-      borderRadius: 'var(--r-md)',
     }"
     @click="$emit('select', task.readable_id)"
     @dblclick="$emit('open', task.readable_id)"
@@ -39,7 +38,7 @@ defineEmits<{
   >
     <span
       style="
-        font-size: 12.5px;
+        font-size: var(--fs-base);
         font-weight: var(--fw-medium);
         line-height: 1.35;
         color: var(--c-foreground);

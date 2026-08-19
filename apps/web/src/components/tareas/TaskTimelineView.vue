@@ -339,9 +339,10 @@ const offWindowNotes = computed<string[]>(() => {
   display: flex;
   align-items: center;
   padding: 0 14px;
-  font-size: 11px;
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.04em;
+  letter-spacing: var(--ls-label);
+  font-family: var(--font-mono);
   text-transform: uppercase;
   color: var(--c-muted);
   border-right: 1px solid var(--c-border);
@@ -358,18 +359,18 @@ const offWindowNotes = computed<string[]>(() => {
 }
 
 .atl-tm-axis-day.today {
-  background: rgba(255, 180, 84, 0.06);
+  background: color-mix(in srgb, var(--c-warning) 6%, transparent);
 }
 
 .atl-tm-axis-letter {
   font-size: 9px;
-  color: rgba(179, 177, 173, 0.5);
+  color: color-mix(in srgb, var(--c-foreground) 50%, transparent);
   text-transform: uppercase;
 }
 
 .atl-tm-axis-num {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: var(--fw-medium);
   color: var(--c-muted);
 }
@@ -388,7 +389,7 @@ const offWindowNotes = computed<string[]>(() => {
   top: 0;
   bottom: 0;
   width: 2px;
-  background: rgba(255, 180, 84, 0.55);
+  background: color-mix(in srgb, var(--c-warning) 55%, transparent);
   z-index: 3;
   pointer-events: none;
 }
@@ -421,7 +422,7 @@ const offWindowNotes = computed<string[]>(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   color: var(--c-foreground);
 }
 
@@ -441,7 +442,6 @@ const offWindowNotes = computed<string[]>(() => {
   top: 50%;
   transform: translateY(-50%);
   height: 24px;
-  border-radius: 4px;
   border: 1px solid;
   display: flex;
   align-items: center;

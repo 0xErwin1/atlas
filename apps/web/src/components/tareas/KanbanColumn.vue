@@ -143,31 +143,29 @@ function onSortableMove(event: DragAutoScrollMoveEvent, originalEvent: Event): v
     class="flex flex-col min-h-0"
     :style="fluid
       ? 'width: 84vw; max-width: 320px; flex: 0 0 84vw; scroll-snap-align: start;'
-      : 'width: 250px; flex: 0 0 250px;'"
+      : 'width: 208px; flex: 0 0 208px;'"
   >
+    <div
+      class="atl-col-rule"
+      :style="{ height: '3px', backgroundColor: editing ? draftDotColor : dotColor, flex: '0 0 3px' }"
+      aria-hidden="true"
+    />
+
     <div
       v-if="!editing"
       class="atl-col-head flex items-center"
-      style="gap: 7px; padding: 0 2px 9px;"
+      style="gap: 8px; padding: 7px 2px 9px;"
     >
       <span
-        :style="{
-          width: '7px',
-          height: '7px',
-          borderRadius: 'var(--r-full)',
-          backgroundColor: dotColor,
-          flex: '0 0 auto',
-        }"
-        aria-hidden="true"
-      />
-      <span
-        style="font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-foreground); cursor: text;"
+        class="atl-col-name"
+        style="font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: var(--fw-semibold); letter-spacing: var(--ls-label); text-transform: uppercase; color: var(--c-foreground); cursor: text;"
         title="Double-click to edit"
         @dblclick="startEdit"
       >
         {{ column.name }}
       </span>
       <span
+        class="atl-col-count"
         style="font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--c-muted);"
       >
         {{ tasks.length }}
@@ -196,18 +194,8 @@ function onSortableMove(event: DragAutoScrollMoveEvent, originalEvent: Event): v
       </button>
     </div>
 
-    <div v-else class="atl-col-edit" style="padding: 0 2px 9px;">
-      <div class="flex items-center" style="gap: 7px;">
-        <span
-          :style="{
-            width: '7px',
-            height: '7px',
-            borderRadius: 'var(--r-full)',
-            backgroundColor: draftDotColor,
-            flex: '0 0 auto',
-          }"
-          aria-hidden="true"
-        />
+    <div v-else class="atl-col-edit" style="padding: 7px 2px 9px;">
+      <div class="flex items-center" style="gap: 8px;">
         <input
           ref="renameRef"
           v-model="draftName"
@@ -319,7 +307,6 @@ function onSortableMove(event: DragAutoScrollMoveEvent, originalEvent: Event): v
 .atl-col-picker {
   align-self: flex-start;
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   background: var(--c-raised);
 }
 
@@ -330,7 +317,6 @@ function onSortableMove(event: DragAutoScrollMoveEvent, originalEvent: Event): v
   padding: 0 8px;
   background: var(--c-raised);
   border: 1px solid var(--c-primary);
-  border-radius: var(--r-md);
   font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
   color: var(--c-foreground);
@@ -364,8 +350,7 @@ function onSortableMove(event: DragAutoScrollMoveEvent, originalEvent: Event): v
   padding: 0 9px;
   background: var(--c-raised);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   font-family: var(--font-mono);
   color: var(--c-foreground);
   outline: none;

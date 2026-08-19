@@ -82,10 +82,11 @@ function pickColumn(itemId: string, columnId: string): void {
   <section>
     <div
       style="
-        font-size: var(--fs-xs);
+        font-size: var(--fs-label);
         font-weight: var(--fw-semibold);
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
+        font-family: var(--font-mono);
+  text-transform: uppercase;
+        letter-spacing: var(--ls-label);
         color: var(--c-muted);
         margin-bottom: 6px;
       "
@@ -97,7 +98,7 @@ function pickColumn(itemId: string, columnId: string): void {
       v-for="item in items"
       :key="item.id"
       class="group flex items-center"
-      style="gap: 8px; padding: 4px 0; font-size: var(--fs-base);"
+      style="gap: 8px; padding: 4px 0; font-size: var(--fs-label);"
       :data-checklist-item="item.id"
     >
       <SquareCheckbox
@@ -140,7 +141,6 @@ function pickColumn(itemId: string, columnId: string): void {
           width: 22px;
           height: 22px;
           border: 1px solid var(--c-border);
-          border-radius: var(--r-sm);
           background: var(--c-secondary);
           color: var(--c-muted);
         "
@@ -175,7 +175,6 @@ function pickColumn(itemId: string, columnId: string): void {
               width: 22px;
               height: 22px;
               border: 1px solid var(--c-border);
-              border-radius: var(--r-sm);
               background: var(--c-secondary);
               color: var(--c-muted);
             "
@@ -212,7 +211,6 @@ function pickColumn(itemId: string, columnId: string): void {
           width: 22px;
           height: 22px;
           border: 1px solid var(--c-border);
-          border-radius: var(--r-sm);
           background: var(--c-secondary);
           color: var(--c-muted);
         "

@@ -837,7 +837,6 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
 .atl-tv-body.drag-active {
   outline: 2px dashed var(--c-primary);
   outline-offset: 6px;
-  border-radius: var(--r-md);
 }
 
 /* The hint must not intercept drag events, or moving over it fires dragleave and
@@ -854,7 +853,6 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
   pointer-events: none;
   background: var(--c-panel);
   border: 1px solid var(--c-primary);
-  border-radius: var(--r-md);
   font-size: var(--fs-sm);
   color: var(--c-primary);
 }
@@ -873,10 +871,9 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
   gap: 6px;
   height: 22px;
   padding: 0 8px;
-  border-radius: var(--r-sm);
   background: var(--c-raised);
   border: 1px solid var(--c-border);
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   font-weight: var(--fw-semibold);
   color: var(--c-foreground);
 }
@@ -896,7 +893,6 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
   margin: 0 0 16px;
   padding: 2px 4px;
   margin-left: -4px;
-  border-radius: var(--r-sm);
   cursor: text;
 }
 
@@ -914,7 +910,6 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
   padding: 2px 4px;
   background: var(--c-panel);
   border: 1px solid var(--c-primary);
-  border-radius: var(--r-sm);
   font-size: 19px;
   font-weight: var(--fw-bold);
   letter-spacing: -0.01em;
@@ -933,10 +928,9 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
   gap: 9px;
   padding: 9px 12px;
   margin-bottom: 20px;
-  border-radius: 4px;
   background: var(--c-agent-bg);
   border: 1px solid var(--c-agent-border);
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   color: var(--c-foreground);
 }
 
@@ -1009,7 +1003,6 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
   padding: 0 10px;
   background: var(--c-raised);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   color: var(--c-foreground);
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
@@ -1043,9 +1036,10 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
 }
 
 .atl-tv-section-label {
-  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.06em;
+  letter-spacing: var(--ls-label);
   text-transform: uppercase;
   color: var(--c-muted);
   margin-bottom: 8px;
@@ -1058,7 +1052,6 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
   height: 24px;
   padding: 0 9px 0 8px;
   border: none;
-  border-radius: 3px;
   font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
   cursor: pointer;
@@ -1092,7 +1085,6 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
   margin-left: -8px;
   background: transparent;
   border: none;
-  border-radius: var(--r-sm);
   color: var(--c-muted);
   font-size: var(--fs-sm);
   font-family: var(--font-ui);

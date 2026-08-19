@@ -95,7 +95,10 @@ interface Row {
   due: string;
 }
 
-const DEFAULT_STATUS: StatusStyle = { fg: 'var(--c-muted)', bg: 'rgba(179, 177, 173, 0.1)' };
+const DEFAULT_STATUS: StatusStyle = {
+  fg: 'var(--c-muted)',
+  bg: 'color-mix(in srgb, var(--c-foreground) 10%, transparent)',
+};
 
 // One swatch per column, resolved once per render instead of on every cell (the
 // status pill read the swatch three times per row).
@@ -284,9 +287,10 @@ function dueLabel(readableId: string): string {
 .atl-tt-th {
   height: 34px;
   padding: 0 0 0 0;
-  font-size: var(--fs-xs);
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.04em;
+  letter-spacing: var(--ls-label);
+  font-family: var(--font-mono);
   text-transform: uppercase;
   color: var(--c-muted);
   text-align: left;
@@ -383,7 +387,6 @@ function dueLabel(readableId: string): string {
   gap: 6px;
   height: 20px;
   padding: 0 8px 0 7px;
-  border-radius: 3px;
   font-size: var(--fs-xs);
   font-weight: var(--fw-semibold);
   white-space: nowrap;
@@ -409,7 +412,6 @@ function dueLabel(readableId: string): string {
   width: 18px;
   height: 18px;
   border: 1px dashed var(--c-muted);
-  border-radius: 2px;
   color: var(--c-muted);
 }
 

@@ -457,13 +457,14 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
   align-items: center;
   column-gap: 10px;
   padding: 0 12px 0 10px;
-  height: 28px;
-  font-size: var(--fs-xs);
+  height: var(--h-header);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.04em;
+  letter-spacing: var(--ls-label);
   text-transform: uppercase;
   color: var(--c-muted);
-  border-bottom: 1px solid var(--c-border);
+  border-bottom: var(--bw-head) solid var(--c-border-strong);
   margin-bottom: 4px;
 }
 
@@ -524,7 +525,6 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
   height: 38px;
   padding: 0 12px 0 10px;
   border: none;
-  border-radius: 3px;
   background: transparent;
   text-align: left;
   cursor: pointer;
@@ -583,7 +583,6 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
   white-space: nowrap;
   padding: 2px 7px;
   border: 1px solid var(--c-border);
-  border-radius: var(--r-sm);
   background: var(--c-raised);
   font-size: var(--fs-xs);
   color: var(--c-muted);
@@ -629,7 +628,6 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
   min-width: 0;
   height: 24px;
   padding: 0 6px;
-  border-radius: var(--r-sm);
   font-size: var(--fs-sm);
   color: var(--c-foreground);
 }
@@ -670,7 +668,6 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
   width: 18px;
   height: 18px;
   border: 1px dashed var(--c-muted);
-  border-radius: 2px;
   color: var(--c-muted);
   flex: 0 0 auto;
 }
@@ -700,7 +697,6 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
   height: 18px;
   padding: 0;
   border: none;
-  border-radius: 3px;
   background: var(--c-raised);
   color: var(--c-muted);
   cursor: pointer;

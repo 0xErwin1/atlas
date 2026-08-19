@@ -90,7 +90,6 @@ const overflowNames = computed<string>(() => ordered.value.slice(props.max).map(
       :style="{
         width: `${size}px`,
         height: `${size}px`,
-        borderRadius: '2px',
         backgroundColor: 'var(--c-raised)',
         border: '1px solid var(--c-border)',
         fontFamily: 'var(--font-mono)',
@@ -108,7 +107,6 @@ const overflowNames = computed<string>(() => ordered.value.slice(props.max).map(
 
 <style scoped>
 .atl-assignee-me {
-  border-radius: 2px;
   box-shadow: 0 0 0 1.5px var(--c-primary);
 }
 

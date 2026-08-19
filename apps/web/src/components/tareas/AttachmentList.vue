@@ -279,7 +279,6 @@ onBeforeUnmount(() => {
   align-self: flex-start;
   margin-left: 22px;
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   overflow: hidden;
 }
 

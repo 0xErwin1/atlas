@@ -137,8 +137,7 @@ function onChangeMode(mode: TaskViewMode): void {
   flex-direction: column;
   min-width: 0;
   background: var(--c-background);
-  border-left: 1px solid var(--c-border);
-  box-shadow: var(--shadow-lg, var(--shadow-md));
+  border-left: 1px solid var(--c-border-strong);
 }
 
 /* Drag handle straddling the dock's left edge; widens the panel toward the
@@ -171,7 +170,7 @@ function onChangeMode(mode: TaskViewMode): void {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(5, 8, 12, 0.55);
+  background: var(--c-overlay);
 }
 
 .atl-tv-modal {
@@ -180,9 +179,7 @@ function onChangeMode(mode: TaskViewMode): void {
   display: flex;
   flex-direction: column;
   background: var(--c-background);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-lg, var(--r-md));
-  box-shadow: var(--shadow-lg, var(--shadow-md));
+  border: 1px solid var(--c-border-strong);
   overflow: hidden;
 }
 

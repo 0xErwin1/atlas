@@ -315,9 +315,10 @@ async function doDelete(): Promise<void> {
   border: none;
   background: transparent;
   cursor: pointer;
-  font-size: var(--fs-xs);
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.06em;
+  letter-spacing: var(--ls-label);
+  font-family: var(--font-mono);
   text-transform: uppercase;
   color: var(--c-muted);
 }
@@ -360,7 +361,6 @@ async function doDelete(): Promise<void> {
   padding: 0 10px;
   background: var(--c-raised);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   color: var(--c-foreground);
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
@@ -396,7 +396,6 @@ async function doDelete(): Promise<void> {
   height: 38px;
   padding: 0 8px;
   border: 1px solid var(--c-border);
-  border-radius: 4px;
   font-size: var(--fs-sm);
   color: var(--c-muted);
 }
@@ -417,7 +416,6 @@ async function doDelete(): Promise<void> {
   margin-top: 4px;
   padding: 10px;
   border: 1px solid var(--c-border);
-  border-radius: 4px;
   background: var(--c-panel);
 }
 
@@ -427,7 +425,6 @@ async function doDelete(): Promise<void> {
   padding: 8px 10px;
   background: var(--c-raised);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   color: var(--c-foreground);
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
@@ -444,7 +441,6 @@ async function doDelete(): Promise<void> {
   height: 28px;
   padding: 0 12px;
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   background: var(--c-secondary);
   color: var(--c-foreground);
   font-family: var(--font-ui);

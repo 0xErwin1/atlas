@@ -134,7 +134,7 @@ const menuItems = computed(() => {
     <div
       ref="scrollEl"
       class="flex flex-1 overflow-x-auto min-w-0"
-      :style="`gap: 14px; padding: 16px; ${isMobile ? 'scroll-snap-type: x mandatory; scroll-padding-left: 16px;' : ''}`"
+      :style="`gap: 22px; padding: 18px 16px; ${isMobile ? 'scroll-snap-type: x mandatory; scroll-padding-left: 16px;' : ''}`"
       @scroll="onBoardScroll"
     >
       <KanbanColumn
@@ -161,7 +161,7 @@ const menuItems = computed(() => {
         v-if="boards.board?.id !== undefined && !boards.loading"
         type="button"
         class="atl-add-column"
-        :style="isMobile ? 'width: 84vw; max-width: 320px; flex: 0 0 84vw; scroll-snap-align: start;' : 'width: 250px; flex: 0 0 250px;'"
+        :style="isMobile ? 'width: 84vw; max-width: 320px; flex: 0 0 84vw; scroll-snap-align: start;' : 'width: 208px; flex: 0 0 208px;'"
         @click="addColumnOpen = true"
       >
         <Icon name="plus" :size="15" />
@@ -192,7 +192,6 @@ const menuItems = computed(() => {
           height: 7px;
           border: none;
           padding: 0;
-          border-radius: 9999px;
           cursor: pointer;
           background: ${i === activeColumn ? 'var(--c-primary)' : 'var(--c-border)'};
           transition: width 0.18s, background 0.18s;
@@ -266,7 +265,6 @@ const menuItems = computed(() => {
   height: 38px;
   padding: 0 12px;
   border: 1px dashed var(--c-border);
-  border-radius: var(--r-lg);
   background: transparent;
   color: var(--c-muted);
   font-family: var(--font-ui);

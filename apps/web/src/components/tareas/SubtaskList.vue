@@ -64,10 +64,10 @@ function bucket(name: string): Bucket {
 }
 
 const PILL: Record<Bucket, { fg: string; bg: string }> = {
-  done: { fg: 'var(--c-success)', bg: 'rgba(170, 217, 76, 0.13)' },
-  review: { fg: 'var(--c-primary)', bg: 'rgba(255, 180, 84, 0.13)' },
-  progress: { fg: 'var(--c-info)', bg: 'rgba(89, 194, 255, 0.13)' },
-  todo: { fg: 'var(--c-muted)', bg: 'rgba(179, 177, 173, 0.1)' },
+  done: { fg: 'var(--c-success)', bg: 'color-mix(in srgb, var(--c-success) 13%, transparent)' },
+  review: { fg: 'var(--c-primary)', bg: 'color-mix(in srgb, var(--c-warning) 13%, transparent)' },
+  progress: { fg: 'var(--c-info)', bg: 'color-mix(in srgb, var(--c-info) 13%, transparent)' },
+  todo: { fg: 'var(--c-muted)', bg: 'color-mix(in srgb, var(--c-foreground) 10%, transparent)' },
 };
 
 const doneColumnId = computed(
@@ -224,10 +224,11 @@ function attach(hit: SearchHitDto): void {
 
 <style scoped>
 .atl-sub-head {
-  font-size: var(--fs-xs);
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
+  font-family: var(--font-mono);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--ls-label);
   color: var(--c-muted);
   margin-bottom: 6px;
 }
@@ -237,12 +238,11 @@ function attach(hit: SearchHitDto): void {
   align-items: center;
   gap: 9px;
   padding: 7px 8px;
-  border-radius: var(--r-lg);
   font-size: var(--fs-base);
 }
 
 .atl-sub-row:hover {
-  background: rgba(179, 177, 173, 0.05);
+  background: color-mix(in srgb, var(--c-foreground) 5%, transparent);
 }
 
 .atl-sub-title {
@@ -283,7 +283,6 @@ function attach(hit: SearchHitDto): void {
   flex: 0 0 auto;
   height: 20px;
   padding: 0 8px 0 7px;
-  border-radius: var(--r-lg);
   font-size: 10.5px;
   font-weight: var(--fw-semibold);
   white-space: nowrap;
@@ -304,7 +303,6 @@ function attach(hit: SearchHitDto): void {
   height: 18px;
   flex: 0 0 auto;
   border: 1px dashed var(--c-muted);
-  border-radius: var(--r-sm);
   color: var(--c-muted);
 }
 
@@ -325,7 +323,6 @@ function attach(hit: SearchHitDto): void {
   width: 22px;
   height: 22px;
   border: 1px solid var(--c-border);
-  border-radius: var(--r-sm);
   background: var(--c-secondary);
   color: var(--c-muted);
   cursor: pointer;
@@ -361,7 +358,6 @@ function attach(hit: SearchHitDto): void {
   height: 22px;
   padding: 0 8px;
   border: 1px solid var(--c-border);
-  border-radius: var(--r-sm);
   background: var(--c-secondary);
   color: var(--c-muted);
   font-size: var(--fs-xs);

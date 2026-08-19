@@ -52,10 +52,11 @@ function pick(mode: TaskViewMode, close: () => void): void {
         <div
           style="
             padding: 4px 6px 6px;
-            font-size: var(--fs-xs);
+            font-size: var(--fs-label);
             font-weight: var(--fw-semibold);
-            letter-spacing: 0.06em;
-            text-transform: uppercase;
+            letter-spacing: var(--ls-label);
+            font-family: var(--font-mono);
+  text-transform: uppercase;
             color: var(--c-muted);
           "
         >
@@ -107,7 +108,6 @@ function pick(mode: TaskViewMode, close: () => void): void {
   position: relative;
   width: 56px;
   height: 38px;
-  border-radius: 3px;
   border: 1px solid var(--c-border);
   background: var(--c-background);
   overflow: hidden;
@@ -125,7 +125,7 @@ function pick(mode: TaskViewMode, close: () => void): void {
   top: 0;
   bottom: 0;
   width: 7px;
-  background: rgba(179, 177, 173, 0.18);
+  background: color-mix(in srgb, var(--c-foreground) 18%, transparent);
 }
 
 .atl-tv-thumb::after {
@@ -133,7 +133,6 @@ function pick(mode: TaskViewMode, close: () => void): void {
   position: absolute;
   background: var(--c-muted);
   opacity: 0.5;
-  border-radius: 2px;
 }
 
 .atl-tv-thumb[data-active='true']::after {
