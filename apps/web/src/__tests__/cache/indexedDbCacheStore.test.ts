@@ -5,7 +5,14 @@ import {
   runHardRefresh,
   setResourceCachePrincipal,
 } from '@/cache/cacheRuntime';
-import { evictEntries, IndexedDbCacheStore, validatePersistedEnvelope } from '@/cache/indexedDbCacheStore';
+import {
+  CACHE_ENTRY_INDEX_STORE_NAME,
+  CACHE_ENTRY_STORE_NAME,
+  createCacheEntryIndexRecord,
+  evictEntries,
+  IndexedDbCacheStore,
+  validatePersistedEnvelope,
+} from '@/cache/indexedDbCacheStore';
 import { buildCacheKey, type CacheEnvelope, createCacheEnvelope, ResourceCache } from '@/cache/resourceCache';
 
 const payloadSchema = z.object({ title: z.string() });
@@ -38,8 +45,47 @@ function keyFor(resourceId: string) {
   return key;
 }
 
+class FakeDatabaseState {
+  readonly stores = new Map<string, Map<string, unknown>>([
+    [CACHE_ENTRY_STORE_NAME, new Map<string, unknown>()],
+    [CACHE_ENTRY_INDEX_STORE_NAME, new Map<string, unknown>()],
+  ]);
+
+  constructor(public version: number) {}
+
+  get entries(): Map<string, unknown> {
+    return this.store(CACHE_ENTRY_STORE_NAME);
+  }
+
+  get entryIndex(): Map<string, unknown> {
+    return this.store(CACHE_ENTRY_INDEX_STORE_NAME);
+  }
+
+  store(name: string): Map<string, unknown> {
+    const store = this.stores.get(name);
+
+    if (!store) {
+      throw new Error(`unknown object store ${name}`);
+    }
+
+    return store;
+  }
+}
+
+function seededDatabase(envelopes: readonly CacheEnvelope<unknown>[], version = 2): FakeDatabaseState {
+  const state = new FakeDatabaseState(version);
+
+  for (const envelope of envelopes) {
+    state.entries.set(envelope.key, envelope);
+    state.entryIndex.set(envelope.key, createCacheEntryIndexRecord(envelope));
+  }
+
+  return state;
+}
+
 class FakeIndexedDbFactory {
-  readonly databases = new Map<string, { entries: Map<string, unknown>; version: number }>();
+  readonly databases = new Map<string, FakeDatabaseState>();
+  private readonly reads = new Map<string, number>();
   deleteCount = 0;
   blockedDeleteOutcome: 'error' | 'success' | null = null;
   failDeletes = false;
@@ -47,6 +93,14 @@ class FakeIndexedDbFactory {
 
   asIdbFactory(): IDBFactory {
     return this as unknown as IDBFactory;
+  }
+
+  recordRead(storeName: string, count: number): void {
+    this.reads.set(storeName, (this.reads.get(storeName) ?? 0) + count);
+  }
+
+  readCount(storeName: string): number {
+    return this.reads.get(storeName) ?? 0;
   }
 
   open(name: string, version: number) {
@@ -73,11 +127,13 @@ class FakeIndexedDbFactory {
         return;
       }
 
-      const database = existing ?? { entries: new Map<string, unknown>(), version };
+      const database = existing ?? new FakeDatabaseState(version);
+      const upgrading = !existing || existing.version < version;
+      database.version = version;
       this.databases.set(name, database);
       request.result = new FakeDatabase(database, this);
 
-      if (!existing) {
+      if (upgrading) {
         request.onupgradeneeded?.();
       }
 
@@ -126,24 +182,25 @@ class FakeIndexedDbFactory {
 
 class FakeDatabase {
   constructor(
-    private readonly database: { entries: Map<string, unknown>; version: number },
+    private readonly database: FakeDatabaseState,
     private readonly factory: FakeIndexedDbFactory,
   ) {}
 
   get objectStoreNames() {
-    return { contains: () => true };
+    return { contains: (name: string) => this.database.stores.has(name) };
   }
 
-  createObjectStore() {
+  createObjectStore(name: string) {
+    this.database.stores.set(name, new Map<string, unknown>());
     return undefined;
   }
 
-  deleteObjectStore() {
-    this.database.entries.clear();
+  deleteObjectStore(name: string) {
+    this.database.stores.delete(name);
   }
 
   transaction() {
-    return new FakeTransaction(this.database.entries, this.factory);
+    return new FakeTransaction(this.database, this.factory);
   }
 }
 
@@ -152,36 +209,45 @@ class FakeTransaction {
   oncomplete: (() => void) | null = null;
   onerror: (() => void) | null = null;
   private aborted = false;
-  private readonly changes = new Map<string, unknown | undefined>();
+  private readonly changes = new Map<string, Map<string, unknown | undefined>>();
 
   constructor(
-    private readonly entries: Map<string, unknown>,
+    private readonly database: FakeDatabaseState,
     private readonly factory: FakeIndexedDbFactory,
   ) {
     setTimeout(() => this.finish(), 0);
   }
 
-  objectStore() {
+  objectStore(name: string) {
+    const entries = this.database.store(name);
+    const changes = this.changesFor(name);
+
     return {
-      clear: () => this.changes.clear(),
+      clear: () => changes.clear(),
       delete: (key: string) => {
         if (this.factory.failDeletes) {
           this.abort();
           return;
         }
 
-        this.changes.set(key, undefined);
+        changes.set(key, undefined);
       },
-      get: (key: string) => this.request(this.entries.get(key)),
-      getAll: (_query?: IDBValidKey | IDBKeyRange | null, count?: number) =>
-        this.request([...this.entries.values()].slice(0, count)),
+      get: (key: string) => {
+        this.factory.recordRead(name, 1);
+        return this.request(entries.get(key));
+      },
+      getAll: (_query?: IDBValidKey | IDBKeyRange | null, count?: number) => {
+        const values = [...entries.values()].slice(0, count);
+        this.factory.recordRead(name, values.length);
+        return this.request(values);
+      },
       put: (value: { key: string }) => {
         if (this.factory.failWrites) {
           this.abort();
           return;
         }
 
-        this.changes.set(value.key, value);
+        changes.set(value.key, value);
       },
     };
   }
@@ -190,17 +256,27 @@ class FakeTransaction {
     this.aborted = true;
   }
 
+  private changesFor(name: string): Map<string, unknown | undefined> {
+    const pending = this.changes.get(name) ?? new Map<string, unknown | undefined>();
+    this.changes.set(name, pending);
+    return pending;
+  }
+
   private finish() {
     if (this.aborted) {
       this.onabort?.();
       return;
     }
 
-    for (const [key, value] of this.changes) {
-      if (value === undefined) {
-        this.entries.delete(key);
-      } else {
-        this.entries.set(key, value);
+    for (const [name, pending] of this.changes) {
+      const entries = this.database.store(name);
+
+      for (const [key, value] of pending) {
+        if (value === undefined) {
+          entries.delete(key);
+        } else {
+          entries.set(key, value);
+        }
       }
     }
 
@@ -239,14 +315,14 @@ describe('IndexedDbCacheStore contracts', () => {
 
     if (otherPrincipal === null) throw new Error('test cache key must be valid');
 
-    indexedDb.databases.set('scoped-delete', {
-      entries: new Map([
-        [matchingKey, entry(matchingKey, { tags: ['document:matching'] })],
-        [unrelatedKey, entry(unrelatedKey, { tags: ['document:unrelated'] })],
-        [otherPrincipal, entry(otherPrincipal, { tags: ['document:matching'] })],
+    indexedDb.databases.set(
+      'scoped-delete',
+      seededDatabase([
+        entry(matchingKey, { tags: ['document:matching'] }),
+        entry(unrelatedKey, { tags: ['document:unrelated'] }),
+        entry(otherPrincipal, { tags: ['document:matching'] }),
       ]),
-      version: 1,
-    });
+    );
     const store = new IndexedDbCacheStore({
       indexedDb: indexedDb.asIdbFactory(),
       databaseName: 'scoped-delete',
@@ -264,13 +340,13 @@ describe('IndexedDbCacheStore contracts', () => {
     const indexedDb = new FakeIndexedDbFactory();
     const keys = Array.from({ length: 501 }, (_, index) => keyFor(`bounded-${index}`));
     const unrelatedKey = keyFor('bounded-unrelated');
-    indexedDb.databases.set('bounded-delete', {
-      entries: new Map([
-        ...keys.map((key) => [key, entry(key, { tags: ['document:matching'] })] as const),
-        [unrelatedKey, entry(unrelatedKey, { tags: ['document:unrelated'] })],
+    indexedDb.databases.set(
+      'bounded-delete',
+      seededDatabase([
+        ...keys.map((key) => entry(key, { tags: ['document:matching'] })),
+        entry(unrelatedKey, { tags: ['document:unrelated'] }),
       ]),
-      version: 1,
-    });
+    );
     const store = new IndexedDbCacheStore({
       indexedDb: indexedDb.asIdbFactory(),
       databaseName: 'bounded-delete',
@@ -289,13 +365,13 @@ describe('IndexedDbCacheStore contracts', () => {
     const indexedDb = new FakeIndexedDbFactory();
     const unrelatedKeys = Array.from({ length: 500 }, (_, index) => keyFor(`unrelated-${index}`));
     const matchingKey = keyFor('after-first-page');
-    indexedDb.databases.set('beyond-page-delete', {
-      entries: new Map([
-        ...unrelatedKeys.map((key) => [key, entry(key, { tags: ['document:unrelated'] })] as const),
-        [matchingKey, entry(matchingKey, { tags: ['document:matching'] })],
+    indexedDb.databases.set(
+      'beyond-page-delete',
+      seededDatabase([
+        ...unrelatedKeys.map((key) => entry(key, { tags: ['document:unrelated'] })),
+        entry(matchingKey, { tags: ['document:matching'] }),
       ]),
-      version: 1,
-    });
+    );
     const store = new IndexedDbCacheStore({
       indexedDb: indexedDb.asIdbFactory(),
       databaseName: 'beyond-page-delete',
@@ -312,13 +388,13 @@ describe('IndexedDbCacheStore contracts', () => {
     const indexedDb = new FakeIndexedDbFactory();
     const matchingKey = keyFor('failed-delete');
     const unrelatedKey = keyFor('failed-delete-unrelated');
-    indexedDb.databases.set('failed-scope-delete', {
-      entries: new Map([
-        [matchingKey, entry(matchingKey, { tags: ['document:matching'] })],
-        [unrelatedKey, entry(unrelatedKey, { tags: ['document:unrelated'] })],
+    indexedDb.databases.set(
+      'failed-scope-delete',
+      seededDatabase([
+        entry(matchingKey, { tags: ['document:matching'] }),
+        entry(unrelatedKey, { tags: ['document:unrelated'] }),
       ]),
-      version: 1,
-    });
+    );
     indexedDb.failDeletes = true;
     const store = new IndexedDbCacheStore({
       indexedDb: indexedDb.asIdbFactory(),
@@ -355,10 +431,10 @@ describe('IndexedDbCacheStore contracts', () => {
   it('waits for corrupt-record deletion and fails closed when that transaction aborts', async () => {
     const indexedDb = new FakeIndexedDbFactory();
     const key = keyFor('corrupt');
-    indexedDb.databases.set('corruption', {
-      entries: new Map([[key, { ...entry(key), payload: { title: 12 } }]]),
-      version: 1,
-    });
+    indexedDb.databases.set(
+      'corruption',
+      seededDatabase([{ ...entry(key), payload: { title: 12 } } as CacheEnvelope<unknown>]),
+    );
     const store = new IndexedDbCacheStore({
       indexedDb: indexedDb.asIdbFactory(),
       databaseName: 'corruption',
@@ -376,10 +452,7 @@ describe('IndexedDbCacheStore contracts', () => {
   it('never returns retention-expired content and waits for its deletion to commit', async () => {
     const indexedDb = new FakeIndexedDbFactory();
     const key = keyFor('expired-read');
-    indexedDb.databases.set('retention-read', {
-      entries: new Map([[key, entry(key, { retentionExpiresAt: 9 })]]),
-      version: 1,
-    });
+    indexedDb.databases.set('retention-read', seededDatabase([entry(key, { retentionExpiresAt: 9 })]));
     const store = new IndexedDbCacheStore({
       indexedDb: indexedDb.asIdbFactory(),
       databaseName: 'retention-read',
@@ -397,10 +470,7 @@ describe('IndexedDbCacheStore contracts', () => {
 
   it('purges incompatible databases and distinguishes retention expiry from stale freshness', async () => {
     const indexedDb = new FakeIndexedDbFactory();
-    indexedDb.databases.set('versioned', {
-      entries: new Map([[keyFor('legacy'), entry(keyFor('legacy'))]]),
-      version: 2,
-    });
+    indexedDb.databases.set('versioned', seededDatabase([entry(keyFor('legacy'))], 3));
     const versionedStore = new IndexedDbCacheStore({
       indexedDb: indexedDb.asIdbFactory(),
       databaseName: 'versioned',
@@ -419,10 +489,7 @@ describe('IndexedDbCacheStore contracts', () => {
 
   it('waits for a blocked purge terminal result and retries after a terminal purge failure', async () => {
     const indexedDb = new FakeIndexedDbFactory();
-    indexedDb.databases.set('blocked-success', {
-      entries: new Map([[keyFor('legacy-success'), entry(keyFor('legacy-success'))]]),
-      version: 2,
-    });
+    indexedDb.databases.set('blocked-success', seededDatabase([entry(keyFor('legacy-success'))], 3));
     indexedDb.blockedDeleteOutcome = 'success';
     const successfulStore = new IndexedDbCacheStore({
       indexedDb: indexedDb.asIdbFactory(),
@@ -433,10 +500,7 @@ describe('IndexedDbCacheStore contracts', () => {
     await expect(successfulStore.putMany([entry(keyFor('fresh-success'))])).resolves.toBe(true);
     expect(indexedDb.databases.get('blocked-success')?.entries.has(keyFor('fresh-success'))).toBe(true);
 
-    indexedDb.databases.set('blocked-error', {
-      entries: new Map([[keyFor('legacy-error'), entry(keyFor('legacy-error'))]]),
-      version: 2,
-    });
+    indexedDb.databases.set('blocked-error', seededDatabase([entry(keyFor('legacy-error'))], 3));
     indexedDb.blockedDeleteOutcome = 'error';
     const retryingStore = new IndexedDbCacheStore({
       indexedDb: indexedDb.asIdbFactory(),
@@ -470,6 +534,64 @@ describe('IndexedDbCacheStore contracts', () => {
         },
       ).map((candidate) => candidate.key),
     ).toEqual(['expired', 'inactive', 'active-a']);
+  });
+
+  it('writes and scope-purges without materializing any stored payload', async () => {
+    const indexedDb = new FakeIndexedDbFactory();
+    const existing = Array.from({ length: 20 }, (_, index) => entry(keyFor(`existing-${index}`)));
+    indexedDb.databases.set('metadata-only', seededDatabase(existing));
+    const store = new IndexedDbCacheStore({
+      indexedDb: indexedDb.asIdbFactory(),
+      databaseName: 'metadata-only',
+    });
+
+    await expect(store.putMany([entry(keyFor('written'))])).resolves.toBe(true);
+    await expect(store.deleteScope({ principal, workspaceId })).resolves.toBe(true);
+
+    expect(indexedDb.readCount(CACHE_ENTRY_STORE_NAME)).toBe(0);
+    expect(indexedDb.readCount(CACHE_ENTRY_INDEX_STORE_NAME)).toBeGreaterThan(0);
+    expect(indexedDb.databases.get('metadata-only')?.entries.size).toBe(0);
+    expect(indexedDb.databases.get('metadata-only')?.entryIndex.size).toBe(0);
+  });
+
+  it('evicts the least recently used cold entry and its index record when over the entry budget', async () => {
+    const indexedDb = new FakeIndexedDbFactory();
+    const oldest = entry(keyFor('oldest'), { lastAccessedAt: 1 });
+    const newer = entry(keyFor('newer'), { lastAccessedAt: 5 });
+    indexedDb.databases.set('eviction', seededDatabase([oldest, newer]));
+    const store = new IndexedDbCacheStore({
+      indexedDb: indexedDb.asIdbFactory(),
+      databaseName: 'eviction',
+      limits: { maxBytes: 1_000, maxEntries: 2, maxNoteBodyBytes: 1_000, maxOtherEntryBytes: 1_000 },
+      now: () => 10,
+    });
+    const written = entry(keyFor('written'), { lastAccessedAt: 9 });
+
+    await expect(store.putMany([written])).resolves.toBe(true);
+
+    const database = indexedDb.databases.get('eviction');
+    expect(database?.entries.has(oldest.key)).toBe(false);
+    expect(database?.entryIndex.has(oldest.key)).toBe(false);
+    expect(database?.entries.has(newer.key)).toBe(true);
+    expect(database?.entries.has(written.key)).toBe(true);
+    expect(database?.entryIndex.has(written.key)).toBe(true);
+  });
+
+  it('keeps the index record in step with a read that refreshes last access', async () => {
+    const indexedDb = new FakeIndexedDbFactory();
+    const key = keyFor('touched');
+    indexedDb.databases.set('index-sync', seededDatabase([entry(key)]));
+    const store = new IndexedDbCacheStore({
+      indexedDb: indexedDb.asIdbFactory(),
+      databaseName: 'index-sync',
+      now: () => 42,
+    });
+
+    await expect(store.get(key, payloadSchema)).resolves.toMatchObject({ lastAccessedAt: 42 });
+    expect(indexedDb.databases.get('index-sync')?.entryIndex.get(key)).toMatchObject({
+      key,
+      lastAccessedAt: 42,
+    });
   });
 
   it('removes the actual hot and IndexedDB cold envelope before hard refresh reloads', async () => {

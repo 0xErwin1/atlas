@@ -8,8 +8,39 @@ import {
 } from './resourceCache';
 
 const DATABASE_NAME = 'atlas-resource-cache';
-const DATABASE_VERSION = 1;
-const STORE_NAME = 'entries';
+const DATABASE_VERSION = 2;
+
+export const CACHE_ENTRY_STORE_NAME = 'entries';
+export const CACHE_ENTRY_INDEX_STORE_NAME = 'entryIndex';
+
+const STORE_NAMES = [CACHE_ENTRY_STORE_NAME, CACHE_ENTRY_INDEX_STORE_NAME] as const;
+
+/**
+ * The payload-free projection of a cached envelope.
+ *
+ * Eviction and scoped deletion only ever need a key, its size, its recency and
+ * its tags, so they read this sidecar store instead of the envelope store. That
+ * is what keeps a single write from structured-cloning every cached payload —
+ * up to the full 50 MB budget — onto the main thread.
+ *
+ * It is written and deleted in the same transaction as the envelope it
+ * describes, so the two stores cannot drift, not even across tabs.
+ */
+export interface CacheEntryIndexRecord {
+  key: string;
+  bytes: number;
+  lastAccessedAt: number;
+  retentionExpiresAt: number;
+  tags: string[];
+}
+
+const cacheEntryIndexRecordSchema = z.object({
+  key: z.string().min(1),
+  bytes: z.number().finite().nonnegative(),
+  lastAccessedAt: z.number().finite().nonnegative(),
+  retentionExpiresAt: z.number().finite().nonnegative(),
+  tags: z.array(z.string()),
+});
 
 interface EvictionOptions {
   activeKeys: ReadonlySet<string>;
@@ -51,8 +82,9 @@ export class IndexedDbCacheStore {
     }
 
     try {
-      const transaction = database.transaction(STORE_NAME, 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
+      const transaction = database.transaction(STORE_NAMES, 'readwrite');
+      const store = transaction.objectStore(CACHE_ENTRY_STORE_NAME);
+      const entryIndex = transaction.objectStore(CACHE_ENTRY_INDEX_STORE_NAME);
       const request = store.get(key);
 
       return new Promise((resolve) => {
@@ -72,18 +104,21 @@ export class IndexedDbCacheStore {
           if (!persisted) {
             if (request.result !== undefined) {
               store.delete(key);
+              entryIndex.delete(key);
             }
             return;
           }
 
           if (persisted.retentionExpiresAt <= this.now()) {
             store.delete(key);
+            entryIndex.delete(key);
             return;
           }
 
           persisted.lastAccessedAt = this.now();
           entry = persisted;
           store.put(persisted);
+          entryIndex.put(createCacheEntryIndexRecord(persisted));
         };
         transaction.oncomplete = () => complete(entry);
         transaction.onabort = () => complete(null);
@@ -105,9 +140,10 @@ export class IndexedDbCacheStore {
       return false;
     }
 
-    const transaction = database.transaction(STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.getAll();
+    const transaction = database.transaction(STORE_NAMES, 'readwrite');
+    const store = transaction.objectStore(CACHE_ENTRY_STORE_NAME);
+    const entryIndex = transaction.objectStore(CACHE_ENTRY_INDEX_STORE_NAME);
+    const request = entryIndex.getAll();
 
     return new Promise((resolve) => {
       let settled = false;
@@ -118,38 +154,50 @@ export class IndexedDbCacheStore {
         }
       };
 
+      const drop = (key: string) => {
+        store.delete(key);
+        entryIndex.delete(key);
+      };
+
       request.onerror = () => transaction.abort();
       request.onsuccess = () => {
-        const persisted = request.result.filter(isUnknownEnvelope);
+        const persisted: CacheEntryIndexRecord[] = [];
 
         for (const candidate of request.result) {
-          const key = cacheKeyOf(candidate);
+          const record = validateIndexRecord(candidate);
 
-          if (key && !isUnknownEnvelope(candidate)) {
-            store.delete(key);
+          if (record) {
+            persisted.push(record);
+            continue;
           }
+
+          const key = cacheKeyOf(candidate);
+          if (key) drop(key);
         }
 
         const entryKeys = new Set(entries.map((entry) => entry.key));
-        const existing = persisted.filter((entry) => !entryKeys.has(entry.key));
-        const candidates = [...existing, ...entries];
+        const existing = persisted.filter((record) => !entryKeys.has(record.key));
+        const candidates = [...existing, ...entries.map(createCacheEntryIndexRecord)];
         const evicted = evictEntries(candidates, {
           activeKeys: this.activeKeys(),
           expiredKeys: new Set(
-            candidates.filter((entry) => entry.retentionExpiresAt <= this.now()).map((entry) => entry.key),
+            candidates
+              .filter((record) => record.retentionExpiresAt <= this.now())
+              .map((record) => record.key),
           ),
           maxEntries: this.limits.maxEntries,
           maxBytes: this.limits.maxBytes,
         });
 
-        for (const entry of evicted) {
-          store.delete(entry.key);
+        for (const record of evicted) {
+          drop(record.key);
         }
 
-        const evictedKeys = new Set(evicted.map((entry) => entry.key));
+        const evictedKeys = new Set(evicted.map((record) => record.key));
         for (const entry of entries) {
           if (!evictedKeys.has(entry.key)) {
             store.put(entry);
+            entryIndex.put(createCacheEntryIndexRecord(entry));
           }
         }
       };
@@ -160,9 +208,10 @@ export class IndexedDbCacheStore {
   }
 
   async deleteMany(keys: readonly string[]): Promise<boolean> {
-    return this.mutate((store) => {
+    return this.mutate((store, entryIndex) => {
       for (const key of keys) {
         store.delete(key);
+        entryIndex.delete(key);
       }
     });
   }
@@ -173,9 +222,10 @@ export class IndexedDbCacheStore {
     if (!database) return false;
 
     try {
-      const transaction = database.transaction(STORE_NAME, 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.getAll(null, this.limits.maxEntries + 1);
+      const transaction = database.transaction(STORE_NAMES, 'readwrite');
+      const store = transaction.objectStore(CACHE_ENTRY_STORE_NAME);
+      const entryIndex = transaction.objectStore(CACHE_ENTRY_INDEX_STORE_NAME);
+      const request = entryIndex.getAll(null, this.limits.maxEntries + 1);
 
       return new Promise((resolve) => {
         let settled = false;
@@ -194,7 +244,10 @@ export class IndexedDbCacheStore {
           }
 
           for (const candidate of request.result) {
-            if (matchesScope(candidate, scope)) store.delete(candidate.key);
+            if (!matchesScope(candidate, scope)) continue;
+
+            store.delete(candidate.key);
+            entryIndex.delete(candidate.key);
           }
         };
         transaction.oncomplete = () => complete(true);
@@ -207,20 +260,28 @@ export class IndexedDbCacheStore {
   }
 
   async clear(): Promise<boolean> {
-    return this.mutate((store) => store.clear());
+    return this.mutate((store, entryIndex) => {
+      store.clear();
+      entryIndex.clear();
+    });
   }
 
-  private async mutate(operation: (store: IDBObjectStore) => void): Promise<boolean> {
+  private async mutate(
+    operation: (store: IDBObjectStore, entryIndex: IDBObjectStore) => void,
+  ): Promise<boolean> {
     const database = await this.open();
 
     if (!database) {
       return false;
     }
 
-    const transaction = database.transaction(STORE_NAME, 'readwrite');
+    const transaction = database.transaction(STORE_NAMES, 'readwrite');
 
     try {
-      operation(transaction.objectStore(STORE_NAME));
+      operation(
+        transaction.objectStore(CACHE_ENTRY_STORE_NAME),
+        transaction.objectStore(CACHE_ENTRY_INDEX_STORE_NAME),
+      );
     } catch {
       transaction.abort();
       return false;
@@ -289,11 +350,13 @@ export class IndexedDbCacheStore {
       request.onupgradeneeded = () => {
         const database = request.result;
 
-        if (database.objectStoreNames.contains(STORE_NAME)) {
-          database.deleteObjectStore(STORE_NAME);
-        }
+        for (const name of STORE_NAMES) {
+          if (database.objectStoreNames.contains(name)) {
+            database.deleteObjectStore(name);
+          }
 
-        database.createObjectStore(STORE_NAME, { keyPath: 'key' });
+          database.createObjectStore(name, { keyPath: 'key' });
+        }
       };
       request.onsuccess = () => {
         const database = request.result;
@@ -328,12 +391,22 @@ export function validatePersistedEnvelope<T>(
   return parsed.success ? parsed.data : null;
 }
 
-export function evictEntries<T>(
-  entries: readonly CacheEnvelope<T>[],
+export function createCacheEntryIndexRecord(entry: CacheEnvelope<unknown>): CacheEntryIndexRecord {
+  return {
+    key: entry.key,
+    bytes: entry.bytes,
+    lastAccessedAt: entry.lastAccessedAt,
+    retentionExpiresAt: entry.retentionExpiresAt,
+    tags: entry.tags,
+  };
+}
+
+export function evictEntries<T extends CacheEntryIndexRecord>(
+  entries: readonly T[],
   options: EvictionOptions,
-): CacheEnvelope<T>[] {
+): T[] {
   const retained = [...entries];
-  const evicted: CacheEnvelope<T>[] = [];
+  const evicted: T[] = [];
 
   const ordered = [...retained].sort((left, right) => {
     const expiration = Number(options.expiredKeys.has(right.key)) - Number(options.expiredKeys.has(left.key));
@@ -380,8 +453,10 @@ function isVersionError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'VersionError';
 }
 
-function isUnknownEnvelope(candidate: unknown): candidate is CacheEnvelope<unknown> {
-  return validatePersistedEnvelope(candidate, z.unknown()) !== null;
+function validateIndexRecord(candidate: unknown): CacheEntryIndexRecord | null {
+  const parsed = cacheEntryIndexRecordSchema.safeParse(candidate);
+
+  return parsed.success ? parsed.data : null;
 }
 
 function cacheKeyOf(candidate: unknown): string | null {
@@ -394,12 +469,14 @@ function cacheKeyOf(candidate: unknown): string | null {
   return typeof key === 'string' ? key : null;
 }
 
-function matchesScope(candidate: unknown, scope: CacheDeleteScope): candidate is CacheEnvelope<unknown> {
-  if (!isUnknownEnvelope(candidate) || !candidate.key.includes(`|p=${scope.principal}|`)) return false;
-  if (scope.workspaceId !== undefined && !candidate.key.includes(`|w=${scope.workspaceId}|`)) return false;
+function matchesScope(candidate: unknown, scope: CacheDeleteScope): candidate is CacheEntryIndexRecord {
+  const record = validateIndexRecord(candidate);
+
+  if (!record?.key.includes(`|p=${scope.principal}|`)) return false;
+  if (scope.workspaceId !== undefined && !record.key.includes(`|w=${scope.workspaceId}|`)) return false;
   return scope.tagsAny === undefined || scope.tagsAny.length === 0
     ? true
-    : candidate.tags.some((tag) => scope.tagsAny?.includes(tag));
+    : record.tags.some((tag) => scope.tagsAny?.includes(tag));
 }
 
 function transactionResult(transaction: IDBTransaction): Promise<boolean> {
