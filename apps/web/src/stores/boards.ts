@@ -13,6 +13,7 @@ import { buildCacheKey, CACHE_CADENCE } from '@/cache/resourceCache';
 import { errorHint } from '@/lib/apiError';
 import { collectPaged } from '@/lib/pagination';
 import { useLabelColorsStore } from '@/stores/labelColors';
+import { deepEqual, reconcileList, reconcileListMap, reconcileValue } from '@/stores/reconcile';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 import { useWorkspaceTasksStore } from '@/stores/workspaceTasks';
@@ -567,9 +568,11 @@ export const useBoardsStore = defineStore('boards', () => {
   }
 
   function publishBoardComposite(composite: BoardComposite): void {
-    board.value = composite.board;
-    columns.value = [...composite.columns].sort((a, b) => a.position_key.localeCompare(b.position_key));
-    tasks.value = groupTasks(composite.tasks);
+    const sorted = [...composite.columns].sort((a, b) => a.position_key.localeCompare(b.position_key));
+
+    board.value = reconcileValue(board.value, composite.board);
+    columns.value = reconcileList(columns.value, sorted, (column) => column.id);
+    tasks.value = reconcileListMap(tasks.value, groupTasks(composite.tasks), (task) => task.id);
     useLabelColorsStore().recordTags(composite.tasks.flatMap((task) => task.labels ?? []));
   }
 
@@ -1304,6 +1307,10 @@ export const useBoardsStore = defineStore('boards', () => {
       }
 
       const updated: TaskSummaryDto = { ...existing, ...update };
+      if (deepEqual(existing, updated)) {
+        break;
+      }
+
       const newList = [...colTasks];
       newList[idx] = updated;
       tasks.value.set(colId, newList);
@@ -1706,10 +1713,11 @@ export const useBoardsStore = defineStore('boards', () => {
    * Used by useKanbanMove to reorder after reconcile, and in tests.
    */
   function _setColumnTasks(columnId: string, colTasks: TaskSummaryDto[]): void {
-    tasks.value.set(
-      columnId,
-      colTasks.map((t) => ({ ...t })),
-    );
+    const existing = tasks.value.get(columnId);
+    const reconciled = reconcileList(existing ?? [], colTasks, (t) => t.id);
+    if (reconciled === existing) return;
+
+    tasks.value.set(columnId, reconciled);
   }
 
   /**

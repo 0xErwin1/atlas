@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { ref, watch } from 'vue';
+import { type Ref, ref, watch } from 'vue';
 import { z } from 'zod';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
@@ -12,6 +12,7 @@ import {
 } from '@/cache/cacheRuntime';
 import { buildCacheKey, CACHE_CADENCE } from '@/cache/resourceCache';
 import { errorHint } from '@/lib/apiError';
+import { reconcileList } from '@/stores/reconcile';
 import { useTasksStore } from '@/stores/tasks';
 
 export type AssigneeDto = components['schemas']['AssigneeDto'];
@@ -212,6 +213,17 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     commentsHasMore.value = false;
   }
 
+  /** Writes one collection's entry, keeping the record's identity when it is unchanged. */
+  function setCollectionEntry<V>(
+    target: Ref<Record<CollectionName, V>>,
+    name: CollectionName,
+    value: V,
+  ): void {
+    if (target.value[name] === value) return;
+
+    target.value = { ...target.value, [name]: value };
+  }
+
   function startCollectionLoads(): void {
     collectionStatus.value = initialCollectionStatus('pending');
     collectionErrors.value = initialCollectionErrors();
@@ -284,8 +296,8 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     const publish = (data: T): void => {
       if (!isCurrent(sequence, target)) return;
       apply(data);
-      collectionStatus.value = { ...collectionStatus.value, [name]: 'ready' };
-      collectionLoaded.value = { ...collectionLoaded.value, [name]: true };
+      setCollectionEntry(collectionStatus, name, 'ready');
+      setCollectionEntry(collectionLoaded, name, true);
     };
 
     const resolve = async (pending: Promise<{ data?: T; error?: unknown }>): Promise<T> => {
@@ -328,8 +340,8 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
         if (!isCurrent(sequence, target)) return;
 
         const failure = detailLoadError(cause);
-        collectionStatus.value = { ...collectionStatus.value, [name]: 'error' };
-        collectionErrors.value = { ...collectionErrors.value, [name]: failure.message };
+        setCollectionEntry(collectionStatus, name, 'error');
+        setCollectionEntry(collectionErrors, name, failure.message);
         if (failure.status === 403 || failure.status === 404) {
           await retractDeniedDetail(target, workspaceId, taskUuid);
         }
@@ -346,14 +358,14 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     } catch (cause) {
       if (!isCurrent(sequence, target)) return;
 
-      collectionStatus.value = { ...collectionStatus.value, [name]: 'error' };
-      collectionErrors.value = {
-        ...collectionErrors.value,
-        [name]:
-          cause instanceof Error && cause.name === 'TaskDetailLoadError'
-            ? cause.message
-            : 'Failed to load task detail',
-      };
+      setCollectionEntry(collectionStatus, name, 'error');
+      setCollectionEntry(
+        collectionErrors,
+        name,
+        cause instanceof Error && cause.name === 'TaskDetailLoadError'
+          ? cause.message
+          : 'Failed to load task detail',
+      );
       const failure = detailLoadError(cause);
       if (failure.status === 403 || failure.status === 404) {
         await retractDeniedDetail(target, workspaceId, taskUuid);
@@ -395,7 +407,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
         sequence,
         target,
         (data) => {
-          assignees.value = data;
+          assignees.value = reconcileList(assignees.value, data);
         },
         workspaceId,
         taskUuid,
@@ -406,7 +418,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
         sequence,
         target,
         (data) => {
-          references.value = data;
+          references.value = reconcileList(references.value, data, (item) => item.id);
         },
         workspaceId,
         taskUuid,
@@ -417,7 +429,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
         sequence,
         target,
         (data) => {
-          backlinks.value = data.items;
+          backlinks.value = reconcileList(backlinks.value, data.items);
         },
         workspaceId,
         taskUuid,
@@ -428,7 +440,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
         sequence,
         target,
         (data) => {
-          subtasks.value = data;
+          subtasks.value = reconcileList(subtasks.value, data, (item) => item.id);
         },
         workspaceId,
         taskUuid,
@@ -439,7 +451,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
         sequence,
         target,
         (data) => {
-          checklist.value = data;
+          checklist.value = reconcileList(checklist.value, data, (item) => item.id);
         },
         workspaceId,
         taskUuid,
@@ -450,7 +462,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
         sequence,
         target,
         (data) => {
-          activity.value = data.items;
+          activity.value = reconcileList(activity.value, data.items, (item) => item.id);
         },
         workspaceId,
         taskUuid,
@@ -461,7 +473,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
         sequence,
         target,
         (data) => {
-          attachments.value = data;
+          attachments.value = reconcileList(attachments.value, data, (item) => item.id);
         },
         workspaceId,
         taskUuid,
@@ -472,7 +484,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
         sequence,
         target,
         (data) => {
-          comments.value = data.items;
+          comments.value = reconcileList(comments.value, data.items, (item) => item.id);
           commentsCursor.value = data.next_cursor ?? null;
           commentsHasMore.value = data.has_more;
         },
@@ -498,8 +510,8 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     }
 
     const cursor = commentsCursor.value;
-    collectionStatus.value = { ...collectionStatus.value, comments: 'pending' };
-    collectionErrors.value = { ...collectionErrors.value, comments: null };
+    setCollectionEntry(collectionStatus, 'comments', 'pending');
+    setCollectionEntry(collectionErrors, 'comments', null);
 
     const publish = (data: CommentPage): void => {
       if (!isOperationCurrent(operation)) return;
@@ -508,8 +520,8 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       comments.value = [...comments.value, ...data.items.filter((item) => !existing.has(item.id))];
       commentsCursor.value = data.next_cursor ?? null;
       commentsHasMore.value = data.has_more ?? false;
-      collectionStatus.value = { ...collectionStatus.value, comments: 'ready' };
-      collectionLoaded.value = { ...collectionLoaded.value, comments: true };
+      setCollectionEntry(collectionStatus, 'comments', 'ready');
+      setCollectionEntry(collectionLoaded, 'comments', true);
     };
 
     const load = async (): Promise<CommentPage> => {
@@ -558,9 +570,9 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     } catch (cause) {
       if (!isOperationCurrent(operation)) return;
 
-      collectionStatus.value = { ...collectionStatus.value, comments: 'error' };
+      setCollectionEntry(collectionStatus, 'comments', 'error');
       const failure = detailLoadError(cause);
-      collectionErrors.value = { ...collectionErrors.value, comments: failure.message };
+      setCollectionEntry(collectionErrors, 'comments', failure.message);
       if (failure.status === 403 || failure.status === 404) {
         await retractDeniedDetail(
           operation.target,
@@ -744,8 +756,8 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     const operation = beginOperation(ws, readableId);
     if (!isOperationCurrent(operation)) return;
 
-    collectionStatus.value = { ...collectionStatus.value, activity: 'pending' };
-    collectionErrors.value = { ...collectionErrors.value, activity: null };
+    setCollectionEntry(collectionStatus, 'activity', 'pending');
+    setCollectionEntry(collectionErrors, 'activity', null);
 
     try {
       const result = await wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/activity', {
@@ -755,18 +767,18 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
 
       if (result.data !== undefined) {
         activity.value = result.data.items;
-        collectionStatus.value = { ...collectionStatus.value, activity: 'ready' };
-        collectionLoaded.value = { ...collectionLoaded.value, activity: true };
+        setCollectionEntry(collectionStatus, 'activity', 'ready');
+        setCollectionEntry(collectionLoaded, 'activity', true);
         return;
       }
 
-      collectionStatus.value = { ...collectionStatus.value, activity: 'error' };
-      collectionErrors.value = { ...collectionErrors.value, activity: 'Failed to load activity' };
+      setCollectionEntry(collectionStatus, 'activity', 'error');
+      setCollectionEntry(collectionErrors, 'activity', 'Failed to load activity');
     } catch {
       if (!isOperationCurrent(operation)) return;
 
-      collectionStatus.value = { ...collectionStatus.value, activity: 'error' };
-      collectionErrors.value = { ...collectionErrors.value, activity: 'Failed to load activity' };
+      setCollectionEntry(collectionStatus, 'activity', 'error');
+      setCollectionEntry(collectionErrors, 'activity', 'Failed to load activity');
     }
   }
 

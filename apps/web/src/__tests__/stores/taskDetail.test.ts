@@ -210,6 +210,50 @@ describe('useTaskDetailStore', () => {
     cacheIsAvailable.mockReturnValue(true);
   });
 
+  it('keeps collection identity when a reload republishes the same data', async () => {
+    cacheIsAvailable.mockReturnValue(false);
+    GET.mockImplementation((path: string) =>
+      Promise.resolve(collectionResponse(collectionIndex(path), 'Stable')),
+    );
+
+    const store = useTaskDetailStore();
+    await store.loadAll('ws', 'ATL-1');
+
+    const firstAssignees = store.assignees;
+    const firstAssignee = store.assignees[0];
+    const firstLoaded = store.collectionLoaded;
+
+    await store.loadAll('ws', 'ATL-1');
+
+    expect(store.assignees).toBe(firstAssignees);
+    expect(store.assignees[0]).toBe(firstAssignee);
+    expect(store.collectionLoaded).toBe(firstLoaded);
+  });
+
+  it('replaces a collection whose contents actually changed', async () => {
+    cacheIsAvailable.mockReturnValue(false);
+    GET.mockImplementation((path: string) =>
+      Promise.resolve(collectionResponse(collectionIndex(path), 'Stable')),
+    );
+
+    const store = useTaskDetailStore();
+    await store.loadAll('ws', 'ATL-1');
+    const firstAssignees = store.assignees;
+    const firstChecklist = store.checklist;
+
+    GET.mockImplementation((path: string) => {
+      if (path.endsWith('/assignees')) {
+        return Promise.resolve({ data: [assignee('u-Changed', 'user', 'Changed')], error: undefined });
+      }
+      return Promise.resolve(collectionResponse(collectionIndex(path), 'Stable'));
+    });
+    await store.loadAll('ws', 'ATL-1');
+
+    expect(store.assignees).not.toBe(firstAssignees);
+    expect(store.assignees[0]?.assignee.display_name).toBe('Changed');
+    expect(store.checklist).toBe(firstChecklist);
+  });
+
   it('loadAll populates assignees, references, subtasks, checklist, activity and comments', async () => {
     GET.mockImplementation((path: string) => {
       if (path.endsWith('/assignees')) {

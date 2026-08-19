@@ -114,3 +114,112 @@ describe('boards store — reconcileTask', () => {
     expect(store.tasksByColumn('c1')[0]?.id).toBe('t9');
   });
 });
+
+describe('boards store — publish identity', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+  });
+
+  it('keeps every object identity when a background refresh republishes the same data', async () => {
+    const store = useBoardsStore();
+    mockBoard([col('c1', 'a'), col('c2', 'b')], [task('t1', 'c1'), task('t2', 'c2')]);
+
+    await store.loadBoardContents('ws', 'board-1');
+
+    const firstBoard = store.board;
+    const firstColumns = store.columns;
+    const firstColumn = store.columns[0];
+    const firstList = store.tasksByColumn('c1');
+    const firstTask = firstList[0];
+
+    await store.loadBoardContents('ws', 'board-1', undefined, { background: true });
+
+    expect(store.board).toBe(firstBoard);
+    expect(store.columns).toBe(firstColumns);
+    expect(store.columns[0]).toBe(firstColumn);
+    expect(store.tasksByColumn('c1')).toBe(firstList);
+    expect(store.tasksByColumn('c1')[0]).toBe(firstTask);
+  });
+
+  it('keeps the filtered-list memo valid across a no-op publish', async () => {
+    const store = useBoardsStore();
+    const ui = useUiStore();
+    ui.setTaskFilterText('Task');
+    mockBoard([col('c1', 'a')], [task('t1', 'c1'), task('t2', 'c1')]);
+
+    await store.loadBoardContents('ws', 'board-1');
+    const firstFiltered = store.filteredTasksByColumn('c1');
+
+    await store.loadBoardContents('ws', 'board-1', undefined, { background: true });
+
+    expect(store.filteredTasksByColumn('c1')).toBe(firstFiltered);
+  });
+
+  it('replaces only what changed when one task is updated', async () => {
+    const store = useBoardsStore();
+    mockBoard([col('c1', 'a'), col('c2', 'b')], [task('t1', 'c1'), task('t2', 'c2')]);
+
+    await store.loadBoardContents('ws', 'board-1');
+    const untouchedList = store.tasksByColumn('c2');
+    const untouchedTask = untouchedList[0];
+    const changingTask = store.tasksByColumn('c1')[0];
+
+    mockBoard([col('c1', 'a'), col('c2', 'b')], [task('t1', 'c1', { title: 'Renamed' }), task('t2', 'c2')]);
+    await store.loadBoardContents('ws', 'board-1', undefined, { background: true });
+
+    expect(store.tasksByColumn('c2')).toBe(untouchedList);
+    expect(store.tasksByColumn('c2')[0]).toBe(untouchedTask);
+    expect(store.tasksByColumn('c1')[0]).not.toBe(changingTask);
+    expect(store.tasksByColumn('c1')[0]?.title).toBe('Renamed');
+  });
+
+  it('drops a column that no longer has tasks and adds a new one', async () => {
+    const store = useBoardsStore();
+    mockBoard([col('c1', 'a'), col('c2', 'b')], [task('t1', 'c1')]);
+    await store.loadBoardContents('ws', 'board-1');
+
+    mockBoard([col('c1', 'a'), col('c2', 'b')], [task('t1', 'c2')]);
+    await store.loadBoardContents('ws', 'board-1', undefined, { background: true });
+
+    expect(store.tasksByColumn('c1')).toEqual([]);
+    expect(store.tasksByColumn('c2')).toHaveLength(1);
+  });
+});
+
+describe('boards store — upsertTaskById identity', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+  });
+
+  it('keeps the existing card objects when the refetch echoes what is already held', async () => {
+    const store = useBoardsStore();
+    store.board = board;
+    mockBoard([col('c1', 'a')], [task('t1', 'c1'), task('t2', 'c1')]);
+    await store.loadBoardContents('ws', 'board-1');
+
+    const firstList = store.tasksByColumn('c1');
+    const firstTask = firstList[0];
+
+    await store.upsertTaskById('ws', 't1');
+
+    expect(store.tasksByColumn('c1')).toBe(firstList);
+    expect(store.tasksByColumn('c1')[0]).toBe(firstTask);
+  });
+
+  it('replaces only the task that actually changed', async () => {
+    const store = useBoardsStore();
+    store.board = board;
+    mockBoard([col('c1', 'a')], [task('t1', 'c1'), task('t2', 'c1')]);
+    await store.loadBoardContents('ws', 'board-1');
+
+    const untouched = store.tasksByColumn('c1')[1];
+
+    mockBoard([col('c1', 'a')], [task('t1', 'c1', { title: 'Renamed' }), task('t2', 'c1')]);
+    await store.upsertTaskById('ws', 't1');
+
+    expect(store.tasksByColumn('c1')[0]?.title).toBe('Renamed');
+    expect(store.tasksByColumn('c1')[1]).toBe(untouched);
+  });
+});
