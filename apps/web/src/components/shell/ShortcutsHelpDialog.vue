@@ -100,9 +100,8 @@ useOverlayEscape(
   max-width: 100%;
   max-height: min(680px, calc(100vh - 48px));
   background: var(--c-panel);
-  border: 1px solid var(--c-border);
+  border: 1px solid var(--c-border-strong);
   border-radius: var(--r-lg);
-  box-shadow: var(--shadow-lg);
   overflow: hidden;
   font-family: var(--font-ui);
 }

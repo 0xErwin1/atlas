@@ -40,11 +40,11 @@ describe('ContextSidebar', () => {
 
     expect(handle.attributes('aria-label')).toBe('Resize sidebar');
     expect(handle.attributes('aria-orientation')).toBe('vertical');
-    expect(handle.attributes('aria-valuemin')).toBe('248');
+    expect(handle.attributes('aria-valuemin')).toBe('218');
     expect(handle.attributes('aria-valuemax')).toBe('480');
-    expect(handle.attributes('aria-valuenow')).toBe('264');
-    expect(aside.attributes('style')).toContain('width: 264px');
-    expect(aside.attributes('style')).toContain('flex: 0 0 264px');
+    expect(handle.attributes('aria-valuenow')).toBe('218');
+    expect(aside.attributes('style')).toContain('width: 218px');
+    expect(aside.attributes('style')).toContain('flex: 0 0 218px');
   });
 
   it('clamps pointer resizing and ignores unrelated pointers', async () => {
@@ -53,7 +53,7 @@ describe('ContextSidebar', () => {
     await startResize(wrapper, 1);
     window.dispatchEvent(pointerEvent('pointermove', 2, 500));
     await wrapper.vm.$nextTick();
-    expect(separator(wrapper).attributes('aria-valuenow')).toBe('264');
+    expect(separator(wrapper).attributes('aria-valuenow')).toBe('218');
 
     window.dispatchEvent(pointerEvent('pointermove', 1, 500));
     await wrapper.vm.$nextTick();
@@ -61,7 +61,7 @@ describe('ContextSidebar', () => {
 
     window.dispatchEvent(pointerEvent('pointermove', 1, -500));
     await wrapper.vm.$nextTick();
-    expect(separator(wrapper).attributes('aria-valuenow')).toBe('248');
+    expect(separator(wrapper).attributes('aria-valuenow')).toBe('218');
   });
 
   it('cleans up pointer listeners and restores body styles after pointer end, cancellation, blur, and unmount', async () => {
@@ -84,7 +84,7 @@ describe('ContextSidebar', () => {
     expect(document.body.style.userSelect).toBe('text');
 
     window.dispatchEvent(pointerEvent('pointermove', 1, 400));
-    expect(separator(wrapper).attributes('aria-valuenow')).toBe('264');
+    expect(separator(wrapper).attributes('aria-valuenow')).toBe('218');
 
     await startResize(wrapper, 3);
     window.dispatchEvent(new Event('blur'));
@@ -101,13 +101,13 @@ describe('ContextSidebar', () => {
     const handle = separator(wrapper);
 
     await handle.trigger('keydown', { key: 'ArrowRight' });
-    expect(handle.attributes('aria-valuenow')).toBe('280');
+    expect(handle.attributes('aria-valuenow')).toBe('234');
 
     await handle.trigger('keydown', { key: 'ArrowDown' });
-    expect(handle.attributes('aria-valuenow')).toBe('264');
+    expect(handle.attributes('aria-valuenow')).toBe('218');
 
     await handle.trigger('keydown', { key: 'Home' });
-    expect(handle.attributes('aria-valuenow')).toBe('248');
+    expect(handle.attributes('aria-valuenow')).toBe('218');
 
     await handle.trigger('keydown', { key: 'End' });
     expect(handle.attributes('aria-valuenow')).toBe('480');
@@ -123,6 +123,6 @@ describe('ContextSidebar', () => {
     first.unmount();
 
     const second = mountSidebar();
-    expect(separator(second).attributes('aria-valuenow')).toBe('264');
+    expect(separator(second).attributes('aria-valuenow')).toBe('218');
   });
 });

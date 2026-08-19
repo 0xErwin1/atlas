@@ -86,7 +86,7 @@ describe('NoteTreeRow drag-and-drop', () => {
     );
     await rename?.click();
 
-    expect(wrapper.get('.note-inline-edit').attributes('style')).toContain('padding-left: 28px');
+    expect(wrapper.get('.note-inline-edit').attributes('style')).toContain('padding-left: 24px');
     expect(wrapper.get('.note-inline-spacer').attributes('style')).toContain('width: 12px');
     wrapper.unmount();
   });

@@ -99,8 +99,8 @@ async function confirmHardRefresh(): Promise<void> {
   <nav
     class="flex flex-col items-center"
     style="
-      width: 48px;
-      flex: 0 0 48px;
+      width: 40px;
+      flex: 0 0 40px;
       background-color: var(--c-panel);
       border-right: 1px solid var(--c-border);
       height: 100%;
@@ -109,15 +109,15 @@ async function confirmHardRefresh(): Promise<void> {
   >
     <div
       class="flex items-center justify-center"
-      style="height: 44px; color: var(--c-foreground);"
+      style="height: 40px; color: var(--c-foreground);"
       title="Atlas"
     >
-      <Icon name="atlas-glyph" :size="22" :stroke-width="1.9" />
+      <Icon name="atlas-glyph" :size="18" :stroke-width="1.9" />
     </div>
 
     <div
       aria-hidden="true"
-      style="width: 24px; height: 1px; background: var(--c-border); margin-bottom: 6px;"
+      style="width: 20px; height: 1px; background: var(--c-border); margin-bottom: 6px;"
     />
 
     <button
@@ -126,8 +126,8 @@ async function confirmHardRefresh(): Promise<void> {
       :aria-label="sidebarToggleLabel"
       class="atl-railitem flex items-center justify-center"
       style="
-        width: 48px;
-        height: 32px;
+        width: 40px;
+        height: var(--h-header);
         border: none;
         cursor: pointer;
         background: transparent;
@@ -149,7 +149,7 @@ async function confirmHardRefresh(): Promise<void> {
         class="atl-railitem flex items-center justify-center"
         :class="{ on: isActive(item) }"
         :style="`
-          width: 48px;
+          width: 40px;
           height: 40px;
           border: none;
           cursor: pointer;
@@ -159,7 +159,7 @@ async function confirmHardRefresh(): Promise<void> {
         `"
         @click="navigate(item)"
       >
-        <Icon :name="item.icon" :size="20" :stroke-width="isActive(item) ? 2 : 1.8" />
+        <Icon :name="item.icon" :size="16" :stroke-width="isActive(item) ? 2 : 1.8" />
       </button>
     </div>
 
@@ -175,7 +175,7 @@ async function confirmHardRefresh(): Promise<void> {
         class="atl-railitem flex items-center justify-center"
         style="
           width: 40px;
-          height: 32px;
+          height: var(--h-header);
           border: none;
           cursor: pointer;
           background: transparent;
@@ -183,7 +183,7 @@ async function confirmHardRefresh(): Promise<void> {
         "
         @click="openSettings()"
       >
-        <Icon name="settings" :size="18" />
+        <Icon name="settings" :size="15" />
       </button>
 
       <Popover placement="right-end">
@@ -196,7 +196,7 @@ async function confirmHardRefresh(): Promise<void> {
             style="border: none; background: transparent; padding: 0; cursor: pointer; display: block;"
             @click="toggle"
           >
-            <Avatar :name="userInitials" :size="26" :agent="auth.apiKeyWarning" />
+            <Avatar :name="userInitials" :size="24" :agent="auth.apiKeyWarning" />
           </button>
         </template>
 
@@ -289,6 +289,6 @@ async function confirmHardRefresh(): Promise<void> {
 }
 
 .atl-account-item.danger {
-  color: var(--c-danger, #f07178);
+  color: var(--c-danger);
 }
 </style>

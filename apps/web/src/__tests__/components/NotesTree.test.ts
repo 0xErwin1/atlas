@@ -134,7 +134,7 @@ describe('NotesTree', () => {
     expect(wrapper.get('[role="treeitem"][aria-label="Board: Roadmap"]').attributes('aria-level')).toBe('1');
   });
 
-  it('keeps logical hierarchy while giving every project child a 20px visual step', async () => {
+  it('keeps logical hierarchy while giving every project child a 16px visual step', async () => {
     const wrapper = mount(NotesTree, {
       props: {
         projectName: 'Atlas',
@@ -160,16 +160,16 @@ describe('NotesTree', () => {
     const rowStyle = (label: string) =>
       wrapper.get(`[role="treeitem"][aria-label="${label}"] .atl-row`).attributes('style');
 
-    expect(rowStyle('Folder: Root')).toContain('padding-left: 28px');
+    expect(rowStyle('Folder: Root')).toContain('padding-left: 24px');
     await wrapper.get('[role="treeitem"][aria-label="Folder: Root"] .atl-row').trigger('click');
-    expect(rowStyle('Folder: Nested')).toContain('padding-left: 48px');
+    expect(rowStyle('Folder: Nested')).toContain('padding-left: 40px');
     await wrapper.get('[role="treeitem"][aria-label="Folder: Nested"] .atl-row').trigger('click');
-    expect(rowStyle('Folder: Deep')).toContain('padding-left: 68px');
-    expect(rowStyle('Folder: Orphan')).toContain('padding-left: 28px');
-    expect(rowStyle('Page: Root page')).toContain('padding-left: 28px');
-    expect(rowStyle('Board: Root board')).toContain('padding-left: 28px');
-    expect(rowStyle('Page: Nested page')).toContain('padding-left: 48px');
-    expect(rowStyle('Board: Nested board')).toContain('padding-left: 48px');
+    expect(rowStyle('Folder: Deep')).toContain('padding-left: 56px');
+    expect(rowStyle('Folder: Orphan')).toContain('padding-left: 24px');
+    expect(rowStyle('Page: Root page')).toContain('padding-left: 24px');
+    expect(rowStyle('Board: Root board')).toContain('padding-left: 24px');
+    expect(rowStyle('Page: Nested page')).toContain('padding-left: 40px');
+    expect(rowStyle('Board: Nested board')).toContain('padding-left: 40px');
     expect(wrapper.get('[role="treeitem"][aria-label="Folder: Root"]').attributes('aria-level')).toBe('1');
     expect(wrapper.get('[role="treeitem"][aria-label="Folder: Nested"]').attributes('aria-level')).toBe('2');
     expect(wrapper.get('[role="treeitem"][aria-label="Folder: Deep"]').attributes('aria-level')).toBe('3');
@@ -194,7 +194,7 @@ describe('NotesTree', () => {
     );
     await createPage?.click();
 
-    expect((wrapper.get('.notes-inline-edit').element as HTMLElement).style.paddingLeft).toBe('28px');
+    expect((wrapper.get('.notes-inline-edit').element as HTMLElement).style.paddingLeft).toBe('24px');
     expect(wrapper.get('.notes-inline-spacer').attributes('style')).toContain('width: 12px');
     wrapper.unmount();
   });

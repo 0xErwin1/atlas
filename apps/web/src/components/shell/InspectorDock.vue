@@ -37,7 +37,7 @@ const collapsed = computed(() => !ui.inspectorOpen);
         title="Expand inspector"
         aria-label="Expand inspector"
         class="atl-gbtn"
-        style="width: 28px; height: 28px; margin: 6px auto 0;"
+        style="width: 28px; height: var(--h-tab); margin: 6px auto 0;"
         @click="ui.toggleInspector()"
       >
         <Icon name="panel-right" :size="15" />
@@ -56,7 +56,7 @@ const collapsed = computed(() => !ui.inspectorOpen);
           :title="tab.label"
           :aria-label="tab.label"
           class="atl-gbtn"
-          style="width: 28px; height: 30px; color: var(--c-muted);"
+          style="width: 28px; height: var(--h-row); color: var(--c-muted);"
           @click="ui.setInspectorTab(tab.id); ui.toggleInspector()"
         >
           <Icon :name="tab.icon" :size="15" />

@@ -25,31 +25,34 @@ const placement = computed(() =>
     : { bottom: '16px', minWidth: '320px', maxWidth: '560px' },
 );
 
-const TONE_STYLES: Record<string, { bg: string; fg: string; border: string; icon: string }> = {
+interface ToneStyle {
+  bg: string;
+  fg: string;
+  border: string;
+  icon: string;
+}
+
+function tone(token: string, icon: string): ToneStyle {
+  return {
+    bg: `color-mix(in srgb, var(${token}) 12%, transparent)`,
+    fg: `var(${token})`,
+    border: `color-mix(in srgb, var(${token}) 35%, transparent)`,
+    icon,
+  };
+}
+
+const TONE_STYLES: Record<string, ToneStyle> = {
+  // The error banner keeps its own filled surface: it is the one tone that has
+  // to read at a glance over whatever is behind it.
   error: {
     bg: 'var(--c-banner-err-bg)',
     fg: 'var(--c-banner-err-fg)',
-    border: 'rgba(240, 113, 120, 0.35)',
+    border: 'color-mix(in srgb, var(--c-danger) 35%, transparent)',
     icon: 'alert-circle',
   },
-  warning: {
-    bg: 'rgba(255, 180, 84, 0.12)',
-    fg: 'var(--c-warning)',
-    border: 'rgba(255, 180, 84, 0.35)',
-    icon: 'alert-triangle',
-  },
-  info: {
-    bg: 'rgba(89, 194, 255, 0.12)',
-    fg: 'var(--c-info)',
-    border: 'rgba(89, 194, 255, 0.35)',
-    icon: 'info',
-  },
-  success: {
-    bg: 'rgba(170, 217, 76, 0.12)',
-    fg: 'var(--c-success)',
-    border: 'rgba(170, 217, 76, 0.35)',
-    icon: 'check-circle',
-  },
+  warning: tone('--c-warning', 'alert-triangle'),
+  info: tone('--c-info', 'info'),
+  success: tone('--c-success', 'check-circle'),
 };
 </script>
 
@@ -69,7 +72,6 @@ const TONE_STYLES: Record<string, { bg: string; fg: string; border: string; icon
         background-color: ${TONE_STYLES[banner.type]?.bg ?? 'var(--c-raised)'};
         border: 1px solid ${TONE_STYLES[banner.type]?.border ?? 'var(--c-border)'};
         color: ${TONE_STYLES[banner.type]?.fg ?? 'var(--c-foreground)'};
-        box-shadow: var(--shadow-lg);
         z-index: 9999;
         font-family: var(--font-mono);
         font-size: var(--fs-sm);

@@ -28,8 +28,8 @@ function openShare() {
   <div
     class="flex items-center"
     style="
-      height: 32px;
-      flex: 0 0 32px;
+      height: var(--h-toolbar);
+      flex: 0 0 var(--h-toolbar);
       gap: 10px;
       padding: 0 8px 0 12px;
       background-color: var(--c-panel);
@@ -50,13 +50,13 @@ function openShare() {
       aria-label="Share"
       @click="openShare"
     >
-      <Icon name="user" :size="14" />
+      <Icon name="user" :size="13" />
     </button>
 
     <div
       v-if="shareLabel !== '' && $slots.default"
       aria-hidden="true"
-      style="width: 1px; height: 18px; background: var(--c-border);"
+      style="width: 1px; height: 14px; background: var(--c-border);"
     />
 
     <slot />

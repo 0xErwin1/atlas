@@ -27,7 +27,7 @@ const props = withDefaults(
   {
     icon: '',
     depth: 0,
-    depthStep: 14,
+    depthStep: 16,
     active: false,
     chevron: false,
     open: false,
@@ -66,7 +66,7 @@ const iconColor = computed(() => props.iconColor ?? (props.active ? 'var(--c-pri
     :aria-current="active ? 'true' : undefined"
     :style="`
       gap: 6px;
-      height: 24px;
+      height: var(--h-row);
       padding-left: ${paddingLeft};
       padding-right: 8px;
       border: none;
@@ -74,7 +74,7 @@ const iconColor = computed(() => props.iconColor ?? (props.active ? 'var(--c-pri
       background: ${active ? 'var(--c-selection)' : 'transparent'};
       box-shadow: ${active ? 'inset 2px 0 0 var(--c-primary)' : 'none'};
       color: ${labelColor};
-      font-size: var(--fs-sm);
+      font-size: var(--fs-base);
       font-weight: ${active ? 'var(--fw-semibold)' : 'var(--fw-medium)'};
       user-select: none;
     `"
@@ -107,7 +107,7 @@ const iconColor = computed(() => props.iconColor ?? (props.active ? 'var(--c-pri
     <span
       v-if="pending"
       title="Broken link · pending note"
-      style="width: 6px; height: 6px; border-radius: 9999px; background: var(--c-danger); flex-shrink: 0;"
+      style="width: 6px; height: 6px; background: var(--c-danger); flex-shrink: 0;"
       aria-hidden="true"
     />
 
@@ -121,7 +121,7 @@ const iconColor = computed(() => props.iconColor ?? (props.active ? 'var(--c-pri
     <span
       v-if="right != null"
       class="shrink-0"
-      style="font-family: var(--font-mono); font-size: 10px; color: var(--c-muted);"
+      style="font-family: var(--font-mono); font-size: var(--fs-label); color: var(--c-muted);"
     >
       {{ right }}
     </span>

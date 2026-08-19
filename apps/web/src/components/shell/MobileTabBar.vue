@@ -61,12 +61,13 @@ function onTab(tab: Tab): void {
         border: none;
         background: transparent;
         cursor: pointer;
+        box-shadow: ${isActive(tab) ? 'inset 0 var(--bw-rule) 0 var(--c-primary)' : 'none'};
         color: ${isActive(tab) ? 'var(--c-primary)' : 'var(--c-muted)'};
       `"
       @click="onTab(tab)"
     >
-      <Icon :name="tab.icon" :size="21" :stroke-width="isActive(tab) ? 2 : 1.8" />
-      <span style="font-size: 10px; font-weight: var(--fw-medium);">{{ tab.label }}</span>
+      <Icon :name="tab.icon" :size="20" :stroke-width="isActive(tab) ? 2 : 1.8" />
+      <span style="font-size: var(--fs-label); font-weight: var(--fw-medium);">{{ tab.label }}</span>
     </button>
   </nav>
 

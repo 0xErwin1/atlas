@@ -288,7 +288,7 @@ function openBoardMenu(event: MouseEvent, board: TreeBoard): void {
 }
 
 const isRenamingFolder = computed(() => editActive.value?.kind === 'rename-folder');
-const treeDepthStep = 20;
+const treeDepthStep = 16;
 const folderPaddingLeft = computed(() => `${8 + (props.depth + 1) * treeDepthStep}px`);
 const inlinePaddingLeft = computed(() => `${8 + (props.depth + 2) * treeDepthStep}px`);
 </script>

@@ -101,7 +101,7 @@ async function confirmHardRefresh(): Promise<void> {
           background: var(--c-raised);
           border: 1px solid var(--c-border);
           font-family: var(--font-mono);
-          font-size: 14px;
+          font-size: var(--fs-lg);
           font-weight: var(--fw-bold);
           color: var(--c-primary);
           flex: 0 0 auto;
@@ -111,11 +111,11 @@ async function confirmHardRefresh(): Promise<void> {
       </div>
       <div class="min-w-0">
         <div
-          style="font-size: 10px; font-weight: var(--fw-semibold); letter-spacing: 0.06em; text-transform: uppercase; color: var(--c-muted);"
+          style="font-family: var(--font-mono); font-size: var(--fs-label); font-weight: var(--fw-semibold); letter-spacing: var(--ls-label); text-transform: uppercase; color: var(--c-muted);"
         >
           Workspace
         </div>
-        <div class="truncate" style="font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--c-foreground);">
+        <div class="truncate" style="font-size: var(--fs-label); font-weight: var(--fw-semibold); color: var(--c-foreground);">
           {{ workspaceLabel }}
         </div>
       </div>
@@ -231,6 +231,6 @@ async function confirmHardRefresh(): Promise<void> {
 }
 
 .atl-more-item.danger {
-  color: var(--c-danger, #f07178);
+  color: var(--c-danger);
 }
 </style>

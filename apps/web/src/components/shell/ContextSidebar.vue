@@ -2,8 +2,8 @@
 import { onBeforeUnmount, ref } from 'vue';
 import WorkspaceSwitcher from '@/components/shell/WorkspaceSwitcher.vue';
 
-const SIDEBAR_MIN = 248;
-const SIDEBAR_DEFAULT = 264;
+const SIDEBAR_MIN = 218;
+const SIDEBAR_DEFAULT = 218;
 const SIDEBAR_MAX = 480;
 const SIDEBAR_STEP = 16;
 
@@ -93,7 +93,7 @@ onBeforeUnmount(finishResize);
     <div
       class="flex items-center"
       style="
-        height: 36px;
+        height: var(--h-header);
         padding: 0 6px 0 6px;
         gap: 8px;
         border-bottom: 1px solid var(--c-border);

@@ -60,7 +60,7 @@ const selection = useTreeSelection();
 const uiState = useUiStateStore();
 
 const rootEl = ref<HTMLElement | null>(null);
-const treeDepthStep = 20;
+const treeDepthStep = 16;
 const rootPaddingLeft = `${8 + treeDepthStep}px`;
 
 // Navigating to a document (e.g. via a wikilink) reveals it in the tree: expand
