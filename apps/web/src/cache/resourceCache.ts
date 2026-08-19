@@ -114,15 +114,15 @@ export interface ResourceCacheRequest<T> {
   isCurrent(): boolean;
 }
 
-export interface ResourceCacheRevalidationResult {
+export interface ResourceCacheRevalidationResult<T = unknown> {
   fallback?: boolean;
   published: boolean;
-  payload?: unknown;
+  payload?: T;
 }
 
 export interface ResourceCacheLoad<T> {
   hydration: Promise<T | null>;
-  revalidation: Promise<ResourceCacheRevalidationResult>;
+  revalidation: Promise<ResourceCacheRevalidationResult<T>>;
   completion: Promise<{ published: boolean; payload?: T }>;
 }
 
@@ -130,7 +130,7 @@ export interface ResourceCacheLoader {
   hydrate<T>(
     request: Pick<ResourceCacheRequest<T>, 'key' | 'payloadSchema' | 'publish' | 'isCurrent'>,
   ): Promise<T | null>;
-  revalidate<T>(request: ResourceCacheRequest<T>): Promise<ResourceCacheRevalidationResult>;
+  revalidate<T>(request: ResourceCacheRequest<T>): Promise<ResourceCacheRevalidationResult<T>>;
   readFresh?<T>(
     request: Pick<ResourceCacheRequest<T>, 'key' | 'payloadSchema' | 'freshForMs' | 'publish' | 'isCurrent'>,
   ): T | null;
@@ -166,13 +166,23 @@ export function startHydrationAndRevalidation<T>(
 ): ResourceCacheLoad<T> {
   let authoritativeSettled = false;
   let publishedPayload: T | undefined;
+  let lastPublished: { payload: T } | undefined;
+  // Cache-then-network publishes the same key up to three times, and an
+  // unguarded republish of an unchanged value re-renders every consumer for
+  // nothing — visibly, on every navigation and every background revalidation.
+  const publishOnce = (payload: T): void => {
+    if (lastPublished !== undefined && payloadsAreEqual(lastPublished.payload, payload)) return;
+
+    lastPublished = { payload };
+    request.publish(payload);
+  };
   const publishHydration = (payload: T): void => {
-    if (!authoritativeSettled) request.publish(payload);
+    if (!authoritativeSettled) publishOnce(payload);
   };
   const publishRevalidation = (payload: T): void => {
     authoritativeSettled = true;
     publishedPayload = payload;
-    request.publish(payload);
+    publishOnce(payload);
   };
   const freshPayload =
     request.reuseFresh === true
@@ -182,7 +192,7 @@ export function startHydrationAndRevalidation<T>(
     freshPayload === null
       ? cache.hydrate({ ...request, publish: publishHydration })
       : Promise.resolve(freshPayload);
-  const revalidation: Promise<ResourceCacheRevalidationResult> =
+  const revalidation: Promise<ResourceCacheRevalidationResult<T>> =
     freshPayload === null
       ? cache.revalidate({ ...request, publish: publishRevalidation })
       : Promise.resolve({ published: true, payload: freshPayload });
@@ -190,8 +200,7 @@ export function startHydrationAndRevalidation<T>(
     try {
       const result = await revalidation;
       authoritativeSettled = true;
-      let payload =
-        result?.payload === undefined ? publishedPayload : request.payloadSchema.parse(result.payload);
+      let payload = result?.payload === undefined ? publishedPayload : result.payload;
       let published = result?.published ?? publishedPayload !== undefined;
 
       if (payload === undefined && result?.fallback === true && request.isCurrent()) {
@@ -199,7 +208,7 @@ export function startHydrationAndRevalidation<T>(
       }
 
       if (!published && payload !== undefined && request.isCurrent()) {
-        request.publish(payload);
+        publishOnce(payload);
         published = true;
       }
 
@@ -235,11 +244,8 @@ export class ResourceCache {
   >();
   private readonly clock: CacheClock;
   private readonly hot = new Map<string, CacheEnvelope<unknown>>();
-  private readonly inflight = new Map<string, Promise<ResourceCacheRevalidationResult>>();
-  private readonly inflightPublishers = new Map<
-    string,
-    { isCurrent: () => boolean; publish: (payload: unknown) => void }
-  >();
+  private readonly inflight = new Map<string, InflightRevalidation>();
+  private readonly inflightPublishers = new Map<string, InflightPublisher>();
   private readonly policy: CachePolicy;
   private readonly random: CacheRandom;
   private readonly store: ResourceCacheStore;
@@ -302,14 +308,15 @@ export class ResourceCache {
     return startHydrationAndRevalidation(this, request);
   }
 
-  revalidate<T>(request: ResourceCacheRequest<T>): Promise<ResourceCacheRevalidationResult> {
+  revalidate<T>(request: ResourceCacheRequest<T>): Promise<ResourceCacheRevalidationResult<T>> {
     if (this.isSuspended()) return Promise.resolve({ fallback: true, published: false });
     this.inflightPublishers.set(request.key, {
       isCurrent: request.isCurrent,
-      publish: (payload) => request.publish(request.payloadSchema.parse(payload)),
+      publish: (payload, validatedWith) =>
+        request.publish(reuseValidatedPayload(payload, validatedWith, request.payloadSchema)),
     });
     const existing = this.inflight.get(request.key);
-    if (existing) return existing;
+    if (existing) return adoptInflightResult(existing, request.payloadSchema);
 
     const generation = this.generation;
     const revalidation = request
@@ -332,6 +339,8 @@ export class ResourceCache {
         const tags = mergeCacheTags(request.tags, request.deriveTags?.(parsedPayload) ?? []);
         if (!isCachePayloadAllowed(parsedPayload)) throw new Error('Cache payload contains excluded data.');
         const now = this.clock.now();
+        const cached = this.hot.get(request.key);
+        const unchanged = cached !== undefined && payloadsAreEqual(cached.payload, parsedPayload);
         const entry = createCacheEnvelope({
           key: request.key,
           payloadVersion: 1,
@@ -339,7 +348,7 @@ export class ResourceCache {
           validatedAt: now,
           lastAccessedAt: now,
           retentionExpiresAt: now + request.retentionForMs,
-          bytes: JSON.stringify(payload).length,
+          bytes: unchanged ? cached.bytes : JSON.stringify(payload).length,
           stale: false,
           tags,
           payload: parsedPayload,
@@ -378,20 +387,20 @@ export class ResourceCache {
         if (!this.isSuspended() && generation === this.generation && publisher.isCurrent()) {
           const active = this.activeKeys.get(request.key);
           if (active !== undefined) active.tags = tags;
-          publisher.publish(parsedPayload);
+          publisher.publish(parsedPayload, request.payloadSchema);
           return { published: true, payload: parsedPayload };
         }
 
         return { published: false, payload: parsedPayload };
       })
       .finally(() => {
-        if (this.inflight.get(request.key) === revalidation) {
+        if (this.inflight.get(request.key)?.result === revalidation) {
           this.inflight.delete(request.key);
           this.inflightPublishers.delete(request.key);
         }
       });
 
-    this.inflight.set(request.key, revalidation);
+    this.inflight.set(request.key, { payloadSchema: request.payloadSchema, result: revalidation });
     return revalidation;
   }
 
@@ -785,6 +794,72 @@ export class ResourceCache {
   private isSuspended(): boolean {
     return this.blocked || this.pendingPurges > 0;
   }
+}
+
+interface InflightRevalidation {
+  payloadSchema: ZodType<unknown>;
+  result: Promise<ResourceCacheRevalidationResult<unknown>>;
+}
+
+interface InflightPublisher {
+  isCurrent: () => boolean;
+  publish: (payload: unknown, validatedWith: ZodType<unknown>) => void;
+}
+
+/**
+ * Structural equality for cache payloads, which are always JSON-shaped values
+ * decoded from an API response.
+ *
+ * It short-circuits on the first difference rather than allocating two full
+ * JSON strings to find one, which is what makes it cheap enough to guard every
+ * publish and every byte measurement.
+ */
+export function payloadsAreEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (left === null || right === null || typeof left !== 'object' || typeof right !== 'object') return false;
+
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+
+    return left.every((item, index) => payloadsAreEqual(item, right[index]));
+  }
+
+  const entries = Object.entries(left);
+  const other = right as Record<string, unknown>;
+
+  return (
+    entries.length === Object.keys(other).length &&
+    entries.every(([key, value]) => Object.hasOwn(other, key) && payloadsAreEqual(value, other[key]))
+  );
+}
+
+/**
+ * Validation is a deep clone, so a payload already parsed by the very schema a
+ * consumer holds is handed over untouched. A consumer that brought a different
+ * schema still crosses a real trust boundary and is validated.
+ */
+function reuseValidatedPayload<T>(payload: unknown, validatedWith: ZodType<unknown>, schema: ZodType<T>): T {
+  return validatedWith === schema ? (payload as T) : schema.parse(payload);
+}
+
+function adoptInflightResult<T>(
+  existing: InflightRevalidation,
+  payloadSchema: ZodType<T>,
+): Promise<ResourceCacheRevalidationResult<T>> {
+  if (existing.payloadSchema === payloadSchema) {
+    return existing.result as Promise<ResourceCacheRevalidationResult<T>>;
+  }
+
+  return existing.result.then((result): ResourceCacheRevalidationResult<T> => {
+    if (result.payload === undefined) {
+      return result as ResourceCacheRevalidationResult<T>;
+    }
+
+    return {
+      ...result,
+      payload: reuseValidatedPayload(result.payload, existing.payloadSchema, payloadSchema),
+    };
+  });
 }
 
 function isAuthoritativeDenial(error: unknown): boolean {

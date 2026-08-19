@@ -24,7 +24,7 @@ interface ResourceCacheRuntime {
     request: Pick<ResourceCacheRequest<T>, 'key' | 'payloadSchema' | 'publish' | 'isCurrent'>,
   ): Promise<T | null>;
   isAvailable(): boolean;
-  revalidate<T>(request: ResourceCacheRequest<T>): Promise<ResourceCacheRevalidationResult>;
+  revalidate<T>(request: ResourceCacheRequest<T>): Promise<ResourceCacheRevalidationResult<T>>;
   readFresh<T>(
     request: Pick<ResourceCacheRequest<T>, 'key' | 'payloadSchema' | 'freshForMs' | 'publish' | 'isCurrent'>,
   ): T | null;

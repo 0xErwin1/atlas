@@ -1930,4 +1930,106 @@ describe('ResourceCache runtime', () => {
     expect(hydrated).toBeNull();
     expect(publish).not.toHaveBeenCalled();
   });
+
+  it('suppresses a republish whose payload matches the one already published', async () => {
+    const store = {
+      get: vi.fn().mockResolvedValue(createEntry('key-a', 'Same', Date.now())),
+      putMany: vi.fn().mockResolvedValue(true),
+      deleteMany: vi.fn().mockResolvedValue(true),
+      clear: vi.fn().mockResolvedValue(true),
+    };
+    const cache = new ResourceCache({ store });
+    const publish = vi.fn();
+    const request = {
+      key: 'key-a',
+      payloadSchema,
+      tags: ['workspace:workspace-a'],
+      freshForMs: 30_000,
+      retentionForMs: 60_000,
+      load: vi.fn().mockResolvedValue({ title: 'Same' }),
+      publish,
+      isCurrent: () => true,
+    };
+
+    cache.allow();
+    const operation = cache.hydrateAndRevalidate(request);
+    await operation.hydration;
+
+    await expect(operation.completion).resolves.toMatchObject({
+      published: true,
+      payload: { title: 'Same' },
+    });
+    expect(publish).toHaveBeenCalledOnce();
+    expect(publish).toHaveBeenCalledWith({ title: 'Same' });
+  });
+
+  it('validates a revalidated payload exactly once', async () => {
+    const validations = vi.fn();
+    const countingSchema = z.object({ title: z.string() }).transform((value) => {
+      validations();
+      return value;
+    });
+    const store = {
+      get: vi.fn().mockResolvedValue(null),
+      putMany: vi.fn().mockResolvedValue(true),
+      deleteMany: vi.fn().mockResolvedValue(true),
+      clear: vi.fn().mockResolvedValue(true),
+    };
+    const cache = new ResourceCache({ store });
+    const request = {
+      key: 'key-validated-once',
+      payloadSchema: countingSchema,
+      tags: ['workspace:workspace-a'],
+      freshForMs: 30_000,
+      retentionForMs: 60_000,
+      load: vi.fn().mockResolvedValue({ title: 'Once' }),
+      publish: vi.fn(),
+      isCurrent: () => true,
+    };
+
+    cache.allow();
+    const operation = cache.hydrateAndRevalidate(request);
+
+    await expect(operation.completion).resolves.toMatchObject({ payload: { title: 'Once' } });
+    expect(validations).toHaveBeenCalledOnce();
+  });
+
+  it('skips byte re-measurement when a revalidation returns an unchanged payload', async () => {
+    const store = {
+      get: vi.fn().mockResolvedValue(null),
+      putMany: vi.fn().mockResolvedValue(true),
+      deleteMany: vi.fn().mockResolvedValue(true),
+      clear: vi.fn().mockResolvedValue(true),
+    };
+    const cache = new ResourceCache({ store });
+    const request = {
+      key: 'key-unchanged-bytes',
+      payloadSchema,
+      tags: ['workspace:workspace-a'],
+      freshForMs: 30_000,
+      retentionForMs: 60_000,
+      load: () => Promise.resolve({ title: 'Unchanged' }),
+      publish: vi.fn(),
+      isCurrent: () => true,
+    };
+
+    cache.allow();
+    await cache.revalidate(request);
+    const [firstEntry] = store.putMany.mock.calls[0]?.[0] as CacheEnvelope<unknown>[];
+    const measured = vi.spyOn(JSON, 'stringify');
+    let payloadMeasurements = 0;
+
+    try {
+      await cache.revalidate(request);
+      payloadMeasurements = measured.mock.calls.filter(
+        ([value]) => (value as { title?: string } | null)?.title === 'Unchanged',
+      ).length;
+    } finally {
+      measured.mockRestore();
+    }
+
+    const [secondEntry] = store.putMany.mock.calls[1]?.[0] as CacheEnvelope<unknown>[];
+    expect(payloadMeasurements).toBe(0);
+    expect(secondEntry?.bytes).toBe(firstEntry?.bytes);
+  });
 });
