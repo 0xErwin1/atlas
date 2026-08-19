@@ -6,6 +6,7 @@ import { EditorView } from '@codemirror/view';
 import { GFM } from '@lezer/markdown';
 import { afterEach, describe, expect, it } from 'vitest';
 import { livePreview } from '@/components/editor/livePreviewExtension';
+import { flushKatex } from './katexReady';
 
 const views: EditorView[] = [];
 const NOTE_ID = '019ed5fa-6df7-7201-97ce-a99abae541c1';
@@ -80,7 +81,7 @@ describe('live preview GFM compatibility matrix', () => {
     expect(gfmCompatibilityMatrix.every((entry) => entry.expectation.length > 0)).toBe(true);
   });
 
-  it('renders tables with inline GFM, wikilinks, links, and math without exposing raw cell markup', () => {
+  it('renders tables with inline GFM, wikilinks, links, and math without exposing raw cell markup', async () => {
     const doc = [
       '| Feature | Preview |',
       '| --- | --- |',
@@ -90,6 +91,8 @@ describe('live preview GFM compatibility matrix', () => {
     ].join('\n');
 
     const view = viewFor(doc);
+    await flushKatex();
+
     const table = view.dom.querySelector('table.cm-atlas-table');
 
     expect(table?.querySelectorAll('thead th')).toHaveLength(2);
@@ -146,10 +149,12 @@ describe('live preview GFM compatibility matrix', () => {
     expect(text(view)).not.toContain('[link](https://atlas.local/docs)');
   });
 
-  it('renders inline markdown inside standard link labels', () => {
+  it('renders inline markdown inside standard link labels', async () => {
     const doc = '[**bold**](https://atlas.local/bold) and [$x$](https://atlas.local/math)';
 
     const view = viewFor(doc);
+    await flushKatex();
+
     const links = [...view.dom.querySelectorAll<HTMLAnchorElement>('a.cm-atlas-link')];
 
     expect(links).toHaveLength(2);
@@ -220,7 +225,7 @@ describe('live preview GFM compatibility matrix', () => {
     expect(view.state.selection.main.anchor).toBe(0);
   });
 
-  it('renders autolinks, images, Mermaid fences, wikilinks, and adjacent math without corrupting source syntax', () => {
+  it('renders autolinks, images, Mermaid fences, wikilinks, and adjacent math without corrupting source syntax', async () => {
     const doc = [
       '<https://atlas.local/autolink>',
       '',
@@ -234,6 +239,8 @@ describe('live preview GFM compatibility matrix', () => {
     ].join('\n');
 
     const view = viewFor(doc);
+    await flushKatex();
+
     const autolink = view.dom.querySelector<HTMLAnchorElement>(
       'a.cm-atlas-link[href="https://atlas.local/autolink"]',
     );

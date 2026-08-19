@@ -5,6 +5,7 @@ import { EditorView } from '@codemirror/view';
 import { GFM } from '@lezer/markdown';
 import { afterEach, describe, expect, it } from 'vitest';
 import { livePreview } from '@/components/editor/livePreviewExtension';
+import { flushKatex } from './katexReady';
 
 const views: EditorView[] = [];
 
@@ -34,8 +35,9 @@ afterEach(() => {
 });
 
 describe('live preview math rendering', () => {
-  it('renders inactive inline math and reveals its source on the active line', () => {
+  it('renders inactive inline math and reveals its source on the active line', async () => {
     const inactive = viewFor('The area is $a^2$ units', 0, false);
+    await flushKatex();
 
     expect(inactive.dom.querySelector('.cm-atlas-math-inline .katex')).not.toBeNull();
     expect(inactive.dom.textContent).not.toContain('$a^2$');
@@ -46,9 +48,10 @@ describe('live preview math rendering', () => {
     expect(active.dom.textContent).toContain('$a^2$');
   });
 
-  it('renders inactive block math as a block widget and reveals it when active', () => {
+  it('renders inactive block math as a block widget and reveals it when active', async () => {
     const doc = ['intro', '', '$$', '\\int_0^1 x dx', '$$', '', 'after'].join('\n');
     const inactive = viewFor(doc, 0, false);
+    await flushKatex();
 
     expect(inactive.dom.querySelector('.cm-atlas-math-block .katex')).not.toBeNull();
     expect(inactive.dom.textContent).not.toContain('$$');
@@ -60,8 +63,10 @@ describe('live preview math rendering', () => {
     expect(active.dom.textContent).toContain('\\int_0^1 x dx');
   });
 
-  it('shows accessible fallbacks for invalid inline and block math without breaking the editor', () => {
+  it('shows accessible fallbacks for invalid inline and block math without breaking the editor', async () => {
     const inline = viewFor('Broken $\\frac{$ math', 0, false);
+    await flushKatex();
+
     const inlineFallback = inline.dom.querySelector('.cm-atlas-math-error');
 
     expect(inlineFallback).not.toBeNull();
@@ -71,6 +76,8 @@ describe('live preview math rendering', () => {
     expect(inline.dom.textContent).toContain('math');
 
     const block = viewFor(['Before', '', '$$', '\\frac{', '$$', '', 'After'].join('\n'), 0, false);
+    await flushKatex();
+
     const blockFallback = block.dom.querySelector('.cm-atlas-math-block.cm-atlas-math-error');
 
     expect(blockFallback).not.toBeNull();

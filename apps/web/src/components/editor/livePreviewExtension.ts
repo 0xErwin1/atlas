@@ -8,7 +8,6 @@ import {
   type ViewUpdate,
   WidgetType,
 } from '@codemirror/view';
-import katex from 'katex';
 import {
   buildDocRangeCache,
   type DocRangeCache,
@@ -59,14 +58,7 @@ export function inlineNode(token: InlineToken, ctx: InlineCtx): Node {
 
   if (token.type === 'math') {
     const span = document.createElement('span');
-    const rendered = renderMath(token.value, false);
-    span.className = rendered.invalid ? 'cm-atlas-math-inline cm-atlas-math-error' : 'cm-atlas-math-inline';
-    if (rendered.invalid) {
-      span.setAttribute('role', 'note');
-      appendMathFallback(span, token.value);
-    } else {
-      span.innerHTML = rendered.html;
-    }
+    paintMath(span, token.value, false, 'cm-atlas-math-inline');
     return span;
   }
 
@@ -522,7 +514,26 @@ function mathBody(doc: EditorState['doc'], range: MathRange): string {
   return doc.sliceString(range.bodyFrom, range.bodyTo).trim();
 }
 
-function renderMath(formula: string, displayMode: boolean): RenderedMath {
+// KaTeX is heavy, so it is imported lazily the first time a document renders math
+// and cached. The resolved module is kept alongside the promise so every later
+// widget still paints synchronously, exactly as a static import did.
+type KatexApi = {
+  renderToString: (formula: string, options: Record<string, unknown>) => string;
+};
+let katexApi: KatexApi | null = null;
+let katexPromise: Promise<KatexApi> | null = null;
+
+function loadKatex(): Promise<KatexApi> {
+  if (katexPromise === null) {
+    katexPromise = import('katex').then((m) => {
+      katexApi = m.default as unknown as KatexApi;
+      return katexApi;
+    });
+  }
+  return katexPromise;
+}
+
+function renderMath(katex: KatexApi, formula: string, displayMode: boolean): RenderedMath {
   try {
     const html = katex.renderToString(formula, {
       displayMode,
@@ -547,6 +558,49 @@ function appendMathFallback(parent: HTMLElement, formula: string): void {
   parent.appendChild(source);
 }
 
+function showMathFallback(target: HTMLElement, formula: string, baseClass: string): void {
+  target.className = `${baseClass} cm-atlas-math-error`;
+  target.setAttribute('role', 'note');
+  appendMathFallback(target, formula);
+}
+
+/**
+ * Paints `formula` into `target` immediately when KaTeX is already loaded, and
+ * otherwise fills the widget in once the lazy import resolves. The widget stays
+ * empty while loading rather than showing its source, so the first math document
+ * of a session never flashes raw TeX.
+ */
+function paintMath(target: HTMLElement, formula: string, displayMode: boolean, baseClass: string): void {
+  if (katexApi !== null) {
+    applyMath(target, katexApi, formula, displayMode, baseClass);
+    return;
+  }
+
+  target.className = baseClass;
+
+  void loadKatex()
+    .then((katex) => applyMath(target, katex, formula, displayMode, baseClass))
+    .catch(() => showMathFallback(target, formula, baseClass));
+}
+
+function applyMath(
+  target: HTMLElement,
+  katex: KatexApi,
+  formula: string,
+  displayMode: boolean,
+  baseClass: string,
+): void {
+  const rendered = renderMath(katex, formula, displayMode);
+
+  if (rendered.invalid) {
+    showMathFallback(target, formula, baseClass);
+    return;
+  }
+
+  target.className = baseClass;
+  target.innerHTML = rendered.html;
+}
+
 class MathInlineWidget extends WidgetType {
   constructor(private readonly formula: string) {
     super();
@@ -558,14 +612,7 @@ class MathInlineWidget extends WidgetType {
 
   toDOM(): HTMLElement {
     const span = document.createElement('span');
-    const rendered = renderMath(this.formula, false);
-    span.className = rendered.invalid ? 'cm-atlas-math-inline cm-atlas-math-error' : 'cm-atlas-math-inline';
-    if (rendered.invalid) {
-      span.setAttribute('role', 'note');
-      appendMathFallback(span, this.formula);
-    } else {
-      span.innerHTML = rendered.html;
-    }
+    paintMath(span, this.formula, false, 'cm-atlas-math-inline');
     return span;
   }
 
@@ -588,14 +635,7 @@ class MathBlockWidget extends WidgetType {
 
   toDOM(view: EditorView): HTMLElement {
     const wrap = document.createElement('div');
-    const rendered = renderMath(this.formula, true);
-    wrap.className = rendered.invalid ? 'cm-atlas-math-block cm-atlas-math-error' : 'cm-atlas-math-block';
-    if (rendered.invalid) {
-      wrap.setAttribute('role', 'note');
-      appendMathFallback(wrap, this.formula);
-    } else {
-      wrap.innerHTML = rendered.html;
-    }
+    paintMath(wrap, this.formula, true, 'cm-atlas-math-block');
 
     wrap.addEventListener('mousedown', (event) => {
       if (view.state.readOnly) return;
