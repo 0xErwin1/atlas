@@ -798,6 +798,15 @@ onBeforeRouteLeave(() => {
       <span class="flex-1 truncate" style="font-size: var(--fs-lg); font-weight: var(--fw-bold); color: var(--c-foreground);">
         {{ title || 'Untitled' }}
       </span>
+      <!-- The routine revalidation is suppressed here: this bar is 44px of
+           shared width with a truncating title, and "Updating…" would eat into
+           the title for a signal nobody has to act on. Offline, a failed
+           update and the retry it offers still surface. -->
+      <FreshnessStatus
+        :status="noteFreshnessStatus"
+        suppress-refreshing
+        @retry="loadDoc(noteResource.target, null)"
+      />
       <button
         type="button"
         title="Markdown source"
@@ -846,6 +855,10 @@ onBeforeRouteLeave(() => {
     </div>
 
     <EditorToolbar v-if="!isMobile" :breadcrumbs="breadcrumbs" :dirty="dirty">
+      <template #lead>
+        <FreshnessStatus :status="noteFreshnessStatus" @retry="loadDoc(noteResource.target, null)" />
+      </template>
+
       <template v-if="slug && hasDocumentContent">
         <div class="atl-seg" role="group" aria-label="Editor view mode">
           <button
@@ -963,8 +976,6 @@ onBeforeRouteLeave(() => {
           >
             {{ title || 'Untitled' }}
           </h1>
-
-          <FreshnessStatus :status="noteFreshnessStatus" @retry="loadDoc(noteResource.target, null)" />
 
           <PropertiesEditor :ws="ws" :meta="meta" @change="onMetaChange" />
 
