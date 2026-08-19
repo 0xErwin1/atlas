@@ -19,6 +19,7 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import ContextMenu from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
 import PromptDialog from '@/components/ui/PromptDialog.vue';
+import { createStatusOptionsIndex, priorityPickerOptions } from '@/composables/taskPickerOptions';
 import { useContextMenu } from '@/composables/useContextMenu';
 import { useTaskInteractions } from '@/composables/useTaskInteractions';
 import { resolveColumnSwatchId } from '@/lib/columnColor';
@@ -173,13 +174,6 @@ const deleteTarget = computed(() => {
   return props.tasks.find((t) => t.readable_id === rid) ?? null;
 });
 
-const PRIORITY_OPTIONS = [
-  { value: 'urgent', label: 'Urgent' },
-  { value: 'high', label: 'High' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'low', label: 'Low' },
-] as const;
-
 // One open picker at a time, keyed by `${kind}:${task.id}`; closed on list scroll
 // because the teleported (fixed) panel does not follow the trigger.
 const openPickerKey = ref<string | null>(null);
@@ -204,13 +198,23 @@ function closePickers(): void {
   openPickerKey.value = null;
 }
 
+// Only the boards whose columns have been fetched can offer status options; the
+// rest share this one empty list so their pickers keep a stable `options` prop.
+const NO_STATUS_OPTIONS: PickerOption[] = [];
+
+const statusOptionsIndexByBoard = computed(
+  () =>
+    new Map(
+      Object.entries(statusColumns.value).map(([boardId, columns]) => [
+        boardId,
+        createStatusOptionsIndex(columns),
+      ]),
+    ),
+);
+
 function statusOptionsFor(task: TaskSummaryDto): PickerOption[] {
-  return (statusColumns.value[task.board_id] ?? []).map((column) => ({
-    value: column.id,
-    label: column.name,
-    color: swatchById(resolveColumnSwatchId(column)).fg,
-    active: column.id === task.column_id,
-  }));
+  const index = statusOptionsIndexByBoard.value.get(task.board_id);
+  return index === undefined ? NO_STATUS_OPTIONS : index(task.column_id);
 }
 
 async function onStatusOpen(task: TaskSummaryDto, value: boolean): Promise<void> {
@@ -219,19 +223,6 @@ async function onStatusOpen(task: TaskSummaryDto, value: boolean): Promise<void>
     const columns = await boards.fetchColumnsForBoard(props.ws, task.board_id);
     statusColumns.value = { ...statusColumns.value, [task.board_id]: columns };
   }
-}
-
-function priorityOptionsFor(task: TaskSummaryDto): PickerOption[] {
-  const options: PickerOption[] = PRIORITY_OPTIONS.map((p) => ({
-    value: p.value,
-    label: p.label,
-    icon: 'flag',
-    color: PRIORITY_COLOR[p.value],
-    active: task.priority === p.value,
-  }));
-
-  options.push({ value: '', label: 'Clear', icon: 'x', muted: true });
-  return options;
 }
 
 const assigneeOptions = computed<PickerOption[]>(() =>
@@ -369,7 +360,7 @@ function onAssigneePick(task: TaskSummaryDto, value: string): void {
 
         <TaskRowPicker
           class="atl-tl-pick atl-tl-prio"
-          :options="priorityOptionsFor(task)"
+          :options="priorityPickerOptions(task.priority)"
           :open="isPickerOpen('priority', task)"
           @update:open="(v: boolean) => setPickerOpen('priority', task, v)"
           @pick="(v: string) => onPriorityPick(task, v)"

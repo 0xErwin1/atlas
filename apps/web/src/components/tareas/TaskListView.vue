@@ -19,6 +19,7 @@ import ContextMenu from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
 import PromptDialog from '@/components/ui/PromptDialog.vue';
 import { resolveDropTarget } from '@/composables/kanbanDrop';
+import { createStatusOptionsIndex, priorityPickerOptions } from '@/composables/taskPickerOptions';
 import { useContextMenu } from '@/composables/useContextMenu';
 import {
   type DragAutoScrollMoveEvent,
@@ -278,13 +279,6 @@ const menuItems = computed(() => {
 
 const deleteTarget = computed(() => ti.deleteTargetFor(ti.menuReadableId.value));
 
-const PRIORITY_OPTIONS = [
-  { value: 'urgent', label: 'Urgent' },
-  { value: 'high', label: 'High' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'low', label: 'Low' },
-] as const;
-
 // One open picker at a time, keyed by `${kind}:${task.id}`; closed on list scroll
 // because the teleported (fixed) panel does not follow the trigger.
 const openPickerKey = ref<string | null>(null);
@@ -305,44 +299,43 @@ function closePickers(): void {
   openPickerKey.value = null;
 }
 
+const statusOptionsIndex = computed(() => createStatusOptionsIndex(boards.columns));
+
 function statusOptionsFor(task: TaskSummaryDto): PickerOption[] {
-  const activeColumnId = statusColumnForTask(task)?.id ?? task.column_id;
-  return boards.columns.map((column) => ({
-    value: column.id,
-    label: column.name,
-    color: statusColor(column),
-    active: column.id === activeColumnId,
-  }));
-}
-
-function priorityOptionsFor(task: TaskSummaryDto): PickerOption[] {
-  const options: PickerOption[] = PRIORITY_OPTIONS.map((p) => ({
-    value: p.value,
-    label: p.label,
-    icon: 'flag',
-    color: PRIORITY_COLOR[p.value],
-    active: task.priority === p.value,
-  }));
-
-  options.push({ value: '', label: 'Clear', icon: 'x', muted: true });
-  return options;
+  return statusOptionsIndex.value(statusColumnForTask(task)?.id ?? task.column_id);
 }
 
 function assignedRefs(task: TaskSummaryDto): Set<string> {
   return new Set((task.assignees ?? []).map((a) => `${a.type}:${a.id}`));
 }
 
+// Assignee options do vary per row (each marks that task's own assignees), but
+// only through the set of assigned principals, and a board has far fewer distinct
+// sets than rows. Reading the members here rebuilds the whole cache whenever the
+// list changes, so a stale label can never survive.
+const assigneeOptionsByAssignment = computed(() => {
+  const base: PickerOption[] = workspace.members.map((member) => ({
+    value: `${member.principal_type}:${member.id}`,
+    label: member.display,
+    icon: member.principal_type === 'api_key' ? 'bot' : 'user',
+    active: false,
+  }));
+
+  const cache = new Map<string, PickerOption[]>();
+
+  return (assigned: Set<string>): PickerOption[] => {
+    const key = [...assigned].sort().join('|');
+    const cached = cache.get(key);
+    if (cached !== undefined) return cached;
+
+    const options = base.map((option) => ({ ...option, active: assigned.has(option.value) }));
+    cache.set(key, options);
+    return options;
+  };
+});
+
 function assigneeOptionsFor(task: TaskSummaryDto): PickerOption[] {
-  const assigned = assignedRefs(task);
-  return workspace.members.map((member) => {
-    const value = `${member.principal_type}:${member.id}`;
-    return {
-      value,
-      label: member.display,
-      icon: member.principal_type === 'api_key' ? 'bot' : 'user',
-      active: assigned.has(value),
-    };
-  });
+  return assigneeOptionsByAssignment.value(assignedRefs(task));
 }
 
 async function onAssigneeOpen(task: TaskSummaryDto, value: boolean): Promise<void> {
@@ -438,7 +431,21 @@ async function toggleExpand(task: TaskSummaryDto): Promise<void> {
 
 // The presentational row takes every derived value and option list as props; this
 // bundles them so a board task and each of its nested children bind identically.
-function rowProps(task: TaskSummaryDto) {
+interface RowProps {
+  task: TaskSummaryDto;
+  selected: boolean;
+  done: boolean;
+  ringColor: string;
+  statusName: string;
+  statusOptions: PickerOption[];
+  assigneeOptions: PickerOption[];
+  priorityOptions: PickerOption[];
+  statusOpen: boolean;
+  assigneeOpen: boolean;
+  priorityOpen: boolean;
+}
+
+function buildRowProps(task: TaskSummaryDto): RowProps {
   return {
     task,
     selected: task.readable_id === props.selectedReadableId,
@@ -447,11 +454,31 @@ function rowProps(task: TaskSummaryDto) {
     statusName: statusNameForTask(task),
     statusOptions: statusOptionsFor(task),
     assigneeOptions: assigneeOptionsFor(task),
-    priorityOptions: priorityOptionsFor(task),
+    priorityOptions: priorityPickerOptions(task.priority),
     statusOpen: isPickerOpen('status', task),
     assigneeOpen: isPickerOpen('assignee', task),
     priorityOpen: isPickerOpen('priority', task),
   };
+}
+
+function sameRowProps(a: RowProps, b: RowProps): boolean {
+  return (Object.keys(a) as (keyof RowProps)[]).every((key) => a[key] === b[key]);
+}
+
+// `rowProps` runs once per row on every list render. Handing back the previous
+// object whenever nothing changed keeps the row — and the three popovers it
+// mounts — out of the re-render, instead of paying for all of them on any list
+// change. Keyed by the task object, so a replaced task drops its entry with it.
+const rowPropsCache = new WeakMap<TaskSummaryDto, RowProps>();
+
+function rowProps(task: TaskSummaryDto): RowProps {
+  const next = buildRowProps(task);
+  const cached = rowPropsCache.get(task);
+
+  if (cached !== undefined && sameRowProps(cached, next)) return cached;
+
+  rowPropsCache.set(task, next);
+  return next;
 }
 
 // One handler map shared by every row (parent and child) so the wiring is not
