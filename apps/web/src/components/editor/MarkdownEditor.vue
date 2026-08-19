@@ -8,6 +8,7 @@ import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { GFM } from '@lezer/markdown';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Icon from '@/components/ui/Icon.vue';
+import { caretScrollDelta, createScrollableAncestorResolver } from '@/composables/caretScrolling';
 import { restoreSelection, snapshotSelection } from '@/lib/editorSelection';
 import { filesFromClipboard, filesFromDataTransfer, isImageFile } from '@/lib/fileTransfer';
 import { blockInsertion } from '@/lib/markdownInsert';
@@ -150,22 +151,21 @@ function syncWikilinkTrigger(state: EditorState): void {
     return;
   }
 
-  if (isCodeContext(state, range.head)) {
+  const line = state.doc.lineAt(range.head);
+  const textBefore = state.doc.sliceString(line.from, range.head);
+
+  // The trigger scan is a line-local string read; the code-context check walks
+  // the syntax tree. Running the cheap one first keeps the walk off the keystroke
+  // path for every line that has no open `[[` on it.
+  const trigger = detectWikilinkTrigger(textBefore, range.head);
+
+  if (trigger === null || isCodeContext(state, range.head)) {
     activeTrigger = null;
     emit('wikilink-query', null, null);
     return;
   }
 
-  const line = state.doc.lineAt(range.head);
-  const textBefore = state.doc.sliceString(line.from, range.head);
-
-  const trigger = detectWikilinkTrigger(textBefore, range.head);
   activeTrigger = trigger;
-
-  if (trigger === null) {
-    emit('wikilink-query', null, null);
-    return;
-  }
 
   // Anchor the suggestion dropdown just below the caret (viewport coords).
   const coords = view?.coordsAtPos(range.head) ?? null;
@@ -197,29 +197,20 @@ function onUpdate(docChanged: boolean, selectionChanged: boolean, state: EditorS
   }
 }
 
-/**
- * The closest ancestor that actually scrolls vertically. The editor grows with
- * its content (no inner scroll), so the surface that moves is a host container —
- * a note page, the task body — not CodeMirror's own scroller.
- */
-function nearestScrollableAncestor(el: HTMLElement): HTMLElement | null {
-  let cur = el.parentElement;
-  while (cur !== null) {
-    const overflowY = getComputedStyle(cur).overflowY;
-    if ((overflowY === 'auto' || overflowY === 'scroll') && cur.scrollHeight > cur.clientHeight) {
-      return cur;
-    }
-    cur = cur.parentElement;
-  }
-  return null;
-}
+// The editor grows with its content (no inner scroll), so the surface that moves
+// is a host container — a note page, the task body — not CodeMirror's own
+// scroller. Resolving it walks the ancestors with `getComputedStyle`, which the
+// resolver keeps out of the keystroke path.
+const resolveScroller = createScrollableAncestorResolver();
+
+const CARET_MARGIN = 28;
 
 /**
- * Keeps the caret visible while typing. When the editor grows inside an outer
- * scroll container, CodeMirror's built-in scroll-into-view acts on its own
- * (non-scrolling) scroller and never moves the host, so a caret at the bottom
- * slips below the fold. This nudges the nearest scrollable ancestor just enough
- * to bring the caret back within a margin of the viewport edges.
+ * Keeps the caret visible while typing. CodeMirror's built-in scroll-into-view
+ * acts on its own (non-scrolling) scroller and never moves the host, so a caret
+ * at the bottom slips below the fold. This nudges the nearest scrollable ancestor
+ * just enough to bring the caret back within a margin of its edges, and leaves
+ * the scroll position untouched while the caret is already inside it.
  */
 function keepCaretInView(): void {
   if (view === null || host.value === null) return;
@@ -227,17 +218,27 @@ function keepCaretInView(): void {
   const caret = view.coordsAtPos(view.state.selection.main.head);
   if (caret === null) return;
 
-  const scroller = nearestScrollableAncestor(host.value);
+  const scroller = resolveScroller(host.value);
   if (scroller === null) return;
 
-  const box = scroller.getBoundingClientRect();
-  const margin = 28;
+  const delta = caretScrollDelta(caret, scroller.getBoundingClientRect(), CARET_MARGIN);
+  if (delta === 0) return;
 
-  if (caret.bottom > box.bottom - margin) {
-    scroller.scrollTop += caret.bottom - (box.bottom - margin);
-  } else if (caret.top < box.top + margin) {
-    scroller.scrollTop -= box.top + margin - caret.top;
-  }
+  scroller.scrollTop += delta;
+}
+
+// A keystroke arrives far more often than the screen repaints, and every run of
+// `keepCaretInView` measures the caret and the scroller box. One pending frame at
+// a time collapses a burst of characters into a single measurement.
+let pendingCaretFrame: number | null = null;
+
+function scheduleKeepCaretInView(): void {
+  if (pendingCaretFrame !== null) return;
+
+  pendingCaretFrame = requestAnimationFrame(() => {
+    pendingCaretFrame = null;
+    keepCaretInView();
+  });
 }
 
 function liveExtension(reveal: boolean) {
@@ -323,7 +324,7 @@ function buildExtensions() {
         update.docChanged &&
         update.transactions.some((tr) => tr.isUserEvent('input') || tr.isUserEvent('delete'))
       ) {
-        requestAnimationFrame(keepCaretInView);
+        scheduleKeepCaretInView();
       }
     }),
   ];
@@ -532,6 +533,10 @@ watch(
 
 onBeforeUnmount(() => {
   imageUploadGeneration += 1;
+
+  if (pendingCaretFrame !== null) cancelAnimationFrame(pendingCaretFrame);
+  pendingCaretFrame = null;
+
   view?.destroy();
   view = null;
 });
