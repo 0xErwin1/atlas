@@ -1,33 +1,92 @@
+/* IBM Plex Sans ships from Google Fonts as a single variable face per subset,
+   so one declaration covers the whole 100–700 range. IBM Plex Mono is static,
+   one file per weight. Both are self-hosted: the production CSP allows no
+   external font host. Licence: src/assets/fonts/IBMPlex-OFL.txt */
+
 @font-face {
-  font-family: 'JetBrains Mono';
+  font-family: 'IBM Plex Sans';
+  font-weight: 100 700;
+  font-stretch: 100%;
+  font-style: normal;
+  font-display: swap;
+  src: url('../assets/fonts/IBMPlexSans-Variable-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-weight: 100 700;
+  font-stretch: 100%;
+  font-style: normal;
+  font-display: swap;
+  src: url('../assets/fonts/IBMPlexSans-Variable-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
   font-weight: 400;
   font-style: normal;
   font-display: swap;
-  src: url('../assets/fonts/JetBrainsMono-Regular.woff2') format('woff2');
+  src: url('../assets/fonts/IBMPlexMono-Regular-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 @font-face {
-  font-family: 'JetBrains Mono';
+  font-family: 'IBM Plex Mono';
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url('../assets/fonts/IBMPlexMono-Regular-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
   font-weight: 500;
   font-style: normal;
   font-display: swap;
-  src: url('../assets/fonts/JetBrainsMono-Medium.woff2') format('woff2');
+  src: url('../assets/fonts/IBMPlexMono-Medium-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 @font-face {
-  font-family: 'JetBrains Mono';
+  font-family: 'IBM Plex Mono';
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  src: url('../assets/fonts/IBMPlexMono-Medium-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
   font-weight: 600;
   font-style: normal;
   font-display: swap;
-  src: url('../assets/fonts/JetBrainsMono-SemiBold.woff2') format('woff2');
+  src: url('../assets/fonts/IBMPlexMono-SemiBold-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 @font-face {
-  font-family: 'JetBrains Mono';
-  font-weight: 700;
+  font-family: 'IBM Plex Mono';
+  font-weight: 600;
   font-style: normal;
   font-display: swap;
-  src: url('../assets/fonts/JetBrainsMono-Bold.woff2') format('woff2');
+  src: url('../assets/fonts/IBMPlexMono-SemiBold-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
 }
 
 :root {
@@ -37,71 +96,79 @@
   color-scheme: dark;
 
   /* Palette */
-  --c-background: #0A0E14;
-  --c-panel: #0F1419;
-  --c-raised: #151E2B;
-  --c-tiles: #111823;
-  --c-foreground: #B3B1AD;
-  --c-muted: #5C6773;
+  --c-background: #0B1015;
+  --c-panel: #0E151C;
+  --c-raised: #131C25;
+  --c-tiles: #10171F;
+  --c-foreground: #C3CDD6;
+  --c-muted: #7A8B9B;
   --c-muted-foreground: var(--c-muted);
-  --c-border: #1F2430;
-  --c-selection: #273747;
-  --c-text-selection: rgba(89, 194, 255, 0.45);
+  --c-border: #22303D;
+  /* Borders that carry meaning rather than decoration — table rules, cell
+     edges, the outline of a control that has no fill. `--c-border` sits at
+     1.4:1 against the background by design (quiet structure); anything a
+     reader has to resolve as a boundary uses this one, which clears the 3:1
+     WCAG threshold for non-text contrast on every surface. */
+  --c-border-strong: #5A6E7F;
+  --c-selection: #16222E;
+  --c-text-selection: rgba(111, 168, 220, 0.35);
 
-  /* Primary (amber) */
-  --c-primary: #FFB454;
-  --c-primary-hover: #E6A34C;
-  --c-primary-active: #CC9143;
-  --c-primary-fg: #0A0E14;
+  /* Primary (teal). Hover and active are the same hue scaled down in
+     luminance, as in the previous palette. */
+  --c-primary: #56B6C2;
+  --c-primary-hover: #4DA4AF;
+  --c-primary-active: #45929B;
+  --c-primary-fg: #0B1015;
 
   /* Semantic */
-  --c-danger: #F07178;
-  --c-success: #AAD94C;
-  --c-warning: #FFB454;
-  --c-info: #59C2FF;
-  --c-secondary: #151E2B;
-  --c-secondary-hover: #1A2535;
+  --c-danger: #E06C75;
+  --c-success: #8FBF6B;
+  --c-warning: #D6A15A;
+  --c-info: #6FA8DC;
+  --c-secondary: #131C25;
+  --c-secondary-hover: #1A2632;
 
-  /* Agent (magenta / cyan) */
-  --c-agent: #D2A6FF;
-  --c-agent-bg: rgba(210, 166, 255, 0.12);
-  --c-agent-border: rgba(210, 166, 255, 0.45);
-  --c-cyan: #95E6CB;
-  --c-chart-5: #D2A6FF;
+  /* Agent */
+  --c-agent: #A48BC8;
+  --c-agent-bg: rgba(164, 139, 200, 0.12);
+  --c-agent-border: rgba(164, 139, 200, 0.45);
+  --c-cyan: #8FC7D4;
+  --c-chart-5: #A48BC8;
 
-  /* Code syntax (Ayu Dark) — used by the editor's HighlightStyle. Scoped to
-     code tokens; markdown prose keeps its cm-atlas-* structural styling. */
-  --c-syntax-keyword: #FF8F40;
-  --c-syntax-string: #C2D94C;
-  --c-syntax-comment: #5C6773;
-  --c-syntax-number: #D2A6FF;
-  --c-syntax-function: #FFB454;
-  --c-syntax-type: #59C2FF;
-  --c-syntax-operator: #F29668;
+  /* Code syntax — used by the editor's HighlightStyle. Scoped to code tokens;
+     markdown prose keeps its cm-atlas-* structural styling. */
+  --c-syntax-keyword: #C678DD;
+  --c-syntax-string: #98C379;
+  --c-syntax-comment: #7A8B9B;
+  --c-syntax-number: #D19A66;
+  --c-syntax-function: #61AFEF;
+  --c-syntax-type: #E5C07B;
+  --c-syntax-operator: #56B6C2;
 
   /* UI chrome */
-  --c-input: rgba(179, 177, 173, 0.14);
-  --c-ring: rgba(255, 180, 84, 0.75);
+  --c-input: rgba(195, 205, 214, 0.14);
+  --c-ring: rgba(86, 182, 194, 0.75);
   --c-overlay: rgba(0, 0, 0, 0.55);
-  --c-list-active: #273747;
+  --c-list-active: #16222E;
 
   /* Banner */
-  --c-banner-err-bg: #7F1D1D;
-  --c-banner-err-fg: #FCA5A5;
+  --c-banner-err-bg: #3B1A1D;
+  --c-banner-err-fg: #F0A8AD;
 
   /* Typography */
-  --font-ui: 'JetBrains Mono', 'JetBrainsMono', monospace;
-  --font-code: 'JetBrains Mono', 'JetBrainsMono', monospace;
-  --font-sans: 'JetBrains Mono', 'JetBrainsMono', monospace;
-  --font-mono: 'JetBrains Mono', 'JetBrainsMono', monospace;
+  --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --font-code: 'IBM Plex Mono', ui-monospace, monospace;
 
   /* Font sizes */
-  --fs-xs: 12px;
-  --fs-sm: 13px;
-  --fs-base: 14px;
-  --fs-lg: 15px;
+  --fs-label: 10px;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-base: 12.5px;
+  --fs-lg: 14px;
   --fs-xl: 17px;
-  --fs-title: 19px;
+  --fs-title: 23px;
 
   /* Font weights */
   --fw-normal: 400;
@@ -114,8 +181,12 @@
   --lh-normal: 1.45;
   --lh-relaxed: 1.6;
 
-  /* Font features */
-  --font-feature-ui: 'zero', 'ss20';
+  /* Font features. IBM Plex Mono draws a slashed zero by default and IBM Plex
+     Sans needs no stylistic set, so nothing has to be forced on. */
+  --font-feature-ui: normal;
+
+  /* Tracking, for the uppercase mono section labels. */
+  --ls-label: 0.14em;
 
   /* Spacing */
   --sp-xs: 4px;
@@ -125,82 +196,87 @@
   --sp-xl: 24px;
 
   /* Heights */
-  --h-row: 28px;
-  --h-compact: 24px;
-  --h-header: 40px;
-  --h-toolbar: 32px;
-  --h-tab: 28px;
-  --h-input: 32px;
-  --h-button: 28px;
-  --h-icon-sm: 16px;
-  --h-icon-md: 20px;
-  --h-icon-lg: 24px;
+  --h-row: 22px;
+  --h-compact: 20px;
+  --h-header: 28px;
+  --h-toolbar: 26px;
+  --h-tab: 24px;
+  --h-input: 26px;
+  --h-button: 26px;
+  --h-icon-sm: 12px;
+  --h-icon-md: 15px;
+  --h-icon-lg: 20px;
 
-  /* Radii */
-  --r-sm: 2px;
-  --r-md: 2px;
-  --r-lg: 3px;
+  /* Borders */
+  --bw-rule: 3px;
+  --bw-head: 2px;
+
+  /* Radii. Blueprint draws no rounded corners; `--r-full` survives only for
+     the task status ring, which is a circle by meaning, not by decoration. */
+  --r-sm: 0;
+  --r-md: 0;
+  --r-lg: 0;
   --r-full: 9999px;
 
-  /* Shadows */
-  --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.35);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.55);
+  /* Shadows. Depth is drawn with borders, not with light. */
+  --shadow-md: none;
+  --shadow-lg: none;
 
   /* Focus ring */
-  --shadow-ring: 0 0 0 1px var(--c-ring);
+  --shadow-ring: 0 0 0 2px var(--c-primary);
 }
 
-/* Ayu Light — alternate theme. Dark is the default (:root above); light is a
-   mirror translation applied when <html data-theme="light">. Only the palette
-   and semantic colors change; typography, spacing, radii and shadows are shared. */
+/* Blueprint light — alternate theme. Dark is the default (:root above); light
+   is a mirror translation applied when <html data-theme="light">. Only the
+   palette and semantic colors change; typography, spacing, radii and shadows
+   are shared. */
 :root[data-theme='light'] {
   color-scheme: light;
-  --c-background: #FCFCFC;
-  --c-panel: #F3F4F6;
-  --c-raised: #ECEEF1;
-  --c-tiles: #F0F2F4;
-  --c-foreground: #5C6166;
-  --c-muted: #8A9199;
+  --c-background: #FFFFFF;
+  --c-panel: #F4F6F7;
+  --c-raised: #EAEEF0;
+  --c-tiles: #F9FAFB;
+  --c-foreground: #141A20;
+  --c-muted: #4A5560;
   --c-muted-foreground: var(--c-muted);
-  --c-border: #E1E4E8;
-  --c-selection: #D6E5F3;
-  --c-text-selection: rgba(57, 158, 230, 0.4);
+  --c-border: #A8B2BC;
+  --c-border-strong: #78848F;
+  --c-selection: #DCE6E8;
+  --c-text-selection: rgba(31, 92, 139, 0.25);
 
-  --c-primary: #F2922A;
-  --c-primary-hover: #E3851F;
-  --c-primary-active: #CC7619;
+  --c-primary: #0F5F6B;
+  --c-primary-hover: #0D545E;
+  --c-primary-active: #0C4A53;
   --c-primary-fg: #FFFFFF;
 
-  --c-danger: #E5484D;
-  --c-success: #6CA300;
-  --c-warning: #F2922A;
-  --c-info: #399EE6;
-  --c-secondary: #ECEEF1;
-  --c-secondary-hover: #E1E4E8;
+  --c-danger: #9B2C2C;
+  --c-success: #3F6B24;
+  --c-warning: #8A5A16;
+  --c-info: #1F5C8B;
+  --c-secondary: #EAEEF0;
+  --c-secondary-hover: #DDE3E6;
 
-  --c-agent: #A37ACC;
-  --c-agent-bg: rgba(163, 122, 204, 0.12);
-  --c-agent-border: rgba(163, 122, 204, 0.40);
-  --c-cyan: #4CBF99;
-  --c-chart-5: #A37ACC;
+  --c-agent: #5B4A80;
+  --c-agent-bg: rgba(91, 74, 128, 0.12);
+  --c-agent-border: rgba(91, 74, 128, 0.40);
+  --c-cyan: #17727F;
+  --c-chart-5: #5B4A80;
 
-  /* Code syntax (Ayu Light) */
-  --c-syntax-keyword: #FA8D3E;
-  --c-syntax-string: #86B300;
-  --c-syntax-comment: #8A9199;
-  --c-syntax-number: #A37ACC;
-  --c-syntax-function: #F2AE49;
-  --c-syntax-type: #399EE6;
-  --c-syntax-operator: #ED9366;
+  /* Code syntax (light). Darkened past the usual light-theme syntax palettes
+     so every token clears 4.5:1 on the page background. */
+  --c-syntax-keyword: #8B2A89;
+  --c-syntax-string: #3F6B24;
+  --c-syntax-comment: #4A5560;
+  --c-syntax-number: #8A5A16;
+  --c-syntax-function: #1F5C8B;
+  --c-syntax-type: #7A5210;
+  --c-syntax-operator: #0F5F6B;
 
-  --c-input: rgba(92, 97, 102, 0.06);
-  --c-ring: rgba(242, 146, 42, 0.55);
-  --c-overlay: rgba(0, 0, 0, 0.30);
-  --c-list-active: #D6E5F3;
+  --c-input: rgba(20, 26, 32, 0.06);
+  --c-ring: rgba(15, 95, 107, 0.55);
+  --c-overlay: rgba(11, 16, 21, 0.30);
+  --c-list-active: #DCE6E8;
 
-  --c-banner-err-bg: #FFE5E5;
-  --c-banner-err-fg: #B42318;
-
-  --shadow-md: 0 2px 6px rgba(92, 97, 102, 0.15);
-  --shadow-lg: 0 8px 24px rgba(92, 97, 102, 0.22);
+  --c-banner-err-bg: #F7E4E4;
+  --c-banner-err-fg: #9B2C2C;
 }

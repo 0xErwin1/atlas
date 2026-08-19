@@ -18,7 +18,7 @@ body {
   font-family: var(--font-ui);
   font-size: var(--fs-base);
   line-height: var(--lh-normal);
-  font-feature-settings: 'zero', 'ss20';
+  font-feature-settings: var(--font-feature-ui);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -47,14 +47,14 @@ select {
   box-shadow: var(--shadow-ring);
 }
 
-/* Form fields get a softer, app-styled focus instead of the generic 1px ring:
-   a crisp primary border plus a translucent halo in the same hue. */
+/* A focused field draws its own edge in the accent instead of the generic
+   ring, so the border stays a single crisp line with nothing bleeding past it. */
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
   outline: none;
   border-color: var(--c-primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-primary) 20%, transparent);
+  box-shadow: inset 0 0 0 1px var(--c-primary);
 }
 
 /* ── scrollbars ─────────────────────────────────────────────────────── */
@@ -77,7 +77,6 @@ select:focus-visible {
 
 *::-webkit-scrollbar-thumb {
   background: var(--c-selection);
-  border-radius: var(--r-full);
   border: 2px solid transparent;
   background-clip: padding-box;
 }
@@ -98,19 +97,18 @@ select:focus-visible {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 22px;
-  min-width: 22px;
+  height: var(--h-compact);
+  min-width: var(--h-compact);
   padding: 0 6px;
   background: transparent;
   border: none;
   color: var(--c-muted);
-  border-radius: var(--r-sm);
   cursor: pointer;
   font-size: var(--fs-sm);
   font-family: var(--font-ui);
 }
 .atl-gbtn:hover {
-  background: rgba(179, 177, 173, 0.06);
+  background: color-mix(in srgb, var(--c-foreground) 6%, transparent);
   color: var(--c-foreground);
 }
 .atl-gbtn.on {
@@ -124,23 +122,21 @@ select:focus-visible {
   gap: 2px;
   background: var(--c-panel);
   border: 1px solid var(--c-border);
-  border-radius: 5px;
   padding: 2px;
 }
 .atl-segb {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 27px;
-  height: 22px;
+  width: 26px;
+  height: var(--h-compact);
   border: none;
   background: transparent;
   color: var(--c-muted);
-  border-radius: var(--r-lg);
   cursor: pointer;
 }
 .atl-segb:hover {
-  background: rgba(179, 177, 173, 0.07);
+  background: color-mix(in srgb, var(--c-foreground) 7%, transparent);
   color: var(--c-foreground);
 }
 .atl-segb.on {
@@ -148,35 +144,33 @@ select:focus-visible {
   color: var(--c-foreground);
 }
 .atl-segb.accent.on {
-  background: rgba(255, 180, 84, 0.16);
+  background: color-mix(in srgb, var(--c-primary) 16%, transparent);
   color: var(--c-primary);
 }
 
 /* Comment thread controls — shared by task and document comment threads. */
 .atl-comment-btn {
-  height: 28px;
-  padding: 0 12px;
+  height: var(--h-button);
+  padding: 0 11px;
   background: transparent;
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   color: var(--c-foreground);
   font-family: var(--font-ui);
   font-size: var(--fs-sm);
   cursor: pointer;
 }
 .atl-comment-btn:hover {
-  background: rgba(179, 177, 173, 0.06);
+  background: color-mix(in srgb, var(--c-foreground) 6%, transparent);
 }
 .atl-comment-submit {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 28px;
-  padding: 0 12px;
+  height: var(--h-button);
+  padding: 0 11px;
   background: var(--c-primary);
   border: 1px solid var(--c-primary);
-  border-radius: var(--r-md);
-  color: var(--c-background);
+  color: var(--c-primary-fg);
   font-family: var(--font-ui);
   font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
@@ -190,7 +184,6 @@ select:focus-visible {
   margin-top: 16px;
   padding: 10px;
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   background: var(--c-panel);
   cursor: text;
 }
@@ -208,24 +201,24 @@ select:focus-visible {
   display: flex;
   align-items: center;
   gap: 9px;
-  height: 28px;
-  padding: 0 12px;
+  height: var(--h-row);
+  padding: 0 11px;
   cursor: pointer;
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   font-weight: var(--fw-medium);
   color: var(--c-foreground);
   user-select: none;
   white-space: nowrap;
 }
 .atl-vmi:hover {
-  background: rgba(179, 177, 173, 0.07);
+  background: color-mix(in srgb, var(--c-foreground) 7%, transparent);
 }
 .atl-vmi.on {
   background: var(--c-selection);
 }
 
 .atl-railitem:hover {
-  background: rgba(179, 177, 173, 0.05);
+  background: color-mix(in srgb, var(--c-foreground) 5%, transparent);
   color: var(--c-foreground);
 }
 .atl-railitem.on:hover {
@@ -237,7 +230,7 @@ select:focus-visible {
 }
 
 .atl-row:hover {
-  background: rgba(179, 177, 173, 0.05);
+  background: color-mix(in srgb, var(--c-foreground) 5%, transparent);
 }
 .atl-row.on:hover {
   background: var(--c-selection);
@@ -247,7 +240,7 @@ select:focus-visible {
   color: var(--c-foreground);
 }
 .atl-x:hover {
-  background: rgba(179, 177, 173, 0.1);
+  background: color-mix(in srgb, var(--c-foreground) 10%, transparent);
   color: var(--c-foreground);
 }
 .atl-itab:hover {
@@ -272,7 +265,7 @@ select:focus-visible {
   transition: border-color 0.12s;
 }
 .atl-card:hover {
-  border-color: rgba(179, 177, 173, 0.25);
+  border-color: var(--c-border-strong);
 }
 
 @keyframes atl-pulse {
@@ -292,23 +285,23 @@ select:focus-visible {
   display: flex;
   align-items: center;
   gap: 9px;
-  height: 28px;
+  height: var(--h-row);
   padding: 0 10px;
   cursor: pointer;
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
   color: var(--c-foreground);
   user-select: none;
   white-space: nowrap;
 }
 .atl-mi:hover {
-  background: rgba(179, 177, 173, 0.07);
+  background: color-mix(in srgb, var(--c-foreground) 7%, transparent);
 }
 .atl-mi.danger {
   color: var(--c-danger);
 }
 .atl-mi.danger:hover {
-  background: rgba(240, 113, 120, 0.12);
+  background: color-mix(in srgb, var(--c-danger) 12%, transparent);
 }
 .atl-mi.disabled {
   color: var(--c-muted);
