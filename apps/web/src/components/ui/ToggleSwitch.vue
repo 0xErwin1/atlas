@@ -67,7 +67,6 @@ function onClick(current: boolean, disabled: boolean): void {
   margin-top: 1px;
   padding: 0;
   border: 1px solid var(--c-border);
-  border-radius: 9999px;
   background: var(--c-input);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
@@ -89,7 +88,6 @@ function onClick(current: boolean, disabled: boolean): void {
   left: 2px;
   width: 14px;
   height: 14px;
-  border-radius: 9999px;
   background: var(--c-foreground);
   transform: translateY(-50%);
   transition: left 0.15s;
@@ -105,13 +103,13 @@ function onClick(current: boolean, disabled: boolean): void {
 }
 
 .atl-switch-label {
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   font-weight: var(--fw-semibold);
   color: var(--c-foreground);
 }
 
 .atl-switch-help {
-  font-size: 11.5px;
+  font-size: var(--fs-sm);
   color: var(--c-muted);
   line-height: 1.45;
   margin-top: 2px;

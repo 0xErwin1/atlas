@@ -9,9 +9,10 @@ defineProps<{
   <div
     class="select-none"
     :style="`
-      font-size: 10px;
+      font-family: var(--font-mono);
+      font-size: var(--fs-label);
       font-weight: var(--fw-semibold);
-      letter-spacing: 0.06em;
+      letter-spacing: var(--ls-label);
       text-transform: uppercase;
       color: var(--c-muted);
       padding: ${flush ? '10px 0 4px' : '10px 10px 4px'};

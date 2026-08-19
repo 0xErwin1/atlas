@@ -105,9 +105,10 @@ function onInput(event: Event) {
 
 .atl-field-label {
   display: block;
-  font-size: 10px;
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.06em;
+  letter-spacing: var(--ls-label);
+  font-family: var(--font-mono);
   text-transform: uppercase;
   color: var(--c-muted);
   margin-bottom: 5px;
@@ -159,13 +160,13 @@ function onInput(event: Event) {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--c-danger);
   margin-top: 5px;
 }
 
 .atl-field-helper {
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--c-muted);
   margin-top: 5px;
 }

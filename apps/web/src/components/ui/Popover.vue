@@ -275,8 +275,7 @@ const PLACEMENT: Record<Placement, Record<string, string>> = {
 
 .atl-popover-panel.surface {
   background: var(--c-raised);
-  border: 1px solid var(--c-border);
+  border: 1px solid var(--c-border-strong);
   border-radius: var(--r-md);
-  box-shadow: var(--shadow-md);
 }
 </style>

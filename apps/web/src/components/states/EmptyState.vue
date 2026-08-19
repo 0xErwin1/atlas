@@ -40,7 +40,7 @@ withDefaults(
     v-else-if="framed"
     data-state="empty"
     class="flex flex-col"
-    style="width: 100%; height: 100%; background-color: var(--c-background); border: 1px solid var(--c-border); border-radius: 3px; overflow: hidden;"
+    style="width: 100%; height: 100%; background-color: var(--c-background); border: 1px solid var(--c-border); overflow: hidden;"
   >
     <div
       class="flex items-center"
@@ -67,7 +67,7 @@ withDefaults(
       style="flex: 1; gap: 10px; padding: 24px; min-height: 0;"
     >
       <Icon :name="icon" :size="26" :style="{ color: 'var(--c-muted)' }" />
-      <div style="font-size: 17px; font-weight: var(--fw-bold); color: var(--c-foreground);">
+      <div style="font-size: var(--fs-xl); font-weight: var(--fw-bold); color: var(--c-foreground);">
         {{ title }}
       </div>
       <div v-if="hint" style="font-size: var(--fs-base); color: var(--c-muted);">
@@ -86,7 +86,7 @@ withDefaults(
     style="gap: 10px; padding: 24px; flex: 1; min-height: 0;"
   >
     <Icon :name="icon" :size="26" :style="{ color: 'var(--c-muted)' }" />
-    <div style="font-size: 17px; font-weight: var(--fw-bold); color: var(--c-foreground);">
+    <div style="font-size: var(--fs-xl); font-weight: var(--fw-bold); color: var(--c-foreground);">
       {{ title }}
     </div>
     <div
@@ -114,13 +114,11 @@ withDefaults(
   text-align: center;
   padding: 54px 20px;
   border: 1px dashed var(--c-border);
-  border-radius: 4px;
 }
 
 .atl-empty-compact-icon {
   width: 44px;
   height: 44px;
-  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -131,13 +129,13 @@ withDefaults(
 }
 
 .atl-empty-compact-title {
-  font-size: 14px;
+  font-size: var(--fs-lg);
   font-weight: var(--fw-semibold);
   color: var(--c-foreground);
 }
 
 .atl-empty-compact-hint {
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   color: var(--c-muted);
   margin-top: 5px;
   max-width: 320px;

@@ -42,7 +42,6 @@ defineEmits<{
   align-items: center;
   background: var(--c-input);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-lg);
   padding: 2px;
   gap: 2px;
 }
@@ -51,13 +50,12 @@ defineEmits<{
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 26px;
-  padding: 0 13px;
+  height: var(--h-button);
+  padding: 0 11px;
   border: none;
-  border-radius: var(--r-sm);
   background: transparent;
   cursor: pointer;
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   font-weight: var(--fw-medium);
   color: var(--c-muted);
 }

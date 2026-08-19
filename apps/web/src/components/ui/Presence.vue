@@ -17,7 +17,7 @@
       background: 'var(--c-agent-bg)',
       border: '1px solid var(--c-agent-border)',
       fontFamily: 'var(--font-mono)',
-      fontSize: '11px',
+      fontSize: 'var(--fs-xs)',
       fontWeight: 'var(--fw-medium)',
       whiteSpace: 'nowrap',
     }"

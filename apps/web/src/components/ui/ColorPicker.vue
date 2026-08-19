@@ -175,7 +175,7 @@ function onNativeInput(event: Event): void {
   border: 1px solid var(--c-border);
   border-radius: var(--r-sm);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--c-foreground);
   outline: none;
 }

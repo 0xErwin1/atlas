@@ -95,9 +95,7 @@ useOverlayEscape(
         left,
         width: `${width}px`,
         background: 'var(--c-raised)',
-        border: '1px solid var(--c-border)',
-        borderRadius: '4px',
-        boxShadow: 'var(--shadow-md)',
+        border: '1px solid var(--c-border-strong)',
         padding: '4px 0',
         fontFamily: 'var(--font-ui)',
         zIndex: 200,
@@ -111,7 +109,7 @@ useOverlayEscape(
         />
         <div
           v-else-if="item.header"
-          style="font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--c-muted); padding: 6px 10px 4px;"
+          style="font-family: var(--font-mono); font-size: var(--fs-label); font-weight: var(--fw-semibold); letter-spacing: var(--ls-label); text-transform: uppercase; color: var(--c-muted); padding: 6px 10px 4px;"
         >
           {{ item.label }}
         </div>
@@ -152,8 +150,6 @@ useOverlayEscape(
               overflowY: 'auto',
               background: 'var(--c-raised)',
               border: '1px solid var(--c-border)',
-              borderRadius: '4px',
-              boxShadow: 'var(--shadow-md)',
               padding: '4px 0',
               zIndex: 201,
             }"
@@ -166,7 +162,7 @@ useOverlayEscape(
               />
               <div
                 v-else-if="child.header"
-                style="font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--c-muted); padding: 6px 10px 4px;"
+                style="font-family: var(--font-mono); font-size: var(--fs-label); font-weight: var(--fw-semibold); letter-spacing: var(--ls-label); text-transform: uppercase; color: var(--c-muted); padding: 6px 10px 4px;"
               >
                 {{ child.label }}
               </div>
@@ -210,7 +206,7 @@ useOverlayEscape(
             <span
               v-for="(k, ki) in item.kbd"
               :key="ki"
-              style="min-width: 16px; padding: 0 4px; text-align: center; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-panel); color: var(--c-muted); font-family: var(--font-mono); font-size: 10px; line-height: 16px;"
+              style="min-width: 16px; padding: 0 4px; text-align: center; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-panel); color: var(--c-muted); font-family: var(--font-mono); font-size: var(--fs-label); line-height: 16px;"
             >
               {{ k }}
             </span>

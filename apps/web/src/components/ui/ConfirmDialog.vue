@@ -60,22 +60,22 @@ interface ToneStyle {
 const TONE: Record<ConfirmTone, ToneStyle> = {
   danger: {
     accent: 'var(--c-danger)',
-    wash: 'rgba(240,113,120,0.12)',
-    border: 'rgba(240,113,120,0.45)',
+    wash: 'color-mix(in srgb, var(--c-danger) 12%, transparent)',
+    border: 'color-mix(in srgb, var(--c-danger) 45%, transparent)',
     variant: 'danger',
     icon: 'trash-2',
   },
   warning: {
     accent: 'var(--c-primary)',
-    wash: 'rgba(255,180,84,0.12)',
-    border: 'rgba(255,180,84,0.45)',
+    wash: 'color-mix(in srgb, var(--c-warning) 12%, transparent)',
+    border: 'color-mix(in srgb, var(--c-warning) 45%, transparent)',
     variant: 'primary',
     icon: 'triangle-alert',
   },
   primary: {
     accent: 'var(--c-info)',
-    wash: 'rgba(89,194,255,0.12)',
-    border: 'rgba(89,194,255,0.45)',
+    wash: 'color-mix(in srgb, var(--c-info) 12%, transparent)',
+    border: 'color-mix(in srgb, var(--c-info) 45%, transparent)',
     variant: 'primary',
     icon: 'info',
   },
@@ -107,7 +107,7 @@ useOverlayEscape(
     <div
       v-if="open"
       class="fixed inset-0 flex items-center justify-center"
-      style="background: rgba(7, 10, 15, 0.66); z-index: 300; padding: 24px;"
+      style="background: var(--c-overlay); z-index: 300; padding: 24px;"
       @mousedown.self="emit('cancel')"
     >
       <div
@@ -117,9 +117,7 @@ useOverlayEscape(
           width: `${width}px`,
           maxWidth: '100%',
           background: 'var(--c-raised)',
-          border: '1px solid var(--c-border)',
-          borderRadius: '4px',
-          boxShadow: 'var(--shadow-lg)',
+          border: '1px solid var(--c-border-strong)',
           overflow: 'hidden',
           fontFamily: 'var(--font-ui)',
         }"
@@ -145,7 +143,7 @@ useOverlayEscape(
             </h2>
             <p
               v-if="message"
-              style="font-size: 12.5px; line-height: 1.5; color: var(--c-muted); margin: 5px 0 0;"
+              style="font-size: var(--fs-base); line-height: 1.5; color: var(--c-muted); margin: 5px 0 0;"
             >
               {{ message }}
             </p>
@@ -168,7 +166,7 @@ useOverlayEscape(
           v-if="detail"
           data-test="detail"
           class="flex items-center"
-          style="margin: 12px 16px 0; padding: 7px 10px; gap: 8px; background: var(--c-background); border: 1px solid var(--c-border); border-radius: var(--r-md); font-family: var(--font-mono); font-size: 11.5px; color: var(--c-foreground); white-space: nowrap; overflow: hidden;"
+          style="margin: 12px 16px 0; padding: 7px 10px; gap: 8px; background: var(--c-background); border: 1px solid var(--c-border); border-radius: var(--r-md); font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--c-foreground); white-space: nowrap; overflow: hidden;"
         >
           <Icon :name="detailIcon" :size="13" style="color: var(--c-muted); flex: 0 0 auto;" />
           <span style="flex: 1; overflow: hidden; text-overflow: ellipsis;">{{ detail }}</span>

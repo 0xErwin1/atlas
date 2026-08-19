@@ -69,8 +69,8 @@ const menuItems = computed<MenuItem[]>(() => {
   <div
     class="flex items-end"
     style="
-      height: 32px;
-      flex: 0 0 32px;
+      height: var(--h-header);
+      flex: 0 0 var(--h-header);
       background-color: var(--c-panel);
       border-bottom: 1px solid var(--c-border);
       padding: 0 4px;
@@ -86,9 +86,8 @@ const menuItems = computed<MenuItem[]>(() => {
       :aria-selected="tab.active === true"
       :style="`
         gap: 8px;
-        height: 28px;
+        height: var(--h-tab);
         padding: 0 8px 0 10px;
-        border-radius: 2px 2px 0 0;
         background: ${tab.active ? 'var(--c-background)' : 'transparent'};
         color: ${tab.active ? 'var(--c-foreground)' : 'var(--c-muted)'};
         font-weight: ${tab.active ? 'var(--fw-semibold)' : 'var(--fw-medium)'};
@@ -105,13 +104,13 @@ const menuItems = computed<MenuItem[]>(() => {
       <span class="flex-1 truncate">{{ tab.name }}</span>
       <span
         v-if="tab.dirty"
-        style="width: 6px; height: 6px; border-radius: 9999px; background: var(--c-primary); flex-shrink: 0;"
+        style="width: 6px; height: 6px; background: var(--c-primary); flex-shrink: 0;"
         aria-hidden="true"
       />
       <span
         v-if="closable"
         class="atl-x inline-flex items-center justify-center"
-        style="width: 14px; height: 14px; border-radius: 2px; color: var(--c-muted); font-size: 13px; flex-shrink: 0;"
+        style="width: 14px; height: 14px; color: var(--c-muted); font-size: var(--fs-lg); flex-shrink: 0;"
         role="button"
         :aria-label="`Close ${tab.name}`"
         @click.stop="$emit('close', tab.id)"

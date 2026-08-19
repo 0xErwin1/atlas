@@ -18,15 +18,18 @@ defineEmits<{
   click: [event: MouseEvent];
 }>();
 
+// The destructive variant is the only one drawn with a doubled border: it has
+// to stay distinguishable from `secondary` after the colour is stripped away,
+// on a greyscale or e-ink panel.
 const VARIANT_STYLES: Record<BtnVariant, string> = {
   primary:
-    'background-color: var(--c-primary); color: var(--c-primary-fg); border: 1px solid transparent; font-weight: var(--fw-semibold);',
+    'background-color: var(--c-primary); color: var(--c-primary-fg); border: 1px solid var(--c-primary); font-weight: var(--fw-semibold);',
   secondary:
-    'background-color: var(--c-secondary); color: var(--c-foreground); border: 1px solid var(--c-border); font-weight: var(--fw-medium);',
-  ghost:
     'background-color: transparent; color: var(--c-foreground); border: 1px solid var(--c-border); font-weight: var(--fw-medium);',
+  ghost:
+    'background-color: transparent; color: var(--c-muted); border: 1px solid transparent; font-weight: var(--fw-medium);',
   danger:
-    'background-color: var(--c-danger); color: var(--c-danger-fg, #fff); border: 1px solid transparent; font-weight: var(--fw-semibold);',
+    'background-color: transparent; color: var(--c-danger); border: 2px solid var(--c-danger); font-weight: var(--fw-semibold);',
 };
 </script>
 
@@ -38,10 +41,9 @@ const VARIANT_STYLES: Record<BtnVariant, string> = {
     :style="`
       height: var(--h-button);
       gap: 6px;
-      padding: 0 12px;
-      border-radius: var(--r-md);
-      font-family: var(--font-mono);
-      font-size: var(--fs-sm);
+      padding: 0 11px;
+      font-family: var(--font-ui);
+      font-size: var(--fs-base);
       font-weight: var(--fw-medium);
       line-height: 1;
       transition: background-color 0.1s;

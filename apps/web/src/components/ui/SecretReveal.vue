@@ -42,8 +42,7 @@ async function onCopy(secret: string): Promise<void> {
 
 <style scoped>
 .atl-secret-box {
-  border: 1px solid rgba(255, 180, 84, 0.45);
-  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--c-warning) 45%, transparent);
   overflow: hidden;
 }
 
@@ -52,10 +51,10 @@ async function onCopy(secret: string): Promise<void> {
   align-items: center;
   gap: 8px;
   padding: 9px 12px;
-  background: rgba(255, 180, 84, 0.12);
-  border-bottom: 1px solid rgba(255, 180, 84, 0.45);
+  background: color-mix(in srgb, var(--c-warning) 12%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--c-warning) 45%, transparent);
   color: var(--c-primary);
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   font-weight: var(--fw-semibold);
 }
 
@@ -65,7 +64,7 @@ async function onCopy(secret: string): Promise<void> {
 }
 
 .atl-secret-caption {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--c-muted);
   margin-bottom: 8px;
 }
@@ -81,7 +80,7 @@ async function onCopy(secret: string): Promise<void> {
   border: 1px solid var(--c-border);
   border-radius: var(--r-lg);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: var(--c-foreground);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -99,6 +98,6 @@ async function onCopy(secret: string): Promise<void> {
   background: var(--c-raised);
   color: var(--c-foreground);
   cursor: pointer;
-  font-size: 12.5px;
+  font-size: var(--fs-base);
 }
 </style>

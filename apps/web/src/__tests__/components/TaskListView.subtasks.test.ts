@@ -143,7 +143,7 @@ describe('TaskListView sub-task rows', () => {
     expect(expandSubtasks).toHaveBeenCalledWith('ws', 'ATL-1');
     const childRow = wrapper.find('.task-row-stub[data-readable-id="ATL-2"]');
     expect(childRow.attributes('data-status-name')).toBe('Ready to take');
-    expect(childRow.attributes('data-ring-color')).toBe('var(--c-primary)');
+    expect(childRow.attributes('data-ring-color')).toBe('var(--c-warning)');
 
     await wrapper.find('.status-pick-stub[data-readable-id="ATL-2"]').trigger('click');
     await flushPromises();

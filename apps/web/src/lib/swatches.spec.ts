@@ -6,8 +6,8 @@ describe('swatchById', () => {
     const blue = swatchById('blue');
     expect(blue.id).toBe('blue');
     expect(blue.fg).toBe('var(--c-info)');
-    expect(blue.bg).toBe('rgba(89, 194, 255, 0.12)');
-    expect(blue.border).toBe('rgba(89, 194, 255, 0.4)');
+    expect(blue.bg).toBe('color-mix(in srgb, var(--c-info) 12%, transparent)');
+    expect(blue.border).toBe('color-mix(in srgb, var(--c-info) 40%, transparent)');
   });
 
   it('falls back to neutral for an unknown id', () => {

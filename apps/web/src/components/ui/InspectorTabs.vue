@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Shared inspector/preview tab strip: a 36px header of tabs with the active one
+ * Shared inspector/preview tab strip: a header of tabs with the active one
  * marked by an inset primary underline. The single source for every inspector
  * tab bar (the editor inspector, the task inspector, the search preview), so
  * they can no longer drift apart.
@@ -50,8 +50,8 @@ const iconOnly = computed(() => props.tabs.length > 1 && props.tabs.every((tab) 
 .atl-tabstrip {
   display: flex;
   align-items: flex-end;
-  height: 36px;
-  flex: 0 0 36px;
+  height: var(--h-header);
+  flex: 0 0 var(--h-header);
   padding: 0 4px;
   border-bottom: 1px solid var(--c-border);
 }
@@ -61,7 +61,7 @@ const iconOnly = computed(() => props.tabs.length > 1 && props.tabs.every((tab) 
 }
 
 .atl-itab {
-  height: 28px;
+  height: var(--h-tab);
   padding: 0 9px;
   border: none;
   background: transparent;
@@ -85,7 +85,7 @@ const iconOnly = computed(() => props.tabs.length > 1 && props.tabs.every((tab) 
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
+  width: 28px;
   padding: 0;
   color: var(--c-muted);
 }

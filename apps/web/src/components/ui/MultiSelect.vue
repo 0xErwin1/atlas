@@ -61,7 +61,7 @@ const chosen = (): MultiSelectOption[] => props.options.filter((o) => model.valu
           width: '100%',
           minHeight: '26px',
           padding: '2px 6px',
-          fontSize: '11.5px',
+          fontSize: 'var(--fs-xs)',
           color: 'var(--c-foreground)',
           background: 'var(--c-input)',
           border: `1px solid ${open ? 'var(--c-primary)' : 'var(--c-border)'}`,
@@ -78,7 +78,7 @@ const chosen = (): MultiSelectOption[] => props.options.filter((o) => model.valu
             v-else
             :key="opt.value"
             class="inline-flex items-center"
-            style="gap: 4px; height: 17px; padding: 0 3px 0 5px; font-size: 11px; background: var(--c-raised); border: 1px solid var(--c-border); border-radius: 3px;"
+            style="gap: 4px; height: 17px; padding: 0 3px 0 5px; font-size: var(--fs-xs); background: var(--c-raised); border: 1px solid var(--c-border); "
           >
             <span
               v-if="opt.dot"
@@ -123,7 +123,6 @@ const chosen = (): MultiSelectOption[] => props.options.filter((o) => model.valu
             gap: '8px',
             height: '26px',
             padding: '0 7px',
-            borderRadius: '3px',
             fontSize: 'var(--fs-sm)',
             cursor: opt.disabled ? 'not-allowed' : 'pointer',
           }"
@@ -134,7 +133,6 @@ const chosen = (): MultiSelectOption[] => props.options.filter((o) => model.valu
             :style="{
               width: '13px',
               height: '13px',
-              borderRadius: '3px',
               border: `1px solid ${isSelected(opt.value) ? 'var(--c-primary)' : 'var(--c-border)'}`,
               background: isSelected(opt.value) ? 'var(--c-primary)' : 'transparent',
               color: 'var(--c-primary-fg)',
@@ -150,7 +148,7 @@ const chosen = (): MultiSelectOption[] => props.options.filter((o) => model.valu
           <span style="flex: 1; color: var(--c-foreground);">{{ opt.label }}</span>
           <span
             v-if="opt.disabled"
-            style="flex: 0 0 auto; font-size: 9.5px; font-weight: var(--fw-semibold); letter-spacing: 0.06em; text-transform: uppercase; color: var(--c-muted);"
+            style="flex: 0 0 auto; font-family: var(--font-mono); font-size: var(--fs-label); font-weight: var(--fw-semibold); letter-spacing: var(--ls-label); text-transform: uppercase; color: var(--c-muted);"
           >
             Soon
           </span>

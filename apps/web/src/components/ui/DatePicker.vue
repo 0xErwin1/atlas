@@ -360,7 +360,7 @@ function clear(close: () => void): void {
   align-items: center;
   justify-content: center;
   height: 24px;
-  font-size: 10px;
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
   color: var(--c-muted);
 }

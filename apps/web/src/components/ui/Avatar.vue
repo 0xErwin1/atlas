@@ -25,7 +25,6 @@ const sparkleSize = computed(() => (props.size <= 18 ? 11 : 13));
     :style="{
       width: `${size}px`,
       height: `${size}px`,
-      borderRadius: '2px',
       backgroundColor: agent ? 'var(--c-agent-bg)' : 'var(--c-raised)',
       border: agent ? '1px solid var(--c-agent-border)' : '1px solid var(--c-border)',
       fontFamily: 'var(--font-mono)',

@@ -9,8 +9,8 @@ defineProps<{
     class="flex items-center"
     style="
       gap: 10px;
-      min-height: 22px;
-      font-size: var(--fs-sm);
+      min-height: var(--h-row);
+      font-size: var(--fs-base);
     "
   >
     <span

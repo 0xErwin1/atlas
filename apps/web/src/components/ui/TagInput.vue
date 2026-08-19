@@ -287,7 +287,7 @@ function focusInput(): void {
   background: transparent;
   color: var(--c-foreground);
   font-family: var(--font-ui);
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   outline: none;
 }
 
@@ -303,7 +303,6 @@ function focusInput(): void {
   background: var(--c-raised);
   border: 1px solid var(--c-border);
   border-radius: var(--r-md);
-  box-shadow: var(--shadow-md);
 }
 
 .atl-taginput-option {
@@ -314,7 +313,6 @@ function focusInput(): void {
   height: 26px;
   padding: 0 7px;
   border: none;
-  border-radius: 3px;
   background: transparent;
   color: var(--c-foreground);
   font-family: var(--font-ui);

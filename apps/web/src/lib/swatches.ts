@@ -13,58 +13,37 @@ export interface Swatch {
   border: string;
 }
 
+/**
+ * Builds a named swatch from one semantic token, washed into the surface at the
+ * same strengths `Chip` uses for its tones, so a tag and a status chip of the
+ * same colour are the same colour.
+ */
+function tokenSwatch(id: string, label: string, token: string): Swatch {
+  return {
+    id,
+    label,
+    fg: `var(${token})`,
+    bg: `color-mix(in srgb, var(${token}) 12%, transparent)`,
+    border: `color-mix(in srgb, var(${token}) 40%, transparent)`,
+  };
+}
+
 const NEUTRAL_SWATCH: Swatch = {
   id: 'neutral',
   label: 'Gray',
   fg: 'var(--c-foreground)',
-  bg: 'rgba(179, 177, 173, 0.06)',
+  bg: 'color-mix(in srgb, var(--c-foreground) 6%, transparent)',
   border: 'var(--c-border)',
 };
 
 export const SWATCHES: Swatch[] = [
   NEUTRAL_SWATCH,
-  {
-    id: 'blue',
-    label: 'Blue',
-    fg: 'var(--c-info)',
-    bg: 'rgba(89, 194, 255, 0.12)',
-    border: 'rgba(89, 194, 255, 0.4)',
-  },
-  {
-    id: 'green',
-    label: 'Green',
-    fg: 'var(--c-success)',
-    bg: 'rgba(170, 217, 76, 0.12)',
-    border: 'rgba(170, 217, 76, 0.4)',
-  },
-  {
-    id: 'amber',
-    label: 'Amber',
-    fg: 'var(--c-primary)',
-    bg: 'rgba(255, 180, 84, 0.12)',
-    border: 'rgba(255, 180, 84, 0.4)',
-  },
-  {
-    id: 'red',
-    label: 'Red',
-    fg: 'var(--c-danger)',
-    bg: 'rgba(240, 113, 120, 0.12)',
-    border: 'rgba(240, 113, 120, 0.4)',
-  },
-  {
-    id: 'magenta',
-    label: 'Magenta',
-    fg: 'var(--c-agent)',
-    bg: 'var(--c-agent-bg)',
-    border: 'var(--c-agent-border)',
-  },
-  {
-    id: 'cyan',
-    label: 'Cyan',
-    fg: 'var(--c-cyan)',
-    bg: 'rgba(149, 230, 203, 0.12)',
-    border: 'rgba(149, 230, 203, 0.4)',
-  },
+  tokenSwatch('blue', 'Blue', '--c-info'),
+  tokenSwatch('green', 'Green', '--c-success'),
+  tokenSwatch('amber', 'Amber', '--c-warning'),
+  tokenSwatch('red', 'Red', '--c-danger'),
+  tokenSwatch('magenta', 'Magenta', '--c-agent'),
+  tokenSwatch('cyan', 'Cyan', '--c-cyan'),
 ];
 
 const SWATCH_BY_ID = new Map(SWATCHES.map((s) => [s.id, s]));

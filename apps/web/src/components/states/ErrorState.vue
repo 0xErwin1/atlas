@@ -73,7 +73,7 @@ const diagnostics = computed(() => {
     v-if="framed"
     data-state="error"
     class="flex flex-col"
-    style="width: 100%; height: 100%; background-color: var(--c-background); border: 1px solid var(--c-border); border-radius: 3px; overflow: hidden;"
+    style="width: 100%; height: 100%; background-color: var(--c-background); border: 1px solid var(--c-border); overflow: hidden;"
   >
     <div
       class="flex items-center"
@@ -105,7 +105,7 @@ const diagnostics = computed(() => {
           width: 340px;
           max-width: 100%;
           background-color: var(--c-banner-err-bg);
-          border: 1px solid rgba(240, 113, 120, 0.5);
+          border: 1px solid color-mix(in srgb, var(--c-danger) 50%, transparent);
           border-radius: var(--r-md);
           padding: 11px 13px;
         "
@@ -118,7 +118,7 @@ const diagnostics = computed(() => {
           {{ title }}
         </div>
         <div
-          style="font-size: 12.5px; color: var(--c-banner-err-fg); opacity: 0.92; line-height: 1.45; margin-bottom: 7px;"
+          style="font-size: var(--fs-base); color: var(--c-banner-err-fg); opacity: 0.92; line-height: 1.45; margin-bottom: 7px;"
         >
           {{ message }}
         </div>
@@ -188,7 +188,7 @@ const diagnostics = computed(() => {
         width: 340px;
         max-width: 100%;
         background-color: var(--c-banner-err-bg);
-        border: 1px solid rgba(240, 113, 120, 0.5);
+        border: 1px solid color-mix(in srgb, var(--c-danger) 50%, transparent);
         border-radius: var(--r-md);
         padding: 11px 13px;
       "
@@ -201,7 +201,7 @@ const diagnostics = computed(() => {
         {{ title }}
       </div>
       <div
-        style="font-size: 12.5px; color: var(--c-banner-err-fg); opacity: 0.92; line-height: 1.45; margin-bottom: 7px;"
+        style="font-size: var(--fs-base); color: var(--c-banner-err-fg); opacity: 0.92; line-height: 1.45; margin-bottom: 7px;"
       >
         {{ message }}
       </div>

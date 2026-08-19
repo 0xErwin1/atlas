@@ -40,14 +40,12 @@ useOverlayEscape(
         width: 100%;
         max-height: 88vh;
         background-color: var(--c-panel);
-        border-top: 1px solid var(--c-border);
-        border-radius: var(--r-lg) var(--r-lg) 0 0;
-        box-shadow: var(--shadow-lg);
+        border-top: 1px solid var(--c-border-strong);
         overflow: hidden;
       "
     >
       <div class="flex justify-center" style="padding: 8px 0 2px;" aria-hidden="true">
-        <div style="width: 36px; height: 4px; border-radius: 9999px; background: var(--c-border);" />
+        <div style="width: 36px; height: 3px; background: var(--c-border);" />
       </div>
 
       <div

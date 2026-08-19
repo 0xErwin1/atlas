@@ -91,7 +91,7 @@ useOverlayEscape(
     <div
       v-if="open"
       class="fixed inset-0 flex items-center justify-center"
-      style="background: rgba(0, 0, 0, 0.45); z-index: 300;"
+      style="background: var(--c-overlay); z-index: 300;"
       @mousedown.self="emit('cancel')"
     >
       <div
@@ -103,9 +103,7 @@ useOverlayEscape(
           width: '380px',
           maxWidth: 'calc(100vw - 32px)',
           background: 'var(--c-raised)',
-          border: '1px solid var(--c-border)',
-          borderRadius: 'var(--r-lg)',
-          boxShadow: 'var(--shadow-lg)',
+          border: '1px solid var(--c-border-strong)',
           padding: '18px 18px 16px',
           fontFamily: 'var(--font-ui)',
         }"
@@ -113,7 +111,7 @@ useOverlayEscape(
       >
         <h2
           :id="titleId"
-          style="font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--c-foreground); margin: 0 0 12px;"
+          style="font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--c-foreground); margin: 0 0 12px;"
         >
           {{ title }}
         </h2>
