@@ -1278,16 +1278,31 @@ export const useBoardsStore = defineStore('boards', () => {
   }
 
   /**
+   * Board tasks indexed by readable_id.
+   *
+   * Derived rather than maintained by hand: a dozen call sites write into the
+   * task map (whole-map replacements and in-place `set`s alike), so a manual
+   * index would rot the first time a new writer forgets to update it. First
+   * column wins on a duplicate readable id, matching the scan this replaces.
+   */
+  const tasksByReadableId = computed(() => {
+    const index = new Map<string, TaskSummaryDto>();
+
+    for (const colTasks of tasks.value.values()) {
+      for (const task of colTasks) {
+        const readableId = task.readable_id;
+        if (!index.has(readableId)) index.set(readableId, task);
+      }
+    }
+
+    return index;
+  });
+
+  /**
    * Find a task by its readable_id across all columns.
    */
   function findTaskByReadableId(readableId: string): TaskSummaryDto | undefined {
-    for (const [, colTasks] of tasks.value) {
-      const found = colTasks.find((t) => t.readable_id === readableId);
-      if (found !== undefined) {
-        return found;
-      }
-    }
-    return undefined;
+    return tasksByReadableId.value.get(readableId);
   }
 
   /**
