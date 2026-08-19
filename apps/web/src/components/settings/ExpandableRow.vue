@@ -62,7 +62,7 @@ function onRowClick(): void {
   display: flex;
   align-items: center;
   padding: 0 12px;
-  border-top: 1px solid var(--c-border);
+  border-top: 1px solid var(--c-border-strong);
   transition: background 0.1s;
 }
 
@@ -93,11 +93,10 @@ function onRowClick(): void {
   height: 24px;
   padding: 0 8px;
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   background: transparent;
   color: var(--c-foreground);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 .atl-rowact:hover {
@@ -105,7 +104,7 @@ function onRowClick(): void {
 }
 
 .atl-erow-panel {
-  border-top: 1px solid var(--c-border);
+  border-top: 1px solid var(--c-border-strong);
   background: var(--c-background);
   padding: 12px 40px;
 }

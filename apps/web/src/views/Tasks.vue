@@ -704,9 +704,10 @@ watch(
   padding: 0 8px;
   border: 1px solid var(--c-border);
   border-radius: 9999px;
-  font-size: var(--fs-xs);
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.03em;
+  letter-spacing: var(--ls-label);
+  font-family: var(--font-mono);
   text-transform: uppercase;
   color: var(--c-muted);
   white-space: nowrap;

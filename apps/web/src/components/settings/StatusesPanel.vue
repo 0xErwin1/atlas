@@ -302,20 +302,19 @@ async function confirmDelete(): Promise<void> {
 }
 
 .atl-field-label {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
   color: var(--c-muted);
 }
 
 .atl-statuses-empty {
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: var(--c-muted);
   padding: 8px 2px;
 }
 
 .atl-statuses-list {
   border: 1px solid var(--c-border);
-  border-radius: 4px;
   overflow: hidden;
 }
 
@@ -350,7 +349,6 @@ async function confirmDelete(): Promise<void> {
 .atl-edit-picker {
   align-self: flex-start;
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   background: var(--c-raised);
 }
 
@@ -362,7 +360,7 @@ async function confirmDelete(): Promise<void> {
 }
 
 .atl-status-name {
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: var(--fw-semibold);
   color: var(--c-foreground);
 }
@@ -373,8 +371,7 @@ async function confirmDelete(): Promise<void> {
   padding: 0 10px;
   background: var(--c-raised);
   border: 1px solid var(--c-primary);
-  border-radius: var(--r-md);
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: var(--c-foreground);
   outline: none;
 }

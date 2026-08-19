@@ -154,13 +154,13 @@ async function applyToBoard(): Promise<void> {
 }
 
 .atl-apply-title {
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: var(--fw-semibold);
   color: var(--c-foreground);
 }
 
 .atl-apply-sub {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--c-muted);
   margin-top: 3px;
 }

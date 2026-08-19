@@ -68,7 +68,7 @@ const activeTab = ref('preview');
         No preview available for this match.
       </p>
 
-      <Btn variant="primary" style="width: 100%; height: 30px;" @click="emit('open', hit)">
+      <Btn variant="primary" style="width: 100%;" @click="emit('open', hit)">
         <Icon name="arrow-right" :size="14" />
         {{ isTask ? 'Open task' : 'Open note' }}
       </Btn>
@@ -102,16 +102,14 @@ const activeTab = ref('preview');
   padding: 10px 12px;
   background: var(--c-raised);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-sm);
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   line-height: 1.5;
   color: var(--c-muted);
 }
 
 .atl-search-preview-snip :deep(mark) {
-  background: rgba(255, 180, 84, 0.25);
+  background: color-mix(in srgb, var(--c-warning) 25%, transparent);
   color: var(--c-foreground);
-  border-radius: 2px;
   padding: 0 2px;
 }
 </style>

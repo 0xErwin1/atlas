@@ -33,13 +33,13 @@ defineProps<{ title: string; subtitle?: string }>();
 }
 
 .atl-panel-title {
-  font-size: 15px;
+  font-size: var(--fs-lg);
   font-weight: var(--fw-bold);
   color: var(--c-foreground);
 }
 
 .atl-panel-sub {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--c-muted);
   margin-top: 3px;
 }

@@ -136,9 +136,7 @@ watch(
         maxWidth: '540px',
         maxHeight: '60vh',
         background: 'var(--c-panel)',
-        border: '1px solid var(--c-border)',
-        borderRadius: 'var(--r-lg)',
-        boxShadow: 'var(--shadow-lg)',
+        border: '1px solid var(--c-border-strong)',
         overflow: 'hidden',
       }"
     >
@@ -253,7 +251,6 @@ watch(
             color: 'var(--c-agent)',
             border: '1px solid var(--c-agent-border)',
             background: 'var(--c-agent-bg)',
-            borderRadius: 'var(--r-sm)',
             padding: '2px 8px',
           }"
         >
@@ -267,9 +264,8 @@ watch(
 
 <style scoped>
 .atl-pal-snip :deep(mark) {
-  background: rgba(255, 180, 84, 0.25);
+  background: color-mix(in srgb, var(--c-warning) 25%, transparent);
   color: var(--c-foreground);
-  border-radius: 2px;
   padding: 0 2px;
 }
 </style>

@@ -167,7 +167,7 @@ async function confirmDelete(): Promise<void> {
       </Btn>
     </form>
 
-    <div v-if="loading" style="font-size: 13px; color: var(--c-muted); padding: 8px;">
+    <div v-if="loading" style="font-size: var(--fs-base); color: var(--c-muted); padding: 8px;">
       Loading&hellip;
     </div>
 
@@ -300,8 +300,7 @@ async function confirmDelete(): Promise<void> {
   height: 32px;
   padding: 0 11px;
   background-color: var(--c-input);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
+  border: 1px solid var(--c-border-strong);
   outline: none;
   font-size: var(--fs-base);
   color: var(--c-foreground);
@@ -319,7 +318,6 @@ async function confirmDelete(): Promise<void> {
 
 .atl-group-card {
   border: 1px solid var(--c-border);
-  border-radius: 4px;
   overflow: hidden;
 }
 
@@ -351,7 +349,6 @@ async function confirmDelete(): Promise<void> {
   width: 26px;
   height: 26px;
   flex: 0 0 auto;
-  border-radius: 2px;
   color: var(--c-primary);
   background: color-mix(in srgb, var(--c-primary) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--c-primary) 40%, transparent);
@@ -360,7 +357,7 @@ async function confirmDelete(): Promise<void> {
 .atl-group-name {
   flex: 1;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: var(--fw-semibold);
   color: var(--c-foreground);
   overflow: hidden;
@@ -376,7 +373,6 @@ async function confirmDelete(): Promise<void> {
   height: 24px;
   flex: 0 0 auto;
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   background: transparent;
   color: var(--c-danger);
   cursor: pointer;
@@ -405,7 +401,6 @@ async function confirmDelete(): Promise<void> {
   padding: 0 10px;
   background-color: var(--c-input);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
 }
 
 .atl-add-member-input input {
@@ -428,8 +423,6 @@ async function confirmDelete(): Promise<void> {
   overflow-y: auto;
   background-color: var(--c-panel);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-lg);
   padding: 4px;
   z-index: 10;
 }
@@ -442,7 +435,6 @@ async function confirmDelete(): Promise<void> {
   height: 34px;
   padding: 0 8px;
   border: none;
-  border-radius: var(--r-md);
   background: transparent;
   cursor: pointer;
   text-align: left;
@@ -469,7 +461,7 @@ async function confirmDelete(): Promise<void> {
 .atl-group-member-name {
   flex: 1;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: var(--fw-medium);
   color: var(--c-foreground);
   overflow: hidden;
@@ -478,7 +470,7 @@ async function confirmDelete(): Promise<void> {
 }
 
 .atl-group-empty-members {
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   color: var(--c-muted);
   padding: 6px 4px;
 }
@@ -490,7 +482,6 @@ async function confirmDelete(): Promise<void> {
   width: 24px;
   height: 24px;
   flex: 0 0 auto;
-  border-radius: 2px;
   background-color: var(--c-raised);
   border: 1px solid var(--c-border);
   font-family: var(--font-mono);
@@ -507,7 +498,6 @@ async function confirmDelete(): Promise<void> {
   height: 24px;
   flex: 0 0 auto;
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   background: transparent;
   color: var(--c-danger);
   cursor: pointer;
@@ -522,7 +512,7 @@ async function confirmDelete(): Promise<void> {
   align-items: center;
   gap: 7px;
   margin-top: 14px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--c-muted);
 }
 </style>

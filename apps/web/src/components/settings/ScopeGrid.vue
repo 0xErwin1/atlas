@@ -172,7 +172,6 @@ function toggle(scope: ApiKeyScope): void {
   display: flex;
   flex-direction: column;
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   overflow: hidden;
 }
 
@@ -201,9 +200,10 @@ function toggle(scope: ApiKeyScope): void {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.05em;
+  letter-spacing: var(--ls-label);
+  font-family: var(--font-mono);
   text-transform: uppercase;
   color: var(--c-muted);
 }
@@ -213,7 +213,7 @@ function toggle(scope: ApiKeyScope): void {
   height: 30px;
   display: flex;
   align-items: center;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
   color: var(--c-foreground);
   text-transform: capitalize;

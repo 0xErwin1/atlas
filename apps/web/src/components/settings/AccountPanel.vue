@@ -183,13 +183,13 @@ async function signOut(): Promise<void> {
       <Avatar :name="initials" :size="44" :agent="false" />
       <div style="flex: 1; min-width: 0;">
         <div class="flex items-center" style="gap: 8px;">
-          <span style="font-size: 15px; font-weight: var(--fw-bold); color: var(--c-foreground);">
+          <span style="font-size: var(--fs-lg); font-weight: var(--fw-bold); color: var(--c-foreground);">
             {{ displayName }}
           </span>
           <span class="atl-tag">USER</span>
           <span v-if="isRoot" class="atl-tag atl-tag-root">ROOT</span>
         </div>
-        <div style="font-size: 12.5px; color: var(--c-muted); font-family: var(--font-mono); margin-top: 3px;">
+        <div style="font-size: var(--fs-base); color: var(--c-muted); font-family: var(--font-mono); margin-top: 3px;">
           @{{ username }}
         </div>
       </div>
@@ -269,7 +269,7 @@ async function signOut(): Promise<void> {
         :options="THEME_OPTIONS"
         @update:model-value="selectTheme"
       />
-      <span style="font-size: 12px; color: var(--c-muted);">Ayu Dark · default</span>
+      <span style="font-size: var(--fs-sm); color: var(--c-muted);">Blueprint Dark · default</span>
     </div>
 
     <div class="atl-divider" />
@@ -281,7 +281,7 @@ async function signOut(): Promise<void> {
         :options="BOARD_VIEW_OPTIONS"
         @update:model-value="selectBoardView"
       />
-      <span style="font-size: 12px; color: var(--c-muted);">
+      <span style="font-size: var(--fs-sm); color: var(--c-muted);">
         Layout every board opens in
       </span>
     </div>
@@ -322,39 +322,38 @@ async function signOut(): Promise<void> {
   padding: 14px;
   background: var(--c-raised);
   border: 1px solid var(--c-border);
-  border-radius: 4px;
   margin-bottom: 22px;
 }
 
 .atl-tag {
-  font-size: 9.5px;
+  font-size: var(--fs-label);
   font-weight: var(--fw-bold);
-  letter-spacing: 0.06em;
+  letter-spacing: var(--ls-label);
   color: var(--c-muted);
   border: 1px solid var(--c-border);
   background: var(--c-background);
-  border-radius: var(--r-sm);
   padding: 1px 5px;
   font-family: var(--font-mono);
 }
 
 .atl-tag-root {
   color: var(--c-primary);
-  border-color: rgba(255, 180, 84, 0.45);
-  background: rgba(255, 180, 84, 0.12);
+  border-color: color-mix(in srgb, var(--c-warning) 45%, transparent);
+  background: color-mix(in srgb, var(--c-warning) 12%, transparent);
 }
 
 .atl-sec-title {
-  font-size: 10px;
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.06em;
+  letter-spacing: var(--ls-label);
+  font-family: var(--font-mono);
   text-transform: uppercase;
   color: var(--c-muted);
   margin-bottom: 10px;
 }
 
 .atl-build-line {
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   font-family: var(--font-mono);
   color: var(--c-muted);
   user-select: text;
@@ -373,11 +372,10 @@ async function signOut(): Promise<void> {
   height: 28px;
   padding: 0 12px;
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   background: transparent;
   color: var(--c-danger);
   cursor: pointer;
-  font-size: 12.5px;
+  font-size: var(--fs-base);
 }
 
 .atl-signout:hover {

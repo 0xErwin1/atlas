@@ -138,7 +138,6 @@ function cancelRemove(): void {
   gap: 7px;
   min-height: 32px;
   padding: 4px 6px;
-  border-radius: var(--r-md);
 }
 
 .atl-wsa-row:hover {
@@ -148,7 +147,7 @@ function cancelRemove(): void {
 .atl-wsa-name {
   flex: 1;
   min-width: 0;
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   color: var(--c-foreground);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -165,7 +164,7 @@ function cancelRemove(): void {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--c-muted);
   padding: 4px 0;
 }

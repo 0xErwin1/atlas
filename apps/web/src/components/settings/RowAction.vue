@@ -44,11 +44,10 @@ defineEmits<{
   height: 26px;
   padding: 0 8px;
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   background: transparent;
   color: var(--c-foreground);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 .atl-rowact--icon {

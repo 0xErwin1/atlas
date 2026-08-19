@@ -160,7 +160,7 @@ async function confirmDelete(): Promise<void> {
 
       <div
         v-if="workspace.adminWorkspaces.length === 0"
-        style="padding: 14px 12px; font-size: 13px; color: var(--c-muted);"
+        style="padding: 14px 12px; font-size: var(--fs-base); color: var(--c-muted);"
       >
         No workspaces.
       </div>
@@ -203,7 +203,6 @@ async function confirmDelete(): Promise<void> {
 <style scoped>
 .atl-ws-table {
   border: 1px solid var(--c-border);
-  border-radius: 4px;
   overflow: hidden;
 }
 
@@ -212,9 +211,10 @@ async function confirmDelete(): Promise<void> {
   align-items: center;
   height: 28px;
   padding: 0 12px;
-  font-size: 10px;
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.05em;
+  letter-spacing: var(--ls-label);
+  font-family: var(--font-mono);
   text-transform: uppercase;
   color: var(--c-muted);
 }
@@ -228,13 +228,13 @@ async function confirmDelete(): Promise<void> {
 }
 
 .atl-ws-name {
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: var(--fw-semibold);
   color: var(--c-foreground);
 }
 
 .atl-ws-slug {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-family: var(--font-mono);
   color: var(--c-muted);
 }
@@ -245,8 +245,7 @@ async function confirmDelete(): Promise<void> {
   padding: 0 9px;
   background: var(--c-raised);
   border: 1px solid var(--c-primary);
-  border-radius: var(--r-md);
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: var(--c-foreground);
   outline: none;
 }

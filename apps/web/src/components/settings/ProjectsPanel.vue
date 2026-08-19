@@ -258,14 +258,13 @@ async function confirmDelete(): Promise<void> {
 
 <style scoped>
 .atl-proj-empty {
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: var(--c-muted);
   padding: 8px 2px;
 }
 
 .atl-proj-list {
   border: 1px solid var(--c-border);
-  border-radius: 4px;
   overflow: hidden;
   max-width: 560px;
 }
@@ -302,7 +301,7 @@ async function confirmDelete(): Promise<void> {
 }
 
 .atl-proj-name {
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: var(--c-foreground);
   font-weight: var(--fw-medium);
   overflow: hidden;
@@ -312,11 +311,10 @@ async function confirmDelete(): Promise<void> {
 
 .atl-proj-prefix {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--c-muted);
   background: var(--c-raised);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-sm);
   padding: 1px 5px;
   flex-shrink: 0;
 }
@@ -333,7 +331,7 @@ async function confirmDelete(): Promise<void> {
   display: flex;
   align-items: flex-start;
   gap: 6px;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--c-muted);
   line-height: 1.4;
 }

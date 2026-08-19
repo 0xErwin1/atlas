@@ -412,7 +412,7 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
         </template>
       </PanelHeader>
 
-      <div v-if="keysStore.loading" style="font-size: 13px; color: var(--c-muted); padding: 8px;">
+      <div v-if="keysStore.loading" style="font-size: var(--fs-base); color: var(--c-muted); padding: 8px;">
         Loading&hellip;
       </div>
 
@@ -600,7 +600,7 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
 <style scoped>
 .atl-key-name {
   flex: 2;
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-family: var(--font-mono);
   color: var(--c-foreground);
   overflow: hidden;
@@ -610,7 +610,7 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
 
 .atl-key-meta {
   flex: 1.4;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--c-muted);
 }
 
@@ -630,9 +630,10 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
 }
 
 .atl-key-id-label {
-  font-size: 10px;
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.05em;
+  letter-spacing: var(--ls-label);
+  font-family: var(--font-mono);
   text-transform: uppercase;
   color: var(--c-muted);
   flex: 0 0 auto;
@@ -642,7 +643,7 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
   flex: 1;
   min-width: 0;
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--c-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -657,10 +658,9 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
   height: 22px;
   padding: 0 8px;
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   background: transparent;
   color: var(--c-muted);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   cursor: pointer;
 }
 
@@ -676,16 +676,17 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
 }
 
 .atl-access-term {
-  font-size: 10px;
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.05em;
+  letter-spacing: var(--ls-label);
+  font-family: var(--font-mono);
   text-transform: uppercase;
   color: var(--c-muted);
   flex: 0 0 auto;
 }
 
 .atl-access-summary {
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   color: var(--c-foreground);
 }
 
@@ -693,17 +694,16 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   font-weight: var(--fw-medium);
   color: var(--c-agent);
   background: var(--c-agent-bg);
   border: 1px solid var(--c-agent-border);
-  border-radius: var(--r-md);
   padding: 2px 8px;
 }
 
 .atl-grants-loading {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--c-muted);
   padding: 6px 0;
 }
@@ -716,9 +716,10 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
 }
 
 .atl-manage-label {
-  font-size: 10px;
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.05em;
+  letter-spacing: var(--ls-label);
+  font-family: var(--font-mono);
   text-transform: uppercase;
   color: var(--c-muted);
 }
@@ -727,7 +728,7 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--c-muted);
   padding: 4px 0;
 }
@@ -744,7 +745,6 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
   gap: 7px;
   min-height: 28px;
   padding: 4px 6px;
-  border-radius: var(--r-md);
 }
 
 .atl-grant-row:hover {
@@ -760,7 +760,7 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
 }
 
 .atl-grant-label {
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   color: var(--c-foreground);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -771,19 +771,19 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--c-muted);
 }
 
 .atl-grant-role {
-  font-size: 11px;
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
   color: var(--c-muted);
+  font-family: var(--font-mono);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--ls-label);
   padding: 2px 6px;
   border: 1px solid var(--c-border);
-  border-radius: 3px;
 }
 
 .atl-keys-helper {
@@ -791,7 +791,7 @@ function grantedByLabel(g: ApiKeyGrantDto): string | null {
   align-items: center;
   gap: 7px;
   margin-top: 12px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--c-muted);
 }
 </style>

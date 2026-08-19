@@ -59,13 +59,13 @@ onMounted(async () => {
 
 .atl-about-k {
   flex: 0 0 130px;
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   color: var(--c-muted);
 }
 
 .atl-about-v {
   flex: 1;
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   font-family: var(--font-mono);
   color: var(--c-foreground);
 }

@@ -241,7 +241,7 @@ defineExpose({ cancelEdit });
 
 <style scoped>
 .atl-statuses-empty {
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: var(--c-muted);
   padding: 8px 2px;
 }
@@ -252,7 +252,6 @@ defineExpose({ cancelEdit });
 
 .atl-statuses-list {
   border: 1px solid var(--c-border);
-  border-radius: 4px;
   overflow: hidden;
   max-width: 560px;
 }
@@ -288,7 +287,6 @@ defineExpose({ cancelEdit });
 .atl-edit-picker {
   align-self: flex-start;
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   background: var(--c-raised);
 }
 
@@ -300,7 +298,7 @@ defineExpose({ cancelEdit });
 }
 
 .atl-status-name {
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: var(--fw-semibold);
   color: var(--c-foreground);
 }
@@ -311,8 +309,7 @@ defineExpose({ cancelEdit });
   padding: 0 10px;
   background: var(--c-raised);
   border: 1px solid var(--c-primary);
-  border-radius: var(--r-md);
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: var(--c-foreground);
   outline: none;
 }

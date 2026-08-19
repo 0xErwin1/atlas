@@ -148,8 +148,7 @@ async function handleSubmit(): Promise<void> {
         padding: 26px 26px 22px;
         border-radius: var(--r-lg);
         background-color: var(--c-panel);
-        border: 1px solid var(--c-border);
-        box-shadow: var(--shadow-lg);
+        border: 1px solid var(--c-border-strong);
       "
     >
       <div class="flex items-center" style="gap: 9px; margin-bottom: 18px;">
@@ -204,7 +203,7 @@ async function handleSubmit(): Promise<void> {
           v-if="submitError"
           style="
             background-color: var(--c-banner-err-bg);
-            border: 1px solid rgba(240, 113, 120, 0.5);
+            border: 1px solid color-mix(in srgb, var(--c-danger) 50%, transparent);
             border-radius: var(--r-md);
             padding: 9px 11px;
             margin-bottom: 14px;

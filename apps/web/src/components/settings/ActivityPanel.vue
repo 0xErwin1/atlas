@@ -270,18 +270,16 @@ watch(activeWs, (ws, prev) => {
   padding: 2px;
   background: var(--c-raised);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
 }
 
 .atl-actor-tab {
   border: none;
   background: transparent;
   color: var(--c-muted);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
   font-family: var(--font-ui);
   padding: 4px 12px;
-  border-radius: var(--r-sm);
   cursor: pointer;
 }
 
@@ -293,7 +291,6 @@ watch(activeWs, (ws, prev) => {
   background: var(--c-background);
   color: var(--c-foreground);
   font-weight: var(--fw-semibold);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 }
 
 .atl-date-range {
@@ -307,15 +304,14 @@ watch(activeWs, (ws, prev) => {
   padding: 0 8px;
   background: var(--c-input);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   color: var(--c-foreground);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-family: var(--font-ui);
 }
 
 .atl-date-sep {
   color: var(--c-muted);
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 .atl-date-clear {
@@ -325,7 +321,6 @@ watch(activeWs, (ws, prev) => {
   width: 26px;
   height: 28px;
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   background: transparent;
   color: var(--c-muted);
   cursor: pointer;
@@ -338,7 +333,6 @@ watch(activeWs, (ws, prev) => {
 
 .atl-activity-feed {
   border: 1px solid var(--c-border);
-  border-radius: 4px;
   overflow: hidden;
 }
 
@@ -369,7 +363,7 @@ watch(activeWs, (ws, prev) => {
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--fs-base);
   line-height: 1.5;
   color: var(--c-muted);
 }
@@ -383,12 +377,12 @@ watch(activeWs, (ws, prev) => {
   display: inline-block;
   font-size: 9.5px;
   font-weight: var(--fw-bold);
-  letter-spacing: 0.05em;
+  letter-spacing: var(--ls-label);
+  font-family: var(--font-mono);
   text-transform: uppercase;
   color: var(--c-agent);
   border: 1px solid var(--c-agent-border);
   background: var(--c-agent-bg);
-  border-radius: var(--r-sm);
   padding: 1px 6px;
 }
 
@@ -401,7 +395,7 @@ watch(activeWs, (ws, prev) => {
   color: var(--c-primary);
   text-decoration: none;
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: var(--fs-base);
 }
 
 .atl-activity-task:hover {
@@ -409,18 +403,18 @@ watch(activeWs, (ws, prev) => {
 }
 
 .atl-activity-time {
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--c-muted);
   margin-top: 2px;
 }
 
 .atl-role-badge {
   display: inline-block;
-  font-size: 10px;
+  font-size: var(--fs-label);
   font-weight: var(--fw-bold);
-  letter-spacing: 0.05em;
+  letter-spacing: var(--ls-label);
+  font-family: var(--font-mono);
   text-transform: uppercase;
-  border-radius: var(--r-sm);
   padding: 1px 7px;
 }
 
@@ -441,7 +435,7 @@ watch(activeWs, (ws, prev) => {
 }
 
 .atl-activity-status {
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   color: var(--c-muted);
   padding: 12px 13px;
 }
@@ -454,7 +448,7 @@ watch(activeWs, (ws, prev) => {
   border-top: 1px solid var(--c-border);
   background: transparent;
   color: var(--c-primary);
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   font-weight: var(--fw-semibold);
   font-family: var(--font-ui);
   cursor: pointer;
@@ -469,7 +463,7 @@ watch(activeWs, (ws, prev) => {
   align-items: center;
   gap: 7px;
   margin-top: 12px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--c-danger);
 }
 </style>

@@ -292,7 +292,7 @@ watch(ws, (slug) => {
             Copy this now — you won't be able to see it again.
           </div>
           <div style="padding: 14px; background: var(--c-raised);">
-            <div style="font-size: 12px; color: var(--c-muted); margin-bottom: 8px;">
+            <div style="font-size: var(--fs-sm); color: var(--c-muted); margin-bottom: 8px;">
               Signing secret for
               <span style="font-family: var(--font-mono); color: var(--c-foreground);">{{ createdWebhook.target_url }}</span>
             </div>
@@ -479,7 +479,7 @@ watch(ws, (slug) => {
             Copy this now — you won't be able to see it again.
           </div>
           <div style="padding: 14px; background: var(--c-raised);">
-            <div style="font-size: 12px; color: var(--c-muted); margin-bottom: 8px;">
+            <div style="font-size: var(--fs-sm); color: var(--c-muted); margin-bottom: 8px;">
               Signing secret for
               <span style="font-family: var(--font-mono); color: var(--c-foreground);">{{ createdIntegration.integration }}</span>
             </div>
@@ -627,13 +627,13 @@ watch(ws, (slug) => {
 }
 
 .atl-section-title {
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: var(--fw-semibold);
   color: var(--c-foreground);
 }
 
 .atl-section-sub {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--c-muted);
   margin-top: 2px;
 }
@@ -645,9 +645,10 @@ watch(ws, (slug) => {
 
 .atl-field-label {
   display: block;
-  font-size: 10px;
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.06em;
+  letter-spacing: var(--ls-label);
+  font-family: var(--font-mono);
   text-transform: uppercase;
   color: var(--c-muted);
   margin-bottom: 5px;
@@ -657,7 +658,7 @@ watch(ws, (slug) => {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--c-danger);
   margin-top: 5px;
 }
@@ -671,7 +672,7 @@ watch(ws, (slug) => {
 }
 
 .atl-wh-label {
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: var(--c-foreground);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -679,7 +680,7 @@ watch(ws, (slug) => {
 }
 
 .atl-wh-url {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-family: var(--font-mono);
   color: var(--c-muted);
   overflow: hidden;
@@ -705,19 +706,18 @@ watch(ws, (slug) => {
   font-family: var(--font-mono);
   background: var(--c-raised);
   border: 1px solid var(--c-border);
-  border-radius: 3px;
   color: var(--c-muted);
 }
 
 .atl-int-name {
   flex: 2;
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: var(--c-foreground);
 }
 
 .atl-int-meta {
   flex: 1.4;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--c-muted);
 }
 
@@ -728,7 +728,6 @@ watch(ws, (slug) => {
   height: 20px;
   padding: 0;
   border: 1px solid var(--c-border);
-  border-radius: 9999px;
   background: var(--c-input);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
@@ -750,7 +749,6 @@ watch(ws, (slug) => {
   left: 2px;
   width: 14px;
   height: 14px;
-  border-radius: 9999px;
   background: var(--c-foreground);
   transform: translateY(-50%);
   transition: left 0.15s;
@@ -762,16 +760,17 @@ watch(ws, (slug) => {
 }
 
 .atl-deliveries-head {
-  font-size: 10px;
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.05em;
+  letter-spacing: var(--ls-label);
+  font-family: var(--font-mono);
   text-transform: uppercase;
   color: var(--c-muted);
   margin-bottom: 8px;
 }
 
 .atl-deliveries-empty {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--c-muted);
   padding: 4px 0;
 }
@@ -786,7 +785,7 @@ watch(ws, (slug) => {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 .atl-delivery-outcome {
@@ -832,8 +831,7 @@ watch(ws, (slug) => {
 }
 
 .atl-secret-box {
-  border: 1px solid rgba(255, 180, 84, 0.45);
-  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--c-warning) 45%, transparent);
   overflow: hidden;
 }
 
@@ -842,10 +840,10 @@ watch(ws, (slug) => {
   align-items: center;
   gap: 8px;
   padding: 9px 12px;
-  background: rgba(255, 180, 84, 0.12);
-  border-bottom: 1px solid rgba(255, 180, 84, 0.45);
+  background: color-mix(in srgb, var(--c-warning) 12%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--c-warning) 45%, transparent);
   color: var(--c-primary);
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   font-weight: var(--fw-semibold);
 }
 
@@ -858,9 +856,8 @@ watch(ws, (slug) => {
   padding: 0 11px;
   background: var(--c-background);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-lg);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: var(--c-foreground);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -868,7 +865,7 @@ watch(ws, (slug) => {
 }
 
 .atl-secret-hint {
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--c-muted);
   margin-top: 10px;
 }
@@ -880,10 +877,9 @@ watch(ws, (slug) => {
   height: 36px;
   padding: 0 12px;
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   background: var(--c-raised);
   color: var(--c-foreground);
   cursor: pointer;
-  font-size: 12.5px;
+  font-size: var(--fs-base);
 }
 </style>

@@ -298,7 +298,7 @@ async function updateSystemTray(next: boolean): Promise<void> {
 .atl-zoom-value {
   min-width: 48px;
   text-align: center;
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-variant-numeric: tabular-nums;
   color: var(--c-foreground);
 }
@@ -308,19 +308,19 @@ async function updateSystemTray(next: boolean): Promise<void> {
 }
 
 .atl-pref-label {
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: var(--fw-medium);
   color: var(--c-foreground);
 }
 
 .atl-pref-hint {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--c-muted);
   margin-top: 3px;
 }
 
 .atl-pref-error {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--c-danger);
   margin-top: 12px;
 }

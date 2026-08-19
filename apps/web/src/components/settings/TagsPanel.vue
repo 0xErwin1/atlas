@@ -282,8 +282,7 @@ async function confirmDelete(): Promise<void> {
   padding: 0 10px;
   background: var(--c-raised);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: var(--c-foreground);
   outline: none;
 }
@@ -298,7 +297,7 @@ async function confirmDelete(): Promise<void> {
 }
 
 .atl-tag-empty {
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: var(--c-muted);
   padding: 8px 2px;
 }
@@ -308,16 +307,17 @@ async function confirmDelete(): Promise<void> {
 }
 
 .atl-section-head {
-  font-size: 11px;
+  font-size: var(--fs-label);
   font-weight: var(--fw-bold);
+  font-family: var(--font-mono);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--ls-label);
   color: var(--c-muted);
   margin-bottom: 8px;
 }
 
 .atl-section-hint {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--c-muted);
   margin: -2px 0 10px;
   max-width: 430px;
@@ -333,7 +333,6 @@ async function confirmDelete(): Promise<void> {
 
 .atl-tag-list {
   border: 1px solid var(--c-border);
-  border-radius: 4px;
   overflow: hidden;
 }
 
@@ -368,7 +367,6 @@ async function confirmDelete(): Promise<void> {
 .atl-edit-picker {
   align-self: flex-start;
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   background: var(--c-raised);
 }
 

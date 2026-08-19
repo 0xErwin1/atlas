@@ -438,10 +438,10 @@ async function confirmDisable(): Promise<void> {
       <div class="atl-reset-id">
         <Avatar :name="initials(linkTarget)" :size="30" />
         <div style="min-width: 0;">
-          <div style="font-size: 13px; font-weight: var(--fw-semibold); color: var(--c-foreground);">
+          <div style="font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--c-foreground);">
             {{ linkTarget.display_name }}
           </div>
-          <div style="font-size: 11.5px; color: var(--c-muted); font-family: var(--font-mono);">
+          <div style="font-size: var(--fs-xs); color: var(--c-muted); font-family: var(--font-mono);">
             @{{ linkTarget.username }}
           </div>
         </div>
@@ -464,10 +464,10 @@ async function confirmDisable(): Promise<void> {
       <div class="atl-reset-id">
         <Avatar :name="initials(resetTarget)" :size="30" />
         <div style="min-width: 0;">
-          <div style="font-size: 13px; font-weight: var(--fw-semibold); color: var(--c-foreground);">
+          <div style="font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--c-foreground);">
             {{ resetTarget.display_name }}
           </div>
-          <div style="font-size: 11.5px; color: var(--c-muted); font-family: var(--font-mono);">
+          <div style="font-size: var(--fs-xs); color: var(--c-muted); font-family: var(--font-mono);">
             @{{ resetTarget.username }}
           </div>
         </div>
@@ -507,7 +507,7 @@ async function confirmDisable(): Promise<void> {
         </template>
       </PanelHeader>
 
-      <div v-if="usersStore.loading" style="font-size: 13px; color: var(--c-muted); padding: 8px;">
+      <div v-if="usersStore.loading" style="font-size: var(--fs-base); color: var(--c-muted); padding: 8px;">
         Loading…
       </div>
 
@@ -533,13 +533,13 @@ async function confirmDisable(): Promise<void> {
               <Avatar :name="initials(u)" :size="26" />
               <div style="min-width: 0;">
                 <div class="flex items-center" style="gap: 6px;">
-                  <span style="font-size: 13px; font-weight: var(--fw-semibold); color: var(--c-foreground);">
+                  <span style="font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--c-foreground);">
                     {{ u.display_name }}
                   </span>
                   <span v-if="u.is_root" class="atl-tag-root">ROOT</span>
                   <span v-else-if="u.is_system_admin" class="atl-tag-sysadmin">SYSADMIN</span>
                 </div>
-                <div style="font-size: 11.5px; color: var(--c-muted); font-family: var(--font-mono);">
+                <div style="font-size: var(--fs-xs); color: var(--c-muted); font-family: var(--font-mono);">
                   @{{ u.username }}
                 </div>
               </div>
@@ -549,7 +549,7 @@ async function confirmDisable(): Promise<void> {
               <Chip v-else-if="isPending(u)" tone="warning">Pending</Chip>
               <Chip v-else tone="success">Active</Chip>
             </div>
-            <div style="flex: 1; font-size: 12px; color: var(--c-muted);">{{ formatDate(u.created_at) }}</div>
+            <div style="flex: 1; font-size: var(--fs-sm); color: var(--c-muted);">{{ formatDate(u.created_at) }}</div>
           </template>
 
           <template #actions>
@@ -700,25 +700,23 @@ async function confirmDisable(): Promise<void> {
 
 <style scoped>
 .atl-tag-root {
-  font-size: 9.5px;
+  font-size: var(--fs-label);
   font-weight: var(--fw-bold);
-  letter-spacing: 0.06em;
-  color: var(--c-primary);
-  border: 1px solid rgba(255, 180, 84, 0.45);
-  background: rgba(255, 180, 84, 0.12);
-  border-radius: var(--r-sm);
+  letter-spacing: var(--ls-label);
+  color: var(--c-warning);
+  border: 1px solid color-mix(in srgb, var(--c-warning) 45%, transparent);
+  background: color-mix(in srgb, var(--c-warning) 12%, transparent);
   padding: 1px 5px;
   font-family: var(--font-mono);
 }
 
 .atl-tag-sysadmin {
-  font-size: 9.5px;
+  font-size: var(--fs-label);
   font-weight: var(--fw-bold);
-  letter-spacing: 0.06em;
+  letter-spacing: var(--ls-label);
   color: var(--c-muted);
   border: 1px solid var(--c-border);
   background: var(--c-raised);
-  border-radius: var(--r-sm);
   padding: 1px 5px;
   font-family: var(--font-mono);
 }
@@ -738,13 +736,13 @@ async function confirmDisable(): Promise<void> {
 }
 
 .atl-identity-name {
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: var(--fw-semibold);
   color: var(--c-foreground);
 }
 
 .atl-identity-handle {
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--c-muted);
   font-family: var(--font-mono);
 }
@@ -756,9 +754,10 @@ async function confirmDisable(): Promise<void> {
 }
 
 .atl-manage-label {
-  font-size: 10px;
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.05em;
+  letter-spacing: var(--ls-label);
+  font-family: var(--font-mono);
   text-transform: uppercase;
   color: var(--c-muted);
 }
@@ -770,18 +769,17 @@ async function confirmDisable(): Promise<void> {
 }
 
 .atl-grants-loading {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--c-muted);
   padding: 4px 0;
 }
 
 .atl-you {
-  font-size: 10px;
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
   color: var(--c-muted);
   border: 1px solid var(--c-border);
   background: var(--c-raised);
-  border-radius: var(--r-sm);
   padding: 2px 8px;
 }
 
@@ -790,7 +788,7 @@ async function confirmDisable(): Promise<void> {
   align-items: center;
   gap: 7px;
   margin-top: 12px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--c-muted);
 }
 
@@ -801,7 +799,6 @@ async function confirmDisable(): Promise<void> {
   padding: 12px;
   background: var(--c-raised);
   border: 1px solid var(--c-border);
-  border-radius: 4px;
   margin-bottom: 18px;
 }
 </style>

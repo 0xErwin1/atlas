@@ -199,8 +199,7 @@ onMounted(async () => {
           v-if="errorProblem"
           style="
             background-color: var(--c-banner-err-bg);
-            border: 1px solid rgba(240, 113, 120, 0.5);
-            border-radius: var(--r-md);
+            border: 1px solid color-mix(in srgb, var(--c-danger) 50%, transparent);
             padding: 9px 11px;
             margin-bottom: 14px;
           "
@@ -318,7 +317,7 @@ onMounted(async () => {
   min-height: 0;
   flex: 1 1 auto;
   background: var(--c-background);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
 }
 
 .login-topbar {
@@ -336,13 +335,14 @@ onMounted(async () => {
 }
 
 .login-wordmark {
-  font-size: 14px;
-  font-weight: 700;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
   color: var(--c-foreground);
 }
 
 .login-version {
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
   color: var(--c-muted);
 }
 
@@ -362,8 +362,8 @@ onMounted(async () => {
 }
 
 .login-heading {
-  font-size: 24px;
-  font-weight: 700;
+  font-size: var(--fs-title);
+  font-weight: var(--fw-semibold);
   color: var(--c-foreground);
   margin-bottom: 4px;
 }
@@ -393,7 +393,8 @@ onMounted(async () => {
   gap: 16px;
   padding: 8px 18px;
   border-top: 1px solid var(--c-border);
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
   color: var(--c-muted);
 }
 

@@ -251,7 +251,7 @@ async function confirmAdd(): Promise<void> {
       </template>
     </PanelHeader>
 
-    <div v-if="loading" style="font-size: 13px; color: var(--c-muted); padding: 8px;">
+    <div v-if="loading" style="font-size: var(--fs-base); color: var(--c-muted); padding: 8px;">
       Loading&hellip;
     </div>
 
@@ -376,8 +376,6 @@ async function confirmAdd(): Promise<void> {
             maxWidth: '100%',
             background: 'var(--c-raised)',
             border: '1px solid var(--c-border)',
-            borderRadius: '4px',
-            boxShadow: 'var(--shadow-lg)',
             overflow: 'hidden',
             fontFamily: 'var(--font-ui)',
           }"
@@ -387,7 +385,7 @@ async function confirmAdd(): Promise<void> {
               <h2 style="font-size: var(--fs-lg); font-weight: var(--fw-bold); color: var(--c-foreground); margin: 0;">
                 Add member
               </h2>
-              <p style="font-size: 12.5px; line-height: 1.5; color: var(--c-muted); margin: 5px 0 0;">
+              <p style="font-size: var(--fs-base); line-height: 1.5; color: var(--c-muted); margin: 5px 0 0;">
                 Add an existing user to this workspace and choose their role.
               </p>
             </div>
@@ -408,12 +406,12 @@ async function confirmAdd(): Promise<void> {
             <div
               v-if="addError"
               data-add-error
-              style="background: var(--c-banner-err-bg); border: 1px solid rgba(240, 113, 120, 0.5); border-radius: var(--r-md); padding: 8px 11px; margin-bottom: 12px; font-size: var(--fs-sm); color: var(--c-banner-err-fg);"
+              style="background: var(--c-banner-err-bg); border: 1px solid color-mix(in srgb, var(--c-danger) 50%, transparent); border-radius: var(--r-md); padding: 8px 11px; margin-bottom: 12px; font-size: var(--fs-sm); color: var(--c-banner-err-fg);"
             >
               {{ addError }}
             </div>
 
-            <div v-if="addLoading" style="font-size: 13px; color: var(--c-muted); padding: 12px 4px;">
+            <div v-if="addLoading" style="font-size: var(--fs-base); color: var(--c-muted); padding: 12px 4px;">
               Loading&hellip;
             </div>
 
@@ -444,7 +442,7 @@ async function confirmAdd(): Promise<void> {
                   <Avatar :size="24" :name="u.display_name" />
                   <span class="flex-1 min-w-0" style="display: flex; flex-direction: column; min-width: 0;">
                     <span class="atl-member-name">{{ u.display_name }}</span>
-                    <span style="font-size: 11px; color: var(--c-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    <span style="font-size: var(--fs-xs); color: var(--c-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                       @{{ u.username }}
                     </span>
                   </span>
@@ -495,9 +493,10 @@ async function confirmAdd(): Promise<void> {
 
 <style scoped>
 .atl-members-section-label {
-  font-size: 10px;
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.05em;
+  letter-spacing: var(--ls-label);
+  font-family: var(--font-mono);
   text-transform: uppercase;
   color: var(--c-muted);
   margin-bottom: 7px;
@@ -505,7 +504,6 @@ async function confirmAdd(): Promise<void> {
 
 .atl-members-table {
   border: 1px solid var(--c-border);
-  border-radius: 4px;
   overflow: hidden;
 }
 
@@ -514,9 +512,10 @@ async function confirmAdd(): Promise<void> {
   align-items: center;
   height: 28px;
   padding: 0 12px;
-  font-size: 10px;
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.05em;
+  letter-spacing: var(--ls-label);
+  font-family: var(--font-mono);
   text-transform: uppercase;
   color: var(--c-muted);
 }
@@ -530,7 +529,7 @@ async function confirmAdd(): Promise<void> {
 }
 
 .atl-member-name {
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: var(--fw-semibold);
   color: var(--c-foreground);
   overflow: hidden;
@@ -540,29 +539,28 @@ async function confirmAdd(): Promise<void> {
 
 .atl-you {
   flex: 0 0 auto;
-  font-size: 10px;
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
   color: var(--c-muted);
   border: 1px solid var(--c-border);
   background: var(--c-raised);
-  border-radius: var(--r-sm);
   padding: 2px 8px;
 }
 
 .atl-role-badge {
   display: inline-block;
-  font-size: 10px;
+  font-size: var(--fs-label);
   font-weight: var(--fw-bold);
-  letter-spacing: 0.05em;
+  letter-spacing: var(--ls-label);
+  font-family: var(--font-mono);
   text-transform: uppercase;
-  border-radius: var(--r-sm);
   padding: 2px 7px;
 }
 
 .atl-role-owner {
   color: var(--c-primary);
-  border: 1px solid rgba(255, 180, 84, 0.45);
-  background: rgba(255, 180, 84, 0.12);
+  border: 1px solid color-mix(in srgb, var(--c-warning) 45%, transparent);
+  background: color-mix(in srgb, var(--c-warning) 12%, transparent);
 }
 
 .atl-role-admin {
@@ -596,7 +594,6 @@ async function confirmAdd(): Promise<void> {
   width: 26px;
   height: 24px;
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   background: transparent;
   color: var(--c-danger);
   cursor: pointer;
@@ -611,7 +608,7 @@ async function confirmAdd(): Promise<void> {
   align-items: center;
   gap: 7px;
   margin-top: 12px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--c-muted);
 }
 
@@ -619,7 +616,6 @@ async function confirmAdd(): Promise<void> {
   max-height: 220px;
   overflow-y: auto;
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
   padding: 4px;
 }
 
@@ -631,7 +627,6 @@ async function confirmAdd(): Promise<void> {
   height: 40px;
   padding: 0 8px;
   border: none;
-  border-radius: var(--r-md);
   background: transparent;
   color: var(--c-foreground);
   cursor: pointer;

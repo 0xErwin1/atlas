@@ -304,9 +304,10 @@ watch(
 
 .atl-settings-group-label {
   padding: 4px 10px;
-  font-size: var(--fs-xs);
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.06em;
+  letter-spacing: var(--ls-label);
+  font-family: var(--font-mono);
   text-transform: uppercase;
   color: var(--c-muted);
 }
@@ -318,10 +319,9 @@ watch(
   height: 30px;
   padding: 0 10px;
   border: none;
-  border-radius: var(--r-sm);
   background: transparent;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: var(--fw-medium);
   color: var(--c-muted);
 }

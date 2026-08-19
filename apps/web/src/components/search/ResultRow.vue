@@ -87,7 +87,7 @@ const authorInitials = computed(() => props.hit.title);
         class="block"
         data-testid="snippet"
         :style="{
-          fontSize: '12.5px',
+          fontSize: 'var(--fs-base)',
           color: 'var(--c-muted)',
           lineHeight: '1.4',
           marginBottom: '6px',
@@ -119,9 +119,8 @@ const authorInitials = computed(() => props.hit.title);
 
 <style scoped>
 .atl-result :deep(mark) {
-  background: rgba(255, 180, 84, 0.25);
+  background: color-mix(in srgb, var(--c-warning) 25%, transparent);
   color: var(--c-foreground);
-  border-radius: 2px;
   padding: 0 2px;
 }
 </style>
