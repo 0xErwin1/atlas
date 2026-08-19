@@ -1170,16 +1170,18 @@ export const useBoardsStore = defineStore('boards', () => {
   function reconcileTask(moved: MovedTaskSummary): void {
     const newColumnId = moved.column_id;
 
-    // A move does not change the task's children; carry the prior count over so
-    // the list view's expand affordance survives the optimistic reconcile.
-    let priorSubtaskCount = 0;
+    // A move changes placement and the fields the move endpoint returns, nothing
+    // else. Everything the card also renders — labels, assignees, estimate, the
+    // sub-task count behind the list view's expand affordance — is carried over,
+    // or those chips vanish until the next refetch puts them back.
+    let previous: TaskSummaryDto | undefined;
     for (const [colId, colTasks] of tasks.value) {
       const existing = colTasks.find((t) => t.id === moved.id);
       if (existing === undefined) {
         continue;
       }
 
-      priorSubtaskCount = existing.subtask_count;
+      previous = existing;
       tasks.value.set(
         colId,
         colTasks.filter((t) => t.id !== moved.id),
@@ -1189,15 +1191,16 @@ export const useBoardsStore = defineStore('boards', () => {
 
     const dest = tasks.value.get(newColumnId) ?? [];
     const updated: TaskSummaryDto = {
+      ...previous,
       id: moved.id,
       readable_id: moved.readable_id,
-      board_id: board.value?.id ?? '',
+      board_id: previous?.board_id ?? board.value?.id ?? '',
       column_id: newColumnId,
-      board_name: board.value?.name ?? '',
+      board_name: previous?.board_name ?? board.value?.name ?? '',
       column_name: columns.value.find((c) => c.id === newColumnId)?.name ?? '',
       title: moved.title,
       priority: moved.priority ?? null,
-      subtask_count: priorSubtaskCount,
+      subtask_count: previous?.subtask_count ?? 0,
       updated_at: moved.updated_at,
     };
     tasks.value.set(newColumnId, [...dest, updated]);
