@@ -45,7 +45,7 @@ async function confirmNewWorkspace(name: string): Promise<void> {
 </script>
 
 <template>
-  <Popover placement="bottom-start" width="220px">
+  <Popover placement="bottom-start" width="220px" teleport>
     <template #trigger="{ open, toggle }">
       <button
         type="button"

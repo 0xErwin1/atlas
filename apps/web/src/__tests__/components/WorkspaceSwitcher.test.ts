@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { isNavigationFailure, NavigationFailureType, routeState, push } = vi.hoisted(() => ({
   isNavigationFailure: vi.fn((_result: unknown, _type?: number) => false),
@@ -21,12 +21,30 @@ import WorkspaceSwitcher from '@/components/shell/WorkspaceSwitcher.vue';
 import { useLastViewedStore } from '@/stores/lastViewed';
 import { useWorkspaceStore } from '@/stores/workspace';
 
+// The menu is teleported out of the sidebar, so it is reachable through the
+// document rather than through the component's own subtree.
+function menuItems(): HTMLElement[] {
+  return Array.from(document.body.querySelectorAll<HTMLElement>('.atl-ws-item'));
+}
+
+// A teleported panel outlives its component in the document unless the mount is
+// torn down, and a stale panel's handlers are gone — so every mount is tracked
+// and unmounted between tests.
+let activeWrapper: ReturnType<typeof mount> | null = null;
+
+async function openMenu(): Promise<ReturnType<typeof mount>> {
+  activeWrapper = mount(WorkspaceSwitcher, { attachTo: document.body });
+  await activeWrapper.get('[aria-label="Switch workspace"]').trigger('click');
+  await flushPromises();
+  return activeWrapper;
+}
+
 async function switchToPersonal(): Promise<void> {
-  const wrapper = mount(WorkspaceSwitcher);
-  await wrapper.get('[aria-label="Switch workspace"]').trigger('click');
-  const personal = wrapper.findAll('.atl-ws-item').find((b) => b.text().includes('Personal'));
+  await openMenu();
+  const personal = menuItems().find((b) => b.textContent?.includes('Personal'));
   if (personal === undefined) throw new Error('Personal workspace item not rendered');
-  await personal.trigger('click');
+  personal.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  await flushPromises();
 }
 
 function seed() {
@@ -72,16 +90,28 @@ describe('WorkspaceSwitcher', () => {
     });
   });
 
+  afterEach(() => {
+    activeWrapper?.unmount();
+    activeWrapper = null;
+    for (const stray of document.body.querySelectorAll('.atl-popover-panel')) stray.remove();
+  });
+
   it('lists every workspace and a create action in the menu', async () => {
     seed();
-    const wrapper = mount(WorkspaceSwitcher);
+    await openMenu();
 
-    await wrapper.get('[aria-label="Switch workspace"]').trigger('click');
+    expect(menuItems().map((i) => i.textContent?.trim())).toEqual(['Atlas', 'Personal', 'New workspace']);
+  });
 
-    const text = wrapper.text();
-    expect(text).toContain('Atlas');
-    expect(text).toContain('Personal');
-    expect(text).toContain('New workspace');
+  // The sidebar clips its own overflow, so a menu rendered inside it loses
+  // whatever sticks out past the sidebar's width.
+  it('renders the menu outside the sidebar so its overflow cannot clip it', async () => {
+    seed();
+    const wrapper = await openMenu();
+
+    const menu = document.body.querySelector('.atl-ws-menu');
+    expect(menu, 'menu is not rendered').not.toBeNull();
+    expect(wrapper.element.contains(menu)).toBe(false);
   });
 
   it('switches the workspace when another one is picked', async () => {
