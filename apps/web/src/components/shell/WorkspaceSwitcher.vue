@@ -58,7 +58,7 @@ async function confirmNewWorkspace(name: string): Promise<void> {
         <span class="atl-ws-switch-name truncate">{{ label }}</span>
         <Icon
           name="chevron-down"
-          :size="14"
+          :size="12"
           :style="{
             flex: '0 0 auto',
             transform: open ? 'rotate(180deg)' : 'none',
@@ -81,12 +81,12 @@ async function confirmNewWorkspace(name: string): Promise<void> {
           :class="{ on: w.slug === workspace.activeWorkspaceSlug }"
           @click="pickWorkspace(w.slug), close()"
         >
-          <Icon :name="w.slug === workspace.activeWorkspaceSlug ? 'check' : 'folder'" :size="14" />
+          <Icon :name="w.slug === workspace.activeWorkspaceSlug ? 'check' : 'folder'" :size="13" />
           {{ w.name }}
         </button>
         <div class="atl-ws-menu-sep" aria-hidden="true" />
         <button type="button" role="menuitem" class="atl-ws-item" @click="startNewWorkspace(), close()">
-          <Icon name="plus" :size="14" />
+          <Icon name="plus" :size="13" />
           New workspace
         </button>
       </div>
@@ -110,10 +110,9 @@ async function confirmNewWorkspace(name: string): Promise<void> {
   gap: 6px;
   min-width: 0;
   max-width: 100%;
-  height: 26px;
+  height: var(--h-row);
   padding: 0 6px;
   border: none;
-  border-radius: var(--r-sm);
   background: transparent;
   color: var(--c-foreground);
   cursor: pointer;
@@ -130,20 +129,25 @@ async function confirmNewWorkspace(name: string): Promise<void> {
 
 .atl-ws-menu {
   min-width: 200px;
-  padding: 5px;
+  padding: 4px 0;
 }
 
 .atl-ws-menu-label {
-  padding: 6px 8px 7px;
-  font-size: var(--fs-sm);
+  padding: 6px 10px 5px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
   font-weight: var(--fw-semibold);
-  color: var(--c-foreground);
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--c-muted);
 }
 
+/* Group separator inside a floating panel: it is what a reader resolves the
+   groups against, so it takes the boundary token rather than the quiet one. */
 .atl-ws-menu-sep {
   height: 1px;
   margin: 4px 0;
-  background: var(--c-border);
+  background: var(--c-border-strong);
 }
 
 .atl-ws-item {
@@ -151,12 +155,12 @@ async function confirmNewWorkspace(name: string): Promise<void> {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 7px 8px;
+  height: var(--h-row);
+  padding: 0 10px;
   border: none;
-  border-radius: var(--r-sm);
   background: transparent;
   cursor: pointer;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-base);
   color: var(--c-foreground);
   text-align: left;
 }
