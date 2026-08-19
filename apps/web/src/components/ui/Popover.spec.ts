@@ -43,6 +43,18 @@ async function openViaTrigger(wrapper: VueWrapper): Promise<void> {
   await nextTick();
 }
 
+/**
+ * The teleported surface coalesces its viewport-driven repositioning into one
+ * animation frame, so a dispatched scroll only lands after the next frame.
+ */
+async function scrollViewport(): Promise<void> {
+  window.dispatchEvent(new Event('scroll'));
+  await new Promise((resolve) => {
+    requestAnimationFrame(() => resolve(undefined));
+  });
+  await nextTick();
+}
+
 async function closeViaBackdrop(): Promise<void> {
   const backdrop = document.body.querySelector<HTMLElement>('.atl-popover-backdrop.fixed');
   if (backdrop === null) throw new Error('expected the popover backdrop');
@@ -164,8 +176,7 @@ describe('Popover — teleported repositioning', () => {
     expect(teleportedPanel()?.style.top).toBe('124px');
 
     rectSpy.mockReturnValue(domRect({ top: 50, bottom: 70, left: 40, right: 140 }));
-    window.dispatchEvent(new Event('scroll'));
-    await nextTick();
+    await scrollViewport();
 
     expect(teleportedPanel()?.style.top).toBe('74px');
   });
@@ -181,8 +192,7 @@ describe('Popover — teleported repositioning', () => {
     await closeViaBackdrop();
 
     rectSpy.mockClear();
-    window.dispatchEvent(new Event('scroll'));
-    await nextTick();
+    await scrollViewport();
 
     expect(rectSpy).not.toHaveBeenCalled();
   });
@@ -201,8 +211,7 @@ describe('Popover — teleported repositioning', () => {
     if (panel === null) throw new Error('expected the teleported panel');
     Object.defineProperty(panel, 'offsetHeight', { value: 200, configurable: true });
 
-    window.dispatchEvent(new Event('scroll'));
-    await nextTick();
+    await scrollViewport();
 
     expect(panel.style.bottom).toBe(`${window.innerHeight - (bottom - 20) + 4}px`);
     expect(panel.style.top).toBe('');
@@ -222,8 +231,7 @@ describe('Popover — teleported repositioning', () => {
     if (panel === null) throw new Error('expected the teleported panel');
     Object.defineProperty(panel, 'offsetWidth', { value: 300, configurable: true });
 
-    window.dispatchEvent(new Event('scroll'));
-    await nextTick();
+    await scrollViewport();
 
     expect(panel.style.left).toBe(`${window.innerWidth - 300}px`);
   });

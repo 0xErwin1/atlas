@@ -121,8 +121,25 @@ function positionFixed(): void {
   fixedStyle.value = style;
 }
 
+// `positionFixed` reads the trigger rect and the panel box, which forces a
+// reflow. Scroll fires far more often than the screen repaints, and a task list
+// holds three popovers per row, so the reads are coalesced to one per frame.
+let pendingFrame: number | null = null;
+
+function cancelPendingFrame(): void {
+  if (pendingFrame === null) return;
+
+  cancelAnimationFrame(pendingFrame);
+  pendingFrame = null;
+}
+
 function onViewportChange(): void {
-  positionFixed();
+  if (pendingFrame !== null) return;
+
+  pendingFrame = requestAnimationFrame(() => {
+    pendingFrame = null;
+    positionFixed();
+  });
 }
 
 function attachViewportListeners(): void {
@@ -131,6 +148,7 @@ function attachViewportListeners(): void {
 }
 
 function detachViewportListeners(): void {
+  cancelPendingFrame();
   window.removeEventListener('scroll', onViewportChange, { capture: true });
   window.removeEventListener('resize', onViewportChange);
 }
@@ -206,26 +224,24 @@ const PLACEMENT: Record<Placement, Record<string, string>> = {
       </div>
     </template>
 
-    <Teleport v-if="teleport" to="body">
-      <template v-if="open">
-        <div
-          class="atl-popover-backdrop fixed"
-          aria-hidden="true"
-          @click="close"
-          @contextmenu.prevent="close"
-        />
-        <div
-          ref="panel"
-          class="atl-menu atl-popover-panel fixed"
-          :class="{ surface }"
-          :role="role"
-          :aria-label="ariaLabel"
-          tabindex="-1"
-          :style="fixedStyle"
-        >
-          <slot :close="close" />
-        </div>
-      </template>
+    <Teleport v-if="teleport && open" to="body">
+      <div
+        class="atl-popover-backdrop fixed"
+        aria-hidden="true"
+        @click="close"
+        @contextmenu.prevent="close"
+      />
+      <div
+        ref="panel"
+        class="atl-menu atl-popover-panel fixed"
+        :class="{ surface }"
+        :role="role"
+        :aria-label="ariaLabel"
+        tabindex="-1"
+        :style="fixedStyle"
+      >
+        <slot :close="close" />
+      </div>
     </Teleport>
   </div>
 </template>
