@@ -199,10 +199,6 @@ const tagSuggestions = computed<string[]>(() => {
   return [...byLower.values()].sort((a, b) => a.localeCompare(b));
 });
 
-function tagColor(tag: string): string {
-  return labelColors.colorFor(`tag:${tag.toLowerCase()}`);
-}
-
 function onRecolorTag(tag: string, swatchId: string): void {
   labelColors.setColor(`tag:${tag.toLowerCase()}`, swatchId);
 }
@@ -450,7 +446,7 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
       <Chip
         v-for="label in task.labels ?? []"
         :key="label"
-        :color="labelColors.colorFor(`tag:${label.toLowerCase()}`)"
+        :color="labelColors.tagColor(label)"
       >
         {{ label }}
       </Chip>
@@ -605,7 +601,7 @@ async function onChecklistPromote(itemId: string, columnId: string): Promise<voi
             <TagInput
               v-model="labelsModel"
               :suggestions="tagSuggestions"
-              :color-for="tagColor"
+              :color-for="labelColors.tagColor"
               :on-recolor="onRecolorTag"
               @create="onCreateTag"
             />

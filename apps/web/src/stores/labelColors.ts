@@ -49,6 +49,11 @@ export const useLabelColorsStore = defineStore('labelColors', () => {
     return colors.value[key] ?? defaultSwatchId(key);
   }
 
+  /** The swatch id for a label name, under the shared case-insensitive `tag:` key. */
+  function tagColor(name: string): string {
+    return colorFor(`tag:${name.toLowerCase()}`);
+  }
+
   /** Records tag names seen in loaded data; deduped (case-insensitive) and sorted. */
   function recordTags(names: string[]): void {
     const byLower = new Map(knownTags.value.map((t) => [t.toLowerCase(), t]));
@@ -125,6 +130,7 @@ export const useLabelColorsStore = defineStore('labelColors', () => {
     knownTags,
     tagNames,
     colorFor,
+    tagColor,
     isExplicit,
     setColor,
     recordTags,

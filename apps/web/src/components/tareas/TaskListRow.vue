@@ -101,7 +101,7 @@ const labelColors = useLabelColorsStore();
           v-for="label in task.labels ?? []"
           :key="label"
           truncate
-          :color="labelColors.colorFor(`tag:${label.toLowerCase()}`)"
+          :color="labelColors.tagColor(label)"
         >
           {{ label }}
         </Chip>
