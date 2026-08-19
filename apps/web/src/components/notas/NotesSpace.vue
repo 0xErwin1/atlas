@@ -24,10 +24,11 @@ import { useContextMenu } from '@/composables/useContextMenu';
 import { type LiveUpdateEvent, useLiveUpdates } from '@/composables/useLiveUpdates';
 import { useProjectDeletion } from '@/composables/useProjectDeletion';
 import { routeAfterClose } from '@/lib/docsTabs';
-import { EVENT_TYPE, eventString, type LiveEnvelope } from '@/lib/eventTypes';
+import { EVENT_TYPE, eventString, isSelfActor, type LiveEnvelope } from '@/lib/eventTypes';
 import { type NoteCatalog, noteCatalogSchema } from '@/lib/noteCatalog';
 import { docKey, type TreeNodeRef } from '@/lib/notesTree';
 import { collectPaged } from '@/lib/pagination';
+import { useAuthStore } from '@/stores/auth';
 import { useBoardsStore } from '@/stores/boards';
 import { useDocumentsStore } from '@/stores/documents';
 import { useFoldersStore } from '@/stores/folders';
@@ -62,6 +63,7 @@ const props = defineProps<{
 const emit = defineEmits<{ 'initial-settled': [] }>();
 
 const router = useRouter();
+const auth = useAuthStore();
 const workspace = useWorkspaceStore();
 const treeRef = ref<InstanceType<typeof NotesTree> | null>(null);
 const folders = useFoldersStore();
@@ -782,8 +784,13 @@ function onLiveEvent(evt: LiveUpdateEvent): void {
 
     case EVENT_TYPE.DOCUMENT_UPDATED: {
       const documentId = eventString(evt.data, 'document_id');
+
+      // A frame naming no document tells this client nothing about which row it
+      // already wrote, so it is reloaded even when the actor is us. A named row
+      // this client just saved is skipped: refetching it would only re-derive the
+      // summary already on screen, once per debounced keystroke burst.
       if (documentId === undefined || documentId === '') scheduleLiveReload();
-      else void reconcileUpdatedDocument(documentId);
+      else if (!isSelfActor(evt.envelope, auth.sessionActor)) void reconcileUpdatedDocument(documentId);
       break;
     }
 

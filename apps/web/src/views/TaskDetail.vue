@@ -13,8 +13,9 @@ import { type LiveUpdateEvent, useLiveUpdates } from '@/composables/useLiveUpdat
 import { useOpenTaskLive } from '@/composables/useOpenTaskLive';
 import { useResizablePanel } from '@/composables/useResizablePanel';
 import { safeBackOrBoard } from '@/composables/useTaskEscapeNavigation';
-import { EVENT_TYPE, eventString } from '@/lib/eventTypes';
+import { EVENT_TYPE, eventString, isSelfActor } from '@/lib/eventTypes';
 import { KEYMAP_PRIORITIES } from '@/lib/keymap';
+import { useAuthStore } from '@/stores/auth';
 import { useBoardsStore } from '@/stores/boards';
 import { useLastViewedStore } from '@/stores/lastViewed';
 import { useTaskDetailStore } from '@/stores/taskDetail';
@@ -25,6 +26,7 @@ import DocsContent from '@/views/DocsContent.vue';
 
 const route = useRoute();
 const router = useRouter();
+const auth = useAuthStore();
 const workspace = useWorkspaceStore();
 const tasks = useTasksStore();
 const detail = useTaskDetailStore();
@@ -167,15 +169,22 @@ function onChangeMode(mode: TaskViewMode): void {
   backToBoard({ open: id });
 }
 
-// Reacts to another actor's change to the open task: an update or move reloads
-// the detail and its collections; a delete returns to the board (the task is
-// gone, so there is nothing to show here).
+// Reacts to a live change to the open task: an update or move reloads the detail
+// and its collections; a delete returns to the board (the task is gone, so there
+// is nothing to show here).
 function onLiveEvent(evt: LiveUpdateEvent): void {
   const taskId = eventString(evt.data, 'task_id');
   if (taskId === undefined) return;
 
   switch (evt.type) {
     case EVENT_TYPE.TASK_UPDATED:
+      // The frame carries no field values, and the client that issued the patch
+      // already applied the server's response, so reloading the task and its
+      // detail collections would only re-derive what is on screen.
+      if (isSelfActor(evt.envelope, auth.sessionActor)) break;
+      openTaskLive.apply(evt.type, taskId);
+      break;
+
     case EVENT_TYPE.TASK_MOVED:
     case EVENT_TYPE.TASK_DELETED:
       if (openTaskLive.apply(evt.type, taskId) === 'deleted') backToBoard();

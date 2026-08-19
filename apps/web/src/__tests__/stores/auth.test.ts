@@ -126,6 +126,29 @@ describe('useAuthStore', () => {
     expect(store.user).toBeNull();
   });
 
+  it('exposes no session actor while signed out', () => {
+    const store = useAuthStore();
+    expect(store.sessionActor).toBeNull();
+  });
+
+  it('exposes the signed-in user as the session actor', async () => {
+    platformTransport.me.mockReturnValueOnce(meOk('bob', '019ef171-bbcf-7b90-9be6-5dbb382afd08'));
+
+    const store = useAuthStore();
+    await store.fetchMe();
+
+    expect(store.sessionActor).toBe('user:019ef171-bbcf-7b90-9be6-5dbb382afd08');
+  });
+
+  it('exposes the signed-in api key as the session actor', async () => {
+    platformTransport.me.mockReturnValueOnce(apiKeyMe('agent', '019ef171-bbcf-7b90-9be6-5dbb382afd09'));
+
+    const store = useAuthStore();
+    await store.fetchMe();
+
+    expect(store.sessionActor).toBe('api_key:019ef171-bbcf-7b90-9be6-5dbb382afd09');
+  });
+
   it('initializes desktop authentication through the typed resume handshake before hydrating identity', async () => {
     platformTransport.resume.mockReturnValueOnce(meOk('resumed-user'));
     const store = useAuthStore();

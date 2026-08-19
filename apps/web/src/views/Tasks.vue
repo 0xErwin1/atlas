@@ -23,8 +23,10 @@ import { installKeymapListener, useKeymap } from '@/composables/useKeymap';
 import { type LiveUpdateEvent, useLiveUpdates } from '@/composables/useLiveUpdates';
 import { useOpenTaskLive } from '@/composables/useOpenTaskLive';
 import { DEFAULT_BOARD_VIEW } from '@/lib/boardViews';
-import { EVENT_TYPE, eventString, PRESENCE_UPDATED } from '@/lib/eventTypes';
+import { EVENT_TYPE, eventString, isSelfActor, PRESENCE_UPDATED } from '@/lib/eventTypes';
 import { formatShortcut, KEYMAP_PRIORITIES } from '@/lib/keymap';
+import type { LiveResyncReason } from '@/lib/workspaceLiveUpdates';
+import { useAuthStore } from '@/stores/auth';
 import { useBoardsStore } from '@/stores/boards';
 import { useLastViewedStore } from '@/stores/lastViewed';
 import { useNotesTabsStore } from '@/stores/notesTabs';
@@ -41,6 +43,7 @@ import DocsContent from '@/views/DocsContent.vue';
 const route = useRoute();
 const router = useRouter();
 const workspace = useWorkspaceStore();
+const auth = useAuthStore();
 const boards = useBoardsStore();
 const tasks = useTasksStore();
 const detail = useTaskDetailStore();
@@ -362,15 +365,36 @@ async function loadView(force = false, background = false): Promise<void> {
   }
 }
 
+// Revalidates the board's own contents without re-running everything a board
+// open does — no selection reset, no tab or layout re-application, no per-task
+// detail fan-out. A reconnect missed at most a short window of events, so this
+// is all it takes to catch up.
+function refreshBoardContents(): void {
+  if (ws.value === '' || boardId.value === null) return;
+
+  void boards.loadBoardContents(ws.value, boardId.value, workspaceId.value ?? undefined, {
+    background: true,
+  });
+}
+
 // Resynchronizes whichever surface is active — the kanban board or a task view —
-// after the live stream reconnects or on a board delete. Runs as a background
-// refresh so the mounted board/list stays put (no spinner, no scroll reset) and
-// swaps to fresh data atomically on success; a transient failure keeps the
-// current data, while an authoritative 403/404 still retracts a gone board/view.
-function reloadActive(): void {
+// after the live stream asks for a catch-up, or on a board delete. Runs as a
+// background refresh so the mounted board/list stays put (no spinner, no scroll
+// reset) and swaps to fresh data atomically on success; a transient failure keeps
+// the current data, while an authoritative 403/404 still retracts a gone
+// board/view. Only a `desync` may have missed arbitrarily much, so only it forces
+// a full reload; a `reconnect` fires on every focus-driven stream reopen and must
+// stay cheap.
+function reloadActive(reason: LiveResyncReason = 'desync'): void {
   void boards.refreshAllCachedSubtasks(ws.value);
-  if (isView.value) void loadView(true, true);
-  else void loadBoard(true);
+
+  if (isView.value) {
+    void loadView(reason === 'desync', true);
+    return;
+  }
+
+  if (reason === 'desync') void loadBoard(true);
+  else refreshBoardContents();
 }
 
 // The column a task currently sits in on the loaded board, by task UUID.
@@ -427,6 +451,11 @@ function onLiveEvent(evt: LiveUpdateEvent): void {
 
     case EVENT_TYPE.TASK_UPDATED:
       if (taskId === undefined) break;
+      // The frame carries no field values, and the client that issued the patch
+      // already applied the server's response, so refetching the board, the
+      // sub-task branches and the whole open task would only re-derive what is
+      // on screen — once per keystroke burst while typing a description.
+      if (isSelfActor(evt.envelope, auth.sessionActor)) break;
       if (onCurrentBoard) void boards.upsertTaskById(ws.value, taskId);
       refreshSubtaskBranches(taskId, false);
       openTaskLive.apply(evt.type, taskId);

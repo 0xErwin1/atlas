@@ -36,6 +36,7 @@ vi.mock('@/composables/useLiveUpdates', () => ({ useLiveUpdates }));
 
 import NotesSpace from '@/components/notas/NotesSpace.vue';
 import NotesTree from '@/components/notas/NotesTree.vue';
+import { useAuthStore } from '@/stores/auth';
 import { useBoardsStore } from '@/stores/boards';
 import { useDocumentsStore } from '@/stores/documents';
 import { useFoldersStore } from '@/stores/folders';
@@ -45,7 +46,9 @@ import { useUiStateStore } from '@/stores/uiState';
 import type { ProjectSummary } from '@/stores/workspace';
 import { useWorkspaceStore } from '@/stores/workspace';
 
-const PRINCIPAL = 'user:018f4abc-1234-7abc-8def-0123456789ab';
+const SESSION_USER_ID = '018f4abc-1234-7abc-8def-0123456789ab';
+const OTHER_USER_ID = '018f4abc-1234-7abc-8def-0123456789ad';
+const PRINCIPAL = `user:${SESSION_USER_ID}`;
 const WORKSPACE_ID = '018f4abc-1234-7abc-8def-0123456789ac';
 const SANDBOX_PROJECT_ID = '018f4abc-1234-7abc-8def-0123456789ae';
 
@@ -185,6 +188,57 @@ function capturedLiveHandlers(): LiveUpdateHandlers {
   const handlers = useLiveUpdates.mock.calls.at(-1)?.[1] as LiveUpdateHandlers | undefined;
   if (handlers === undefined) throw new Error('Expected NotesSpace to register live update handlers');
   return handlers;
+}
+
+const RENAMED_DOCUMENT = {
+  id: 'Old title-document',
+  slug: 'old-title',
+  title: 'Renamed live',
+  folder_id: null,
+  head_seq: 3,
+  updated_at: '2026-01-03T00:00:00Z',
+  project_id: SANDBOX_PROJECT_ID,
+  workspace_id: WORKSPACE_ID,
+  content: '',
+  frontmatter: {},
+  head_revision_id: 'revision-id',
+  created_at: '2026-01-02T00:00:00Z',
+};
+
+async function mountWithListedDocument() {
+  setupWorkspace();
+  const docs = useDocumentsStore();
+  const loadSummaries = vi.spyOn(docs, 'loadSummaries').mockResolvedValue();
+  vi.spyOn(useFoldersStore(), 'load').mockResolvedValue();
+  vi.spyOn(useBoardsStore(), 'loadBoardsForProject').mockResolvedValue(null);
+
+  const wrapper = mountSpace();
+  await flushPromises();
+
+  docs.publishSummariesForProject('sandbox', catalog('Folder', 'Old title').summaries);
+  GET.mockClear();
+  loadSummaries.mockClear();
+  GET.mockResolvedValue({ error: undefined, data: RENAMED_DOCUMENT });
+
+  return { wrapper, docs, loadSummaries };
+}
+
+function signIn(): void {
+  useAuthStore().user = {
+    id: SESSION_USER_ID,
+    principal_type: 'user',
+    username: 'bob',
+    is_root: false,
+    is_system_admin: false,
+  };
+}
+
+function documentUpdatedFrame(actorId: string, documentId: string | null) {
+  return {
+    type: EVENT_TYPE.DOCUMENT_UPDATED,
+    data: documentId === null ? {} : { document_id: documentId, revision_id: 'revision-id', seq: 3 },
+    envelope: { project_id: SANDBOX_PROJECT_ID, actor: { type: 'user', id: actorId } } as never,
+  };
 }
 
 describe('NotesSpace catalog', () => {
@@ -556,6 +610,47 @@ describe('NotesSpace catalog', () => {
 
     expect(GET).not.toHaveBeenCalled();
     expect(loadSummaries).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it('skips the row refetch for a document.updated frame this client produced', async () => {
+    signIn();
+    const { wrapper, docs, loadSummaries } = await mountWithListedDocument();
+
+    vi.useFakeTimers();
+    capturedLiveHandlers().onEvent(documentUpdatedFrame(SESSION_USER_ID, 'Old title-document'));
+    await vi.advanceTimersByTimeAsync(2000);
+    vi.useRealTimers();
+
+    expect(GET).not.toHaveBeenCalled();
+    expect(loadSummaries).not.toHaveBeenCalled();
+    expect(docs.summariesFor('sandbox').map((item) => item.title)).toEqual(['Old title']);
+    wrapper.unmount();
+  });
+
+  it('still refreshes the row for a document.updated frame from another actor', async () => {
+    signIn();
+    const { wrapper, docs, loadSummaries } = await mountWithListedDocument();
+
+    capturedLiveHandlers().onEvent(documentUpdatedFrame(OTHER_USER_ID, 'Old title-document'));
+    await flushPromises();
+
+    expect(GET).toHaveBeenCalledOnce();
+    expect(docs.summariesFor('sandbox').map((item) => item.title)).toEqual(['Renamed live']);
+    expect(loadSummaries).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it('still reloads the catalog for a self document.updated frame carrying no document id', async () => {
+    signIn();
+    const { wrapper, loadSummaries } = await mountWithListedDocument();
+
+    vi.useFakeTimers();
+    capturedLiveHandlers().onEvent(documentUpdatedFrame(SESSION_USER_ID, null));
+    await vi.advanceTimersByTimeAsync(2000);
+    vi.useRealTimers();
+
+    expect(loadSummaries).toHaveBeenCalledTimes(1);
     wrapper.unmount();
   });
 

@@ -1361,10 +1361,16 @@ export const useBoardsStore = defineStore('boards', () => {
       return false;
     }
 
-    const summaryPatch: Partial<TaskSummaryDto> & { id: string } = { id: data.id };
+    // `updated_at` comes back only from the server, and nothing else refreshes
+    // the card after this patch, so the response is the one chance to take it.
+    const summaryPatch: Partial<TaskSummaryDto> & { id: string } = {
+      id: data.id,
+      updated_at: data.updated_at,
+    };
     if (patch.title !== undefined) summaryPatch.title = data.title;
     if (patch.priority !== undefined) summaryPatch.priority = data.priority ?? null;
     if (patch.labels !== undefined) summaryPatch.labels = data.labels ?? [];
+    if (patch.estimate !== undefined) summaryPatch.estimate = data.estimate ?? null;
     updateTaskFields(summaryPatch);
 
     await evictActiveBoardCache();

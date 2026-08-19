@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { readonly, ref } from 'vue';
+import { computed, readonly, ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
 import {
@@ -57,7 +57,12 @@ function installDesktopSessionActionListener(invalidate: () => void): void {
   desktopSessionActionListenerInstalled = true;
 }
 
-function cachePrincipal(data: MeResponse): string | undefined {
+/**
+ * The signed-in principal as `<type>:<id>`. Doubles as the resource-cache
+ * principal and as the identity a live-event actor is compared against, so both
+ * always agree on who this session is.
+ */
+function sessionPrincipal(data: MeResponse): string | undefined {
   const principalId = data.principal_type === 'api_key' ? data.agent?.id : data.id;
   if (typeof principalId !== 'string') return undefined;
 
@@ -71,6 +76,8 @@ export const useAuthStore = defineStore('auth', () => {
   const apiKeyWarning = ref(false);
   const sessionGeneration = ref(0);
   let fetchGeneration = 0;
+
+  const sessionActor = computed(() => (user.value === null ? null : (sessionPrincipal(user.value) ?? null)));
 
   function hydrateUser(data: MeResponse, principal: string) {
     setResourceCachePrincipal(principal);
@@ -135,13 +142,13 @@ export const useAuthStore = defineStore('auth', () => {
       return;
     }
 
-    const nextPrincipal = cachePrincipal(data);
+    const nextPrincipal = sessionPrincipal(data);
     if (nextPrincipal === undefined) {
       await clearUser();
       return;
     }
 
-    const currentPrincipal = user.value === null ? undefined : cachePrincipal(user.value);
+    const currentPrincipal = user.value === null ? undefined : sessionPrincipal(user.value);
     if (currentPrincipal !== undefined && currentPrincipal !== nextPrincipal) {
       const purged = await clearUser();
       if (!purged || requestGeneration !== fetchGeneration) return;
@@ -213,6 +220,7 @@ export const useAuthStore = defineStore('auth', () => {
     user,
     isAuthenticated,
     apiKeyWarning,
+    sessionActor,
     sessionGeneration: readonly(sessionGeneration),
     clearUser,
     fetchMe,

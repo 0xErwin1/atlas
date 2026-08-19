@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { resetKeymapForTests } from '@/composables/useKeymap';
+import { useAuthStore } from '@/stores/auth';
 import { useBoardsStore } from '@/stores/boards';
 import { useTaskDetailStore } from '@/stores/taskDetail';
 import { useTasksStore } from '@/stores/tasks';
@@ -189,5 +190,96 @@ describe('TaskDetail resource loading', () => {
     handlers.onResync?.();
     await flushPromises();
     expect(tasks.loadTask).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('TaskDetail self-echo suppression', () => {
+  const SESSION_USER_ID = '019ef171-bbcf-7b90-9be6-5dbb382afd08';
+
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    resetKeymapForTests();
+    route.params.readableId = 'ATL-1';
+    router.push.mockClear();
+
+    const workspace = useWorkspaceStore();
+    workspace.activeWorkspaceSlug = 'ws-1';
+    workspace.workspaceIdForSlug = vi.fn().mockReturnValue('workspace-1');
+    workspace.loadMembers = vi.fn().mockResolvedValue(undefined);
+
+    const boards = useBoardsStore();
+    boards.loadBoard = vi.fn().mockResolvedValue(undefined);
+    boards.loadColumns = vi.fn().mockResolvedValue(undefined);
+
+    const detail = useTaskDetailStore();
+    detail.loadAll = vi.fn().mockResolvedValue(undefined);
+
+    const auth = useAuthStore();
+    auth.user = {
+      id: SESSION_USER_ID,
+      principal_type: 'user',
+      username: 'bob',
+      is_root: false,
+      is_system_admin: false,
+    };
+  });
+
+  afterEach(() => {
+    unmountDetail?.();
+    unmountDetail = null;
+    resetKeymapForTests();
+  });
+
+  async function mountWithOpenTask(): Promise<ReturnType<typeof useTasksStore>> {
+    const tasks = useTasksStore();
+    tasks.openTask = task('ATL-1');
+    tasks.loadTask = vi.fn().mockResolvedValue(undefined);
+
+    mountDetail();
+    await flushPromises();
+    (tasks.loadTask as ReturnType<typeof vi.fn>).mockClear();
+
+    return tasks;
+  }
+
+  it('skips the reload cascade for a task.updated frame this client produced', async () => {
+    const tasks = await mountWithOpenTask();
+    const detail = useTaskDetailStore();
+    (detail.loadAll as ReturnType<typeof vi.fn>).mockClear();
+
+    capturedLiveHandlers().onEvent({
+      type: 'task.updated',
+      data: { task_id: 'task-ATL-1' },
+      envelope: { actor: { type: 'user', id: SESSION_USER_ID } },
+    });
+
+    expect(tasks.loadTask).not.toHaveBeenCalled();
+    expect(detail.loadAll).not.toHaveBeenCalled();
+  });
+
+  it('still reloads for a task.updated frame from another actor', async () => {
+    const tasks = await mountWithOpenTask();
+
+    capturedLiveHandlers().onEvent({
+      type: 'task.updated',
+      data: { task_id: 'task-ATL-1' },
+      envelope: { actor: { type: 'user', id: '019ef171-bbcf-7b90-9be6-5dbb382afd09' } },
+    });
+
+    expect(tasks.loadTask).toHaveBeenCalledOnce();
+    expect(tasks.loadTask).toHaveBeenCalledWith('ws-1', 'ATL-1', 'workspace-1');
+  });
+
+  it('keeps applying a self task.moved and navigates back on a self task.deleted', async () => {
+    const tasks = await mountWithOpenTask();
+    const selfEnvelope = { actor: { type: 'user', id: SESSION_USER_ID } };
+    const handlers = capturedLiveHandlers();
+
+    handlers.onEvent({ type: 'task.moved', data: { task_id: 'task-ATL-1' }, envelope: selfEnvelope });
+    expect(tasks.loadTask).toHaveBeenCalledOnce();
+
+    handlers.onEvent({ type: 'task.deleted', data: { task_id: 'task-ATL-1' }, envelope: selfEnvelope });
+    expect(tasks.openTask).toBeNull();
+    expect(router.push).toHaveBeenCalledWith({ name: 'tasks' });
   });
 });
