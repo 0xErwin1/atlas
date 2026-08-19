@@ -107,9 +107,8 @@ function cancel(): void {
         max-width: 100%;
         max-height: 100%;
         background: var(--c-panel);
-        border: 1px solid var(--c-border);
+        border: 1px solid var(--c-border-strong);
         border-radius: var(--r-lg);
-        box-shadow: var(--shadow-lg);
         overflow: hidden;
       "
     >

@@ -49,8 +49,9 @@ const emit = defineEmits<{
       style="
         font-size: 10px;
         font-weight: var(--fw-semibold);
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
+        letter-spacing: var(--ls-label);
+        font-family: var(--font-mono);
+  text-transform: uppercase;
         color: var(--c-muted);
         margin-bottom: 8px;
       "
@@ -60,7 +61,7 @@ const emit = defineEmits<{
 
     <p
       v-if="props.revisions.length === 0"
-      style="font-size: var(--fs-sm); color: var(--c-muted);"
+      style="font-size: var(--fs-label); color: var(--c-muted);"
     >
       No version history yet.
     </p>
@@ -68,7 +69,7 @@ const emit = defineEmits<{
     <template v-else>
       <div
         v-if="props.diff"
-        style="font-size: var(--fs-sm); color: var(--c-foreground); margin-bottom: 8px;"
+        style="font-size: var(--fs-label); color: var(--c-foreground); margin-bottom: 8px;"
       >
         <span style="color: var(--c-success); font-weight: var(--fw-bold);">+{{ props.diff.added }}</span>
         &nbsp;&nbsp;
@@ -86,16 +87,16 @@ const emit = defineEmits<{
         <div class="flex-1 min-w-0">
           <div
             class="flex items-center"
-            style="gap: 6px; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-foreground);"
+            style="gap: 6px; font-size: var(--fs-label); font-weight: var(--fw-semibold); color: var(--c-foreground);"
           >
             {{ rev.actorName }}
             <AgentBadge v-if="rev.agent" />
           </div>
-          <div style="font-size: var(--fs-sm); color: var(--c-muted); line-height: 1.4;">
+          <div style="font-size: var(--fs-label); color: var(--c-muted); line-height: 1.4;">
             {{ rev.change }}
           </div>
           <div
-            style="font-size: var(--fs-xs); color: var(--c-muted); font-family: var(--font-mono); margin-top: 1px;"
+            style="font-size: var(--fs-label); color: var(--c-muted); font-family: var(--font-mono); margin-top: 1px;"
           >
             {{ rev.when }}&nbsp;&nbsp;·&nbsp;&nbsp;
             <button
@@ -108,7 +109,7 @@ const emit = defineEmits<{
                 color: var(--c-primary);
                 font-weight: var(--fw-bold);
                 font-family: var(--font-mono);
-                font-size: var(--fs-xs);
+                font-size: var(--fs-label);
               "
               @click="emit('restore', rev.id)"
             >

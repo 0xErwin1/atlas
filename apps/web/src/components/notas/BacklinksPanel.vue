@@ -75,8 +75,9 @@ const heading = computed(() => {
       style="
         font-size: 10px;
         font-weight: var(--fw-semibold);
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
+        letter-spacing: var(--ls-label);
+        font-family: var(--font-mono);
+  text-transform: uppercase;
         color: var(--c-muted);
         margin-bottom: 8px;
       "

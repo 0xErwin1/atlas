@@ -81,15 +81,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown));
           display: 'flex',
           flexDirection: 'column',
           background: 'var(--c-raised)',
-          border: '1px solid var(--c-border)',
+          border: '1px solid var(--c-border-strong)',
           borderRadius: 'var(--r-md)',
-          boxShadow: 'var(--shadow-lg)',
           overflow: 'hidden',
           fontFamily: 'var(--font-ui)',
         }"
       >
         <div
-          style="padding: 14px 16px; border-bottom: 1px solid var(--c-border); font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--c-foreground);"
+          style="padding: 14px 16px; border-bottom: 1px solid var(--c-border); font-size: var(--fs-lg); font-weight: var(--fw-bold); color: var(--c-foreground);"
         >
           {{ title }}
         </div>

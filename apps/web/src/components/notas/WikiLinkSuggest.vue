@@ -220,9 +220,8 @@ defineExpose({ open, moveDown, moveUp, confirmActive });
       z-index: 30;
       width: 250px;
       background: var(--c-raised);
-      border: 1px solid var(--c-border);
+      border: 1px solid var(--c-border-strong);
       border-radius: var(--r-md);
-      box-shadow: var(--shadow-lg);
       padding: 3px 0;
     "
   >
@@ -232,8 +231,9 @@ defineExpose({ open, moveDown, moveUp, confirmActive });
         font-size: 10px;
         font-weight: var(--fw-semibold);
         color: var(--c-muted);
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
+        font-family: var(--font-mono);
+  text-transform: uppercase;
+        letter-spacing: var(--ls-label);
       "
     >
       {{ listLabel }}
@@ -251,7 +251,7 @@ defineExpose({ open, moveDown, moveUp, confirmActive });
         padding: 0 8px;
         border: none;
         cursor: pointer;
-        font-size: var(--fs-sm);
+        font-size: var(--fs-label);
         color: var(--c-foreground);
         background: ${activeIndex === i ? 'var(--c-list-active)' : 'transparent'};
       `"
@@ -295,8 +295,9 @@ defineExpose({ open, moveDown, moveUp, confirmActive });
         style="
           font-size: 10px;
           font-weight: var(--fw-bold);
-          letter-spacing: 0.04em;
-          text-transform: uppercase;
+          letter-spacing: var(--ls-label);
+          font-family: var(--font-mono);
+  text-transform: uppercase;
           color: var(--c-muted);
           background: var(--c-panel);
           border-radius: var(--r-sm);
