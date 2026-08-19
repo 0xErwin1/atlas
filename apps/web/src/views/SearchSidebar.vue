@@ -381,7 +381,6 @@ onBeforeUnmount(() => {
   padding: 0 6px;
   background: var(--c-input);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-sm);
   font-size: var(--fs-sm);
   font-family: var(--font-mono);
   color: var(--c-foreground);

@@ -19,7 +19,6 @@ const router = useRouter();
         margin-top: 16px;
         padding: 0 10px;
         height: var(--h-button);
-        border-radius: var(--r-md);
         background-color: var(--c-raised);
         border: 1px solid var(--c-border);
         color: var(--c-foreground);

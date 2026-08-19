@@ -146,14 +146,13 @@ async function handleSubmit(): Promise<void> {
       style="
         width: 340px;
         padding: 26px 26px 22px;
-        border-radius: var(--r-lg);
         background-color: var(--c-panel);
         border: 1px solid var(--c-border-strong);
       "
     >
       <div class="flex items-center" style="gap: 9px; margin-bottom: 18px;">
         <Icon name="atlas-glyph" :size="24" style="color: var(--c-primary);" />
-        <span style="font-size: 19px; font-weight: 700; color: var(--c-foreground); font-family: var(--font-ui);">
+        <span style="font-size: var(--fs-xl); font-weight: var(--fw-semibold); color: var(--c-foreground); font-family: var(--font-ui);">
           Atlas
         </span>
       </div>
@@ -204,7 +203,6 @@ async function handleSubmit(): Promise<void> {
           style="
             background-color: var(--c-banner-err-bg);
             border: 1px solid color-mix(in srgb, var(--c-danger) 50%, transparent);
-            border-radius: var(--r-md);
             padding: 9px 11px;
             margin-bottom: 14px;
           "

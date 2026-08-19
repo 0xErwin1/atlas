@@ -142,7 +142,7 @@ describe('Blueprint geometry', () => {
     expect(dark['--h-row']).toBe('22px');
     expect(dark['--h-compact']).toBe('20px');
     expect(dark['--h-header']).toBe('28px');
-    expect(dark['--h-toolbar']).toBe('26px');
+    expect(dark['--h-toolbar']).toBe('32px');
     expect(dark['--h-tab']).toBe('24px');
     expect(dark['--h-input']).toBe('26px');
     expect(dark['--h-button']).toBe('26px');

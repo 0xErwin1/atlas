@@ -255,7 +255,7 @@ function onListKeydown(event: KeyboardEvent): void {
     >
       <div
         class="flex items-center"
-        style="gap: 8px; height: 36px; padding: 0 10px; background: var(--c-input); border: 1px solid var(--c-border); border-radius: var(--r-md);"
+        style="gap: 8px; height: 36px; padding: 0 10px; background: var(--c-input); border: 1px solid var(--c-border); "
       >
         <Icon name="search" :size="15" :style="{ color: 'var(--c-muted)' }" />
         <input

@@ -959,7 +959,7 @@ onBeforeRouteLeave(() => {
 
         <template v-else-if="slug && hasDocumentContent">
           <h1
-            style="font-size: 22px; font-weight: var(--fw-bold); letter-spacing: -0.01em; color: var(--c-foreground); margin-bottom: 14px;"
+            style="font-size: var(--fs-title); font-weight: var(--fw-bold); letter-spacing: -0.01em; color: var(--c-foreground); margin-bottom: 14px;"
           >
             {{ title || 'Untitled' }}
           </h1>

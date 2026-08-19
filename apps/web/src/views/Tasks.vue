@@ -722,10 +722,9 @@ watch(
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 28px;
+  height: var(--h-input);
   padding: 0 8px;
   border: 1px solid var(--c-border);
-  border-radius: var(--r-sm);
   background: var(--c-background);
   color: var(--c-muted);
 }
@@ -761,7 +760,6 @@ watch(
   height: 16px;
   padding: 0;
   border: none;
-  border-radius: var(--r-sm);
   background: transparent;
   color: var(--c-muted);
   cursor: pointer;
