@@ -63,7 +63,7 @@ describe('Blueprint palette', () => {
     '--c-panel': ['#0E151C', '#F4F6F7'],
     '--c-raised': ['#131C25', '#EAEEF0'],
     '--c-tiles': ['#10171F', '#F9FAFB'],
-    '--c-foreground': ['#C3CDD6', '#141A20'],
+    '--c-foreground': ['#D4DDE5', '#141A20'],
     '--c-muted': ['#7A8B9B', '#4A5560'],
     '--c-border': ['#22303D', '#A8B2BC'],
     '--c-selection': ['#16222E', '#DCE6E8'],
@@ -150,6 +150,16 @@ describe('Blueprint geometry', () => {
 });
 
 describe('typography', () => {
+  it('sets light-on-dark text heavier than dark-on-light at the same size', () => {
+    // Light strokes on a dark ground read thinner than the reverse at an
+    // equal weight; the variable Plex Sans face lets dark compensate without
+    // touching the light theme.
+    expect(dark['--fw-normal']).toBe('450');
+    expect(dark['--fw-medium']).toBe('550');
+    expect(light['--fw-normal']).toBe('400');
+    expect(light['--fw-medium']).toBe('500');
+  });
+
   it('reads prose in IBM Plex Sans and data in IBM Plex Mono', () => {
     expect(dark['--font-ui']).toContain('IBM Plex Sans');
     expect(dark['--font-sans']).toContain('IBM Plex Sans');

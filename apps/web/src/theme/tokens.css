@@ -100,7 +100,7 @@
   --c-panel: #0E151C;
   --c-raised: #131C25;
   --c-tiles: #10171F;
-  --c-foreground: #C3CDD6;
+  --c-foreground: #D4DDE5;
   --c-muted: #7A8B9B;
   --c-muted-foreground: var(--c-muted);
   --c-border: #22303D;
@@ -170,9 +170,13 @@
   --fs-xl: 17px;
   --fs-title: 23px;
 
-  /* Font weights */
-  --fw-normal: 400;
-  --fw-medium: 500;
+  /* Font weights. Light strokes on a dark ground read thinner than dark on
+     light at the same weight, so the dark theme runs the variable Plex Sans
+     face slightly heavier; the light theme resets these to the nominal
+     values. Plex Mono is static (400/500/600), so these round to the nearest
+     shipped face there. */
+  --fw-normal: 450;
+  --fw-medium: 550;
   --fw-semibold: 600;
   --fw-bold: 700;
 
@@ -279,4 +283,7 @@
 
   --c-banner-err-bg: #F7E4E4;
   --c-banner-err-fg: #9B2C2C;
+
+  --fw-normal: 400;
+  --fw-medium: 500;
 }
