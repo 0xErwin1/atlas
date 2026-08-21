@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick } from 'vue';
+import { setResourceCachePrincipal } from '@/cache/cacheRuntime';
 import LiveConnectionStatus from '@/components/shell/LiveConnectionStatus.vue';
 import type { LiveConnectionState, WorkspaceLiveUpdateHandlers } from '@/lib/workspaceLiveUpdates';
 
@@ -31,9 +32,11 @@ async function announce(state: LiveConnectionState): Promise<void> {
 describe('LiveConnectionStatus', () => {
   beforeEach(() => {
     handlers = null;
+    setResourceCachePrincipal('user:019ef171-bbcf-7b90-9be6-5dbb382afd08');
   });
 
   afterEach(() => {
+    setResourceCachePrincipal(undefined);
     vi.restoreAllMocks();
   });
 

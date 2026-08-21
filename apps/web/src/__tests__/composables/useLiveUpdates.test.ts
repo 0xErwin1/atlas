@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { effectScope, nextTick, ref } from 'vue';
+import { resourceCacheEpoch, setResourceCachePrincipal } from '@/cache/cacheRuntime';
 import { useLiveUpdates } from '@/composables/useLiveUpdates';
-import { resetWorkspaceLiveUpdatesForTest } from '@/lib/workspaceLiveUpdates';
+import { disposeWorkspaceLiveUpdates, resetWorkspaceLiveUpdatesForTest } from '@/lib/workspaceLiveUpdates';
+
+const PRINCIPAL = 'user:019ef171-bbcf-7b90-9be6-5dbb382afd08';
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
@@ -67,14 +70,58 @@ function envelope(eventType: string, data: unknown): string {
 describe('useLiveUpdates', () => {
   beforeEach(() => {
     resetWorkspaceLiveUpdatesForTest();
+    setResourceCachePrincipal(PRINCIPAL);
     FakeEventSource.instances = [];
     vi.stubGlobal('EventSource', FakeEventSource);
   });
 
   afterEach(() => {
     resetWorkspaceLiveUpdatesForTest();
+    setResourceCachePrincipal(undefined);
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it('re-acquires after a resource cache epoch bump so a mounted subscriber keeps receiving events', async () => {
+    const ws = ref('acme');
+    const onEvent = vi.fn();
+    const scope = effectScope();
+    scope.run(() => useLiveUpdates(ws, { onEvent, onResync: vi.fn() }));
+
+    resourceCacheEpoch.value += 1;
+    await nextTick();
+
+    expect(FakeEventSource.instances).toHaveLength(2);
+    expect(FakeEventSource.instances[0]?.closed).toBe(true);
+
+    FakeEventSource.instances[1]?.emit('task.updated', envelope('task.updated', { task_id: 't1' }));
+    expect(onEvent).toHaveBeenCalledTimes(1);
+
+    scope.stop();
+  });
+
+  it('opens no source while the principal is gone and reopens once it returns', async () => {
+    const ws = ref('acme');
+    const onEvent = vi.fn();
+    const scope = effectScope();
+    scope.run(() => useLiveUpdates(ws, { onEvent, onResync: vi.fn() }));
+    expect(FakeEventSource.instances).toHaveLength(1);
+
+    // Sign-out drops the principal and disposes the broker, in that order.
+    setResourceCachePrincipal(undefined);
+    disposeWorkspaceLiveUpdates();
+    await nextTick();
+    expect(FakeEventSource.instances).toHaveLength(1);
+    expect(FakeEventSource.instances[0]?.closed).toBe(true);
+
+    setResourceCachePrincipal(PRINCIPAL);
+    await nextTick();
+    expect(FakeEventSource.instances).toHaveLength(2);
+
+    FakeEventSource.instances[1]?.emit('task.updated', envelope('task.updated', { task_id: 't1' }));
+    expect(onEvent).toHaveBeenCalledTimes(1);
+
+    scope.stop();
   });
 
   it('shares one native source and fans out events and resyncs across concurrent scopes', () => {

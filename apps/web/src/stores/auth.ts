@@ -44,7 +44,17 @@ const UNREACHABLE_PROBLEM: NonNullable<LoginResult['problem']> = {
 };
 
 let desktopSessionActionInvalidator: (() => void) | null = null;
+let desktopSessionActionHandler: (() => void) | null = null;
 let desktopSessionActionListenerInstalled = false;
+
+/**
+ * Lets the app shell own what a desktop auth-loss action does. The store's own
+ * fallback only clears the session; the shell's handler also routes to login,
+ * exactly like a 401 from the API, so the two paths never drift apart.
+ */
+export function setDesktopSessionActionHandler(handler: (() => void) | null): void {
+  desktopSessionActionHandler = handler;
+}
 
 function installDesktopSessionActionListener(invalidate: () => void): void {
   desktopSessionActionInvalidator = invalidate;
@@ -52,7 +62,7 @@ function installDesktopSessionActionListener(invalidate: () => void): void {
   if (desktopSessionActionListenerInstalled || typeof window === 'undefined') return;
 
   window.addEventListener('atlas:session-action', () => {
-    desktopSessionActionInvalidator?.();
+    (desktopSessionActionHandler ?? desktopSessionActionInvalidator)?.();
   });
   desktopSessionActionListenerInstalled = true;
 }

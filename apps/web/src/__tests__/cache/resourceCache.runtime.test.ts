@@ -1368,6 +1368,63 @@ describe('ResourceCache runtime', () => {
     expect(load).toHaveBeenCalledOnce();
   });
 
+  it('activates a request deferred during a tag purge once the purge completes', async () => {
+    const principal = 'user:019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    const workspaceId = '019ef171-bbcf-7b90-9be6-5dbb382afd08';
+    let now = 0;
+    const scheduled: Array<{ delay: number; callback: () => void }> = [];
+    let resolveDelete: ((value: boolean) => void) | undefined;
+    const store = {
+      get: vi.fn(),
+      putMany: vi.fn().mockResolvedValue(true),
+      deleteMany: vi.fn().mockResolvedValue(true),
+      deleteScope: vi.fn(
+        () =>
+          new Promise<boolean>((resolve) => {
+            resolveDelete = resolve;
+          }),
+      ),
+      clear: vi.fn().mockResolvedValue(true),
+    };
+    const cache = new ResourceCache({
+      store,
+      clock: { now: () => now },
+      random: { next: () => 0.5 },
+      timer: {
+        clear: vi.fn(),
+        schedule: (delay, callback) => {
+          scheduled.push({ delay, callback });
+          return scheduled.length;
+        },
+      },
+    });
+    const load = vi.fn().mockResolvedValue({ title: 'Fresh' });
+    const request = {
+      key: `v1|p=${principal}|w=${workspaceId}|k=note-tree|r=project-a|q={}`,
+      payloadSchema,
+      tags: [`workspace:${workspaceId}`, 'project:project-a'],
+      freshForMs: CACHE_CADENCE.catalog.freshForMs,
+      activeForMs: CACHE_CADENCE.catalog.activeForMs,
+      retentionForMs: 60_000,
+      load,
+      publish: vi.fn(),
+      isCurrent: () => true,
+    };
+
+    const purge = cache.purgeTags(['project:project-a'], principal, workspaceId);
+    await vi.waitFor(() => expect(store.deleteScope).toHaveBeenCalledOnce());
+    cache.activate(request);
+    expect(scheduled).toHaveLength(0);
+
+    resolveDelete?.(true);
+    await expect(purge).resolves.toBe(true);
+
+    expect(scheduled.at(-1)?.delay).toBe(CACHE_CADENCE.catalog.activeForMs);
+    now += CACHE_CADENCE.catalog.activeForMs;
+    scheduled.at(-1)?.callback();
+    await vi.waitFor(() => expect(load).toHaveBeenCalledOnce());
+  });
+
   it('resets retry backoff after a successful active revalidation', async () => {
     let now = 0;
     const scheduled: Array<{ delay: number; callback: () => void }> = [];

@@ -212,14 +212,12 @@ export function startHydrationAndRevalidation<T>(
         published = true;
       }
 
-      if (request.isCurrent() && cache.isAvailable()) cache.activate(request);
+      if (request.isCurrent()) cache.activate(request);
       return { published, ...(payload === undefined ? {} : { payload }) };
     } catch (error) {
       const denied = isAuthoritativeDenial(error);
       authoritativeSettled = denied;
-      if (!denied && request.isCurrent() && cache.isAvailable()) {
-        cache.activate(request);
-      }
+      if (!denied && request.isCurrent()) cache.activate(request);
       throw error;
     }
   })();
@@ -245,6 +243,7 @@ export class ResourceCache {
   private readonly clock: CacheClock;
   private readonly hot = new Map<string, CacheEnvelope<unknown>>();
   private readonly inflight = new Map<string, InflightRevalidation>();
+  private readonly pendingActivations = new Map<string, () => void>();
   private readonly inflightPublishers = new Map<string, InflightPublisher>();
   private readonly policy: CachePolicy;
   private readonly random: CacheRandom;
@@ -436,6 +435,26 @@ export class ResourceCache {
     revalidate?: () => Promise<void>,
     freshForMs = 60_000,
   ): void {
+    if (!this.isSuspended()) {
+      this.activateNow(requestOrKey, revalidate, freshForMs);
+      return;
+    }
+
+    // A purge pauses the scheduler, but the request that arrives meanwhile
+    // still wants periodic revalidation once the purge is over. Dropping it here
+    // would leave that resource without a refresh until its next full load.
+    const key = typeof requestOrKey === 'string' ? requestOrKey : requestOrKey.key;
+    this.pendingActivations.set(key, () => {
+      if (typeof requestOrKey !== 'string' && !requestOrKey.isCurrent()) return;
+      this.activateNow(requestOrKey, revalidate, freshForMs);
+    });
+  }
+
+  private activateNow<T>(
+    requestOrKey: ResourceCacheRequest<T> | string,
+    revalidate: (() => Promise<void>) | undefined,
+    freshForMs: number,
+  ): void {
     const active =
       typeof requestOrKey === 'string'
         ? { key: requestOrKey, freshForMs, revalidate: revalidate ?? (() => Promise.resolve()) }
@@ -449,7 +468,6 @@ export class ResourceCache {
 
     const activeForMs =
       typeof requestOrKey === 'string' ? freshForMs : (requestOrKey.activeForMs ?? requestOrKey.freshForMs);
-    if (this.isSuspended()) return;
 
     const nextAttemptAt = this.clock.now() + activeForMs;
     this.activeKeys.set(active.key, {
@@ -469,6 +487,7 @@ export class ResourceCache {
 
   deactivate(key: string): void {
     this.activeKeys.delete(key);
+    this.pendingActivations.delete(key);
   }
 
   isAvailable(): boolean {
@@ -527,12 +546,14 @@ export class ResourceCache {
     this.blocked = true;
     this.hot.clear();
     this.authorizationLeaseExpiresAt = 0;
+    this.pendingActivations.clear();
     this.dropActiveCallbacks();
   }
 
   allow(): void {
     this.blocked = false;
     this.authorizationLeaseExpiresAt = this.clock.now() + this.policy.authorizationLeaseMs;
+    this.flushPendingActivations();
   }
 
   async purgeTags(tags: readonly string[], principal?: string, workspaceId?: string): Promise<boolean> {
@@ -787,8 +808,19 @@ export class ResourceCache {
       }
     }
 
-    if (!this.isSuspended()) this.reschedule();
+    if (!this.isSuspended()) {
+      this.flushPendingActivations();
+      this.reschedule();
+    }
     return succeeded;
+  }
+
+  private flushPendingActivations(): void {
+    if (this.isSuspended()) return;
+
+    const pending = [...this.pendingActivations.values()];
+    this.pendingActivations.clear();
+    for (const activate of pending) activate();
   }
 
   private isSuspended(): boolean {

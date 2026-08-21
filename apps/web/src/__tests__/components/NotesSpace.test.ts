@@ -2,7 +2,12 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ZodType } from 'zod';
-import { configureResourceCacheForTest, setResourceCachePrincipal } from '@/cache/cacheRuntime';
+import {
+  allowResourceCache,
+  blockAndPurgeResourceCache,
+  configureResourceCacheForTest,
+  setResourceCachePrincipal,
+} from '@/cache/cacheRuntime';
 import {
   type CacheEnvelope,
   createCacheEnvelope,
@@ -422,6 +427,184 @@ describe('NotesSpace catalog', () => {
     });
     expect(docs.summariesFor('sandbox').map((item) => item.id)).not.toContain('new-document-id');
     expect(loadSummaries).toHaveBeenCalledWith('atlas', 'sandbox');
+    wrapper.unmount();
+  });
+
+  it('falls back to the catalog reload when the created-document fetch rejects', async () => {
+    setupWorkspace();
+    const docs = useDocumentsStore();
+    const loadSummaries = vi.spyOn(docs, 'loadSummaries').mockResolvedValue();
+    vi.spyOn(useFoldersStore(), 'load').mockResolvedValue();
+    vi.spyOn(useBoardsStore(), 'loadBoardsForProject').mockResolvedValue(null);
+    const wrapper = mountSpace();
+    await flushPromises();
+    GET.mockClear();
+    loadSummaries.mockClear();
+    GET.mockRejectedValueOnce(new Error('desktop transport is unavailable'));
+
+    vi.useFakeTimers();
+    capturedLiveHandlers().onEvent({
+      type: EVENT_TYPE.DOCUMENT_CREATED,
+      data: { document_id: 'new-document-id', slug: 'new-document', title: 'New document' },
+      envelope: { project_id: SANDBOX_PROJECT_ID } as never,
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    vi.useRealTimers();
+
+    expect(loadSummaries).toHaveBeenCalledWith('atlas', 'sandbox');
+    wrapper.unmount();
+  });
+
+  it('falls back to the catalog reload when the created-document reconciliation itself throws', async () => {
+    setupWorkspace();
+    const docs = useDocumentsStore();
+    const loadSummaries = vi.spyOn(docs, 'loadSummaries').mockResolvedValue();
+    vi.spyOn(useFoldersStore(), 'load').mockResolvedValue();
+    vi.spyOn(useBoardsStore(), 'loadBoardsForProject').mockResolvedValue(null);
+    const wrapper = mountSpace();
+    await flushPromises();
+    loadSummaries.mockClear();
+    vi.spyOn(docs, 'fetchSummary').mockRejectedValue(new Error('boom'));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    vi.useFakeTimers();
+    capturedLiveHandlers().onEvent({
+      type: EVENT_TYPE.DOCUMENT_CREATED,
+      data: { document_id: 'new-document-id', slug: 'new-document', title: 'New document' },
+      envelope: { project_id: SANDBOX_PROJECT_ID } as never,
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    vi.useRealTimers();
+
+    expect(loadSummaries).toHaveBeenCalledWith('atlas', 'sandbox');
+    expect(consoleError).toHaveBeenCalledOnce();
+    wrapper.unmount();
+  });
+
+  it('falls back to the catalog reload when the updated-document reconciliation throws', async () => {
+    const { wrapper, docs, loadSummaries } = await mountWithListedDocument();
+    vi.spyOn(docs, 'fetchSummary').mockRejectedValue(new Error('boom'));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    vi.useFakeTimers();
+    capturedLiveHandlers().onEvent(documentUpdatedFrame(OTHER_USER_ID, 'Old title-document'));
+    await vi.advanceTimersByTimeAsync(2000);
+    vi.useRealTimers();
+
+    expect(loadSummaries).toHaveBeenCalledWith('atlas', 'sandbox');
+    wrapper.unmount();
+  });
+
+  it('keeps a live-created document when a catalog load that started before the event lands with the old list', async () => {
+    const store = new MemoryCacheStore();
+    configureCatalogRuntime(store);
+    const stale = catalog('Folder', 'Existing document');
+    let resolveSummaries: (value: { data: { items: Catalog['summaries']; has_more: boolean } }) => void =
+      () => {};
+    GET.mockImplementation(async (path: string) => {
+      if (path === '/api/workspaces/{ws}/documents/{slug}') {
+        return {
+          data: {
+            id: 'new-document-id',
+            slug: 'new-document',
+            title: 'New document',
+            folder_id: null,
+            head_seq: 1,
+            updated_at: '2026-01-02T00:00:00Z',
+            project_id: SANDBOX_PROJECT_ID,
+            workspace_id: WORKSPACE_ID,
+            content: '',
+            frontmatter: {},
+            head_revision_id: 'revision-id',
+            created_at: '2026-01-02T00:00:00Z',
+          },
+          error: undefined,
+        };
+      }
+      if (path.endsWith('/documents')) {
+        return new Promise((resolve) => {
+          resolveSummaries = resolve;
+        });
+      }
+      return { data: { items: path.endsWith('/folders') ? stale.folders : [], has_more: false } };
+    });
+    setupWorkspace();
+
+    const wrapper = mountSpace();
+    await flushPromises();
+
+    capturedLiveHandlers().onEvent({
+      type: EVENT_TYPE.DOCUMENT_CREATED,
+      data: { document_id: 'new-document-id', slug: 'new-document', title: 'New document' },
+      envelope: { project_id: SANDBOX_PROJECT_ID } as never,
+    });
+    await flushPromises();
+    expect(
+      useDocumentsStore()
+        .summariesFor('sandbox')
+        .map((item) => item.id),
+    ).toContain('new-document-id');
+
+    resolveSummaries({ data: { items: stale.summaries, has_more: false } });
+    await flushPromises();
+
+    expect(
+      useDocumentsStore()
+        .summariesFor('sandbox')
+        .map((item) => item.id),
+    ).toEqual(['Existing document-document', 'new-document-id']);
+    expect(wrapper.text()).toContain('New document');
+    wrapper.unmount();
+  });
+
+  it('stops replaying once the pending live mutations exceed the cap and schedules a reload instead', async () => {
+    const store = new MemoryCacheStore();
+    configureCatalogRuntime(store);
+    const stale = catalog('Folder', 'Existing document');
+    let resolveSummaries: (value: { data: { items: Catalog['summaries']; has_more: boolean } }) => void =
+      () => {};
+    let summariesCalls = 0;
+    GET.mockImplementation(async (path: string) => {
+      if (path.endsWith('/documents')) {
+        summariesCalls += 1;
+        if (summariesCalls === 1) {
+          return new Promise((resolve) => {
+            resolveSummaries = resolve;
+          });
+        }
+        return { data: { items: stale.summaries, has_more: false }, error: undefined };
+      }
+      return { data: { items: path.endsWith('/folders') ? stale.folders : [], has_more: false } };
+    });
+    setupWorkspace();
+    const docs = useDocumentsStore();
+    const removeSummaryById = vi.spyOn(docs, 'removeSummaryById');
+
+    const wrapper = mountSpace();
+    await flushPromises();
+
+    vi.useFakeTimers();
+    const handlers = capturedLiveHandlers();
+    for (let i = 0; i < 65; i += 1) {
+      handlers.onEvent({
+        type: EVENT_TYPE.DOCUMENT_DELETED,
+        data: { document_id: `gone-${i}` },
+        envelope: { project_id: SANDBOX_PROJECT_ID } as never,
+      });
+    }
+    expect(removeSummaryById).toHaveBeenCalledTimes(65);
+
+    resolveSummaries({ data: { items: stale.summaries, has_more: false } });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(removeSummaryById).toHaveBeenCalledTimes(65);
+    expect(summariesCalls).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(2000);
+    vi.useRealTimers();
+    await flushPromises();
+
+    expect(summariesCalls).toBe(2);
+    expect(removeSummaryById).toHaveBeenCalledTimes(65);
     wrapper.unmount();
   });
 
@@ -913,6 +1096,50 @@ describe('NotesSpace catalog', () => {
     expect(wrapper.text()).not.toContain('Prior document');
     expect(wrapper.text()).toContain('Loading notes…');
     expect(priorPrincipal).not.toBe(nextPrincipal);
+    wrapper.unmount();
+  });
+
+  it('clears the tree while the principal is purged and reloads the catalog once a principal returns', async () => {
+    const store = new MemoryCacheStore();
+    configureCatalogRuntime(store);
+    const fresh = catalog('Fresh folder', 'Fresh document');
+    GET.mockImplementation(async (path: string) => ({
+      data: {
+        items: path.endsWith('/folders') ? fresh.folders : path.endsWith('/boards') ? [] : fresh.summaries,
+        has_more: false,
+      },
+      error: undefined,
+    }));
+    setupWorkspace();
+
+    const wrapper = mountSpace();
+    await flushPromises();
+    expect(wrapper.text()).toContain('Fresh document');
+    GET.mockClear();
+
+    const purging = blockAndPurgeResourceCache();
+    setResourceCachePrincipal(undefined);
+    await purging;
+    await flushPromises();
+
+    expect(useDocumentsStore().summariesFor('sandbox')).toEqual([]);
+    expect(wrapper.text()).not.toContain('Fresh document');
+    expect(GET).not.toHaveBeenCalled();
+
+    setResourceCachePrincipal(PRINCIPAL);
+    allowResourceCache();
+    await flushPromises();
+
+    expect(GET).toHaveBeenCalledWith(
+      '/api/workspaces/{ws}/projects/{project_slug}/documents',
+      expect.anything(),
+    );
+    expect(
+      useDocumentsStore()
+        .summariesFor('sandbox')
+        .map((summary) => summary.title),
+    ).toEqual(['Fresh document']);
+    expect(wrapper.text()).toContain('Fresh document');
     wrapper.unmount();
   });
 

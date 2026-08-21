@@ -15,7 +15,7 @@ import { installDesktopZoom } from './platform/desktopZoom';
 import { createDesktopFetch, setPlatformFetch } from './platform/fetch';
 import { getPlatformTransport, type PlatformTransport, setPlatformTransport } from './platform/transport';
 import { router } from './router/index';
-import { useAuthStore } from './stores/auth';
+import { setDesktopSessionActionHandler, useAuthStore } from './stores/auth';
 import { useResourceStatusStore } from './stores/resourceStatus';
 import { setWorkspaceAliasInvalidationHandler, useWorkspaceStore } from './stores/workspace';
 import './theme/index.css';
@@ -61,7 +61,13 @@ export function registerWorkspaceLiveUpdatesPagehide(): () => void {
 app.use(appPinia);
 app.use(router);
 
-setUnauthorizedHandler(async () => {
+/**
+ * Ends the signed-in session and sends the user to the login view, keeping the
+ * current location as the post-login redirect. Shared by the API 401 path and
+ * the desktop host's session-action signal, so losing the session looks the
+ * same no matter which side noticed it first.
+ */
+async function expireSessionAndRedirect(): Promise<void> {
   const auth = useAuthStore(appPinia);
   const currentRoute = router.currentRoute.value;
   if (!auth.isAuthenticated) return;
@@ -74,7 +80,10 @@ setUnauthorizedHandler(async () => {
       : { name: 'login', query: { redirect: currentRoute.fullPath } };
 
   if (redirect !== null) void router.replace(redirect);
-});
+}
+
+setUnauthorizedHandler(expireSessionAndRedirect);
+setDesktopSessionActionHandler(() => void expireSessionAndRedirect());
 
 setCacheInvalidationHandler(async (scope) => {
   if (scope.workspaceSlug === null || scope.scope === 'none') return;

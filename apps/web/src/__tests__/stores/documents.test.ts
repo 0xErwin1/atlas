@@ -1230,6 +1230,14 @@ describe('useDocumentsStore', () => {
     expect(init.bodySerializer(file)).toBe(file);
   });
 
+  it('fetchSummary resolves null when the transport rejects instead of propagating', async () => {
+    GET.mockRejectedValueOnce(new Error('desktop transport is unavailable'));
+
+    const store = useDocumentsStore();
+
+    await expect(store.fetchSummary('ws', 'my-doc')).resolves.toBeNull();
+  });
+
   it('uploadAttachment returns null and sets error on failure', async () => {
     POST.mockResolvedValue({ error: { hint: 'too large' } });
 

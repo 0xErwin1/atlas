@@ -43,7 +43,7 @@ import {
   disposeWorkspaceLiveUpdates,
   setWorkspaceLiveUpdatesAuthorizationInvalidator,
 } from '@/lib/workspaceLiveUpdates';
-import { type MeResponse, useAuthStore } from '@/stores/auth';
+import { type MeResponse, setDesktopSessionActionHandler, useAuthStore } from '@/stores/auth';
 import { useUiStateStore } from '@/stores/uiState';
 
 const mockGet = wrappedClient.GET as ReturnType<typeof vi.fn>;
@@ -236,6 +236,28 @@ describe('useAuthStore', () => {
     expect(store.isAuthenticated).toBe(false);
     expect(store.user).toBeNull();
     expect(blockAndPurgeResourceCache).toHaveBeenCalledOnce();
+  });
+
+  it('routes a desktop auth-loss action through the registered app handler instead of the bare clear', () => {
+    const store = useAuthStore();
+    store.user = { username: 'alice' } as MeResponse;
+    store.isAuthenticated = true;
+    const handler = vi.fn();
+    setDesktopSessionActionHandler(handler);
+
+    try {
+      window.dispatchEvent(
+        new CustomEvent('atlas:session-action', {
+          detail: { origin: 'https://atlas.iperez.dev', identity: 'user-1', cancel_transport: true },
+        }),
+      );
+
+      expect(handler).toHaveBeenCalledOnce();
+      expect(store.isAuthenticated).toBe(true);
+      expect(blockAndPurgeResourceCache).not.toHaveBeenCalled();
+    } finally {
+      setDesktopSessionActionHandler(null);
+    }
   });
 
   it('consumes an origin-scoped desktop auth-loss action when the keyring identity is unavailable', () => {

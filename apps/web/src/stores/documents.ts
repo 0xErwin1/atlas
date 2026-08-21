@@ -165,10 +165,18 @@ export const useDocumentsStore = defineStore('documents', () => {
     return summariesFor(projectSlug).find((item) => item.id === documentId);
   }
 
+  /**
+   * Reads one document's catalog row. Resolves `null` on any failure, including
+   * a transport that throws instead of answering, so a live reconciliation can
+   * always fall back to a catalog reload rather than losing the event.
+   */
   async function fetchSummary(ws: string, slug: string): Promise<FetchedDocumentSummary | null> {
-    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/documents/{slug}', {
-      params: { path: { ws, slug } },
-    });
+    const response = await wrappedClient
+      .GET('/api/workspaces/{ws}/documents/{slug}', { params: { path: { ws, slug } } })
+      .catch(() => null);
+    if (response === null) return null;
+
+    const { data, error: apiError } = response;
     if (apiError !== undefined || data === undefined) return null;
 
     const parsed = fetchedDocumentSchema.safeParse(data);

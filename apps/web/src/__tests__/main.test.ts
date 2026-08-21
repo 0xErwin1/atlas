@@ -43,6 +43,8 @@ import {
 } from '@/main';
 import { createBrowserPlatformTransport } from '@/platform/browser';
 import { createDesktopPlatformTransport, type DesktopBridge } from '@/platform/desktop';
+import { router } from '@/router/index';
+import { useAuthStore } from '@/stores/auth';
 import { useResourceStatusStore } from '@/stores/resourceStatus';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -70,6 +72,51 @@ describe('workspace live update page lifecycle', () => {
 
     expect(disposeWorkspaceLiveUpdates).not.toHaveBeenCalled();
     cleanup();
+  });
+});
+
+describe('session expiry', () => {
+  afterEach(() => {
+    setResourceCachePrincipal(undefined);
+  });
+
+  it('routes a desktop session action through the shared expiry: clears the session and redirects to login', async () => {
+    configureResourceCacheForTest(
+      new ResourceCache({
+        store: {
+          get: vi.fn(),
+          putMany: vi.fn().mockResolvedValue(true),
+          deleteMany: vi.fn().mockResolvedValue(true),
+          clear: vi.fn().mockResolvedValue(true),
+        },
+      }),
+    );
+    setResourceCachePrincipal('user:019ef171-bbcf-7b90-9be6-5dbb382afd08');
+    const replace = vi.fn().mockResolvedValue(undefined);
+    Object.assign(router, {
+      currentRoute: { value: { name: 'notes', fullPath: '/n/doc-1', meta: {} } },
+      replace,
+    });
+    const auth = useAuthStore(appPinia);
+    auth.user = {
+      id: '019ef171-bbcf-7b90-9be6-5dbb382afd08',
+      principal_type: 'user',
+      username: 'alice',
+      is_root: false,
+      is_system_admin: false,
+    };
+    auth.isAuthenticated = true;
+
+    window.dispatchEvent(
+      new CustomEvent('atlas:session-action', {
+        detail: { origin: 'https://atlas.iperez.dev', identity: 'user-1', cancel_transport: true },
+      }),
+    );
+    await flushPromises();
+
+    expect(auth.isAuthenticated).toBe(false);
+    expect(auth.user).toBeNull();
+    expect(replace).toHaveBeenCalledExactlyOnceWith({ name: 'login', query: { redirect: '/n/doc-1' } });
   });
 });
 

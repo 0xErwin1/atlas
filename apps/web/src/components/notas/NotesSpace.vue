@@ -102,10 +102,53 @@ const catalogFreshnessStatus = computed(() =>
   catalogStatusKey.value === '' ? 'empty' : resourceStatus.statusFor(catalogStatusKey.value),
 );
 
+interface LiveCatalogMutation {
+  seq: number;
+  apply: () => void;
+}
+
+// Pending mutations are only pruned when a catalog snapshot is published, so a
+// long stretch of live events with no reload would let the list grow without
+// bound and replay every closure on the next publish. Past this many, a reload
+// is cheaper than the replay and its snapshot already contains them all.
+const LIVE_MUTATION_REPLAY_CAP = 64;
+
+let liveMutationSeq = 0;
+let pendingLiveMutations: LiveCatalogMutation[] = [];
+
+/**
+ * Applies a live mutation to the published catalog and remembers it, so a
+ * catalog load that was already in flight when the event arrived cannot revert
+ * it when that load's older snapshot is published.
+ */
+function applyLiveMutation(apply: () => void): void {
+  liveMutationSeq += 1;
+  apply();
+
+  if (pendingLiveMutations.length >= LIVE_MUTATION_REPLAY_CAP) {
+    pendingLiveMutations = [];
+    scheduleLiveReload();
+    return;
+  }
+
+  pendingLiveMutations.push({ seq: liveMutationSeq, apply });
+}
+
+/**
+ * Re-applies, in order, the live mutations a freshly published snapshot cannot
+ * contain: those applied after the request that produced it started. Older
+ * ones are already in the snapshot and are forgotten.
+ */
+function replayLiveMutationsAfter(loadStartedAtSeq: number): void {
+  pendingLiveMutations = pendingLiveMutations.filter((mutation) => mutation.seq > loadStartedAtSeq);
+  for (const mutation of pendingLiveMutations) mutation.apply();
+}
+
 function clearCatalog(): void {
   catalogSequence += 1;
   catalogTarget.value = null;
   catalogError.value = null;
+  pendingLiveMutations = [];
 
   folders.publishForProject(props.project.slug, []);
   documents.publishSummariesForProject(props.project.slug, []);
@@ -118,6 +161,12 @@ interface CatalogLoadContext {
   project: ProjectSummary;
   target: string;
   statusKey: string;
+  /**
+   * The live-mutation sequence when this context last started a network load,
+   * or -1 before any. A published snapshot reflects the server as of that
+   * start, so only later mutations have to be replayed on top of it.
+   */
+  loadStartedAtSeq: number;
   /**
    * A background catch-up rather than a user-visible load: it must not raise the
    * loading flag, flap the freshness row, or replace a rendered tree with an
@@ -170,6 +219,7 @@ async function loadTree(options: LoadTreeOptions = {}): Promise<void> {
     project,
     target,
     statusKey: `note-tree:${wsSlug}:${project.slug}`,
+    loadStartedAtSeq: -1,
     silent: options.silent === true && catalogTarget.value === target,
     isCurrent: () => sequence === catalogSequence && workspace.activeWorkspaceSlug === wsSlug,
   };
@@ -205,6 +255,7 @@ async function loadCatalogDegraded(ctx: CatalogLoadContext): Promise<void> {
   const onlineHint = typeof navigator === 'undefined' || navigator.onLine;
   if (!ctx.silent) resourceStatus.beginRequest(ctx.statusKey, onlineHint);
 
+  ctx.loadStartedAtSeq = liveMutationSeq;
   const [, , boardsError] = await Promise.all([
     folders.load(ctx.wsSlug, ctx.project.slug),
     documents.loadSummaries(ctx.wsSlug, ctx.project.slug),
@@ -219,6 +270,7 @@ async function loadCatalogDegraded(ctx: CatalogLoadContext): Promise<void> {
       if (!ctx.silent) catalogError.value = failure;
       resourceStatus.recordRequestFailure(ctx.statusKey, onlineHint);
     } else {
+      replayLiveMutationsAfter(ctx.loadStartedAtSeq);
       catalogTarget.value = ctx.target;
       resourceStatus.recordRequestSuccess(ctx.statusKey, true);
     }
@@ -241,12 +293,14 @@ async function loadCatalogCached(ctx: CatalogLoadContext, key: string): Promise<
     folders.publishForProject(project.slug, payload.folders);
     documents.publishSummariesForProject(project.slug, payload.summaries);
     boards.publishForProject(project.slug, payload.boards);
+    replayLiveMutationsAfter(ctx.loadStartedAtSeq);
     catalogTarget.value = ctx.target;
     resourceStatus.recordRequestSuccess(ctx.statusKey, true);
   };
 
   let catalogDenied = false;
   const load = async (): Promise<NoteCatalog> => {
+    ctx.loadStartedAtSeq = liveMutationSeq;
     const [folderPage, summaryPage, boardPage] = await Promise.all([
       collectPaged((cursor) =>
         wrappedClient.GET('/api/workspaces/{ws}/projects/{project_slug}/folders', {
@@ -675,7 +729,7 @@ async function reconcileCreatedDocument(evt: LiveUpdateEvent): Promise<void> {
     return;
   }
 
-  documents.upsertSummary(project.slug, fetched.summary);
+  applyLiveMutation(() => documents.upsertSummary(project.slug, fetched.summary));
 }
 
 /**
@@ -703,7 +757,7 @@ async function reconcileUpdatedDocument(documentId: string): Promise<void> {
     return;
   }
 
-  documents.upsertSummary(project.slug, fetched.summary);
+  applyLiveMutation(() => documents.upsertSummary(project.slug, fetched.summary));
 }
 
 /**
@@ -723,7 +777,7 @@ function reconcileMovedDocument(evt: LiveUpdateEvent): void {
   const listed = documents.summaryById(project.slug, documentId) !== undefined;
 
   if (eventProjectId !== undefined && project.id !== undefined && eventProjectId !== project.id) {
-    if (listed) documents.removeSummaryById(project.slug, documentId);
+    if (listed) applyLiveMutation(() => documents.removeSummaryById(project.slug, documentId));
     return;
   }
 
@@ -732,7 +786,8 @@ function reconcileMovedDocument(evt: LiveUpdateEvent): void {
     return;
   }
 
-  documents.moveSummaryById(project.slug, documentId, eventString(evt.data, 'to_folder_id') ?? null);
+  const toFolderId = eventString(evt.data, 'to_folder_id') ?? null;
+  applyLiveMutation(() => documents.moveSummaryById(project.slug, documentId, toFolderId));
 }
 
 function reconcileMovedBoard(evt: LiveUpdateEvent): void {
@@ -747,7 +802,7 @@ function reconcileMovedBoard(evt: LiveUpdateEvent): void {
   const listed = boards.boardsFor(project.slug).some((board) => board.id === boardId);
 
   if (eventProjectId !== undefined && project.id !== undefined && eventProjectId !== project.id) {
-    if (listed) boards.removeFromProject(project.slug, boardId);
+    if (listed) applyLiveMutation(() => boards.removeFromProject(project.slug, boardId));
     return;
   }
 
@@ -756,7 +811,8 @@ function reconcileMovedBoard(evt: LiveUpdateEvent): void {
     return;
   }
 
-  boards.moveInProject(project.slug, boardId, eventString(evt.data, 'to_folder_id') ?? null);
+  const toFolderId = eventString(evt.data, 'to_folder_id') ?? null;
+  applyLiveMutation(() => boards.moveInProject(project.slug, boardId, toFolderId));
 }
 
 /**
@@ -770,8 +826,21 @@ function reconcileDeletion(evt: LiveUpdateEvent, kind: 'board' | 'document'): vo
     return;
   }
 
-  if (kind === 'document') documents.removeSummaryById(props.project.slug, id);
-  else boards.removeFromProject(props.project.slug, id);
+  const projectSlug = props.project.slug;
+  if (kind === 'document') applyLiveMutation(() => documents.removeSummaryById(projectSlug, id));
+  else applyLiveMutation(() => boards.removeFromProject(projectSlug, id));
+}
+
+/**
+ * Runs a targeted reconciliation and falls back to the catalog reload if it
+ * throws, so a failed single-row fetch degrades to a refetch instead of a
+ * silently dropped live event.
+ */
+function reconcileOrReload(reconciliation: Promise<void>): void {
+  reconciliation.catch((error: unknown) => {
+    console.error('NotesSpace: live reconciliation failed, reloading the catalog', error);
+    scheduleLiveReload();
+  });
 }
 
 function onLiveEvent(evt: LiveUpdateEvent): void {
@@ -779,7 +848,7 @@ function onLiveEvent(evt: LiveUpdateEvent): void {
 
   switch (evt.type) {
     case EVENT_TYPE.DOCUMENT_CREATED:
-      void reconcileCreatedDocument(evt);
+      reconcileOrReload(reconcileCreatedDocument(evt));
       break;
 
     case EVENT_TYPE.DOCUMENT_UPDATED: {
@@ -790,7 +859,9 @@ function onLiveEvent(evt: LiveUpdateEvent): void {
       // this client just saved is skipped: refetching it would only re-derive the
       // summary already on screen, once per debounced keystroke burst.
       if (documentId === undefined || documentId === '') scheduleLiveReload();
-      else if (!isSelfActor(evt.envelope, auth.sessionActor)) void reconcileUpdatedDocument(documentId);
+      else if (!isSelfActor(evt.envelope, auth.sessionActor)) {
+        reconcileOrReload(reconcileUpdatedDocument(documentId));
+      }
       break;
     }
 
