@@ -400,14 +400,60 @@ export function buildDocRangeCache(docText: string): DocRangeCache {
 }
 
 /**
- * Whether the ViewPlugin must re-run full-document range discovery. Selection
- * and viewport-only updates reuse the previous cache.
+ * Whether the ViewPlugin must re-run full-document range discovery. The scan
+ * reads the document text alone, so only a document change invalidates it;
+ * selection, viewport and parser-progress updates reuse the previous cache.
  */
 export function shouldRefreshDocRangeCache(flags: {
   docChanged: boolean;
   syntaxTreeChanged: boolean;
 }): boolean {
-  return flags.docChanged || flags.syntaxTreeChanged;
+  return flags.docChanged;
+}
+
+/** A half-open document range `[from, to)`, as produced by the scans above. */
+export interface PositionRange {
+  from: number;
+  to: number;
+}
+
+/**
+ * Index bounds `[start, end)` of the entries in `ranges` that overlap the window
+ * `[from, to)`. `ranges` must be sorted by `from` and non-overlapping, which
+ * every scan in this module guarantees, so both bounds are found by binary
+ * search and a viewport pass never walks the whole document's ranges.
+ */
+export function overlappingRangeBounds(
+  ranges: readonly PositionRange[],
+  from: number,
+  to: number,
+): { start: number; end: number } {
+  let low = 0;
+  let high = ranges.length;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    const candidate = ranges[mid];
+    if (candidate !== undefined && candidate.to <= from) low = mid + 1;
+    else high = mid;
+  }
+  const start = low;
+
+  high = ranges.length;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    const candidate = ranges[mid];
+    if (candidate !== undefined && candidate.from < to) low = mid + 1;
+    else high = mid;
+  }
+
+  return { start, end: low };
+}
+
+/** The entry of sorted, non-overlapping `ranges` that contains `pos`, or null. */
+export function rangeContaining<T extends PositionRange>(ranges: readonly T[], pos: number): T | null {
+  const { start, end } = overlappingRangeBounds(ranges, pos, pos + 1);
+  if (start >= end) return null;
+  return ranges[start] ?? null;
 }
 
 /** Per-column horizontal alignment from a GFM table delimiter row. */

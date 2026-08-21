@@ -9,10 +9,12 @@ import {
   isMarkerRevealed,
   type LineRange,
   type MarkerRange,
+  overlappingRangeBounds,
   paragraphSoftBreaks,
   parseImage,
   parseTable,
   partitionMarkers,
+  rangeContaining,
   type SelectionRange,
   shouldRefreshDocRangeCache,
   taskMarkerChecked,
@@ -176,8 +178,9 @@ describe('findWikilinkRanges', () => {
 });
 
 /**
- * Selection/viewport moves must reuse the full-doc math/wikilink scan. Refreshing
- * only when the document or syntax tree identity changes keeps caret motion cheap.
+ * Selection, viewport and parser-progress updates must reuse the full-doc
+ * math/wikilink scan. Refreshing only when the document changes keeps caret
+ * motion and background parsing cheap.
  */
 describe('doc range cache policy', () => {
   it('does not refresh on selection- or viewport-only updates', () => {
@@ -188,8 +191,8 @@ describe('doc range cache policy', () => {
     expect(shouldRefreshDocRangeCache({ docChanged: true, syntaxTreeChanged: false })).toBe(true);
   });
 
-  it('refreshes when the syntax tree identity changes', () => {
-    expect(shouldRefreshDocRangeCache({ docChanged: false, syntaxTreeChanged: true })).toBe(true);
+  it('does not refresh when only the syntax tree identity changes, since the scan reads text alone', () => {
+    expect(shouldRefreshDocRangeCache({ docChanged: false, syntaxTreeChanged: true })).toBe(false);
   });
 
   it('precomputes math and wikilink ranges from a single doc string', () => {
@@ -351,5 +354,41 @@ describe('partitionMarkers', () => {
 
     expect(revealed).toEqual([openBold, closeBold]);
     expect(hidden).toEqual([headerMark]);
+  });
+});
+
+/**
+ * The viewport passes look up sorted, non-overlapping ranges (math, wikilinks)
+ * by binary search so a long document costs O(log n) per visible range instead
+ * of a linear scan of every range in the document.
+ */
+describe('sorted range lookup', () => {
+  const ranges = [
+    { from: 0, to: 5 },
+    { from: 10, to: 15 },
+    { from: 20, to: 25 },
+    { from: 30, to: 35 },
+  ];
+
+  it('bounds the ranges overlapping a window', () => {
+    expect(overlappingRangeBounds(ranges, 12, 22)).toEqual({ start: 1, end: 3 });
+    expect(overlappingRangeBounds(ranges, 0, 100)).toEqual({ start: 0, end: 4 });
+    expect(overlappingRangeBounds(ranges, 5, 10)).toEqual({ start: 1, end: 1 });
+    expect(overlappingRangeBounds(ranges, 40, 50)).toEqual({ start: 4, end: 4 });
+    expect(overlappingRangeBounds([], 0, 10)).toEqual({ start: 0, end: 0 });
+  });
+
+  it('treats a range touching the window edge as overlapping only when it has length inside it', () => {
+    expect(overlappingRangeBounds(ranges, 4, 5)).toEqual({ start: 0, end: 1 });
+    expect(overlappingRangeBounds(ranges, 15, 20)).toEqual({ start: 2, end: 2 });
+  });
+
+  it('finds the range containing a position', () => {
+    expect(rangeContaining(ranges, 0)).toBe(ranges[0]);
+    expect(rangeContaining(ranges, 4)).toBe(ranges[0]);
+    expect(rangeContaining(ranges, 5)).toBeNull();
+    expect(rangeContaining(ranges, 23)).toBe(ranges[2]);
+    expect(rangeContaining(ranges, 36)).toBeNull();
+    expect(rangeContaining([], 3)).toBeNull();
   });
 });

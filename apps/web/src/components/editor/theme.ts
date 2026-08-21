@@ -124,10 +124,14 @@ export const atlasMarkdownThemeSpec: Record<string, Record<string, string>> = {
   },
 
   // Rendered GFM table, in place of the raw pipe markdown off the active block.
+  // Block widgets are contained so a repaint inside one (diagram landing, table
+  // scroll) never invalidates the prose around it; `content` keeps size out of
+  // the containment so the wrappers still measure to their rendered height.
   '.cm-atlas-table-wrap': {
     overflowX: 'auto',
     margin: '0.2em 0',
     cursor: 'text',
+    contain: 'content',
   },
   '.cm-atlas-table': {
     borderCollapse: 'collapse',
@@ -151,6 +155,7 @@ export const atlasMarkdownThemeSpec: Record<string, Record<string, string>> = {
     justifyContent: 'center',
     padding: '0.6em 0',
     cursor: 'text',
+    contain: 'content',
   },
   '.cm-atlas-mermaid svg': {
     maxWidth: '100%',
@@ -196,6 +201,7 @@ export const atlasMarkdownThemeSpec: Record<string, Record<string, string>> = {
     padding: '0.35em 0',
     color: 'var(--c-foreground)',
     cursor: 'text',
+    contain: 'content',
   },
   '.cm-atlas-math-block .katex-display': {
     margin: '0',

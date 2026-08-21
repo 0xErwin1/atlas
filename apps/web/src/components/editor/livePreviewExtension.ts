@@ -1,5 +1,12 @@
 import { ensureSyntaxTree, syntaxTree } from '@codemirror/language';
-import { type EditorState, type Extension, type Range, RangeSetBuilder, StateField } from '@codemirror/state';
+import {
+  type EditorSelection,
+  type EditorState,
+  type Extension,
+  type Range,
+  RangeSetBuilder,
+  StateField,
+} from '@codemirror/state';
 import {
   Decoration,
   type DecorationSet,
@@ -8,6 +15,7 @@ import {
   type ViewUpdate,
   WidgetType,
 } from '@codemirror/view';
+import { BoundedCache } from '@/lib/boundedCache';
 import {
   buildDocRangeCache,
   type DocRangeCache,
@@ -17,10 +25,13 @@ import {
   type InlineToken,
   isBlockActive,
   type MathRange,
+  overlappingRangeBounds,
   type ParsedTable,
+  type PositionRange,
   paragraphSoftBreaks,
   parseImage,
   parseTable,
+  rangeContaining,
   shouldRefreshDocRangeCache,
   taskMarkerChecked,
   tokenizeInline,
@@ -380,21 +391,20 @@ export class ImageWidget extends WidgetType {
  * (bold, italic, code, strikethrough, links, wikilinks).
  */
 class TableWidget extends WidgetType {
+  // Includes the resolved titles so cells with wikilinks re-render on rename.
+  private readonly key: string;
+
   constructor(
     private readonly table: ParsedTable,
     private readonly from: number,
     private readonly ctx: InlineCtx,
   ) {
     super();
+    this.key = JSON.stringify(table) + JSON.stringify(ctx.titles);
   }
 
   eq(other: TableWidget): boolean {
     return other.from === this.from && other.key === this.key;
-  }
-
-  // Includes the resolved titles so cells with wikilinks re-render on rename.
-  private get key(): string {
-    return JSON.stringify(this.table) + JSON.stringify(this.ctx.titles);
   }
 
   toDOM(view: EditorView): HTMLElement {
@@ -486,24 +496,134 @@ export function attachMermaidSvg(container: HTMLElement, svg: string): void {
   container.replaceChildren(template.content);
 }
 
-async function renderMermaid(container: HTMLElement, code: string): Promise<void> {
-  try {
-    const mermaid = await loadMermaid();
-    mermaidSeq += 1;
-    // Theme is set per render so the diagram tracks the app's dark/light theme.
-    mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: currentMermaidTheme() });
-    const { svg } = await mermaid.render(`atlas-mermaid-${mermaidSeq}`, code);
-    attachMermaidSvg(container, svg);
-    container.classList.remove('cm-atlas-mermaid-error');
-  } catch {
-    container.textContent = code;
-    container.classList.add('cm-atlas-mermaid-error');
-  }
+const MERMAID_CACHE_CAP = 64;
+
+/**
+ * Rendered SVG per diagram source and theme. CodeMirror drops a widget's DOM
+ * when its block leaves the viewport margin and asks for it again on re-entry,
+ * so without this every scroll past a diagram would run mermaid again.
+ */
+const mermaidSvgCache = new BoundedCache<string | null>(MERMAID_CACHE_CAP);
+
+/**
+ * Last measured wrapper height per diagram source, reserved before the SVG
+ * lands so the block does not jump from 0px once the render resolves. Keyed
+ * by source only: the palette does not change a diagram's size.
+ */
+const mermaidHeightCache = new BoundedCache<number>(MERMAID_CACHE_CAP);
+
+/** In-flight renders per cache key, so widgets sharing a source share one render. */
+const mermaidInFlight = new Map<string, Promise<string | null>>();
+
+interface LiveMermaid {
+  code: string;
+  view: EditorView;
 }
 
-// Per-diagram observers that re-render when the app theme flips, keyed by the
-// widget DOM so they can be disconnected when the widget is destroyed.
-const mermaidThemeObservers = new WeakMap<HTMLElement, MutationObserver>();
+/** Mounted diagram wrappers, re-rendered together when the app theme flips. */
+const liveMermaidWrappers = new Map<HTMLElement, LiveMermaid>();
+let mermaidThemeObserver: MutationObserver | null = null;
+
+function mermaidCacheKey(code: string): string {
+  return `${currentMermaidTheme()}\u0000${code}`;
+}
+
+/**
+ * Renders `code` with the current theme, resolving to the SVG or null on a
+ * parse error. The result is cached either way, so a broken diagram is not
+ * re-parsed on every viewport entry; concurrent callers share one render.
+ */
+function renderMermaidSvg(code: string): Promise<string | null> {
+  const key = mermaidCacheKey(code);
+  const pending = mermaidInFlight.get(key);
+  if (pending !== undefined) return pending;
+
+  const run = (async (): Promise<string | null> => {
+    try {
+      const mermaid = await loadMermaid();
+      mermaidSeq += 1;
+      // Theme is set per render so the diagram tracks the app's dark/light theme.
+      mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: currentMermaidTheme() });
+      const { svg } = await mermaid.render(`atlas-mermaid-${mermaidSeq}`, code);
+      mermaidSvgCache.set(key, svg);
+      return svg;
+    } catch {
+      mermaidSvgCache.set(key, null);
+      return null;
+    } finally {
+      mermaidInFlight.delete(key);
+    }
+  })();
+
+  mermaidInFlight.set(key, run);
+  return run;
+}
+
+function paintMermaid(wrap: HTMLElement, code: string, svg: string | null): void {
+  wrap.style.minHeight = '';
+
+  if (svg === null) {
+    wrap.textContent = code;
+    wrap.classList.add('cm-atlas-mermaid-error');
+    return;
+  }
+
+  attachMermaidSvg(wrap, svg);
+  wrap.classList.remove('cm-atlas-mermaid-error');
+}
+
+/**
+ * Records the painted wrapper's height for later reservation and lets the view
+ * reconcile its height map with the diagram that just landed.
+ */
+function measureMermaid(wrap: HTMLElement, code: string, view: EditorView): void {
+  view.requestMeasure({
+    read: () => wrap.getBoundingClientRect().height,
+    write: (height) => {
+      if (height > 0) mermaidHeightCache.set(code, height);
+    },
+  });
+}
+
+/**
+ * Paints the diagram into `wrap`: synchronously from the cache when the source
+ * was rendered before under the current theme, otherwise asynchronously after a
+ * render, with the last known height reserved in the meantime.
+ */
+function renderMermaidInto(wrap: HTMLElement, code: string, view: EditorView): void {
+  const cached = mermaidSvgCache.get(mermaidCacheKey(code));
+  if (cached !== undefined) {
+    paintMermaid(wrap, code, cached);
+    if (mermaidHeightCache.get(code) === undefined) measureMermaid(wrap, code, view);
+    return;
+  }
+
+  const height = mermaidHeightCache.get(code);
+  if (height !== undefined) wrap.style.minHeight = `${height}px`;
+
+  void renderMermaidSvg(code).then((svg) => {
+    if (!liveMermaidWrappers.has(wrap)) return;
+    paintMermaid(wrap, code, svg);
+    measureMermaid(wrap, code, view);
+  });
+}
+
+/**
+ * Starts the single observer that re-renders every mounted diagram when the
+ * app theme flips. Cached SVG embeds the old palette, so it is dropped first.
+ */
+function watchMermaidTheme(): void {
+  if (mermaidThemeObserver !== null || typeof MutationObserver === 'undefined') return;
+
+  mermaidThemeObserver = new MutationObserver(() => {
+    mermaidSvgCache.clear();
+    for (const [wrap, live] of liveMermaidWrappers) renderMermaidInto(wrap, live.code, live.view);
+  });
+  mermaidThemeObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-theme'],
+  });
+}
 
 interface RenderedMath {
   html: string;
@@ -533,18 +653,40 @@ function loadKatex(): Promise<KatexApi> {
   return katexPromise;
 }
 
+const MATH_CACHE_CAP = 256;
+
+/**
+ * Rendered KaTeX output per formula and mode. A math widget is re-created every
+ * time its line re-enters the viewport, and KaTeX parsing is the expensive part,
+ * so the markup is rendered once per distinct formula.
+ */
+const mathRenderCache = new BoundedCache<RenderedMath>(MATH_CACHE_CAP);
+
+/**
+ * Renders `formula` to HTML-only markup (no MathML twin: it is visually hidden
+ * yet doubles the DOM every formula costs at layout time), memoised per formula
+ * and display mode.
+ */
 function renderMath(katex: KatexApi, formula: string, displayMode: boolean): RenderedMath {
+  const key = `${displayMode ? 'display' : 'inline'}\u0000${formula}`;
+  const cached = mathRenderCache.get(key);
+  if (cached !== undefined) return cached;
+
+  let rendered: RenderedMath;
   try {
     const html = katex.renderToString(formula, {
       displayMode,
-      output: 'htmlAndMathml',
+      output: 'html',
       throwOnError: false,
       trust: false,
     });
-    return { html, invalid: /katex-error|merror/.test(html) };
+    rendered = { html, invalid: /katex-error|merror/.test(html) };
   } catch {
-    return { html: '', invalid: true };
+    rendered = { html: '', invalid: true };
   }
+
+  mathRenderCache.set(key, rendered);
+  return rendered;
 }
 
 function appendMathFallback(parent: HTMLElement, formula: string): void {
@@ -689,8 +831,10 @@ class HtmlBlockWidget extends WidgetType {
  * rendered asynchronously (mermaid is lazy-loaded) with the current app theme and
  * re-rendered when the theme changes; on a parse error the raw code is shown
  * instead. Clicking (when editable) reveals the source for editing.
+ *
+ * Exported for unit testing its identity and height reservation.
  */
-class MermaidWidget extends WidgetType {
+export class MermaidWidget extends WidgetType {
   constructor(
     private readonly code: string,
     private readonly from: number,
@@ -700,6 +844,10 @@ class MermaidWidget extends WidgetType {
 
   eq(other: MermaidWidget): boolean {
     return other.code === this.code && other.from === this.from;
+  }
+
+  get estimatedHeight(): number {
+    return mermaidHeightCache.get(this.code) ?? -1;
   }
 
   toDOM(view: EditorView): HTMLElement {
@@ -713,23 +861,15 @@ class MermaidWidget extends WidgetType {
       view.focus();
     });
 
-    void renderMermaid(wrap, this.code);
-
-    if (typeof MutationObserver !== 'undefined') {
-      const observer = new MutationObserver(() => void renderMermaid(wrap, this.code));
-      observer.observe(document.documentElement, {
-        attributes: true,
-        attributeFilter: ['data-theme'],
-      });
-      mermaidThemeObservers.set(wrap, observer);
-    }
+    liveMermaidWrappers.set(wrap, { code: this.code, view });
+    watchMermaidTheme();
+    renderMermaidInto(wrap, this.code, view);
 
     return wrap;
   }
 
   destroy(dom: HTMLElement): void {
-    mermaidThemeObservers.get(dom)?.disconnect();
-    mermaidThemeObservers.delete(dom);
+    liveMermaidWrappers.delete(dom);
   }
 
   ignoreEvent(): boolean {
@@ -862,26 +1002,33 @@ export function buildDecorations(
   // Ranges replaced by a block widget (tables, diagrams). The wikilink pass must
   // skip these: a replace decoration inside an already-replaced block would
   // overlap and break the RangeSet. Collect them in a full first pass so every
-  // block range is known before any wikilink is added.
+  // block range is known before any wikilink is added. Only blocks touching a
+  // visible range matter, since every later pass is scoped to those ranges.
   const blockRanges: BlockRange[] = [];
   const docText = rangeCache?.docText ?? view.state.doc.toString();
   const mathRanges = rangeCache?.mathRanges ?? findMathRanges(docText);
 
-  for (const range of mathRanges) {
-    if (range.kind !== 'block') continue;
-    const firstLine = view.state.doc.lineAt(range.from).number;
-    const lastLine = view.state.doc.lineAt(range.to).number;
-    if (!isBlockActive(firstLine, lastLine, activeLines))
-      blockRanges.push({ from: range.from, to: range.to });
-  }
+  for (const { from, to } of view.visibleRanges) {
+    const { start, end } = overlappingRangeBounds(mathRanges, from, to);
+    for (let i = start; i < end; i += 1) {
+      const range = mathRanges[i];
+      if (range === undefined || range.kind !== 'block') continue;
+      const firstLine = view.state.doc.lineAt(range.from).number;
+      const lastLine = view.state.doc.lineAt(range.to).number;
+      if (!isBlockActive(firstLine, lastLine, activeLines))
+        blockRanges.push({ from: range.from, to: range.to });
+    }
 
-  tree.iterate({
-    enter: (node) => {
-      if (node.name !== 'HTMLBlock') return undefined;
-      blockRanges.push({ from: node.from, to: node.to });
-      return false;
-    },
-  });
+    tree.iterate({
+      from,
+      to,
+      enter: (node) => {
+        if (node.name !== 'HTMLBlock') return undefined;
+        blockRanges.push({ from: node.from, to: node.to });
+        return false;
+      },
+    });
+  }
 
   // Cached wikilink ranges omit block exclusions; decorateWikilinks filters via
   // isInsideBlock. Without a cache, exclude block ranges during the scan.
@@ -1213,9 +1360,11 @@ function decorateInlineMath(
   mathRanges: MathRange[],
 ): void {
   const doc = view.state.doc;
+  const { start, end } = overlappingRangeBounds(mathRanges, from, to);
 
-  for (const range of mathRanges) {
-    if (range.kind !== 'inline' || range.to <= from || range.from >= to) continue;
+  for (let i = start; i < end; i += 1) {
+    const range = mathRanges[i];
+    if (range === undefined || range.kind !== 'inline') continue;
     if (isInsideBlock(range.from, blockRanges)) continue;
 
     const lineNo = doc.lineAt(range.from).number;
@@ -1239,8 +1388,11 @@ function decorateWikilinks(
   blockRanges: BlockRange[],
   wikilinkRanges: WikilinkRange[],
 ): void {
-  for (const range of wikilinkRanges) {
-    if (range.to <= from || range.from >= to) continue;
+  const { start, end } = overlappingRangeBounds(wikilinkRanges, from, to);
+
+  for (let i = start; i < end; i += 1) {
+    const range = wikilinkRanges[i];
+    if (range === undefined) continue;
 
     // Skip wikilinks inside a block-replaced range (e.g. a rendered table cell):
     // a replace inside an already-replaced block would overlap and throw.
@@ -1290,8 +1442,10 @@ function isInsideBlock(pos: number, blockRanges: BlockRange[]): boolean {
   return blockRanges.some((b) => pos >= b.from && pos < b.to);
 }
 
-function isInsideRange(from: number, to: number, ranges: Array<{ from: number; to: number }>): boolean {
-  return ranges.some((range) => from >= range.from && to <= range.to);
+/** True when `[from, to]` lies within one of the sorted, non-overlapping `ranges`. */
+function isInsideRange(from: number, to: number, ranges: readonly PositionRange[]): boolean {
+  const range = rangeContaining(ranges, from);
+  return range !== null && to <= range.to;
 }
 
 /** The language label of a FencedCode node from its CodeInfo child, or null. */
@@ -1381,9 +1535,60 @@ export function buildBlockDecorations(
   /** Precomputed math ranges; when omitted, scans `state.doc` once. */
   mathRanges?: MathRange[],
 ): DecorationSet {
+  return collectBlockDecorations(state, reveal, ctx, tree, mathRanges).decorations;
+}
+
+/**
+ * The line span of a block-widget candidate (table, HTML block, mermaid fence,
+ * block math), as document positions of its first line's start and last line's
+ * end. A selection range touching this span reveals the block.
+ */
+interface BlockSpan {
+  lineFrom: number;
+  lineTo: number;
+}
+
+interface BuiltBlocks {
+  decorations: DecorationSet;
+  /** Every candidate block, whether or not it is currently revealed. */
+  blocks: BlockSpan[];
+}
+
+/** True when `selection` touches any line of `block`, matching the active-block rule. */
+function blockRevealed(block: BlockSpan, selection: EditorSelection): boolean {
+  return selection.ranges.some((range) => range.from <= block.lineTo && range.to >= block.lineFrom);
+}
+
+/**
+ * True when moving the selection from `before` to `after` neither reveals nor
+ * re-collapses any block, so the existing block decorations remain valid.
+ */
+export function revealedBlocksUnchanged(
+  blocks: readonly BlockSpan[],
+  before: EditorSelection,
+  after: EditorSelection,
+): boolean {
+  return blocks.every((block) => blockRevealed(block, before) === blockRevealed(block, after));
+}
+
+function collectBlockDecorations(
+  state: EditorState,
+  reveal: boolean,
+  ctx: InlineCtx,
+  tree: ReturnType<typeof syntaxTree>,
+  mathRanges?: MathRange[],
+): BuiltBlocks {
   const doc = state.doc;
   const activeLines = activeLinesFromSelection(state, reveal);
   const decos: Range<Decoration>[] = [];
+  const blocks: BlockSpan[] = [];
+
+  const spanOf = (from: number, to: number): { firstLine: number; lastLine: number } => {
+    const first = doc.lineAt(from);
+    const last = doc.lineAt(to);
+    blocks.push({ lineFrom: first.from, lineTo: last.to });
+    return { firstLine: first.number, lastLine: last.number };
+  };
 
   const blockReplace = (node: SyntaxNode, widget: WidgetType): void => {
     decos.push(Decoration.replace({ widget, block: true }).range(node.from, node.to));
@@ -1396,8 +1601,7 @@ export function buildBlockDecorations(
   const ranges = mathRanges ?? findMathRanges(doc.toString());
   for (const range of ranges) {
     if (range.kind !== 'block') continue;
-    const firstLine = doc.lineAt(range.from).number;
-    const lastLine = doc.lineAt(range.to).number;
+    const { firstLine, lastLine } = spanOf(range.from, range.to);
     if (!isBlockActive(firstLine, lastLine, activeLines)) {
       rangeReplace(range, new MathBlockWidget(mathBody(doc, range), range.from));
     }
@@ -1416,8 +1620,7 @@ export function buildBlockDecorations(
       }
 
       if (node.name === 'Table') {
-        const firstLine = doc.lineAt(node.from).number;
-        const lastLine = doc.lineAt(node.to).number;
+        const { firstLine, lastLine } = spanOf(node.from, node.to);
         if (!isBlockActive(firstLine, lastLine, activeLines)) {
           const parsed = parseTable(doc.sliceString(node.from, node.to));
           if (parsed !== null) blockReplace(node.node, new TableWidget(parsed, node.from, ctx));
@@ -1426,8 +1629,7 @@ export function buildBlockDecorations(
       }
 
       if (node.name === 'HTMLBlock') {
-        const firstLine = doc.lineAt(node.from).number;
-        const lastLine = doc.lineAt(node.to).number;
+        const { firstLine, lastLine } = spanOf(node.from, node.to);
         if (!isBlockActive(firstLine, lastLine, activeLines)) {
           blockReplace(node.node, new HtmlBlockWidget(doc.sliceString(node.from, node.to), node.from));
         }
@@ -1436,8 +1638,7 @@ export function buildBlockDecorations(
 
       if (node.name === 'FencedCode') {
         if (fencedLanguage(state, node.node) === 'mermaid') {
-          const firstLine = doc.lineAt(node.from).number;
-          const lastLine = doc.lineAt(node.to).number;
+          const { firstLine, lastLine } = spanOf(node.from, node.to);
           if (!isBlockActive(firstLine, lastLine, activeLines)) {
             const codeText = findChild(node.node.firstChild, 'CodeText');
             const code = codeText ? doc.sliceString(codeText.from, codeText.to) : '';
@@ -1455,25 +1656,28 @@ export function buildBlockDecorations(
 
   const builder = new RangeSetBuilder<Decoration>();
   for (const deco of decos) builder.add(deco.from, deco.to, deco.value);
-  return builder.finish();
+  return { decorations: builder.finish(), blocks };
 }
 
 /**
- * Block-decoration field state: decorations plus a cached full-doc math scan so
- * pure selection moves rebuild widgets without re-stringifying the document.
+ * Block-decoration field state: decorations, the candidate blocks they were
+ * built from, and a cached full-doc math scan, so pure selection moves can tell
+ * whether any block changed state without rebuilding or re-stringifying.
  */
 interface BlockFieldState {
   decorations: DecorationSet;
+  blocks: BlockSpan[];
   mathRanges: MathRange[];
 }
 
 /**
- * StateField that provides the block decorations. Recomputed on every doc or
- * selection change so a table re-renders (or reveals raw) as the cursor moves.
+ * StateField that provides the block decorations.
  *
- * Full-document `ensureSyntaxTree` runs only on create and when the doc or
- * syntax-tree identity changes. Selection-only updates reuse `syntaxTree(state)`
- * and the cached math ranges.
+ * Full-document `ensureSyntaxTree` runs only on create, so the first paint shows
+ * blocks past the init parse. Afterwards the field reads the tree the background
+ * parser delivers: every parser progress transaction and document change rebuilds
+ * from `syntaxTree(state)`, and a selection move rebuilds only when it reveals or
+ * re-collapses a block.
  */
 function blockDecorationsField(reveal: boolean, ctx: InlineCtx): StateField<BlockFieldState> {
   return StateField.define<BlockFieldState>({
@@ -1483,35 +1687,30 @@ function blockDecorationsField(reveal: boolean, ctx: InlineCtx): StateField<Bloc
       // alone would miss block widgets (tables, diagrams) past the first ~3 KB.
       const tree = ensureSyntaxTree(state, state.doc.length, VIEWPORT_PARSE_BUDGET_MS) ?? syntaxTree(state);
       const mathRanges = findMathRanges(state.doc.toString());
-      return {
-        decorations: buildBlockDecorations(state, reveal, ctx, tree, mathRanges),
-        mathRanges,
-      };
+      return { ...collectBlockDecorations(state, reveal, ctx, tree, mathRanges), mathRanges };
     },
     update(value, tr) {
       const treeChanged = syntaxTree(tr.startState) !== syntaxTree(tr.state);
 
       if (tr.docChanged || treeChanged) {
-        const tree =
-          ensureSyntaxTree(tr.state, tr.state.doc.length, VIEWPORT_PARSE_BUDGET_MS) ?? syntaxTree(tr.state);
         const mathRanges = tr.docChanged ? findMathRanges(tr.state.doc.toString()) : value.mathRanges;
         return {
-          decorations: buildBlockDecorations(tr.state, reveal, ctx, tree, mathRanges),
+          ...collectBlockDecorations(tr.state, reveal, ctx, syntaxTree(tr.state), mathRanges),
           mathRanges,
         };
       }
 
       if (tr.selection !== undefined) {
+        if (!reveal || revealedBlocksUnchanged(value.blocks, tr.startState.selection, tr.state.selection)) {
+          return value;
+        }
         return {
-          decorations: buildBlockDecorations(tr.state, reveal, ctx, syntaxTree(tr.state), value.mathRanges),
+          ...collectBlockDecorations(tr.state, reveal, ctx, syntaxTree(tr.state), value.mathRanges),
           mathRanges: value.mathRanges,
         };
       }
 
-      return {
-        decorations: value.decorations.map(tr.changes),
-        mathRanges: value.mathRanges,
-      };
+      return value;
     },
     provide: (field) => EditorView.decorations.from(field, (v) => v.decorations),
   });
