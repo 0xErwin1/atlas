@@ -25,7 +25,7 @@ flowchart TD
 | `atlas_client` | Typed HTTP client over `atlas_api`/`atlas_domain` types; the single client used by CLI, MCP, and e2e tests | `lib.rs` |
 | `atlas_server` | The axum binary: auth, permission enforcement, routing, and SeaORM **adapters** implementing the domain ports | see module tree below |
 | `atlas_cli` | `atlas` command-line over `atlas_client` | `lib.rs` |
-| `atlas_mcp` | MCP server (`rmcp`) over `atlas_client`; advertises verb-shaped tools whose resources resolve through `catalog.rs` | `lib.rs`, `catalog.rs` |
+| `atlas_mcp` | MCP server (`rmcp` 3.1.4) over `atlas_client`; serves both the `2026-07-28` revision and the legacy `2025-11-25`-and-earlier era, and advertises verb-shaped tools whose resources resolve through `catalog.rs` | `lib.rs`, `catalog.rs` |
 | `migration` | `sea-orm-migration` tool crate, run via `cargo run -p migration -- <up\|fresh>` | one migration file per schema slice |
 
 ## Request lifecycle

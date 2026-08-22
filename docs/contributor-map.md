@@ -92,6 +92,12 @@ In `lib.rs`, useful sections are:
 - parameter structs for each tool
 - the `#[tool_router] impl AtlasMcp` block
 - the `ServerHandler` implementation for resources (`atlas:///{workspace}/{slug}`)
+- `SUPPORTED_PROTOCOL_VERSIONS`, returned by `ServerHandler::supported_protocol_versions`: the one
+  place the modern/legacy protocol era split is declared. rmcp gates negotiation, per-request
+  metadata, the SEP-2243 routing headers, cache hints and MRTR against that list, so era-dependent
+  behavior belongs there rather than in a tool body
+- `plan_confirmation`, which turns an unconfirmed `delete` into a multi round-trip confirmation for
+  peers that can answer one
 
 ## Web app map
 

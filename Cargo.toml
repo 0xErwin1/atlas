@@ -91,8 +91,9 @@ comfy-table = "7"
 keyring = { version = "3", default-features = false, features = ["sync-secret-service", "crypto-rust"] }
 zeroize = "1"
 
-# MCP — pinned exact version confirmed at scaffold time
-rmcp = { version = "=1.7.0", features = ["server", "transport-io", "macros", "transport-streamable-http-server"] }
+# MCP — pinned exactly: the protocol era a request gets is decided by this SDK's
+# version gating, so an unreviewed minor bump can change wire behavior.
+rmcp = { version = "=3.1.4", features = ["server", "transport-io", "macros", "transport-streamable-http-server"] }
 
 # HTTP plumbing for MCP request-parts access in tool handlers
 http = "1"
