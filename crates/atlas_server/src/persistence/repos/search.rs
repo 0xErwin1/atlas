@@ -465,7 +465,7 @@ fn build_doc_arm(
 /// Permission pushdown: the disjunction is embedded in the WHERE clause so that
 /// LIMIT applies only to rows the principal can actually see. Fetching then
 /// filtering in Rust would require unbounded row reads and could leak row counts.
-fn build_doc_permission(
+pub(crate) fn build_doc_permission(
     owner_admin_clause: &str,
     member_clause: &str,
     principal_col: &str,
@@ -649,7 +649,7 @@ fn build_task_arm(
 ///    LEFT JOIN, removing the contribution exactly as a soft-deleted project
 ///    drops out of the resolved chain (`PgProjectRepo::find` filters deleted
 ///    rows). ApiKey principals get no visibility contribution.
-fn build_task_permission(
+pub(crate) fn build_task_permission(
     owner_admin_clause: &str,
     member_clause: &str,
     principal_col: &str,

@@ -236,6 +236,56 @@ pub enum AttachmentOwner {
     Draft(CommentDraftId),
 }
 
+/// What kind of resource an attachment ultimately hangs off.
+///
+/// A comment-owned attachment resolves to the comment's parent, so the whole
+/// workspace listing is addressable through a document or a task.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AttachmentOwnerKind {
+    Document,
+    Task,
+}
+
+/// The resource an attachment belongs to, resolved for a workspace-wide listing.
+///
+/// `comment_id` is set when the attachment was posted on a comment rather than
+/// on the parent itself; the parent identity is carried either way so every row
+/// is navigable.
+#[derive(Debug, Clone)]
+pub struct AttachmentOwnerRef {
+    pub kind: AttachmentOwnerKind,
+    pub title: String,
+    pub document_id: Option<DocumentId>,
+    pub document_slug: Option<String>,
+    pub task_id: Option<crate::ids::TaskId>,
+    pub task_readable_id: Option<String>,
+    pub project_slug: Option<String>,
+    pub comment_id: Option<CommentId>,
+}
+
+/// An attachment paired with the resource that owns it.
+#[derive(Debug, Clone)]
+pub struct WorkspaceAttachment {
+    pub attachment: Attachment,
+    pub owner: AttachmentOwnerRef,
+}
+
+/// Filters for the workspace-wide attachment listing.
+///
+/// `after` is the id of the last row of the previous page; ids are UUIDv7, so
+/// paging by id descending is paging by upload time descending.
+#[derive(Debug, Clone, Default)]
+pub struct WorkspaceAttachmentQuery {
+    /// Case-insensitive substring match on the file name.
+    pub file_name: Option<String>,
+    /// Restricts the listing to one owner kind.
+    pub owner_kind: Option<AttachmentOwnerKind>,
+    /// Restricts the listing to attachments whose content type starts with this.
+    pub content_type_prefix: Option<String>,
+    pub after: Option<AttachmentId>,
+    pub limit: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AttachmentWriteIntent {
     pub id: uuid::Uuid,

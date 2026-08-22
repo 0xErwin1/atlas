@@ -41,7 +41,7 @@ use atlas_domain::{
     entities::documents::{AttachmentOwner, LinkSource, NewAttachment, NewDocument},
     entities::identity::MemberRole,
     ids::{AttachmentId, CommentDraftId, CommentId, DocumentId, FolderId, RevisionId, UserId},
-    permissions::{Capability, CapabilityAction, CapabilityFamily, Principal, ResourceRole},
+    permissions::{CapabilityAction, Principal, ResourceRole},
     ports::{
         comments::{CommentAttachmentDraftRepo, CommentLinkRepo, CommentRepo},
         documents::FolderPresence,
@@ -60,7 +60,7 @@ use crate::{
         batch_authorization::{
             BatchAuthorizationService, PgBatchAuthorizationSource, ProjectionSubject,
         },
-        enforce_api_key_scope, resolve_folder_ancestry,
+        resolve_folder_ancestry,
     },
     error::ApiError,
     persistence::entities::documents::document,
@@ -1509,19 +1509,20 @@ pub(crate) async fn download_attachment(
         .map_err(ApiError::Domain)?
         .ok_or(ApiError::NotFound)?;
 
-    authorize_attachment_document(&state, &member, &attachment, ViewerMin::ROLE).await?;
-
-    if let Some(key_id) = member.api_key_id {
-        enforce_api_key_scope(
-            &state.db,
-            key_id,
-            Capability {
-                family: CapabilityFamily::Docs,
-                action: CapabilityAction::Read,
-            },
-        )
-        .await?;
-    }
+    let owner = crate::routes::attachments::authorize_attachment(
+        &state,
+        &member,
+        &attachment,
+        ViewerMin::ROLE,
+    )
+    .await?;
+    crate::routes::attachments::enforce_attachment_scope(
+        &state,
+        &member,
+        &owner,
+        CapabilityAction::Read,
+    )
+    .await?;
 
     let bytes = state
         .attachments
@@ -1590,19 +1591,20 @@ pub(crate) async fn delete_attachment(
         .map_err(ApiError::Domain)?
         .ok_or(ApiError::NotFound)?;
 
-    authorize_attachment_document(&state, &member, &attachment, EditorMin::ROLE).await?;
-
-    if let Some(key_id) = member.api_key_id {
-        enforce_api_key_scope(
-            &state.db,
-            key_id,
-            Capability {
-                family: CapabilityFamily::Docs,
-                action: CapabilityAction::Update,
-            },
-        )
-        .await?;
-    }
+    let owner = crate::routes::attachments::authorize_attachment(
+        &state,
+        &member,
+        &attachment,
+        EditorMin::ROLE,
+    )
+    .await?;
+    crate::routes::attachments::enforce_attachment_scope(
+        &state,
+        &member,
+        &owner,
+        CapabilityAction::Update,
+    )
+    .await?;
 
     attachment_repo
         .soft_delete(&ctx, attachment_id)
@@ -2354,52 +2356,6 @@ async fn collect_existing_slugs_for_workspace(
     Ok(rows.into_iter().map(|r| r.slug).collect())
 }
 
-/// Authorizes the request principal against the document that owns `attachment`,
-/// requiring at least `min_role` on that document's permission chain.
-///
-/// Attachment binaries are reached by id without going through the document
-/// extractor, so this re-applies the same document-level resolution the rest of
-/// the document routes use. A principal lacking the role is rejected with
-/// `NotFound` to avoid disclosing the attachment's or document's existence.
-async fn authorize_attachment_document(
-    state: &AppState,
-    member: &WorkspaceMember,
-    attachment: &atlas_domain::entities::documents::Attachment,
-    min_role: atlas_domain::permissions::ResourceRole,
-) -> Result<(), ApiError> {
-    let document_id = attachment.document_id.ok_or(ApiError::NotFound)?;
-
-    let ctx = WorkspaceCtx::new(member.workspace.id, member_to_actor(member));
-    let doc_repo = PgDocumentRepo::new((*state.db).clone(), state.anchor_interval);
-
-    let doc = doc_repo
-        .get(&ctx, document_id)
-        .await
-        .map_err(ApiError::Domain)?
-        .ok_or(ApiError::NotFound)?;
-
-    let principal = member_to_principal(member);
-    let membership = member.membership.as_ref().map(|m| m.role.clone());
-
-    let chain = crate::authz::build_document_chain(&state.db, &member.workspace, &doc).await?;
-
-    let effective = crate::authz::resolve_effective_role(
-        &state.db,
-        &principal,
-        membership,
-        &member.workspace,
-        &chain,
-    )
-    .await?
-    .ok_or(ApiError::NotFound)?;
-
-    if effective < min_role {
-        return Err(ApiError::NotFound);
-    }
-
-    Ok(())
-}
-
 // ---------------------------------------------------------------------------
 // Document comments
 // ---------------------------------------------------------------------------
@@ -2937,7 +2893,7 @@ fn derive_frontmatter(content: &str) -> serde_json::Value {
     atlas_domain::frontmatter::parse_frontmatter_yaml(yaml.unwrap_or(""))
 }
 
-async fn update_document_links(
+pub(crate) async fn update_document_links(
     ctx: &WorkspaceCtx,
     link_repo: &PgDocumentLinkRepo,
     doc_id: DocumentId,
@@ -3180,7 +3136,10 @@ fn rfc5987_encode(value: &str) -> String {
     out
 }
 
-fn make_actor_dto(user_id: Option<uuid::Uuid>, api_key_id: Option<uuid::Uuid>) -> Option<ActorDto> {
+pub(crate) fn make_actor_dto(
+    user_id: Option<uuid::Uuid>,
+    api_key_id: Option<uuid::Uuid>,
+) -> Option<ActorDto> {
     if let Some(uid) = user_id {
         Some(ActorDto {
             r#type: "user".into(),
@@ -3200,7 +3159,7 @@ fn make_actor_dto(user_id: Option<uuid::Uuid>, api_key_id: Option<uuid::Uuid>) -
     }
 }
 
-fn principal_to_actor(principal: &Principal) -> Actor {
+pub(crate) fn principal_to_actor(principal: &Principal) -> Actor {
     match principal {
         Principal::User(uid) => Actor::User(*uid),
         Principal::ApiKey(kid) => Actor::ApiKey(*kid),
@@ -3208,7 +3167,7 @@ fn principal_to_actor(principal: &Principal) -> Actor {
     }
 }
 
-fn member_to_actor(member: &WorkspaceMember) -> Actor {
+pub(crate) fn member_to_actor(member: &WorkspaceMember) -> Actor {
     if let Some(user) = &member.user {
         Actor::User(user.id)
     } else if let Some(kid) = member.api_key_id {
@@ -3218,7 +3177,7 @@ fn member_to_actor(member: &WorkspaceMember) -> Actor {
     }
 }
 
-fn member_to_principal(member: &WorkspaceMember) -> Principal {
+pub(crate) fn member_to_principal(member: &WorkspaceMember) -> Principal {
     if let Some(user) = &member.user {
         Principal::User(user.id)
     } else if let Some(kid) = member.api_key_id {

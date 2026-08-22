@@ -45,6 +45,11 @@ async function pickWorkspace(slug: string): Promise<void> {
   emit('close');
 }
 
+function openFiles(): void {
+  emit('close');
+  router.push({ name: 'files' });
+}
+
 function openSettings(): void {
   emit('close');
   router.push({ name: 'settings', params: { section: 'account' } });
@@ -147,6 +152,12 @@ async function confirmHardRefresh(): Promise<void> {
         <div style="font-size: var(--fs-xs); color: var(--c-muted);">Signed in</div>
       </div>
     </div>
+
+    <button type="button" class="atl-more-item" data-action="files" @click="openFiles">
+      <Icon name="paperclip" :size="17" />
+      <span class="flex-1 text-left">Files</span>
+      <Icon name="chevron-right" :size="15" :style="{ color: 'var(--c-muted)' }" />
+    </button>
 
     <button type="button" class="atl-more-item" @click="openSettings">
       <Icon name="settings" :size="17" />

@@ -25,7 +25,7 @@ mod permissions;
 #[allow(unreachable_pub)]
 mod s3_attachment_store;
 #[allow(unreachable_pub)]
-mod search;
+pub(crate) mod search;
 #[allow(unreachable_pub)]
 mod search_index_queue;
 #[allow(unreachable_pub)]
@@ -40,6 +40,8 @@ mod tags;
 mod webhook_delivery;
 #[allow(unreachable_pub)]
 mod webhook_subscription;
+#[allow(unreachable_pub)]
+mod workspace_attachments;
 #[allow(unreachable_pub)]
 mod workspace_core;
 
@@ -67,6 +69,7 @@ pub use documents::{
     update_content_in as doc_update_content_in,
 };
 pub use s3_attachment_store::{S3AttachmentStore, S3Config};
+pub use workspace_attachments::PgWorkspaceAttachmentRepo;
 pub use workspace_core::{
     FolderRepo, PgFolderRepo, PgProjectRepo, PgPropertyDefinitionRepo, ProjectRepo,
     PropertyDefinitionRepo,
