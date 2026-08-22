@@ -206,3 +206,120 @@ describe('desktop preference transport', () => {
     expect(invoke).toHaveBeenCalledWith('desktop_set_system_tray', { systemTray: false });
   });
 });
+
+describe('desktop publicBase cache', () => {
+  function bridgeWithOrigin(result: (command: string) => Promise<unknown>): {
+    bridge: DesktopBridge;
+    invoke: ReturnType<typeof vi.fn>;
+  } {
+    const invoke = vi.fn(async (command: string): Promise<unknown> => result(command));
+    const listen = vi.fn(async (): Promise<() => void> => () => {});
+    return {
+      bridge: { invoke: invoke as DesktopBridge['invoke'], listen: listen as DesktopBridge['listen'] },
+      invoke,
+    };
+  }
+
+  it('fires the origin lookup un-awaited at construction', () => {
+    const { bridge, invoke } = bridgeWithOrigin(async () => ({ data: { origin: 'https://atlas.test' } }));
+
+    createDesktopPlatformTransport(bridge);
+
+    expect(invoke).toHaveBeenCalledWith('desktop_get_origin');
+  });
+
+  it('publicBase is empty before the eager lookup resolves', () => {
+    const { bridge } = bridgeWithOrigin(async () => ({ data: { origin: 'https://atlas.test' } }));
+
+    const transport = createDesktopPlatformTransport(bridge);
+
+    expect(transport.publicBase()).toBe('');
+  });
+
+  it('publicBase reflects the origin once the eager lookup resolves', async () => {
+    const { bridge } = bridgeWithOrigin(async () => ({ data: { origin: 'https://atlas.test' } }));
+
+    const transport = createDesktopPlatformTransport(bridge);
+    await flushPromises();
+    await flushPromises();
+
+    expect(transport.publicBase()).toBe('https://atlas.test');
+  });
+
+  it('leaves publicBase empty when the eager lookup returns an IpcResult error, with no unhandled rejection', async () => {
+    const { bridge } = bridgeWithOrigin(async () => ({ error: 'desktop session is unavailable' }));
+
+    const transport = createDesktopPlatformTransport(bridge);
+    await flushPromises();
+    await flushPromises();
+
+    expect(transport.publicBase()).toBe('');
+  });
+
+  it('catches a rejecting eager lookup and leaves publicBase empty', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const invoke = vi.fn(async (command: string): Promise<unknown> => {
+      if (command === 'desktop_get_origin') throw new Error('bridge unavailable');
+      return {};
+    });
+    const listen = vi.fn(async (): Promise<() => void> => () => {});
+    const bridge: DesktopBridge = {
+      invoke: invoke as DesktopBridge['invoke'],
+      listen: listen as DesktopBridge['listen'],
+    };
+
+    const transport = createDesktopPlatformTransport(bridge);
+    await flushPromises();
+    await flushPromises();
+
+    expect(transport.publicBase()).toBe('');
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it('setOrigin success updates the cached publicBase', async () => {
+    const { bridge } = bridgeWithOrigin(async () => ({ data: { origin: 'https://old.test' } }));
+    const transport = createDesktopPlatformTransport(bridge);
+    await flushPromises();
+    await flushPromises();
+
+    (bridge.invoke as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => ({
+      data: { origin: 'https://new.test' },
+    }));
+    const result = await transport.setOrigin('https://new.test');
+
+    expect(result).toEqual({ data: { origin: 'https://new.test' } });
+    expect(transport.publicBase()).toBe('https://new.test');
+  });
+
+  it('setOrigin failure leaves the previous publicBase in place', async () => {
+    const { bridge } = bridgeWithOrigin(async () => ({ data: { origin: 'https://old.test' } }));
+    const transport = createDesktopPlatformTransport(bridge);
+    await flushPromises();
+    await flushPromises();
+
+    (bridge.invoke as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => ({
+      error: 'origin rejected',
+    }));
+    await transport.setOrigin('https://blocked.test');
+
+    expect(transport.publicBase()).toBe('https://old.test');
+  });
+});
+
+describe('desktop openExternal', () => {
+  it('invokes desktop_open_external with the url and returns the raw result', async () => {
+    const invoke = vi.fn(async (): Promise<unknown> => ({}));
+    const listen = vi.fn(async (): Promise<() => void> => () => {});
+    const bridge: DesktopBridge = {
+      invoke: invoke as DesktopBridge['invoke'],
+      listen: listen as DesktopBridge['listen'],
+    };
+    const transport = createDesktopPlatformTransport(bridge);
+
+    const result = await transport.openExternal('https://example.com');
+
+    expect(invoke).toHaveBeenCalledWith('desktop_open_external', { url: 'https://example.com' });
+    expect(result).toEqual({});
+  });
+});

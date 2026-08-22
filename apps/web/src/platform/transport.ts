@@ -58,6 +58,19 @@ export interface PlatformTransport {
   readClipboardImage: () => Promise<File | null>;
   /** Writes downloaded bytes to the user's downloads directory (desktop only). */
   saveDownload: (fileName: string, bytes: Uint8Array) => Promise<PlatformResult<{ path: string }>>;
+  /**
+   * Opens `url` outside the app shell. The desktop host validates the scheme
+   * before handing it to the OS; the browser opens a new tab. A failure to open
+   * arrives as `PlatformResult.error` rather than a thrown rejection.
+   */
+  openExternal: (url: string) => Promise<PlatformResult<unknown>>;
+  /**
+   * The origin external links should be built against: `window.location.origin`
+   * in the browser, or the desktop host's configured server origin. May return
+   * `''` before the desktop host has answered; callers must not fall back to a
+   * relative URL when it does.
+   */
+  publicBase: () => string;
 }
 
 let platformTransport = createBrowserPlatformTransport();

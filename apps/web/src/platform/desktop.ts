@@ -318,6 +318,24 @@ export function createDesktopPlatformTransport(bridge: DesktopBridge = desktopBr
       console.error('desktop: session action listener registration failed', cause);
     });
 
+  let cachedPublicBase = '';
+
+  // Rust serializes `IpcResult.error: None` as JSON `null`, not omitting the
+  // field. Treat only non-null errors as failure, matching the workspace
+  // event source's convention above.
+  function cachePublicBase(result: PlatformResult<DesktopConfiguration>): void {
+    if (result.error != null) return;
+    const origin = result.data?.origin;
+    if (typeof origin === 'string' && origin !== '') cachedPublicBase = origin;
+  }
+
+  void bridge
+    .invoke<PlatformResult<DesktopConfiguration>>('desktop_get_origin')
+    .then(cachePublicBase)
+    .catch((cause) => {
+      console.error('desktop: origin lookup failed', cause);
+    });
+
   return {
     isDesktop: true,
     login(credentials) {
@@ -335,8 +353,12 @@ export function createDesktopPlatformTransport(bridge: DesktopBridge = desktopBr
     getOrigin() {
       return bridge.invoke<PlatformResult<DesktopConfiguration>>('desktop_get_origin');
     },
-    setOrigin(origin) {
-      return bridge.invoke<PlatformResult<DesktopConfiguration>>('desktop_set_origin', { origin });
+    async setOrigin(origin) {
+      const result = await bridge.invoke<PlatformResult<DesktopConfiguration>>('desktop_set_origin', {
+        origin,
+      });
+      cachePublicBase(result);
+      return result;
     },
     getWindowDecorations() {
       return bridge.invoke<PlatformResult<DesktopPreferences>>('desktop_get_window_decorations');
@@ -377,6 +399,12 @@ export function createDesktopPlatformTransport(bridge: DesktopBridge = desktopBr
         fileName,
         bytes: Array.from(bytes),
       });
+    },
+    openExternal(url) {
+      return bridge.invoke<PlatformResult<unknown>>('desktop_open_external', { url });
+    },
+    publicBase() {
+      return cachedPublicBase;
     },
   };
 }
