@@ -7,12 +7,9 @@ import ColorPicker from '@/components/ui/ColorPicker.vue';
 import ContextMenu, { type MenuItem } from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { resolveDropTarget } from '@/composables/kanbanDrop';
+import { taskDragOptions } from '@/composables/taskDragOptions';
 import { useContextMenu } from '@/composables/useContextMenu';
-import {
-  type DragAutoScrollMoveEvent,
-  dragAutoScrollOptions,
-  handleDragAutoScrollMove,
-} from '@/composables/useDragAutoScroll';
+import { type DragAutoScrollMoveEvent, handleDragAutoScrollMove } from '@/composables/useDragAutoScroll';
 import { useInlineEdit } from '@/composables/useInlineEdit';
 import { resolveColumnSwatchId } from '@/lib/columnColor';
 import { swatchById } from '@/lib/swatches';
@@ -252,7 +249,7 @@ function onSortableMove(event: DragAutoScrollMoveEvent, originalEvent: Event): v
       :group="'kanban'"
       :disabled="readOnly"
       :animation="150"
-      v-bind="dragAutoScrollOptions"
+      v-bind="taskDragOptions"
       :on-move="onSortableMove"
       item-key="id"
       class="flex flex-col"

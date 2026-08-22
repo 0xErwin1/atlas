@@ -12,6 +12,9 @@ vi.mock('vue-draggable-plus', () => ({
       'scrollSpeed',
       'bubbleScroll',
       'forceAutoScrollFallback',
+      'delay',
+      'delayOnTouchOnly',
+      'touchStartThreshold',
       'onMove',
     ],
     template: '<div class="vdp-stub"><slot /></div>',
@@ -105,6 +108,9 @@ describe('TaskListView drag auto-scroll', () => {
         scrollSpeed: 14,
         bubbleScroll: true,
         forceAutoScrollFallback: true,
+        delay: 150,
+        delayOnTouchOnly: true,
+        touchStartThreshold: 5,
       });
     }
 

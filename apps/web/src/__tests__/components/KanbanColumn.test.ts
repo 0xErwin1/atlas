@@ -11,6 +11,9 @@ vi.mock('vue-draggable-plus', () => ({
       'scrollSpeed',
       'bubbleScroll',
       'forceAutoScrollFallback',
+      'delay',
+      'delayOnTouchOnly',
+      'touchStartThreshold',
       'onMove',
     ],
     template: '<div class="vdp-stub"><slot /></div>',
@@ -80,6 +83,18 @@ describe('KanbanColumn layout', () => {
 
     expect(head.get('.atl-col-name').attributes('style')).toContain('font-family: var(--font-mono)');
     expect(head.get('.atl-col-count').attributes('style')).toContain('font-family: var(--font-mono)');
+  });
+});
+
+describe('KanbanColumn drag', () => {
+  it('delays touch drag so a finger scroll over the column never moves a task', () => {
+    const draggable = mountColumn().getComponent({ name: 'VueDraggable' });
+
+    expect(draggable.props()).toMatchObject({
+      delay: 150,
+      delayOnTouchOnly: true,
+      touchStartThreshold: 5,
+    });
   });
 });
 
