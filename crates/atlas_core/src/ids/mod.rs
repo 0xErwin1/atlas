@@ -2,11 +2,13 @@ pub mod action_id;
 pub mod resource_path;
 pub mod resource_ref;
 pub mod segment;
+pub mod selector;
 
 pub use action_id::{ActionId, ActionIdParseError};
 pub use resource_path::{PathSegment, ResourcePath, ResourcePathParseError};
 pub use resource_ref::{ResourceRef, ResourceRefParseError};
 pub use segment::SegmentError;
+pub use selector::{ResourceSelector, ResourceSelectorParseError, SelectorSegment};
 
 /// Generates string-conversion glue (`TryFrom<&str>`, `TryFrom<String>`,
 /// `Serialize`, `Deserialize`) for a colon-delimited id type backed by a
