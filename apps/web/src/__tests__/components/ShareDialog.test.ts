@@ -13,7 +13,9 @@ vi.mock('@/api/wrapper', () => ({
 }));
 
 import ShareDialog from '@/components/share/ShareDialog.vue';
+import { resetPlatformTransportForTest, setPlatformTransport } from '@/platform/transport';
 import { useShareStore } from '@/stores/share';
+import { fakePlatformTransport } from '../helpers/platformTransport';
 
 const grant = (id: string, type: 'user' | 'api_key', principalId: string, role: string) => ({
   id,
@@ -156,6 +158,42 @@ describe('ShareDialog (REQ-W26/W27)', () => {
     await wrapper.find('[data-action="close"]').trigger('click');
 
     expect(wrapper.emitted('close')).toBeTruthy();
+  });
+
+  it('copies the resolved public URL for the current path', async () => {
+    setPlatformTransport(fakePlatformTransport());
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    const wrapper = mountDialog();
+    await wrapper.vm.$nextTick();
+
+    const copyBtn = wrapper.findAll('button').find((b) => b.text().includes('Copy link'));
+    await copyBtn?.trigger('click');
+
+    await vi.waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(
+        `https://atlas.test${window.location.pathname}${window.location.search}`,
+      ),
+    );
+
+    resetPlatformTransportForTest();
+  });
+
+  it('does nothing and does not throw when the public base is unknown', async () => {
+    setPlatformTransport(fakePlatformTransport({ publicBase: () => '' }));
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    const wrapper = mountDialog();
+    await wrapper.vm.$nextTick();
+
+    const copyBtn = wrapper.findAll('button').find((b) => b.text().includes('Copy link'));
+    await expect(copyBtn?.trigger('click')).resolves.not.toThrow();
+
+    expect(writeText).not.toHaveBeenCalled();
+
+    resetPlatformTransportForTest();
   });
 
   it('surfaces the store error hint', async () => {

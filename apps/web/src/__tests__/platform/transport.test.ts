@@ -2,10 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createBrowserPlatformTransport } from '@/platform/browser';
 import {
   getPlatformTransport,
-  type PlatformTransport,
   resetPlatformTransportForTest,
   setPlatformTransport,
 } from '@/platform/transport';
+import { fakePlatformTransport } from '../helpers/platformTransport';
 
 class FakeEventSource {
   readyState = 0;
@@ -22,27 +22,11 @@ class FakeEventSource {
   }
 }
 
-function desktopTransport(): PlatformTransport {
-  return {
-    isDesktop: true,
-    login: vi.fn(),
-    me: vi.fn(),
-    resume: vi.fn(),
-    logout: vi.fn(),
-    getOrigin: vi.fn(),
-    setOrigin: vi.fn(),
-    getWindowDecorations: vi.fn(),
-    setWindowDecorations: vi.fn(),
-    getZoom: vi.fn(),
-    setZoom: vi.fn(),
-    getStartOnLogin: vi.fn(),
-    setStartOnLogin: vi.fn(),
-    getSystemTray: vi.fn(),
-    setSystemTray: vi.fn(),
+function desktopTransport() {
+  return fakePlatformTransport({
     createWorkspaceEventSource: vi.fn(() => new FakeEventSource('desktop://events')),
-    readClipboardImage: vi.fn(async () => null),
     saveDownload: () => Promise.resolve({ data: { path: '/downloads/file' } }),
-  };
+  });
 }
 
 describe('platform transport', () => {

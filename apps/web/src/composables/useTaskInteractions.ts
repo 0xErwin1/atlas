@@ -2,6 +2,7 @@ import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import type { MenuItem } from '@/components/ui/ContextMenu.vue';
 import { AI_ACTIONS } from '@/lib/aiPrompt';
+import { openPublicPath, toPublicUrl } from '@/platform/publicUrl';
 import type { ColumnDto, TaskSummaryDto } from '@/stores/boards';
 import { useBoardsStore } from '@/stores/boards';
 import { type TaskViewMode, useUiStore } from '@/stores/ui';
@@ -113,6 +114,26 @@ export function useTaskInteractions(ws: string) {
     }
   }
 
+  async function copyLink(path: string): Promise<void> {
+    const url = toPublicUrl(path);
+    if (url === null) {
+      ui.showBanner('The server address is not available yet', 'error');
+      return;
+    }
+
+    await copyText(url, 'Link');
+  }
+
+  async function openInBrowser(path: string): Promise<void> {
+    const outcome = await openPublicPath(path);
+    if (outcome === 'unknown-base') {
+      ui.showBanner('The server address is not available yet', 'error');
+      return;
+    }
+
+    if (outcome === 'failed') ui.showBanner("The link couldn't be opened", 'error');
+  }
+
   function openRename(task: { title: string }): void {
     promptState.value = { open: true, mode: 'rename', title: 'Rename task', initial: task.title };
   }
@@ -187,7 +208,7 @@ export function useTaskInteractions(ws: string) {
       {
         label: 'Open in new tab',
         icon: 'external-link',
-        action: () => window.open(`${window.location.origin}${taskHref(readableId)}`, '_blank'),
+        action: () => void openInBrowser(taskHref(readableId)),
       },
       buildAskAiItem(task),
       { sep: true },
@@ -203,7 +224,7 @@ export function useTaskInteractions(ws: string) {
       {
         label: 'Copy link',
         icon: 'link',
-        action: () => copyText(`${window.location.origin}${taskHref(readableId)}`, 'Link'),
+        action: () => void copyLink(taskHref(readableId)),
       },
       {
         label: 'Duplicate',
@@ -307,6 +328,8 @@ export function useTaskInteractions(ws: string) {
     runUnassign,
     runDuplicate,
     copyText,
+    copyLink,
+    openInBrowser,
     openRename,
     openDueDate,
     openAddTag,

@@ -1,5 +1,5 @@
 import { createPinia, setActivePinia } from 'pinia';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { GET, POST, PATCH, DELETE } = vi.hoisted(() => ({
   GET: vi.fn(),
@@ -12,9 +12,20 @@ vi.mock('@/api/wrapper', () => ({
   wrappedClient: { GET, POST, PATCH, DELETE },
 }));
 
+vi.mock('vue-router', () => ({
+  useRouter: () => ({
+    resolve: ({ params }: { params: { readableId: string } }) => ({
+      href: `/t/task/${params.readableId}`,
+    }),
+  }),
+}));
+
 import { useTaskInteractions } from '@/composables/useTaskInteractions';
+import { resetPlatformTransportForTest, setPlatformTransport } from '@/platform/transport';
 import type { ColumnDto, TaskSummaryDto } from '@/stores/boards';
 import { useBoardsStore } from '@/stores/boards';
+import { useUiStore } from '@/stores/ui';
+import { fakePlatformTransport } from '../helpers/platformTransport';
 
 const col = (id: string, name: string): ColumnDto => ({
   id,
@@ -44,6 +55,10 @@ describe('useTaskInteractions.buildMenuItems', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    resetPlatformTransportForTest();
   });
 
   it('returns the full action set (incl. Add tag) for a single-board context', () => {
@@ -209,6 +224,77 @@ describe('useTaskInteractions.buildMenuItems', () => {
 
     const moveToBoard = items.find((it) => it.label === 'Move to board');
     expect(moveToBoard).toBeDefined();
+  });
+
+  it('copyLink shows a banner and does not touch the clipboard when the public base is unknown', async () => {
+    setPlatformTransport(fakePlatformTransport({ publicBase: () => '' }));
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    const ti = useTaskInteractions('ws');
+    await ti.copyLink('/t/task/AB-1');
+
+    expect(writeText).not.toHaveBeenCalled();
+    expect(useUiStore().banner?.message).toBe('The server address is not available yet');
+  });
+
+  it('copyLink copies the resolved public URL when the base is known', async () => {
+    setPlatformTransport(fakePlatformTransport());
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    const ti = useTaskInteractions('ws');
+    await ti.copyLink('/t/task/AB-1');
+
+    expect(writeText).toHaveBeenCalledWith('https://atlas.test/t/task/AB-1');
+  });
+
+  it('openInBrowser shows an unknown-base banner without a known origin', async () => {
+    setPlatformTransport(fakePlatformTransport({ publicBase: () => '' }));
+
+    const ti = useTaskInteractions('ws');
+    await ti.openInBrowser('/t/task/AB-1');
+
+    expect(useUiStore().banner?.message).toBe('The server address is not available yet');
+  });
+
+  it('openInBrowser shows a failure banner when openExternal fails', async () => {
+    setPlatformTransport(fakePlatformTransport({ openExternal: vi.fn(async () => ({ error: 'blocked' })) }));
+
+    const ti = useTaskInteractions('ws');
+    await ti.openInBrowser('/t/task/AB-1');
+
+    expect(useUiStore().banner?.message).toBe("The link couldn't be opened");
+  });
+
+  it('openInBrowser opens the resolved public URL through the platform transport', async () => {
+    const openExternal = vi.fn(async () => ({}));
+    setPlatformTransport(fakePlatformTransport({ openExternal }));
+
+    const ti = useTaskInteractions('ws');
+    await ti.openInBrowser('/t/task/AB-1');
+
+    expect(openExternal).toHaveBeenCalledWith('https://atlas.test/t/task/AB-1');
+  });
+
+  it('the Copy link and Open in new tab menu actions resolve through taskHref', async () => {
+    setPlatformTransport(fakePlatformTransport());
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    const ti = useTaskInteractions('ws');
+    const t = task('t1', 'AB-1', 'c1');
+    const items = ti.buildMenuItems({
+      task: t,
+      boardId: 'board-1',
+      columns,
+      allowDuplicate: true,
+      onOpen: () => {},
+    });
+
+    const copyLinkItem = items.find((it) => it.label === 'Copy link');
+    await copyLinkItem?.action?.();
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith('https://atlas.test/t/task/AB-1'));
   });
 });
 

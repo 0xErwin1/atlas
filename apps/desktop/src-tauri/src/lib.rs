@@ -1556,6 +1556,41 @@ pub enum DesktopError {
     ConfigurationUnavailable,
 }
 
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum ExternalUrlError {
+    #[error("the external URL is malformed")]
+    Malformed,
+    #[error("the external URL scheme is not allowed")]
+    UnsupportedScheme,
+    #[error("the external URL carries credentials")]
+    CredentialsPresent,
+}
+
+/// Validates a URL the webview asked the host to open in the user's real browser.
+///
+/// The webview is the untrusted side of this boundary: it can ask the host to
+/// open anything, and `opener` hands the string to whatever handler the
+/// operating system registered for the scheme. Only `http` and `https` are
+/// ever passed through, and embedded credentials are rejected so a crafted
+/// link cannot smuggle a password into a system-level open call.
+pub fn validate_external_url(raw: &str) -> Result<Url, ExternalUrlError> {
+    let url = Url::parse(raw).map_err(|_| ExternalUrlError::Malformed)?;
+
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(ExternalUrlError::UnsupportedScheme);
+    }
+
+    if url.host_str().is_none() {
+        return Err(ExternalUrlError::Malformed);
+    }
+
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(ExternalUrlError::CredentialsPresent);
+    }
+
+    Ok(url)
+}
+
 /// The window operations a second launch performs to surface the running instance.
 /// Abstracted so the ordering and failure handling are testable without a runtime.
 pub trait SurfaceableWindow {

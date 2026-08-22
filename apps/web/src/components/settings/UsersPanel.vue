@@ -166,8 +166,14 @@ const linkUrl = ref('');
 const regenerating = ref(false);
 
 function showLink(user: UserDto, path: string): void {
+  const url = activationUrl(path);
+  if (url === null) {
+    ui.showBanner('The server address is not available yet', 'error');
+    return;
+  }
+
   linkTarget.value = user;
-  linkUrl.value = activationUrl(path);
+  linkUrl.value = url;
   mode.value = 'link';
 }
 
