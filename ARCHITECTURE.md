@@ -75,6 +75,7 @@ flowchart LR
 | Notes | projects · folders · documents (CAS content save, revisions, **backlinks**); a document is addressable by stable **UUID or slug** |
 | Tasks | boards · board columns · tasks (atomic move, assignees, references, activity) · sub-tasks (`…/tasks/{id}/subtasks` create/list, `…/tasks/{id}/promote` to detach onto the board) |
 | Search | `GET /v1/workspaces/{ws}/search` (ranked docs+tasks, permission-filtered, filter tokens) |
+| Attachments | `GET /v1/workspaces/{ws}/attachments` (every file on a note, task, or comment of either — permission-filtered, with its owner and uploader) · `GET\|PATCH\|DELETE …/attachments/{id}` (download, rename, delete); a rename also rewrites the `[[file:…]]` links addressing it |
 | Sharing + meta | grants (`…/grants`) · `GET /v1/meta` (server version/build) |
 
 ## Data model

@@ -1933,6 +1933,178 @@
         ]
       }
     },
+    "/api/workspaces/{ws}/attachments": {
+      "get": {
+        "tags": [
+          "attachments"
+        ],
+        "summary": "Lists every attachment in the workspace the principal may see.",
+        "description": "Rows are permission-filtered in SQL against the resource that owns them, so\nthe page limit applies only to visible rows. Attachments still held by an\nunpublished comment draft are never listed.",
+        "operationId": "list_workspace_attachments",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Pagination cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, default 50, clamped to [1,200]",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Case-insensitive substring match on the file name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "owner",
+            "in": "query",
+            "description": "Owner kind: document | task | all (default)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "content_type",
+            "in": "query",
+            "description": "Content-type prefix, e.g. image/",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Attachment page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Paginated response envelope.",
+                  "required": [
+                    "items",
+                    "has_more"
+                  ],
+                  "properties": {
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "description": "One row of the workspace-wide attachment listing: the file's metadata plus\nthe resource that owns it.",
+                        "required": [
+                          "id",
+                          "file_name",
+                          "content_type",
+                          "size_bytes",
+                          "sha256",
+                          "created_at",
+                          "updated_at",
+                          "owner",
+                          "content_url"
+                        ],
+                        "properties": {
+                          "actor": {
+                            "oneOf": [
+                              {
+                                "type": "null"
+                              },
+                              {
+                                "$ref": "#/components/schemas/ActorDto"
+                              }
+                            ]
+                          },
+                          "content_type": {
+                            "type": "string"
+                          },
+                          "content_url": {
+                            "type": "string",
+                            "description": "Root-relative URL that streams the bytes with a download disposition."
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "file_name": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "owner": {
+                            "$ref": "#/components/schemas/AttachmentOwnerDto"
+                          },
+                          "sha256": {
+                            "type": "string"
+                          },
+                          "size_bytes": {
+                            "type": "integer",
+                            "format": "int64"
+                          },
+                          "updated_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    },
+                    "next_cursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Workspace not found or principal has no access"
+          },
+          "422": {
+            "description": "Unknown owner filter"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/api/workspaces/{ws}/attachments/{attachment_id}": {
       "get": {
         "tags": [
@@ -2016,6 +2188,73 @@
           },
           "404": {
             "description": "Attachment not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "attachments"
+        ],
+        "summary": "Renames an attachment and rewrites every reference that addressed it by name.",
+        "description": "A `[[file:…]]` wikilink is the only name-bound way to reference an\nattachment — embedded images and links carry the attachment id — so the\nrewrite is confined to the owner's own body, and it goes through the normal\ncontent-save path so the note keeps its revision history and its link rows.",
+        "operationId": "rename_workspace_attachment",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "description": "Attachment UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameAttachmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Attachment renamed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceAttachmentDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Attachment not found"
+          },
+          "422": {
+            "description": "Invalid file name, or the name is already taken here"
           }
         },
         "security": [
@@ -12547,6 +12786,62 @@
           }
         }
       },
+      "AttachmentOwnerDto": {
+        "type": "object",
+        "description": "The resource a workspace attachment hangs off.\n\n`comment_id` is set when the file was posted on a comment rather than on the\nparent itself; the parent identity is carried either way so every row in the\nworkspace listing is navigable.",
+        "required": [
+          "kind",
+          "title"
+        ],
+        "properties": {
+          "comment_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "document_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "document_slug": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "description": "`\"document\"` or `\"task\"`."
+          },
+          "project_slug": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "task_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "task_readable_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
       "AuditEntryDto": {
         "type": "object",
         "description": "A single security audit log entry.",
@@ -16802,6 +17097,18 @@
           "wikilink"
         ]
       },
+      "RenameAttachmentRequest": {
+        "type": "object",
+        "description": "Renames an attachment and rewrites the `[[file:…]]` links that address it.",
+        "required": [
+          "file_name"
+        ],
+        "properties": {
+          "file_name": {
+            "type": "string"
+          }
+        }
+      },
       "RenameFolderRequest": {
         "type": "object",
         "description": "Request body for `PATCH /api/workspaces/{ws}/folders/{folder_id}`.",
@@ -18628,6 +18935,65 @@
           }
         }
       },
+      "WorkspaceAttachmentDto": {
+        "type": "object",
+        "description": "One row of the workspace-wide attachment listing: the file's metadata plus\nthe resource that owns it.",
+        "required": [
+          "id",
+          "file_name",
+          "content_type",
+          "size_bytes",
+          "sha256",
+          "created_at",
+          "updated_at",
+          "owner",
+          "content_url"
+        ],
+        "properties": {
+          "actor": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ActorDto"
+              }
+            ]
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "content_url": {
+            "type": "string",
+            "description": "Root-relative URL that streams the bytes with a download disposition."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "file_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/AttachmentOwnerDto"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "WorkspaceDto": {
         "type": "object",
         "description": "Workspace representation.",
@@ -18757,6 +19123,10 @@
     {
       "name": "automation-rules",
       "description": "Automation rule CRUD (admin-only)"
+    },
+    {
+      "name": "attachments",
+      "description": "Workspace-wide attachment listing and rename"
     },
     {
       "name": "trash",

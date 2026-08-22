@@ -618,8 +618,13 @@ pub fn app(state: AppState) -> Router {
                 .get(routes::documents::list_attachments),
         )
         .route(
+            "/api/workspaces/{ws}/attachments",
+            get(routes::attachments::list_workspace_attachments),
+        )
+        .route(
             "/api/workspaces/{ws}/attachments/{attachment_id}",
             get(routes::documents::download_attachment)
+                .patch(routes::attachments::rename_attachment)
                 .delete(routes::documents::delete_attachment),
         )
         .route(

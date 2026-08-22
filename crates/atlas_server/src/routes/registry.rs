@@ -608,10 +608,24 @@ pub static ROUTE_REGISTRY: &[RouteEntry] = &[
     },
     RouteEntry {
         method: "GET",
+        path_template: "/api/workspaces/{ws}/attachments",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/api/workspaces/{ws}/attachments"),
+        capability: None,
+    },
+    RouteEntry {
+        method: "GET",
         path_template: "/api/workspaces/{ws}/attachments/00000000-0000-0000-0000-000000000001",
         kind: RouteKind::WorkspaceMember,
         openapi_path: Some("/api/workspaces/{ws}/attachments/{attachment_id}"),
         capability: Some("docs:read"),
+    },
+    RouteEntry {
+        method: "PATCH",
+        path_template: "/api/workspaces/{ws}/attachments/00000000-0000-0000-0000-000000000001",
+        kind: RouteKind::WorkspaceMember,
+        openapi_path: Some("/api/workspaces/{ws}/attachments/{attachment_id}"),
+        capability: None,
     },
     RouteEntry {
         method: "DELETE",

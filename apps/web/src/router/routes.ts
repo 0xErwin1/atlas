@@ -50,6 +50,12 @@ export const routes: RouteRecordRaw[] = [
         },
       },
       {
+        path: 'f',
+        name: 'files',
+        component: () => import('@/views/Files.vue'),
+        meta: { mobileDetail: true },
+      },
+      {
         path: 't/task/:readableId',
         name: 'task-detail',
         component: () => import('@/views/TaskDetail.vue'),

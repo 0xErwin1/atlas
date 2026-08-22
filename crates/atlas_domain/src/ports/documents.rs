@@ -1,9 +1,9 @@
 use crate::{
     DomainError, WorkspaceCtx,
     entities::documents::{
-        Attachment, AttachmentOwner, AttachmentWriteIntent, Document, DocumentLink,
-        DocumentSummary, ExtractedLink, NewAttachment, NewDocument, RevisionMeta,
-        TaskDescriptionLinks,
+        Attachment, AttachmentOwner, AttachmentOwnerRef, AttachmentWriteIntent, Document,
+        DocumentLink, DocumentSummary, ExtractedLink, NewAttachment, NewDocument, RevisionMeta,
+        TaskDescriptionLinks, WorkspaceAttachment, WorkspaceAttachmentQuery,
     },
     ids::{AttachmentId, DocumentId, FolderId, ProjectId, RevisionId, TaskId},
     permissions::Principal,
@@ -197,6 +197,32 @@ pub trait AttachmentRepo: Send + Sync {
     ) -> Result<Vec<Attachment>, DomainError>;
 
     async fn soft_delete(&self, ctx: &WorkspaceCtx, id: AttachmentId) -> Result<(), DomainError>;
+}
+
+/// Workspace-wide attachment listing, permission-filtered like search.
+///
+/// `principal` and `bypass` are carried the same way `SearchRepo` carries them:
+/// the visibility predicate mirrors `permissions::resolve()` and is pushed into
+/// the query, so the page limit applies only to rows the principal may see.
+#[async_trait]
+pub trait WorkspaceAttachmentRepo: Send + Sync {
+    async fn list(
+        &self,
+        ctx: &WorkspaceCtx,
+        principal: &Principal,
+        query: &WorkspaceAttachmentQuery,
+        bypass: bool,
+    ) -> Result<Vec<WorkspaceAttachment>, DomainError>;
+
+    /// Resolves one attachment's owner without the permission predicate.
+    ///
+    /// Callers authorize the returned owner themselves; this only answers what
+    /// the attachment hangs off.
+    async fn owner_of(
+        &self,
+        ctx: &WorkspaceCtx,
+        id: AttachmentId,
+    ) -> Result<Option<AttachmentOwnerRef>, DomainError>;
 }
 
 #[async_trait]

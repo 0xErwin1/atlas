@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 /// Upper bound on a wikilink target's byte length. A real target is a short
 /// title (optionally id-bound), never a paragraph; anything longer is a `[[`
 /// opened in prose or an inline-code span whose `]]` only appears far away.
@@ -149,28 +151,121 @@ fn typed_target(left: &str) -> Option<(WikilinkTarget, &str)> {
 /// short, single-line title, so such spans are false positives.
 pub fn parse_wikilinks(content: &str) -> Vec<String> {
     let mut targets: Vec<String> = Vec::new();
-    let mut remaining = content;
 
-    while let Some(open) = remaining.find("[[") {
-        remaining = &remaining[open + 2..];
+    for span in wikilink_spans(content) {
+        let Some(target) = content.get(span) else {
+            continue;
+        };
 
-        if let Some(close) = remaining.find("]]") {
-            let target = &remaining[..close];
-            remaining = &remaining[close + 2..];
-
-            if !target.is_empty()
-                && !target.contains('\n')
-                && target.len() <= MAX_WIKILINK_TARGET_LEN
-                && !targets.iter().any(|t| t == target)
-            {
-                targets.push(target.to_string());
-            }
-        } else {
-            break;
+        if !targets.iter().any(|t| t == target) {
+            targets.push(target.to_string());
         }
     }
 
     targets
+}
+
+/// Byte ranges of the inner text of every `[[…]]` token, in order of appearance.
+///
+/// Multi-line and oversized candidates are dropped here, so every caller that
+/// walks wikilinks agrees on what counts as one.
+fn wikilink_spans(content: &str) -> Vec<Range<usize>> {
+    let mut spans = Vec::new();
+    let mut offset = 0usize;
+
+    while let Some(open) = content.get(offset..).and_then(|rest| rest.find("[[")) {
+        let start = offset + open + 2;
+
+        let Some(close) = content.get(start..).and_then(|rest| rest.find("]]")) else {
+            break;
+        };
+
+        let end = start + close;
+        offset = end + 2;
+
+        let Some(inner) = content.get(start..end) else {
+            continue;
+        };
+
+        if !inner.is_empty() && !inner.contains('\n') && inner.len() <= MAX_WIKILINK_TARGET_LEN {
+            spans.push(start..end);
+        }
+    }
+
+    spans
+}
+
+/// Rewrites every `[[file:<old_name>]]` link so it addresses `new_name`.
+///
+/// A `file:` link is addressed by file name, so renaming an attachment without
+/// this rewrite would leave its links pointing at a name that no longer exists.
+/// Only the address is replaced: the written kind case, the display half, and
+/// any whitespace inside the token are preserved, and every other wikilink form
+/// is left exactly as written.
+pub fn rename_file_links(content: &str, old_name: &str, new_name: &str) -> String {
+    let mut rewritten = String::with_capacity(content.len());
+    let mut copied = 0usize;
+
+    for span in wikilink_spans(content) {
+        let Some(inner) = content.get(span.clone()) else {
+            continue;
+        };
+
+        let Some(address) = file_address_span(inner) else {
+            continue;
+        };
+
+        if inner.get(address.clone()) != Some(old_name) {
+            continue;
+        }
+
+        let Some(prefix) = content.get(copied..span.start + address.start) else {
+            continue;
+        };
+
+        rewritten.push_str(prefix);
+        rewritten.push_str(new_name);
+        copied = span.start + address.end;
+    }
+
+    if let Some(tail) = content.get(copied..) {
+        rewritten.push_str(tail);
+    }
+
+    rewritten
+}
+
+/// Byte range, within a wikilink's inner text, of a `file:` link's address.
+///
+/// Returns `None` for every other target form, applying the same rules
+/// `classify_wikilink` uses so the two never disagree about what a `file:`
+/// link addresses.
+fn file_address_span(inner: &str) -> Option<Range<usize>> {
+    let left = match inner.find('|') {
+        Some(pipe) => inner.get(..pipe)?,
+        None => inner,
+    };
+
+    let trimmed = left.trim();
+    let lead = left.len() - left.trim_start().len();
+
+    let colon = trimmed.find(':')?;
+    if !trimmed.get(..colon)?.eq_ignore_ascii_case("file") {
+        return None;
+    }
+
+    let address = trimmed.get(colon + 1..)?;
+    if address.starts_with(char::is_whitespace) {
+        return None;
+    }
+
+    let address = address.trim_end();
+    if address.is_empty() {
+        return None;
+    }
+
+    let start = lead + colon + 1;
+    Some(start..start + address.len())
 }
 
 /// Resolves the inner content of a `[[...]]` wikilink into an optional target
@@ -655,5 +750,78 @@ mod tests {
                 display: "Foo|Bar".into(),
             }
         );
+    }
+
+    #[test]
+    fn rename_file_links_rewrites_the_plain_form() {
+        assert_eq!(
+            rename_file_links("see [[file:old.pdf]] now", "old.pdf", "new.pdf"),
+            "see [[file:new.pdf]] now"
+        );
+    }
+
+    #[test]
+    fn rename_file_links_keeps_the_display_half() {
+        assert_eq!(
+            rename_file_links("[[file:old.pdf|The policy]]", "old.pdf", "new.pdf"),
+            "[[file:new.pdf|The policy]]"
+        );
+    }
+
+    #[test]
+    fn rename_file_links_rewrites_every_occurrence() {
+        assert_eq!(
+            rename_file_links(
+                "[[file:old.pdf]] and [[file:old.pdf|again]]",
+                "old.pdf",
+                "new.pdf"
+            ),
+            "[[file:new.pdf]] and [[file:new.pdf|again]]"
+        );
+    }
+
+    #[test]
+    fn rename_file_links_leaves_other_targets_untouched() {
+        let content = "[[note:old.pdf]] [[old.pdf]] [[task:OLD.PDF]] [[file:other.pdf]]";
+
+        assert_eq!(rename_file_links(content, "old.pdf", "new.pdf"), content);
+    }
+
+    #[test]
+    fn rename_file_links_preserves_surrounding_whitespace_inside_the_token() {
+        assert_eq!(
+            rename_file_links("[[ file:old.pdf | Old ]]", "old.pdf", "new.pdf"),
+            "[[ file:new.pdf | Old ]]"
+        );
+    }
+
+    #[test]
+    fn rename_file_links_preserves_the_written_kind_case() {
+        assert_eq!(
+            rename_file_links("[[File:old.pdf]]", "old.pdf", "new.pdf"),
+            "[[File:new.pdf]]"
+        );
+    }
+
+    #[test]
+    fn rename_file_links_skips_candidates_parse_wikilinks_rejects() {
+        let multiline = "[[file:old.pdf\nstill open]]";
+        assert_eq!(
+            rename_file_links(multiline, "old.pdf", "new.pdf"),
+            multiline
+        );
+
+        let oversized = format!("[[file:{}]]", "o".repeat(MAX_WIKILINK_TARGET_LEN));
+        assert_eq!(
+            rename_file_links(&oversized, &"o".repeat(MAX_WIKILINK_TARGET_LEN), "new.pdf"),
+            oversized
+        );
+    }
+
+    #[test]
+    fn rename_file_links_returns_content_unchanged_without_a_match() {
+        let content = "nothing to rewrite here";
+
+        assert_eq!(rename_file_links(content, "old.pdf", "new.pdf"), content);
     }
 }

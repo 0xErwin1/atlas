@@ -29,8 +29,8 @@ use atlas_api::{
             DocumentContentEditRequest, DocumentContentRangeDto, DocumentContentRangeQuery,
             DocumentContentSearchDto, DocumentContentSearchRequest, DocumentDto,
             DocumentMoveBatchRequest, DocumentMoveBatchResultDto, DocumentSummaryDto,
-            FrontmatterDto, MoveDocumentRequest, RevisionContentDto, RevisionMetaDto,
-            UpdateContentRequest, UpdateDocumentRequest,
+            FrontmatterDto, MoveDocumentRequest, RenameAttachmentRequest, RevisionContentDto,
+            RevisionMetaDto, UpdateContentRequest, UpdateDocumentRequest, WorkspaceAttachmentDto,
         },
         folders::{
             CopyFolderRequest, CreateFolderRequest, FolderDto, MoveFolderRequest,
@@ -1448,6 +1448,42 @@ impl AtlasClient {
         );
         let response = self.get(&path).send().await?;
         self.decode_response(response, "list_attachments").await
+    }
+
+    /// `GET /api/workspaces/{ws}/attachments`
+    ///
+    /// Lists every attachment in the workspace the principal may see, across
+    /// notes, tasks, and the comments of either.
+    pub async fn list_workspace_attachments(
+        &self,
+        ws: &str,
+        cursor: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Page<WorkspaceAttachmentDto>, ClientError> {
+        let path =
+            build_paginated_path(&format!("/api/workspaces/{ws}/attachments"), cursor, limit);
+        let response = self.get(&path).send().await?;
+        self.decode_response(response, "list_workspace_attachments")
+            .await
+    }
+
+    /// `PATCH /api/workspaces/{ws}/attachments/{attachment_id}`
+    ///
+    /// Renames the attachment and rewrites the `[[file:…]]` links addressing it.
+    pub async fn rename_workspace_attachment(
+        &self,
+        ws: &str,
+        attachment_id: uuid::Uuid,
+        body: RenameAttachmentRequest,
+    ) -> Result<WorkspaceAttachmentDto, ClientError> {
+        let response = self
+            .patch(&format!("/api/workspaces/{ws}/attachments/{attachment_id}"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "rename_workspace_attachment")
+            .await
     }
 
     /// `GET /api/workspaces/{ws}/attachments/{attachment_id}`

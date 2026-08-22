@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 // biome-ignore lint/style/useImportType: used as a component in <template>, not only as a type
 import NotesSpace from '@/components/notas/NotesSpace.vue';
 import SidebarViews from '@/components/notas/SidebarViews.vue';
@@ -9,6 +10,7 @@ import ErrorState from '@/components/states/ErrorState.vue';
 import LoadingState from '@/components/states/LoadingState.vue';
 import ContextMenu, { type MenuItem } from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
+import Row from '@/components/ui/Row.vue';
 import SectionLabel from '@/components/ui/SectionLabel.vue';
 import { useActiveSidebarNode } from '@/composables/useActiveSidebarNode';
 import { useContextMenu } from '@/composables/useContextMenu';
@@ -18,8 +20,16 @@ import { boardKey, docKey } from '@/lib/notesTree';
 import { useTreeSelection } from '@/stores/treeSelection';
 import { useWorkspaceStore } from '@/stores/workspace';
 
+const route = useRoute();
+const router = useRouter();
 const workspace = useWorkspaceStore();
 const selection = useTreeSelection();
+
+const isFilesRoute = computed(() => route.name === 'files');
+
+function openFiles(): void {
+  void router.push({ name: 'files' });
+}
 
 const spaceRefs = ref<Array<InstanceType<typeof NotesSpace> | null>>([]);
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
@@ -162,6 +172,15 @@ defineExpose({ openNewPage, refresh });
         </div>
 
         <footer class="notes-sidebar-actions" aria-label="Sidebar actions">
+          <div>
+            <SectionLabel>Workspace</SectionLabel>
+            <Row
+              label="Files"
+              icon="paperclip"
+              :active="isFilesRoute"
+              @click="openFiles"
+            />
+          </div>
           <SidebarViews :active-view-id="activeViewId" />
           <button
             type="button"

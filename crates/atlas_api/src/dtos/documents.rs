@@ -634,6 +634,57 @@ pub struct AttachmentDto {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// The resource a workspace attachment hangs off.
+///
+/// `comment_id` is set when the file was posted on a comment rather than on the
+/// parent itself; the parent identity is carried either way so every row in the
+/// workspace listing is navigable.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct AttachmentOwnerDto {
+    /// `"document"` or `"task"`.
+    pub kind: String,
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub document_id: Option<uuid::Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub document_slug: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<uuid::Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_readable_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_slug: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment_id: Option<uuid::Uuid>,
+}
+
+/// One row of the workspace-wide attachment listing: the file's metadata plus
+/// the resource that owns it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct WorkspaceAttachmentDto {
+    pub id: uuid::Uuid,
+    pub file_name: String,
+    pub content_type: String,
+    pub size_bytes: i64,
+    pub sha256: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actor: Option<ActorDto>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub owner: AttachmentOwnerDto,
+    /// Root-relative URL that streams the bytes with a download disposition.
+    pub content_url: String,
+}
+
+/// Renames an attachment and rewrites the `[[file:…]]` links that address it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct RenameAttachmentRequest {
+    pub file_name: String,
+}
+
 /// Metadata for a file owned by a task or document comment.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
