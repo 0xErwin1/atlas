@@ -29,11 +29,13 @@ use atlas_api::dtos::{CreateProjectRequest, ServerMetaDto, UpdateProjectRequest}
 use atlas_client::{AtlasClient, helpers};
 use rmcp::{
     ErrorData as McpError, ServerHandler,
-    handler::server::wrapper::Parameters,
+    handler::server::{tool::InputResponses as ClientInputResponses, wrapper::Parameters},
     model::{
-        AnnotateAble, Content, Implementation, ListResourceTemplatesResult, RawResourceTemplate,
-        ReadResourceRequestParams, ReadResourceResult, ResourceContents, ServerCapabilities,
-        ServerInfo,
+        CacheScope, CallToolResponse, CallToolResult, ContentBlock, ElicitRequest,
+        ElicitRequestParams, ElicitationAction, ElicitationSchema, Implementation, InputRequest,
+        InputRequests, InputRequiredResult, ListResourceTemplatesResult, ProtocolVersion,
+        ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult, ResourceContents,
+        ResourceTemplate, ServerCapabilities, ServerInfo,
     },
     service::{RequestContext, RoleServer},
     tool, tool_handler, tool_router,
@@ -239,6 +241,198 @@ impl AtlasMcp {
             &self.base_url,
             token,
         ))
+    }
+}
+
+/// Protocol revisions Atlas implements, ascending.
+///
+/// Covers both eras Atlas serves: the modern `2026-07-28` revision and the
+/// legacy `2025-11-25`-and-earlier revisions. Whether a request gets modern or
+/// legacy behavior is decided by rmcp's own version gating against this list,
+/// never by hand-rolled branching in the tool bodies.
+const SUPPORTED_PROTOCOL_VERSIONS: &[ProtocolVersion] = &[
+    ProtocolVersion::V_2024_11_05,
+    ProtocolVersion::V_2025_03_26,
+    ProtocolVersion::V_2025_06_18,
+    ProtocolVersion::V_2025_11_25,
+    ProtocolVersion::V_2026_07_28,
+];
+
+/// SEP-2549 freshness window Atlas advertises: none.
+///
+/// Every list and read is served from a live Atlas API call whose result can
+/// change on the next request, so no response may be replayed from a cache
+/// without revalidating.
+const NO_CACHE_TTL_MS: u64 = 0;
+
+/// True when the peer negotiated the modern era.
+///
+/// The one place Atlas reads the negotiated revision itself. Everything else the
+/// era decides — negotiation, required request metadata, routing headers, the
+/// `resultType` discriminator, resource-not-found mapping — is gated by rmcp
+/// against `SUPPORTED_PROTOCOL_VERSIONS`. This covers only the two response
+/// fields the SDK leaves to the handler.
+fn is_modern_peer(ctx: &RequestContext<RoleServer>) -> bool {
+    ctx.protocol_version()
+        .is_some_and(|version| version >= ProtocolVersion::V_2026_07_28)
+}
+
+/// Key of the deletion prompt inside an MRTR `inputRequests` map.
+const CONFIRM_DELETION_KEY: &str = "confirm_deletion";
+
+/// How a `delete` call satisfies its confirmation guard this round.
+enum ConfirmationRound {
+    /// Run the delete now: the caller confirmed, or this resource has no guard.
+    Proceed,
+    /// Ask the client to confirm before anything is deleted.
+    Ask(InputRequiredResult),
+    /// The client was asked and did not approve.
+    Refused(String),
+}
+
+/// Decides how a `delete` call satisfies its confirmation guard.
+///
+/// A `2026-07-28` peer that declared the elicitation client capability gets the
+/// SEP-2322 multi round-trip flow: an unconfirmed delete answers
+/// `resultType: "input_required"`, the client asks the human, and the retry
+/// carries the answer. Every other peer falls through untouched, so the
+/// per-resource `require_confirm` guard and its error string stay exactly as
+/// they were.
+///
+/// Only resources whose parameters carry `confirm` are guarded, which is the
+/// same set `require_confirm` protects; the others are unaffected.
+///
+/// No `requestState` is emitted and none is trusted. The retry resends its own
+/// arguments, so an echoed value could never authorize more than the caller can
+/// already ask for directly, and there is nothing to integrity-protect.
+fn plan_confirmation(
+    call: &mut CallParams,
+    answers: Option<&rmcp::model::InputResponses>,
+    ctx: &RequestContext<RoleServer>,
+) -> ConfirmationRound {
+    let Some(params) = call.params.as_object_mut() else {
+        return ConfirmationRound::Proceed;
+    };
+
+    if params.get("confirm").and_then(serde_json::Value::as_bool) != Some(false) {
+        return ConfirmationRound::Proceed;
+    }
+
+    if !supports_elicited_confirmation(ctx) {
+        return ConfirmationRound::Proceed;
+    }
+
+    let Some(answers) = answers else {
+        return ConfirmationRound::Ask(confirm_deletion_request(
+            &call.resource,
+            &serde_json::Value::Object(params.clone()),
+        ));
+    };
+
+    match confirmation_answer(answers) {
+        Some(true) => {
+            params.insert("confirm".to_string(), serde_json::Value::Bool(true));
+            ConfirmationRound::Proceed
+        }
+        _ => ConfirmationRound::Refused(format!(
+            "Deletion cancelled: the client declined to confirm deleting the {}.",
+            call.resource
+        )),
+    }
+}
+
+/// True when the peer can be asked to confirm rather than told to retry.
+///
+/// Needs both a revision that defines MRTR and a client that declared it can
+/// answer an elicitation. Atlas never advertises elicitation itself; it only
+/// uses what the caller says it supports.
+fn supports_elicited_confirmation(ctx: &RequestContext<RoleServer>) -> bool {
+    is_modern_peer(ctx)
+        && ctx
+            .client_capabilities()
+            .is_some_and(|capabilities| capabilities.elicitation.is_some())
+}
+
+/// Reads the human's answer out of an MRTR `inputResponses` map.
+///
+/// `None` means the client answered something Atlas cannot read as approval.
+fn confirmation_answer(answers: &rmcp::model::InputResponses) -> Option<bool> {
+    let answer = answers.get(CONFIRM_DELETION_KEY)?;
+    let action: ElicitationAction = serde_json::from_value(answer.get("action")?.clone()).ok()?;
+
+    if action != ElicitationAction::Accept {
+        return Some(false);
+    }
+
+    Some(
+        answer
+            .get("content")
+            .and_then(|content| content.get("confirm"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
+    )
+}
+
+/// Builds the one elicitation an unconfirmed delete asks for.
+fn confirm_deletion_request(resource: &str, params: &serde_json::Value) -> InputRequiredResult {
+    let target = deletion_target(params)
+        .map(|target| format!("{resource} '{target}'"))
+        .unwrap_or_else(|| resource.to_string());
+
+    let schema = ElicitationSchema::builder()
+        .required_bool_property("confirm", |property| {
+            property.description("Set to true to delete it, false to cancel.")
+        })
+        .build_unchecked();
+
+    let request = ElicitRequest::new(ElicitRequestParams::FormElicitationParams {
+        meta: None,
+        message: format!("Confirm deleting {target}. This is destructive and not auto-reversible."),
+        requested_schema: schema,
+    });
+
+    let mut requests = InputRequests::new();
+    requests.insert(
+        CONFIRM_DELETION_KEY.to_string(),
+        InputRequest::Elicitation(request),
+    );
+
+    InputRequiredResult::from_input_requests(requests)
+}
+
+/// The identifier a guarded `delete` resource names its target by.
+fn deletion_target(params: &serde_json::Value) -> Option<String> {
+    const IDENTIFIER_KEYS: &[&str] = &[
+        "readable_id",
+        "slug",
+        "column",
+        "board",
+        "folder_id",
+        "webhook_id",
+    ];
+
+    IDENTIFIER_KEYS
+        .iter()
+        .find_map(|key| params.get(key).and_then(serde_json::Value::as_str))
+        .map(str::to_owned)
+}
+
+/// Maps an Atlas read failure onto the MCP error code the resource contract expects.
+///
+/// A document the caller cannot see is a resource-not-found (`-32002`), which
+/// rmcp rewrites to `INVALID_PARAMS` (`-32602`) for peers on `2026-07-28` or
+/// newer. Anything else is a server-side failure the caller cannot act on.
+fn read_resource_error(error: atlas_client::ClientError, uri: &str) -> McpError {
+    let missing = matches!(
+        &error,
+        atlas_client::ClientError::Api(problem) if problem.status == 404
+    );
+    let message = enrich_client_error(error, "read_resource");
+
+    if missing {
+        McpError::resource_not_found(message, Some(json!({ "uri": uri })))
+    } else {
+        McpError::internal_error(message, None)
     }
 }
 
@@ -2541,7 +2735,26 @@ impl AtlasMcp {
     )]
     async fn delete(
         &self,
-        Parameters(call): Parameters<CallParams>,
+        Parameters(mut call): Parameters<CallParams>,
+        ClientInputResponses(answers): ClientInputResponses,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResponse, String> {
+        match plan_confirmation(&mut call, answers.as_ref(), &ctx) {
+            ConfirmationRound::Ask(request) => return Ok(CallToolResponse::InputRequired(request)),
+            ConfirmationRound::Refused(reason) => return Err(reason),
+            ConfirmationRound::Proceed => {}
+        }
+
+        let text = self.delete_resource(call, ctx).await?;
+
+        Ok(CallToolResponse::Complete(CallToolResult::success(vec![
+            ContentBlock::text(text),
+        ])))
+    }
+
+    async fn delete_resource(
+        &self,
+        call: CallParams,
         ctx: RequestContext<RoleServer>,
     ) -> Result<String, String> {
         match call.resource.as_str() {
@@ -2798,7 +3011,7 @@ impl AtlasMcp {
         &self,
         Parameters(call): Parameters<CallParams>,
         ctx: RequestContext<RoleServer>,
-    ) -> Result<Content, String> {
+    ) -> Result<ContentBlock, String> {
         match call.resource.as_str() {
             "document_list" => self
                 .list_attachments(
@@ -2806,14 +3019,14 @@ impl AtlasMcp {
                     ctx,
                 )
                 .await
-                .map(Content::text),
+                .map(ContentBlock::text),
             "task_list" => self
                 .list_task_attachments(
                     catalog::decode("attachment", "task_list", call.params)?,
                     ctx,
                 )
                 .await
-                .map(Content::text),
+                .map(ContentBlock::text),
             "task_get" => {
                 self.get_task_attachment(
                     catalog::decode("attachment", "task_get", call.params)?,
@@ -2827,56 +3040,56 @@ impl AtlasMcp {
                     ctx,
                 )
                 .await
-                .map(Content::text),
+                .map(ContentBlock::text),
             "task_comment_list" => self
                 .list_task_comment_attachments(
                     catalog::decode("attachment", "task_comment_list", call.params)?,
                     ctx,
                 )
                 .await
-                .map(Content::text),
+                .map(ContentBlock::text),
             "task_comment_get" => self
                 .get_task_comment_attachment(
                     catalog::decode("attachment", "task_comment_get", call.params)?,
                     ctx,
                 )
                 .await
-                .map(Content::text),
+                .map(ContentBlock::text),
             "task_comment_delete" => self
                 .delete_task_comment_attachment(
                     catalog::decode("attachment", "task_comment_delete", call.params)?,
                     ctx,
                 )
                 .await
-                .map(Content::text),
+                .map(ContentBlock::text),
             "document_comment_upload" => self
                 .upload_document_comment_attachment(
                     catalog::decode("attachment", "document_comment_upload", call.params)?,
                     ctx,
                 )
                 .await
-                .map(Content::text),
+                .map(ContentBlock::text),
             "document_comment_list" => self
                 .list_document_comment_attachments(
                     catalog::decode("attachment", "document_comment_list", call.params)?,
                     ctx,
                 )
                 .await
-                .map(Content::text),
+                .map(ContentBlock::text),
             "document_comment_get" => self
                 .get_document_comment_attachment(
                     catalog::decode("attachment", "document_comment_get", call.params)?,
                     ctx,
                 )
                 .await
-                .map(Content::text),
+                .map(ContentBlock::text),
             "document_comment_delete" => self
                 .delete_document_comment_attachment(
                     catalog::decode("attachment", "document_comment_delete", call.params)?,
                     ctx,
                 )
                 .await
-                .map(Content::text),
+                .map(ContentBlock::text),
             other => Err(catalog::unknown_resource("attachment", other)),
         }
     }
@@ -3815,7 +4028,7 @@ impl AtlasMcp {
         &self,
         Parameters(params): Parameters<GetTaskAttachmentParams>,
         ctx: RequestContext<RoleServer>,
-    ) -> Result<Content, String> {
+    ) -> Result<ContentBlock, String> {
         let client = self.resolve_client(&ctx)?;
 
         let attachment_id = parse_uuid_param("attachment_id", &params.attachment_id)?;
@@ -3836,7 +4049,7 @@ impl AtlasMcp {
         if essence.starts_with("image/") {
             use base64::Engine as _;
             let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
-            return Ok(Content::image(encoded, mime));
+            return Ok(ContentBlock::image(encoded, mime));
         }
 
         if is_textual_mime(&essence) {
@@ -3855,7 +4068,7 @@ impl AtlasMcp {
                 )
             })?;
 
-            return Ok(Content::text(text));
+            return Ok(ContentBlock::text(text));
         }
 
         Err(format!(
@@ -5886,31 +6099,48 @@ impl ServerHandler for AtlasMcp {
         .with_instructions(ATLAS_INSTRUCTIONS)
     }
 
+    /// The protocol revisions Atlas implements, in ascending order.
+    ///
+    /// Pinned here rather than inherited from `ProtocolVersion::KNOWN_VERSIONS`
+    /// so an rmcp upgrade cannot silently advertise a revision Atlas has not
+    /// been built and tested against. This list is the single place the
+    /// modern/legacy era split is declared: the SDK gates negotiation,
+    /// per-request metadata, cache hints, and MRTR against it.
+    fn supported_protocol_versions(&self) -> std::borrow::Cow<'static, [ProtocolVersion]> {
+        std::borrow::Cow::Borrowed(SUPPORTED_PROTOCOL_VERSIONS)
+    }
+
     async fn list_resource_templates(
         &self,
         _request: Option<rmcp::model::PaginatedRequestParams>,
-        _ctx: RequestContext<RoleServer>,
+        ctx: RequestContext<RoleServer>,
     ) -> Result<ListResourceTemplatesResult, McpError> {
-        let template = RawResourceTemplate::new("atlas:///{workspace}/{slug}", "atlas-document")
+        let template = ResourceTemplate::new("atlas:///{workspace}/{slug}", "atlas-document")
             .with_title("Atlas Document")
             .with_description(
                 "A markdown document in an Atlas workspace. \
                  workspace = workspace slug, slug = document slug or UUID.",
             )
-            .with_mime_type("text/markdown")
-            .no_annotation();
+            .with_mime_type("text/markdown");
 
-        Ok(ListResourceTemplatesResult {
+        let mut result = ListResourceTemplatesResult {
             resource_templates: vec![template],
             ..Default::default()
-        })
+        };
+
+        if is_modern_peer(&ctx) {
+            result.ttl_ms = Some(NO_CACHE_TTL_MS);
+            result.cache_scope = Some(CacheScope::Public);
+        }
+
+        Ok(result)
     }
 
     async fn read_resource(
         &self,
         request: ReadResourceRequestParams,
         ctx: RequestContext<RoleServer>,
-    ) -> Result<ReadResourceResult, McpError> {
+    ) -> Result<ReadResourceResponse, McpError> {
         let uri = &request.uri;
 
         let (workspace, slug) =
@@ -5923,16 +6153,21 @@ impl ServerHandler for AtlasMcp {
         let doc = client
             .get_document(&workspace, &slug)
             .await
-            .map_err(|e| McpError::internal_error(enrich_client_error(e, "read_resource"), None))?;
+            .map_err(|e| read_resource_error(e, uri))?;
 
-        Ok(ReadResourceResult::new(vec![
-            ResourceContents::TextResourceContents {
-                uri: uri.clone(),
-                mime_type: Some("text/markdown".to_string()),
-                text: doc.content,
-                meta: None,
-            },
-        ]))
+        let mut result = ReadResourceResult::new(vec![ResourceContents::TextResourceContents {
+            uri: uri.clone(),
+            mime_type: Some("text/markdown".to_string()),
+            text: doc.content,
+            meta: None,
+        }]);
+
+        if is_modern_peer(&ctx) {
+            result.ttl_ms = Some(NO_CACHE_TTL_MS);
+            result.cache_scope = Some(CacheScope::Private);
+        }
+
+        Ok(result.into())
     }
 }
 
@@ -6032,7 +6267,7 @@ mod tests {
         result
             .content
             .first()
-            .and_then(|content| content.raw.as_text())
+            .and_then(|content| content.as_text())
             .map(|text| text.text.as_str())
             .expect("tool returns text content")
     }
@@ -6746,6 +6981,22 @@ mod tests {
             assert!(router.has_route(verb), "verb `{verb}` is not advertised");
         }
         assert!(router.has_route("help"));
+    }
+
+    /// `tools/list` is advertised as cacheable, so its order must not move
+    /// between two calls to the same build.
+    #[test]
+    fn the_advertised_catalog_has_a_stable_order() {
+        let names: Vec<_> = AtlasMcp::tool_router()
+            .list_all()
+            .into_iter()
+            .map(|tool| tool.name)
+            .collect();
+
+        let mut sorted = names.clone();
+        sorted.sort();
+
+        assert_eq!(names, sorted, "the catalog must be ordered by tool name");
     }
 
     /// A client that sees no `type` on `params` serializes the argument as a

@@ -167,6 +167,13 @@ The server starts a background webhook dispatcher after building application sta
 | `ATLAS_MCP_BIND` | `127.0.0.1` | MCP HTTP mode |
 | `ATLAS_MCP_PORT` | `3001` | MCP HTTP mode |
 
+In HTTP mode the bind address and port also decide which callers the transport accepts: the `Host`
+header must name the bind address or a loopback name, and a request carrying a browser `Origin`
+must name one of the server's own `http://<host>:<port>` origins. Agents and the CLI send no
+`Origin`, so only browsers are affected. Behind the bundled nginx the `/mcp` location rewrites
+`Host` to `localhost`, so the host check does not currently constrain the public hostname; see
+`docs/mcp.md` for what that does and does not cover.
+
 ## What server startup does
 
 Backed by `crates/atlas_server/src/main.rs` and `state.rs`, startup:
