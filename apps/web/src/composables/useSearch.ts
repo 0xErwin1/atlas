@@ -1,17 +1,39 @@
 import Fuse from 'fuse.js';
 import { useSearchStore } from '@/stores/search';
 
-export type LocalActionKind = 'navigate' | 'action';
+export type LocalActionKind = 'navigate' | 'action' | 'workspace';
 
-/**
- * A locally-resolved command (navigation or action) shown in the command
- * palette alongside server search hits. These are matched on the client with
- * fuse.js (Q6); server ranking remains authoritative for actual search hits.
- */
-export interface LocalAction {
+interface LocalActionBase {
   id: string;
   label: string;
-  kind: LocalActionKind;
+}
+
+/**
+ * A locally-resolved command shown in the command palette alongside server
+ * search hits: a navigation, an app action, or a switch to another workspace
+ * (which carries the destination slug). These are matched on the client with
+ * fuse.js (Q6); server ranking remains authoritative for actual search hits.
+ */
+export type LocalAction =
+  | (LocalActionBase & { kind: 'navigate' | 'action' })
+  | (LocalActionBase & { kind: 'workspace'; slug: string });
+
+/**
+ * Builds one "switch to workspace" palette action per workspace the user can
+ * reach, excluding the active one (switching to it would be a no-op).
+ */
+export function workspaceSwitchActions(
+  workspaces: ReadonlyArray<{ slug: string; name: string }>,
+  activeSlug: string | null,
+): LocalAction[] {
+  return workspaces
+    .filter((workspace) => workspace.slug !== activeSlug)
+    .map((workspace) => ({
+      id: `switch-workspace:${workspace.slug}`,
+      label: `Switch to workspace ${workspace.name}`,
+      kind: 'workspace',
+      slug: workspace.slug,
+    }));
 }
 
 const FUSE_OPTIONS = {

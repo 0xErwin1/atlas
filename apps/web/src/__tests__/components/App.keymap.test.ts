@@ -1,9 +1,11 @@
-import { mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '@/App.vue';
 import { resetKeymapForTests } from '@/composables/useKeymap';
+import type { LocalAction } from '@/composables/useSearch';
 import { useUiStore } from '@/stores/ui';
+import { useWorkspaceStore } from '@/stores/workspace';
 
 const push = vi.fn();
 
@@ -12,6 +14,7 @@ vi.mock('vue-router', async () => {
   return {
     ...actual,
     useRouter: () => ({ push }),
+    useRoute: () => ({ name: 'tasks', params: {} }),
   };
 });
 
@@ -78,6 +81,32 @@ describe('App keymap wiring', () => {
     await wrapper.vm.$nextTick();
 
     expect(ui.shortcutsHelpOpen).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('offers the other workspaces as palette actions and switches on select', async () => {
+    const wrapper = mount(App, {
+      global: { stubs: { RouterView: true, Teleport: true } },
+    });
+    const workspace = useWorkspaceStore();
+    workspace.workspaces = [
+      { id: 'w1', slug: 'acme', name: 'Acme' },
+      { id: 'w2', slug: 'personal', name: 'Personal' },
+    ] as typeof workspace.workspaces;
+    workspace.setActiveWorkspace('acme');
+    await wrapper.vm.$nextTick();
+
+    const palette = wrapper.getComponent({ name: 'CommandPalette' });
+    const actions = palette.props('actions') as LocalAction[];
+    const workspaceActions = actions.filter((a) => a.kind === 'workspace');
+    expect(workspaceActions).toHaveLength(1);
+    expect(workspaceActions[0]).toMatchObject({ slug: 'personal', label: 'Switch to workspace Personal' });
+
+    palette.vm.$emit('select', { type: 'action', action: workspaceActions[0] });
+    await flushPromises();
+
+    expect(push).toHaveBeenCalledWith({ name: 'tasks' });
+    expect(workspace.activeWorkspaceSlug).toBe('personal');
     wrapper.unmount();
   });
 });

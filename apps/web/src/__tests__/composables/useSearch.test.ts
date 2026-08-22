@@ -9,7 +9,12 @@ vi.mock('@/api/wrapper', () => ({
   wrappedClient: { GET },
 }));
 
-import { filterLocalActions, type LocalAction, useSearch } from '@/composables/useSearch';
+import {
+  filterLocalActions,
+  type LocalAction,
+  useSearch,
+  workspaceSwitchActions,
+} from '@/composables/useSearch';
 
 const page = (items: { id: string; kind: 'document' | 'task'; title: string }[]) => ({
   data: {
@@ -92,5 +97,37 @@ describe('filterLocalActions (Q6 fuse.js local nav/actions)', () => {
 
   it('returns nothing for a non-matching query', () => {
     expect(filterLocalActions(actions, 'zzzqqq')).toHaveLength(0);
+  });
+});
+
+describe('workspaceSwitchActions', () => {
+  const workspaces = [
+    { slug: 'acme', name: 'Acme Corp' },
+    { slug: 'personal', name: 'Personal' },
+  ];
+
+  it('builds one workspace action per workspace except the active one', () => {
+    const result = workspaceSwitchActions(workspaces, 'acme');
+
+    expect(result).toEqual([
+      {
+        id: 'switch-workspace:personal',
+        label: 'Switch to workspace Personal',
+        kind: 'workspace',
+        slug: 'personal',
+      },
+    ]);
+  });
+
+  it('lists every workspace when none is active', () => {
+    expect(workspaceSwitchActions(workspaces, null).map((a) => a.id)).toEqual([
+      'switch-workspace:acme',
+      'switch-workspace:personal',
+    ]);
+  });
+
+  it('is searchable by workspace name through filterLocalActions', () => {
+    const result = filterLocalActions(workspaceSwitchActions(workspaces, null), 'acme');
+    expect(result[0]?.id).toBe('switch-workspace:acme');
   });
 });
