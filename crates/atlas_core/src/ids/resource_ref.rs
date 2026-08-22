@@ -58,6 +58,13 @@ impl ResourceRef {
     pub fn id(&self) -> &str {
         &self.id
     }
+
+    /// Builds a `ResourceRef` from already-validated parts, skipping
+    /// re-validation. Used by conversions from types that validate their
+    /// own segments (for example `ResourcePath::leaf_ref`).
+    pub(crate) fn from_validated_parts(product: String, kind: String, id: String) -> Self {
+        Self { product, kind, id }
+    }
 }
 
 impl FromStr for ResourceRef {

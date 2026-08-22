@@ -10,7 +10,10 @@
 
 pub mod ids;
 
-pub use ids::{ActionId, ActionIdParseError, ResourceRef, ResourceRefParseError, SegmentError};
+pub use ids::{
+    ActionId, ActionIdParseError, PathSegment, ResourcePath, ResourcePathParseError, ResourceRef,
+    ResourceRefParseError, SegmentError,
+};
 
 #[cfg(test)]
 mod tests {

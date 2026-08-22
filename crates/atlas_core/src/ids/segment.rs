@@ -23,6 +23,12 @@ pub(crate) fn validate_segment(value: &str) -> Result<(), SegmentError> {
     Ok(())
 }
 
+/// Splits a `<kind>::<id>` path or selector element into its two halves.
+/// Performs no validation; callers must validate both halves separately.
+pub(crate) fn split_element(element: &str) -> Option<(&str, &str)> {
+    element.split_once("::")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

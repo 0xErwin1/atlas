@@ -1,8 +1,10 @@
 pub mod action_id;
+pub mod resource_path;
 pub mod resource_ref;
 pub mod segment;
 
 pub use action_id::{ActionId, ActionIdParseError};
+pub use resource_path::{PathSegment, ResourcePath, ResourcePathParseError};
 pub use resource_ref::{ResourceRef, ResourceRefParseError};
 pub use segment::SegmentError;
 
