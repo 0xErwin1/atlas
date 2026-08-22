@@ -19,13 +19,10 @@ import ContextMenu from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
 import PromptDialog from '@/components/ui/PromptDialog.vue';
 import { resolveDropTarget } from '@/composables/kanbanDrop';
+import { taskDragOptions } from '@/composables/taskDragOptions';
 import { createStatusOptionsIndex, priorityPickerOptions } from '@/composables/taskPickerOptions';
 import { useContextMenu } from '@/composables/useContextMenu';
-import {
-  type DragAutoScrollMoveEvent,
-  dragAutoScrollOptions,
-  handleDragAutoScrollMove,
-} from '@/composables/useDragAutoScroll';
+import { type DragAutoScrollMoveEvent, handleDragAutoScrollMove } from '@/composables/useDragAutoScroll';
 import { useInlineEdit } from '@/composables/useInlineEdit';
 import { useKanbanMove } from '@/composables/useKanbanMove';
 import { useTaskInteractions } from '@/composables/useTaskInteractions';
@@ -537,7 +534,7 @@ const rowHandlers = {
           :model-value="group.tasks"
           :group="'kanban'"
           :animation="150"
-          v-bind="dragAutoScrollOptions"
+          v-bind="taskDragOptions"
           :on-move="onSortableMove"
           item-key="id"
           ghost-class="atl-tl-row-ghost"
