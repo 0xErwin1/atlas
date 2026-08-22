@@ -13,7 +13,7 @@ pub mod ids;
 pub use ids::{
     ActionId, ActionIdParseError, PathSegment, ResourcePath, ResourcePathParseError, ResourceRef,
     ResourceRefParseError, ResourceSelector, ResourceSelectorParseError, SegmentError,
-    SelectorSegment,
+    SelectorSegment, Specificity,
 };
 
 #[cfg(test)]
