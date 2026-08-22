@@ -5,7 +5,8 @@ import CommandPalette, { type PaletteSelection } from '@/components/search/Comma
 import ShortcutsHelpDialog from '@/components/shell/ShortcutsHelpDialog.vue';
 import { useCrossTabSync } from '@/composables/useCrossTabSync';
 import { installKeymapListener, registerShortcut } from '@/composables/useKeymap';
-import type { LocalAction } from '@/composables/useSearch';
+import { type LocalAction, workspaceSwitchActions } from '@/composables/useSearch';
+import { useWorkspaceSwitch } from '@/composables/useWorkspaceSwitch';
 import type { SearchHitDto } from '@/stores/search';
 import { useSearchStore } from '@/stores/search';
 import { useUiStore } from '@/stores/ui';
@@ -15,6 +16,7 @@ const router = useRouter();
 const workspace = useWorkspaceStore();
 const searchStore = useSearchStore();
 const ui = useUiStore();
+const { switchTo } = useWorkspaceSwitch();
 
 const ws = computed(() => workspace.activeWorkspaceSlug ?? '');
 
@@ -31,14 +33,24 @@ watch(
   },
 );
 
-const localActions: LocalAction[] = [
+const staticActions: LocalAction[] = [
   { id: 'goto-notes', label: 'Go to Notes', kind: 'navigate' },
   { id: 'goto-tasks', label: 'Go to Tasks', kind: 'navigate' },
   { id: 'goto-search', label: 'Go to Search', kind: 'navigate' },
   { id: 'show-shortcuts-help', label: 'Show keyboard shortcuts', kind: 'action' },
 ];
 
+const localActions = computed<LocalAction[]>(() => [
+  ...staticActions,
+  ...workspaceSwitchActions(workspace.workspaces, workspace.activeWorkspaceSlug),
+]);
+
 function runAction(action: LocalAction): void {
+  if (action.kind === 'workspace') {
+    void switchTo(action.slug);
+    return;
+  }
+
   switch (action.id) {
     case 'goto-notes':
       void router.push({ name: 'notes' });

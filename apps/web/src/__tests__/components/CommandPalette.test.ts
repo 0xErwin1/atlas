@@ -11,11 +11,13 @@ vi.mock('@/api/wrapper', () => ({
 }));
 
 import CommandPalette from '@/components/search/CommandPalette.vue';
+import type { LocalAction } from '@/composables/useSearch';
 import { useSearchStore } from '@/stores/search';
 
-const localActions = [
-  { id: 'goto-notes', label: 'Go to Notes', kind: 'navigate' as const },
-  { id: 'goto-tasks', label: 'Go to Tasks', kind: 'navigate' as const },
+const localActions: LocalAction[] = [
+  { id: 'goto-notes', label: 'Go to Notes', kind: 'navigate' },
+  { id: 'goto-tasks', label: 'Go to Tasks', kind: 'navigate' },
+  { id: 'switch-workspace:acme', label: 'Switch to workspace Acme', kind: 'workspace', slug: 'acme' },
 ];
 
 const mountPalette = () =>
@@ -77,6 +79,18 @@ describe('CommandPalette (REQ-W23/W24)', () => {
     const payload = wrapper.emitted('select')?.[0]?.[0] as { type: string; action?: { id: string } };
     expect(payload.type).toBe('action');
     expect(payload.action?.id).toBe('goto-tasks');
+  });
+
+  it('lists workspace actions and emits the picked workspace slug', async () => {
+    const wrapper = mountPalette();
+    expect(wrapper.text()).toContain('Switch to workspace Acme');
+
+    await wrapper.get('input').setValue('acme');
+    await wrapper.get('input').trigger('keydown', { key: 'Enter' });
+
+    const payload = wrapper.emitted('select')?.[0]?.[0] as { type: string; action?: LocalAction };
+    expect(payload.type).toBe('action');
+    expect(payload.action).toEqual(localActions[2]);
   });
 
   it('selects a search hit on enter and emits a hit payload', async () => {

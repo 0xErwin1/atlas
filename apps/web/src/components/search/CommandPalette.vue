@@ -4,11 +4,22 @@ import Icon from '@/components/ui/Icon.vue';
 import Kbd from '@/components/ui/Kbd.vue';
 import SectionLabel from '@/components/ui/SectionLabel.vue';
 import { useOverlayEscape } from '@/composables/useOverlayEscape';
-import { filterLocalActions, type LocalAction, useSearch } from '@/composables/useSearch';
+import {
+  filterLocalActions,
+  type LocalAction,
+  type LocalActionKind,
+  useSearch,
+} from '@/composables/useSearch';
 import { sanitizeSnippet } from '@/lib/sanitize';
 import type { SearchHitDto } from '@/stores/search';
 
 export type PaletteSelection = { type: 'action'; action: LocalAction } | { type: 'hit'; hit: SearchHitDto };
+
+const ACTION_ICONS: Record<LocalActionKind, string> = {
+  navigate: 'corner-down-right',
+  action: 'plus',
+  workspace: 'arrow-right-left',
+};
 
 const props = withDefaults(
   defineProps<{
@@ -185,7 +196,7 @@ watch(
           >
             <template v-if="entry.kind === 'action'">
               <Icon
-                :name="entry.action.kind === 'navigate' ? 'corner-down-right' : 'plus'"
+                :name="ACTION_ICONS[entry.action.kind]"
                 :size="15"
                 :style="{ color: i === activeIndex ? 'var(--c-primary)' : 'var(--c-muted)', flex: '0 0 auto' }"
               />
