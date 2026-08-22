@@ -4,6 +4,7 @@ import TaskViewModeSwitch from '@/components/tareas/TaskViewModeSwitch.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import ContextMenu, { type MenuItem } from '@/components/ui/ContextMenu.vue';
 import Icon from '@/components/ui/Icon.vue';
+import { openPublicPath, toPublicUrl } from '@/platform/publicUrl';
 import { type TaskViewMode, useUiStore } from '@/stores/ui';
 
 const props = withDefaults(
@@ -63,8 +64,8 @@ function openMenu(event: MouseEvent): void {
   menuOpen.value = true;
 }
 
-function taskUrl(): string {
-  return `${window.location.origin}/t/task/${props.readableId}`;
+function taskPath(): string {
+  return `/t/task/${props.readableId}`;
 }
 
 async function copy(text: string, label: string): Promise<void> {
@@ -76,10 +77,30 @@ async function copy(text: string, label: string): Promise<void> {
   }
 }
 
+async function copyLink(): Promise<void> {
+  const url = toPublicUrl(taskPath());
+  if (url === null) {
+    ui.showBanner('The server address is not available yet', 'error');
+    return;
+  }
+
+  await copy(url, 'Link');
+}
+
+async function openInBrowser(): Promise<void> {
+  const outcome = await openPublicPath(taskPath());
+  if (outcome === 'unknown-base') {
+    ui.showBanner('The server address is not available yet', 'error');
+    return;
+  }
+
+  if (outcome === 'failed') ui.showBanner("The link couldn't be opened", 'error');
+}
+
 const menuItems = computed<MenuItem[]>(() => [
-  { label: 'Copy link', icon: 'link', action: () => copy(taskUrl(), 'Link') },
+  { label: 'Copy link', icon: 'link', action: () => void copyLink() },
   { label: 'Copy ID', icon: 'hash', action: () => copy(props.readableId, 'ID') },
-  { label: 'Open in new tab', icon: 'external-link', action: () => window.open(taskUrl(), '_blank') },
+  { label: 'Open in new tab', icon: 'external-link', action: () => void openInBrowser() },
   { label: 'Delete task', icon: 'trash-2', danger: true, action: () => (confirmDeleteOpen.value = true) },
 ]);
 

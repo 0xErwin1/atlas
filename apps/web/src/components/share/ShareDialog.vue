@@ -9,6 +9,7 @@ import Popover from '@/components/ui/Popover.vue';
 import { useBreakpoint } from '@/composables/useBreakpoint';
 import { useOverlayEscape } from '@/composables/useOverlayEscape';
 import type { GrantRole } from '@/lib/grantRoles';
+import { toPublicUrl } from '@/platform/publicUrl';
 import { useApiKeysStore } from '@/stores/apiKeys';
 import { useGroupsStore } from '@/stores/groups';
 import { type GrantDto, type PrincipalDto, type ShareResource, useShareStore } from '@/stores/share';
@@ -56,8 +57,11 @@ const resource = computed<ShareResource>(() =>
 );
 
 async function copyLink(): Promise<void> {
+  const url = toPublicUrl(`${window.location.pathname}${window.location.search}`);
+  if (url === null) return;
+
   try {
-    await navigator.clipboard.writeText(window.location.href);
+    await navigator.clipboard.writeText(url);
     linkCopied.value = true;
     setTimeout(() => {
       linkCopied.value = false;

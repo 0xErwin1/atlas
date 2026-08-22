@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import type { components } from '@/api/types.d.ts';
 import { wrappedClient } from '@/api/wrapper';
 import { errorHint } from '@/lib/apiError';
+import { toPublicUrl } from '@/platform/publicUrl';
 
 export type UserDto = components['schemas']['UserDto'];
 export type CreateUserResponse = components['schemas']['CreateUserResponse'];
@@ -13,12 +14,11 @@ export type MembershipMap = Record<string, string>;
 
 /**
  * Turns the bare single-use activation path returned by the API
- * (`/activate/<token>`) into a full URL on the current origin so it can be
- * shared with the invitee as-is.
+ * (`/activate/<token>`) into a full URL that can be shared with the invitee
+ * as-is. Returns `null` when the platform's public base is not known yet.
  */
-export function activationUrl(path: string): string {
-  if (/^https?:\/\//i.test(path)) return path;
-  return `${window.location.origin}${path.startsWith('/') ? '' : '/'}${path}`;
+export function activationUrl(path: string): string | null {
+  return toPublicUrl(path);
 }
 
 export const useUsersStore = defineStore('users', () => {

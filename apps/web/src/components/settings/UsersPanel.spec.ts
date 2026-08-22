@@ -3,9 +3,12 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick } from 'vue';
 import UsersPanel from '@/components/settings/UsersPanel.vue';
+import { resetPlatformTransportForTest, setPlatformTransport } from '@/platform/transport';
 import { useAuthStore } from '@/stores/auth';
+import { useUiStore } from '@/stores/ui';
 import { type UserDto, useUsersStore } from '@/stores/users';
 import { useWorkspaceStore, type WorkspaceDto } from '@/stores/workspace';
+import { fakePlatformTransport } from '../../__tests__/helpers/platformTransport';
 
 // ConfirmDialog teleports to <body>, so its nodes live outside the wrapper.
 function dialogEl<T extends Element = HTMLElement>(selector: string): T | null {
@@ -115,6 +118,7 @@ afterEach(() => {
   activeWrapper?.unmount();
   activeWrapper = null;
   document.body.innerHTML = '';
+  resetPlatformTransportForTest();
 });
 
 describe('UsersPanel — manage panel', () => {
@@ -328,5 +332,28 @@ describe('UsersPanel — workspace access editor', () => {
     const labels = await roleOptionLabels(wsRowAt(wrapper, 0));
     expect(labels).toContain('Owner');
     expect(labels).toContain('None');
+  });
+});
+
+describe('UsersPanel — activation link with an unknown public base', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+    setPlatformTransport(fakePlatformTransport({ publicBase: () => '' }));
+  });
+
+  it('shows a banner and leaves linkUrl empty instead of the activation-link panel', async () => {
+    const pending = user({ activated_at: null });
+    const { usersStore } = setup({ users: [pending] });
+    vi.spyOn(usersStore, 'regenerateActivationLink').mockResolvedValue('/activate/token123');
+
+    const wrapper = mountPanel();
+    await expandFirst(wrapper);
+
+    await wrapper.find('[data-action="regenerate-link"]').trigger('click');
+    await flushPromises();
+
+    expect(useUiStore().banner?.message).toBe('The server address is not available yet');
+    expect(wrapper.text()).not.toContain('Activation link');
   });
 });
