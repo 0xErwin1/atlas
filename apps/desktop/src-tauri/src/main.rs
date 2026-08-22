@@ -6,7 +6,7 @@ use atlas_desktop::{
     classify_workspace_stream_terminal, clear_active_identity, close_behavior, default_log_filter,
     desktop_state_directory_from, install_file_logging, load_active_identity,
     process_workspace_sse_chunk, sanitize_download_file_name, store_active_identity,
-    surface_existing_window, unique_download_path,
+    surface_existing_window, unique_download_path, validate_external_url,
 };
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -920,6 +920,35 @@ fn desktop_save_download<R: Runtime>(
     }
 }
 
+/// Opens a validated http/https URL in the user's real browser.
+///
+/// The webview cannot navigate an external link itself: it is confined to the
+/// app origin. This command hands the URL to the operating system's registered
+/// handler, so only `http`/`https` targets without embedded credentials are
+/// ever passed through, and the URL is never logged. The handler launch runs on
+/// the blocking pool so a slow or foreground handler cannot stall the event
+/// loop and freeze the window.
+#[tauri::command]
+async fn desktop_open_external(url: String) -> IpcResult<()> {
+    let Ok(target) = validate_external_url(&url) else {
+        return IpcResult::error("invalid_url_scheme");
+    };
+
+    let opened = tauri::async_runtime::spawn_blocking(move || opener::open(target.as_str())).await;
+
+    match opened {
+        Ok(Ok(())) => IpcResult::data(()),
+        Ok(Err(error)) => {
+            tracing::warn!(%error, "the external URL could not be opened");
+            IpcResult::error("open_failed")
+        }
+        Err(error) => {
+            tracing::warn!(%error, "the external URL opener task did not complete");
+            IpcResult::error("open_failed")
+        }
+    }
+}
+
 #[tauri::command]
 async fn desktop_auth_resume<R: Runtime>(app: tauri::AppHandle<R>) -> IpcResult<IpcIdentity> {
     resume_desktop_authentication(app).await
@@ -1618,6 +1647,7 @@ pub(crate) fn run_with_client(client: reqwest::Client) {
             desktop_api_request,
             desktop_read_clipboard_image,
             desktop_save_download,
+            desktop_open_external,
             desktop_workspace_events_subscribe,
             desktop_workspace_events_stop
         ])
@@ -1976,6 +2006,34 @@ mod command_tests {
         assert_eq!(updated["data"]["system_tray"], false);
 
         std::fs::remove_dir_all(&directory).expect("temporary preferences are removed");
+    }
+
+    #[test]
+    fn desktop_open_external_rejects_a_non_http_scheme_through_the_command_boundary() {
+        let app = mock_builder()
+            .manage(test_state())
+            .invoke_handler(tauri::generate_handler![desktop_open_external])
+            .build(mock_context(noop_assets()))
+            .expect("the command test app builds");
+        let webview = WebviewWindowBuilder::new(&app, MAIN_WINDOW_LABEL, Default::default())
+            .build()
+            .expect("the command test webview builds");
+        let request = InvokeRequest {
+            cmd: "desktop_open_external".into(),
+            callback: CallbackFn(0),
+            error: CallbackFn(1),
+            url: "tauri://localhost".parse().expect("valid test URL"),
+            body: tauri::ipc::InvokeBody::Json(serde_json::json!({ "url": "file:///etc/passwd" })),
+            headers: Default::default(),
+            invoke_key: INVOKE_KEY.to_owned(),
+        };
+
+        let response = get_ipc_response(&webview, request)
+            .expect("the command must deserialize and invoke through Tauri IPC")
+            .deserialize::<serde_json::Value>()
+            .expect("the command response is JSON");
+
+        assert_eq!(response["error"], "invalid_url_scheme");
     }
 
     #[test]
