@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/atlas_core",
     "crates/atlas_domain",
     "crates/atlas_api",
     "crates/atlas_client",
@@ -12,6 +13,7 @@ members = [
     "apps/desktop/src-tauri",
 ]
 default-members = [
+    "crates/atlas_core",
     "crates/atlas_domain",
     "crates/atlas_api",
     "crates/atlas_client",
@@ -30,6 +32,7 @@ license = "Apache-2.0"
 
 [workspace.dependencies]
 # Internal crates (path deps)
+atlas_core   = { path = "crates/atlas_core" }
 atlas_domain = { path = "crates/atlas_domain" }
 atlas_api    = { path = "crates/atlas_api" }
 atlas_client = { path = "crates/atlas_client" }
