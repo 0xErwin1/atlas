@@ -1,5 +1,5 @@
 import { createPinia, setActivePinia } from 'pinia';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { platformTransport } = vi.hoisted(() => ({
   platformTransport: {
@@ -43,7 +43,12 @@ import {
   disposeWorkspaceLiveUpdates,
   setWorkspaceLiveUpdatesAuthorizationInvalidator,
 } from '@/lib/workspaceLiveUpdates';
-import { type MeResponse, setDesktopSessionActionHandler, useAuthStore } from '@/stores/auth';
+import {
+  AUTH_INITIALIZATION_DEADLINE_MS,
+  type MeResponse,
+  setDesktopSessionActionHandler,
+  useAuthStore,
+} from '@/stores/auth';
 import { useUiStateStore } from '@/stores/uiState';
 
 const mockGet = wrappedClient.GET as ReturnType<typeof vi.fn>;
@@ -99,6 +104,10 @@ describe('useAuthStore', () => {
     platformTransport.me.mockImplementation(() => wrappedClient.GET('/api/auth/me', {}));
     platformTransport.resume.mockImplementation(() => platformTransport.me());
     platformTransport.logout.mockImplementation(() => wrappedClient.POST('/api/auth/logout', {}));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('uses the platform transport seam for login, identity, and logout without changing failures', async () => {
@@ -159,6 +168,66 @@ describe('useAuthStore', () => {
     expect(platformTransport.me).not.toHaveBeenCalled();
     expect(store.isAuthenticated).toBe(true);
     expect(store.user?.username).toBe('resumed-user');
+    expect(store.isInitializationComplete).toBe(true);
+  });
+
+  it('bounds a pending startup resume and completes initialization unauthenticated', async () => {
+    vi.useFakeTimers();
+    platformTransport.resume.mockReturnValueOnce(new Promise(() => {}));
+    const store = useAuthStore();
+
+    const initialization = store.initialize();
+    expect(store.isInitializationComplete).toBe(false);
+    await vi.advanceTimersByTimeAsync(AUTH_INITIALIZATION_DEADLINE_MS);
+    await initialization;
+
+    expect(store.isInitializationComplete).toBe(true);
+    expect(store.isAuthenticated).toBe(false);
+    expect(store.user).toBeNull();
+  });
+
+  it('accepts a newer identity request that resolves after the startup resume deadline', async () => {
+    vi.useFakeTimers();
+    platformTransport.resume.mockReturnValueOnce(new Promise(() => {}));
+    let resolveIdentity: ((value: Awaited<ReturnType<typeof meOk>>) => void) | undefined;
+    platformTransport.me.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveIdentity = resolve;
+      }),
+    );
+    const store = useAuthStore();
+
+    const initialization = store.initialize();
+    const identity = store.fetchMe();
+    await vi.advanceTimersByTimeAsync(AUTH_INITIALIZATION_DEADLINE_MS);
+    await initialization;
+    resolveIdentity?.(await meOk('newer-identity'));
+    await identity;
+
+    expect(store.isInitializationComplete).toBe(true);
+    expect(store.isAuthenticated).toBe(true);
+    expect(store.user?.username).toBe('newer-identity');
+  });
+
+  it('ignores a successful startup resume that arrives after the deadline', async () => {
+    vi.useFakeTimers();
+    let resolveResume: ((value: Awaited<ReturnType<typeof meOk>>) => void) | undefined;
+    platformTransport.resume.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveResume = resolve;
+      }),
+    );
+    const store = useAuthStore();
+
+    const initialization = store.initialize();
+    await vi.advanceTimersByTimeAsync(AUTH_INITIALIZATION_DEADLINE_MS);
+    await initialization;
+    resolveResume?.(await meOk('too-late'));
+    await Promise.resolve();
+
+    expect(store.isInitializationComplete).toBe(true);
+    expect(store.isAuthenticated).toBe(false);
+    expect(store.user).toBeNull();
   });
 
   it('keeps startup unauthenticated when the typed resume handshake reports credential loss', async () => {

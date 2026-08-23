@@ -1039,6 +1039,22 @@ fn startup_continues_when_autostart_or_tray_setup_is_unavailable() {
 }
 
 #[test]
+fn nightly_appimage_defaults_to_cpu_rendering_without_overriding_the_caller() {
+    let flake = include_str!("../../../../flake.nix");
+
+    assert!(flake.contains("pkgs.symlinkJoin"));
+    assert!(flake.contains("pkgs.makeWrapper"));
+    assert!(
+        flake.contains("--set-default WEBKIT_SKIA_ENABLE_CPU_RENDERING 1"),
+        "the mutable nightly WebKitGTK stack must default to CPU rendering"
+    );
+    assert!(
+        !flake.contains("--set WEBKIT_SKIA_ENABLE_CPU_RENDERING"),
+        "a caller-provided rendering override must be preserved"
+    );
+}
+
+#[test]
 fn supported_nix_package_provides_the_dynamic_tray_backend_and_autostart_parent() {
     let desktop_derivation = include_str!("../../../../nix/atlas-desktop.nix");
     let host_source = include_str!("../src/main.rs");

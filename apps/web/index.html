@@ -14,6 +14,14 @@
         color-scheme: light;
         background-color: #ffffff;
       }
+      .startup-status {
+        align-items: center;
+        display: flex;
+        font: 14px/1.5 system-ui, sans-serif;
+        justify-content: center;
+        min-height: 100vh;
+        opacity: 0.72;
+      }
     </style>
     <script>
       (function () {
@@ -27,7 +35,9 @@
     </script>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <div class="startup-status" role="status" aria-live="polite">Starting Atlas…</div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

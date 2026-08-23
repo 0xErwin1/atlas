@@ -99,16 +99,26 @@
                 chmod -R u+w "$out"
                 rm -f "$out/usr/lib/libwayland-client.so.0"
               '';
+
+              appImage = pkgs.appimageTools.wrapAppImage {
+                pname = "atlas-desktop";
+                version = "nightly";
+                src = contents;
+                extraInstallCommands = ''
+                  install -Dm444 ${desktopItem}/share/applications/atlas-desktop.desktop \
+                    -t "$out/share/applications"
+                  install -Dm644 ${./apps/desktop/src-tauri/icons/atlas-icon.svg} \
+                    "$out/share/icons/hicolor/scalable/apps/atlas-desktop.svg"
+                '';
+              };
             in
-            pkgs.appimageTools.wrapAppImage {
-              pname = "atlas-desktop";
-              version = "nightly";
-              src = contents;
-              extraInstallCommands = ''
-                install -Dm444 ${desktopItem}/share/applications/atlas-desktop.desktop \
-                  -t "$out/share/applications"
-                install -Dm644 ${./apps/desktop/src-tauri/icons/atlas-icon.svg} \
-                  "$out/share/icons/hicolor/scalable/apps/atlas-desktop.svg"
+            pkgs.symlinkJoin {
+              name = "atlas-desktop-nightly";
+              paths = [ appImage ];
+              nativeBuildInputs = [ pkgs.makeWrapper ];
+              postBuild = ''
+                wrapProgram "$out/bin/atlas-desktop" \
+                  --set-default WEBKIT_SKIA_ENABLE_CPU_RENDERING 1
               '';
             };
         in

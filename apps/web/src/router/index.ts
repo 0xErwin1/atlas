@@ -38,11 +38,11 @@ export async function workspaceBeforeEach(
   if (to.name === 'login') {
     // An authenticated visit to /login bounces to the redirect target or default
     // instead of showing the sign-in form again.
-    if (!auth.isAuthenticated) await auth.fetchMe();
+    if (!auth.isAuthenticated && !auth.isInitializationComplete) await auth.fetchMe();
     return auth.isAuthenticated ? redirectTarget(to) : true;
   }
 
-  if (!auth.isAuthenticated) {
+  if (!auth.isAuthenticated && !auth.isInitializationComplete) {
     await auth.fetchMe();
   }
 

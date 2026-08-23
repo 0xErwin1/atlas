@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { flushPromises } from '@vue/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentPublicInstance } from 'vue';
@@ -47,6 +48,16 @@ import { router } from '@/router/index';
 import { useAuthStore } from '@/stores/auth';
 import { useResourceStatusStore } from '@/stores/resourceStatus';
 import { useWorkspaceStore } from '@/stores/workspace';
+
+describe('startup shell', () => {
+  it('renders an accessible status before Vue mounts', () => {
+    const html = readFileSync('index.html', 'utf8');
+
+    expect(html).toContain('role="status"');
+    expect(html).toContain('aria-live="polite"');
+    expect(html).toMatch(/<div id="app">[\s\S]*Starting Atlas/);
+  });
+});
 
 describe('workspace live update page lifecycle', () => {
   afterEach(() => {

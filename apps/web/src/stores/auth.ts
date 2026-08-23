@@ -36,6 +36,8 @@ export interface ActionResult {
   problem?: Problem;
 }
 
+export const AUTH_INITIALIZATION_DEADLINE_MS = 4_000;
+
 const UNREACHABLE_PROBLEM: NonNullable<LoginResult['problem']> = {
   type: 'urn:atlas:error:unreachable',
   title: "Can't reach the server",
@@ -84,8 +86,10 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<MeResponse | null>(null);
   const isAuthenticated = ref(false);
   const apiKeyWarning = ref(false);
+  const isInitializationComplete = ref(false);
   const sessionGeneration = ref(0);
   let fetchGeneration = 0;
+  let initializationPromise: Promise<void> | null = null;
 
   const sessionActor = computed(() => (user.value === null ? null : (sessionPrincipal(user.value) ?? null)));
 
@@ -120,17 +124,46 @@ export const useAuthStore = defineStore('auth', () => {
   });
 
   async function fetchMe(): Promise<void> {
-    await fetchIdentity(() => getPlatformTransport().me());
+    const requestGeneration = ++fetchGeneration;
+    await fetchIdentity(requestGeneration, () => getPlatformTransport().me());
   }
 
-  async function initialize(): Promise<void> {
-    await fetchIdentity(() => getPlatformTransport().resume());
+  function initialize(): Promise<void> {
+    if (initializationPromise !== null) return initializationPromise;
+
+    initializationPromise = initializeAuthentication();
+    return initializationPromise;
+  }
+
+  async function initializeAuthentication(): Promise<void> {
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    const startupGeneration = ++fetchGeneration;
+    const identity = fetchIdentity(startupGeneration, () => getPlatformTransport().resume());
+
+    try {
+      const timedOut = await Promise.race([
+        identity.then(() => false),
+        new Promise<true>((resolve) => {
+          deadline = setTimeout(() => resolve(true), AUTH_INITIALIZATION_DEADLINE_MS);
+        }),
+      ]);
+
+      if (timedOut && fetchGeneration === startupGeneration) {
+        // The host request cannot always be cancelled (notably while a desktop
+        // keyring is locked), so invalidate only this startup request before
+        // allowing Vue to mount. A newer identity request must remain valid.
+        fetchGeneration += 1;
+      }
+    } finally {
+      if (deadline !== undefined) clearTimeout(deadline);
+      isInitializationComplete.value = true;
+    }
   }
 
   async function fetchIdentity(
+    requestGeneration: number,
     load: () => ReturnType<ReturnType<typeof getPlatformTransport>['me']>,
   ): Promise<void> {
-    const requestGeneration = ++fetchGeneration;
     const requestSessionGeneration = sessionGeneration.value;
     let response: Awaited<ReturnType<ReturnType<typeof getPlatformTransport>['me']>>;
 
@@ -230,6 +263,7 @@ export const useAuthStore = defineStore('auth', () => {
     user,
     isAuthenticated,
     apiKeyWarning,
+    isInitializationComplete: readonly(isInitializationComplete),
     sessionActor,
     sessionGeneration: readonly(sessionGeneration),
     clearUser,
