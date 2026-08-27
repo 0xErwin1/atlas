@@ -125,6 +125,10 @@ function onInput(event: Event) {
   border-radius: var(--r-md);
 }
 
+.atl-field-box:focus-within {
+  box-shadow: var(--shadow-ring);
+}
+
 .atl-field-input {
   flex: 1;
   min-width: 0;
@@ -133,6 +137,10 @@ function onInput(event: Event) {
   outline: none;
   color: var(--c-foreground);
   font-size: var(--fs-base);
+}
+
+.atl-field-input:focus-visible {
+  box-shadow: none;
 }
 
 .atl-field-input::placeholder {
