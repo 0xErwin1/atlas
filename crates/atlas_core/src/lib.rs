@@ -9,6 +9,7 @@
 )]
 
 pub mod ids;
+pub mod registry;
 
 pub use ids::{
     ActionId, ActionIdParseError, PathSegment, ResourcePath, ResourcePathParseError, ResourceRef,
@@ -27,5 +28,13 @@ mod tests {
 
         assert_eq!(action.to_string(), "acta::task::create");
         assert_eq!(resource.to_string(), "acta::document::42");
+    }
+
+    #[test]
+    fn registry_module_path_resolves() {
+        let id: crate::registry::ComponentId =
+            "storage.filesystem".parse().expect("valid component id");
+
+        assert_eq!(id.to_string(), "storage.filesystem");
     }
 }
