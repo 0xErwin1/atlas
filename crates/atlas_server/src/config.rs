@@ -1,5 +1,8 @@
+use atlas_core::config::ComponentConfig;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use std::fmt;
+
+pub use atlas_postgres::{PoolConfig, PostgresConfig};
 
 /// Vector width the `search_embeddings.embedding` column is declared with.
 ///
@@ -204,31 +207,6 @@ impl Default for DispatcherConfig {
     }
 }
 
-/// Postgres connection-pool sizing for the shared `sea_orm` connection.
-///
-/// The server holds one connection permanently for the `LISTEN` consumer, up to
-/// `DispatcherConfig::max_concurrent` more for in-flight webhook deliveries, plus
-/// request and SSE-auth queries. Left at the driver default (10 connections, no
-/// acquire timeout) that baseline can saturate the pool and then block new
-/// acquisitions forever, so both bounds are configurable and the acquire wait is
-/// capped to fail fast instead of hanging silently.
-#[derive(Clone, Debug)]
-pub struct DbPoolConfig {
-    pub max_connections: u32,
-    pub min_connections: u32,
-    pub acquire_timeout_secs: u64,
-}
-
-impl Default for DbPoolConfig {
-    fn default() -> Self {
-        Self {
-            max_connections: 20,
-            min_connections: 1,
-            acquire_timeout_secs: 10,
-        }
-    }
-}
-
 /// Per-principal rate-limit parameters for the authenticated API surface.
 ///
 /// The limiter keys by the authenticated caller (user or API key), not by IP:
@@ -254,7 +232,7 @@ impl Default for RateLimitConfig {
 }
 
 pub struct ServerConfig {
-    pub database_url: String,
+    pub postgres: PostgresConfig,
     pub root_password: Option<String>,
     pub anchor_interval: u32,
     /// Raw 32-byte AES-256-GCM key bytes decoded from `ATLAS_WEBHOOK_ENC_KEY`.
@@ -262,7 +240,6 @@ pub struct ServerConfig {
     pub dispatcher: DispatcherConfig,
     pub allow_private_webhook_targets: bool,
     pub rate_limit: RateLimitConfig,
-    pub db_pool: DbPoolConfig,
     pub embeddings: EmbeddingConfig,
     pub search: SearchConfig,
     /// Upper bound, in seconds, on the post-signal graceful drain before the
@@ -273,8 +250,8 @@ pub struct ServerConfig {
 
 impl ServerConfig {
     pub fn from_env() -> Result<Self, String> {
-        let database_url =
-            std::env::var("DATABASE_URL").map_err(|_| "DATABASE_URL is required".to_string())?;
+        let postgres =
+            PostgresConfig::from_env(&atlas_core::config::ProcessEnv).map_err(|e| e.to_string())?;
 
         let root_password = env_var_nonempty("ATLAS_ROOT_PASSWORD");
 
@@ -295,32 +272,19 @@ impl ServerConfig {
             read_env_bool("ATLAS_ALLOW_PRIVATE_WEBHOOK_TARGETS", false);
         let rate_limit = load_rate_limit_config();
 
-        let db_pool = load_db_pool_config();
         let embeddings = EmbeddingConfig::from_env()?;
         let search = load_search_config()?;
-
-        if db_pool.max_connections < 1 {
-            return Err("ATLAS_DB_MAX_CONNECTIONS must be >= 1".to_string());
-        }
-
-        if db_pool.min_connections > db_pool.max_connections {
-            return Err(format!(
-                "ATLAS_DB_MIN_CONNECTIONS ({}) must be <= ATLAS_DB_MAX_CONNECTIONS ({})",
-                db_pool.min_connections, db_pool.max_connections
-            ));
-        }
 
         let shutdown_timeout_secs = read_env_u64("ATLAS_SHUTDOWN_TIMEOUT_SECS", 20);
 
         Ok(Self {
-            database_url,
+            postgres,
             root_password,
             anchor_interval,
             webhook_enc_key,
             dispatcher,
             allow_private_webhook_targets,
             rate_limit,
-            db_pool,
             embeddings,
             search,
             shutdown_timeout_secs,
@@ -331,7 +295,7 @@ impl ServerConfig {
 impl fmt::Debug for ServerConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ServerConfig")
-            .field("database_url", &"[REDACTED]")
+            .field("postgres", &self.postgres)
             .field("root_password", &"[REDACTED]")
             .field("anchor_interval", &self.anchor_interval)
             .field("webhook_enc_key", &"[REDACTED]")
@@ -341,7 +305,6 @@ impl fmt::Debug for ServerConfig {
                 &self.allow_private_webhook_targets,
             )
             .field("rate_limit", &self.rate_limit)
-            .field("db_pool", &self.db_pool)
             .field("embeddings", &self.embeddings)
             .field("search", &self.search)
             .field("shutdown_timeout_secs", &self.shutdown_timeout_secs)
@@ -390,18 +353,6 @@ fn load_dispatcher_config() -> DispatcherConfig {
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(30),
-    }
-}
-
-fn load_db_pool_config() -> DbPoolConfig {
-    let defaults = DbPoolConfig::default();
-    DbPoolConfig {
-        max_connections: read_env_u32("ATLAS_DB_MAX_CONNECTIONS", defaults.max_connections),
-        min_connections: read_env_u32("ATLAS_DB_MIN_CONNECTIONS", defaults.min_connections),
-        acquire_timeout_secs: read_env_u64(
-            "ATLAS_DB_ACQUIRE_TIMEOUT_SECS",
-            defaults.acquire_timeout_secs,
-        ),
     }
 }
 
@@ -489,14 +440,18 @@ mod tests {
     #[test]
     fn debug_does_not_expose_database_url_password() {
         let config = ServerConfig {
-            database_url: "postgres://user:supersecretpassword@localhost/db".to_string(),
+            postgres: PostgresConfig {
+                database_url: atlas_core::config::Secret::new(
+                    "postgres://user:supersecretpassword@localhost/db".to_string(),
+                ),
+                pool: atlas_postgres::PoolConfig::default(),
+            },
             root_password: Some("rootsecret".to_string()),
             anchor_interval: 50,
             webhook_enc_key: [0xABu8; 32],
             dispatcher: DispatcherConfig::default(),
             allow_private_webhook_targets: false,
             rate_limit: RateLimitConfig::default(),
-            db_pool: DbPoolConfig::default(),
             embeddings: EmbeddingConfig::default(),
             search: SearchConfig::default(),
             shutdown_timeout_secs: 20,
@@ -528,18 +483,6 @@ mod tests {
         assert!(cfg.enabled, "rate limiting is enabled by default");
         assert_eq!(cfg.per_second, 20);
         assert_eq!(cfg.burst, 40);
-    }
-
-    #[test]
-    fn db_pool_config_has_sane_defaults() {
-        let cfg = DbPoolConfig::default();
-        assert_eq!(cfg.max_connections, 20);
-        assert_eq!(cfg.min_connections, 1);
-        assert_eq!(cfg.acquire_timeout_secs, 10);
-        assert!(
-            cfg.min_connections <= cfg.max_connections,
-            "min pool size must not exceed max pool size"
-        );
     }
 
     #[test]

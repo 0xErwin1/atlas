@@ -721,6 +721,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas_postgres"
+version = "0.0.0"
+dependencies = [
+ "atlas_core",
+ "log",
+ "sea-orm",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "atlas_server"
 version = "0.0.0"
 dependencies = [
@@ -730,7 +741,9 @@ dependencies = [
  "async-trait",
  "atlas_api",
  "atlas_client",
+ "atlas_core",
  "atlas_domain",
+ "atlas_postgres",
  "atlas_test_db",
  "axum",
  "axum-extra",

@@ -15,7 +15,7 @@ async fn main() -> Result<()> {
 
     let cfg = atlas_server::config::ServerConfig::from_env().map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    let db = Database::connect(&cfg.database_url).await?;
+    let db = Database::connect(cfg.postgres.database_url.expose().clone()).await?;
 
     Migrator::up(&db, None).await?;
     info!("migrations applied");
