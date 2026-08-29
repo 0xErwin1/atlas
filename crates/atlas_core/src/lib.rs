@@ -9,6 +9,7 @@
 )]
 
 pub mod capabilities;
+pub mod config;
 pub mod ids;
 pub mod registry;
 
