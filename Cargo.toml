@@ -4,6 +4,7 @@ members = [
     "crates/atlas_domain",
     "crates/atlas_api",
     "crates/atlas_client",
+    "crates/atlas_postgres",
     "crates/atlas_server",
     "crates/atlas_cli",
     "crates/atlas_mcp",
@@ -17,6 +18,7 @@ default-members = [
     "crates/atlas_domain",
     "crates/atlas_api",
     "crates/atlas_client",
+    "crates/atlas_postgres",
     "crates/atlas_server",
     "crates/atlas_cli",
     "crates/atlas_mcp",
@@ -32,11 +34,12 @@ license = "Apache-2.0"
 
 [workspace.dependencies]
 # Internal crates (path deps)
-atlas_core   = { path = "crates/atlas_core" }
-atlas_domain = { path = "crates/atlas_domain" }
-atlas_api    = { path = "crates/atlas_api" }
-atlas_client = { path = "crates/atlas_client" }
-migration    = { path = "crates/migration" }
+atlas_core     = { path = "crates/atlas_core" }
+atlas_domain   = { path = "crates/atlas_domain" }
+atlas_api      = { path = "crates/atlas_api" }
+atlas_client   = { path = "crates/atlas_client" }
+atlas_postgres = { path = "crates/atlas_postgres" }
+migration      = { path = "crates/migration" }
 
 # Domain layer (pure)
 serde      = { version = "1", features = ["derive"] }

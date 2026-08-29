@@ -36,10 +36,12 @@ Atlas is not run locally: it is deployed as containers, with its runtime configu
 
 ## Workspace layout
 
-Seven crates. The dependency direction is strict and **compiler-enforced** — `atlas_domain` is pure and never imports HTTP/SQL.
+Nine crates (plus the `atlas_test_db`/`atlas_test_harness` test utilities). The dependency direction is strict and **compiler-enforced** — `atlas_domain` and `atlas_core` are pure and never import HTTP/SQL.
 
 | Crate | Role | May depend on |
 |-------|------|---------------|
+| `atlas_core` | Neutral V2 platform contracts: ids (`ActionId`, `ResourceRef`, …), registry types + `registry::build()`, capability traits, config contract (`ComponentConfig`, `EnvSource`, `Secret`) | serde, thiserror, async-trait, chrono, bytes — **no axum, no sea-orm, no tokio** |
+| `atlas_postgres` | Neutral Postgres runtime: pool config (`PostgresConfig`) and connection construction — **no product repos, no entities** | atlas_core, sea-orm |
 | `atlas_domain` | Pure types, value objects, errors, **repository ports** (traits taking `WorkspaceCtx`), pure permission/diff/position logic | serde, thiserror, uuid, chrono only — **no axum, no sea-orm, no tokio** |
 | `atlas_api` | Shared DTOs + OpenAPI schemas (the wire contract) | atlas_domain |
 | `atlas_client` | Typed HTTP client speaking `atlas_api`/`atlas_domain` types | atlas_api, atlas_domain, reqwest |

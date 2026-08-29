@@ -20,6 +20,8 @@ flowchart TD
 
 | Crate | Responsibility | Notable contents |
 |-------|----------------|------------------|
+| `atlas_core` | Neutral V2 platform contracts: identifiers, compiled-registry types and `registry::build()` validation, capability traits, and the component config contract | `ids/`, `registry/`, `capabilities/`, `config/` |
+| `atlas_postgres` | Neutral Postgres runtime — pool configuration and connection construction, with no product repositories or entities | `config.rs`, `connect.rs` |
 | `atlas_domain` | Pure types, value objects, errors, **repository ports** (traits taking `WorkspaceCtx`), and pure logic (permission resolution, revision diff/anchor, fractional positions) | `entities/`, `ports/`, `permissions.rs`, `ids.rs` |
 | `atlas_api` | The wire contract: shared DTOs + their OpenAPI (`utoipa`) schemas + the pagination codec | `dtos/`, `pagination.rs`, `problem.rs` |
 | `atlas_client` | Typed HTTP client over `atlas_api`/`atlas_domain` types; the single client used by CLI, MCP, and e2e tests | `lib.rs` |

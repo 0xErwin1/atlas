@@ -1,6 +1,5 @@
 use anyhow::Result;
 use migration::Migrator;
-use sea_orm::{ConnectOptions, Database};
 use sea_orm_migration::prelude::MigratorTrait;
 use std::future::IntoFuture;
 use std::net::SocketAddr;
@@ -21,17 +20,7 @@ async fn main() -> Result<()> {
     let cfg = atlas_server::config::ServerConfig::from_env().map_err(|e| anyhow::anyhow!("{e}"))?;
 
     info!("connecting to database");
-    // Log SQL queries at DEBUG, not the sea-orm default of INFO: the webhook
-    // dispatcher polls the outbox every second, so at INFO the poll's UPDATEs
-    // flood the logs with `sqlx::query` lines even when there is no work. They
-    // stay available under a `sqlx=debug` filter for query-level debugging.
-    let mut db_opts = ConnectOptions::new(cfg.database_url.clone());
-    db_opts
-        .max_connections(cfg.db_pool.max_connections)
-        .min_connections(cfg.db_pool.min_connections)
-        .acquire_timeout(Duration::from_secs(cfg.db_pool.acquire_timeout_secs))
-        .sqlx_logging_level(log::LevelFilter::Debug);
-    let db = Database::connect(db_opts).await?;
+    let db = atlas_postgres::connect(&cfg.postgres).await?;
 
     info!("applying migrations");
     Migrator::up(&db, None).await?;
