@@ -18,6 +18,7 @@ use crate::persistence::{
     live_ancestors::{board_chain_is_live_sql, folder_chain_is_live_sql, project_is_live_sql},
     repos::search::{build_doc_permission, build_task_permission},
 };
+use atlas_postgres::db_err;
 
 pub struct PgWorkspaceAttachmentRepo {
     pub conn: DatabaseConnection,
@@ -364,10 +365,4 @@ fn row_to_workspace_attachment(
     };
 
     Ok(WorkspaceAttachment { attachment, owner })
-}
-
-fn db_err(e: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: e.to_string(),
-    }
 }

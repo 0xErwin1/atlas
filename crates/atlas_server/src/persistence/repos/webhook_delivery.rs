@@ -7,6 +7,7 @@ use sea_orm::{
 use uuid::Uuid;
 
 use crate::persistence::entities::webhook_delivery::webhook_delivery_log;
+use atlas_postgres::db_err;
 
 pub struct PgWebhookDeliveryRepo;
 
@@ -88,11 +89,5 @@ impl PgWebhookDeliveryRepo {
             .map_err(db_err)?;
 
         Ok(rows)
-    }
-}
-
-fn db_err(e: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: e.to_string(),
     }
 }

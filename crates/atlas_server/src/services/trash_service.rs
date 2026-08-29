@@ -14,6 +14,7 @@ use uuid::Uuid;
 use crate::persistence::repos::{
     NewPurgeOperation, PgAttachmentLifecycle, PgPurgeOperationRepo, PgSecurityAuditRepo,
 };
+use atlas_postgres::db_err;
 
 pub struct TrashService {
     conn: DatabaseConnection,
@@ -668,11 +669,6 @@ fn table_for(kind: TrashKind) -> &'static str {
         TrashKind::Document => "documents",
         TrashKind::Comment => "comments",
         TrashKind::Attachment => "attachments",
-    }
-}
-fn db_err(error: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: error.to_string(),
     }
 }
 

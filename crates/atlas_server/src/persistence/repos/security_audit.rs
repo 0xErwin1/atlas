@@ -16,6 +16,7 @@ use sea_orm::{
 };
 
 use crate::persistence::entities::security_audit::security_audit_log;
+use atlas_postgres::db_err;
 
 pub struct PgSecurityAuditRepo {
     pub conn: DatabaseConnection,
@@ -367,12 +368,6 @@ fn actor_from_row(user_id: Option<uuid::Uuid>, api_key_id: Option<uuid::Uuid>) -
         (Some(uid), None) => Actor::User(UserId(uid)),
         (None, Some(kid)) => Actor::ApiKey(ApiKeyId(kid)),
         _ => Actor::User(UserId::new()),
-    }
-}
-
-fn db_err(e: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: e.to_string(),
     }
 }
 

@@ -16,6 +16,7 @@ use crate::persistence::entities::status_templates::{
     platform_status_template, platform_status_template_from,
 };
 use crate::persistence::repos::status_templates::remap_anchors;
+use atlas_postgres::db_err;
 
 pub use atlas_domain::ports::status_templates::PlatformStatusTemplateRepo;
 
@@ -185,10 +186,4 @@ async fn resequence_templates(
     }
 
     Ok(remap)
-}
-
-fn db_err(e: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: e.to_string(),
-    }
 }

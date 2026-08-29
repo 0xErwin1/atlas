@@ -18,6 +18,7 @@ use crate::persistence::repos::{
     doc_create_in, doc_edit_content_in, doc_move_to_in, doc_rename_in, doc_soft_delete_in,
     doc_update_content_in,
 };
+use atlas_postgres::db_err;
 
 /// Coordinates document mutations with transactional outbox emission.
 ///
@@ -311,11 +312,5 @@ impl DocumentService {
         self.comments
             .update(ctx, CommentOwner::Document(document_id), comment_id, body)
             .await
-    }
-}
-
-fn db_err(e: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: e.to_string(),
     }
 }

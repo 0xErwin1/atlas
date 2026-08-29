@@ -13,6 +13,7 @@ use atlas_domain::{
     ports::comments::CommentLinkRepo,
     wikilink::{CommentAttachmentUrlOwner, CommentLinkCandidate},
 };
+use atlas_postgres::db_err;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
@@ -692,11 +693,6 @@ fn feed_entry_from_row(row: sea_orm::QueryResult) -> Result<CommentFeedEntry, Do
 }
 
 fn row_err(error: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: error.to_string(),
-    }
-}
-fn db_err(error: sea_orm::DbErr) -> DomainError {
     DomainError::Internal {
         message: error.to_string(),
     }

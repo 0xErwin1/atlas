@@ -2,6 +2,8 @@
 
 mod support;
 
+use atlas_api::dtos::{CreateProjectRequest, folders::CreateFolderRequest};
+use atlas_client::ClientError;
 use atlas_domain::{
     Actor, WorkspaceCtx,
     entities::identity::{ApiKeyType, NewApiKey},
@@ -13,6 +15,72 @@ use atlas_domain::{
 use atlas_server::persistence::repos::{
     ApiKeyRepo, FolderRepo, ProjectRepo, PropertyDefinitionRepo,
 };
+
+// ---- Characterization: duplicate-name unique-violation maps to 409 --------------
+//
+// Pins the current behavior of `workspace_core.rs`'s `db_err` before the S2b-2
+// consolidation touches it: a `folders_name_uq` unique-constraint violation
+// (same workspace/project/parent/name) must surface as HTTP 409 with a fixed
+// `AlreadyExists` message, not the generic `Internal.message` derived from
+// `e.to_string()`. This test must stay green across the consolidation.
+#[tokio::test]
+async fn duplicate_folder_name_returns_409_with_fixed_message() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _) =
+        support::login_user_with_workspace(&server, &db, "dup-folder-name-409").await;
+
+    let project = client
+        .create_project(
+            &ws.slug,
+            CreateProjectRequest {
+                name: "DupNameProj".into(),
+                slug: "dup-name-proj".into(),
+                task_prefix: "DNP".into(),
+                visibility: None,
+                visibility_role: None,
+            },
+        )
+        .await
+        .expect("create project");
+
+    client
+        .create_folder(
+            &ws.slug,
+            &project.slug,
+            CreateFolderRequest {
+                name: "Docs".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await
+        .expect("create first folder");
+
+    let result = client
+        .create_folder(
+            &ws.slug,
+            &project.slug,
+            CreateFolderRequest {
+                name: "Docs".to_string(),
+                parent_folder_id: None,
+            },
+        )
+        .await;
+
+    match result {
+        Err(ClientError::Api(ref p)) => {
+            assert_eq!(p.status, 409, "duplicate folder name must return 409");
+            assert_eq!(
+                p.detail.as_deref(),
+                Some("an item with the same name already exists in this location"),
+                "duplicate folder name must keep the fixed AlreadyExists message"
+            );
+        }
+        other => panic!("duplicate folder name must return 409 AlreadyExists, got {other:?}"),
+    }
+
+    db.teardown().await;
+}
 
 #[tokio::test]
 async fn project_slug_unique_per_workspace() {

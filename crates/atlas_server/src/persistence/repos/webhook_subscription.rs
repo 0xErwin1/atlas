@@ -7,6 +7,7 @@ use sea_orm::{
 use uuid::Uuid;
 
 use crate::persistence::entities::webhook_subscription::webhook_subscriptions;
+use atlas_postgres::db_err;
 
 pub struct PgWebhookSubscriptionRepo;
 
@@ -185,11 +186,5 @@ fn actor_fields(actor: &Actor) -> (Option<Uuid>, Option<Uuid>) {
     match actor {
         Actor::User(uid) => (Some(uid.0), None),
         Actor::ApiKey(kid) => (None, Some(kid.0)),
-    }
-}
-
-fn db_err(e: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: e.to_string(),
     }
 }

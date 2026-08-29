@@ -10,6 +10,7 @@ use atlas_domain::{
         ResourceRef, ResourceRole, Visibility, VisibilityRole,
     },
 };
+use atlas_postgres::db_err as db_error;
 use sea_orm::{DatabaseBackend, DatabaseConnection, FromQueryResult, Statement};
 use serde::Deserialize;
 use uuid::Uuid;
@@ -856,12 +857,6 @@ fn decode_role(role: &str) -> Result<ResourceRole, DomainError> {
         _ => Err(DomainError::Internal {
             message: "batch principal facts contained an invalid grant role".into(),
         }),
-    }
-}
-
-fn db_error(error: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: error.to_string(),
     }
 }
 

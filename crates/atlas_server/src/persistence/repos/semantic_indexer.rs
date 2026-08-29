@@ -18,6 +18,7 @@ use crate::semantic_indexer::{
     AttachmentText, ChecklistText, CommentText, DocumentIndexInput, SubtaskText, TaskIndexInput,
     aggregate_document_chunks, aggregate_task_chunks,
 };
+use atlas_postgres::db_err;
 
 /// Upper bound on the characters that go into a single embedded chunk.
 ///
@@ -227,11 +228,5 @@ impl SemanticIndexer for PgSemanticIndexer {
             .await?;
 
         Ok(())
-    }
-}
-
-fn db_err(e: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: e.to_string(),
     }
 }

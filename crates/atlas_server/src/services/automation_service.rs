@@ -23,6 +23,7 @@ use crate::{
     },
     services::TaskService,
 };
+use atlas_postgres::db_err;
 
 /// Maximum characters allowed for any single substituted value in a title template.
 const MAX_TEMPLATE_VALUE_CHARS: usize = 256;
@@ -459,12 +460,6 @@ struct CreateTaskParams {
 struct AddCommentParams {
     task_id: Uuid,
     body_template: String,
-}
-
-fn db_err(e: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: e.to_string(),
-    }
 }
 
 #[cfg(test)]
