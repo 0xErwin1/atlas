@@ -7,6 +7,9 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+async-trait.workspace = true
+bytes.workspace = true
+chrono.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 

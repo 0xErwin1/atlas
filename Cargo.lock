@@ -638,6 +638,9 @@ dependencies = [
 name = "atlas_core"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
+ "bytes",
+ "chrono",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
