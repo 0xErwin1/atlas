@@ -1,4 +1,6 @@
 pub mod action_id;
+pub mod principal_id;
+pub mod principal_set_id;
 pub mod resource_path;
 pub mod resource_ref;
 pub mod segment;
@@ -6,6 +8,8 @@ pub mod selector;
 pub mod specificity;
 
 pub use action_id::{ActionId, ActionIdParseError};
+pub use principal_id::{PrincipalId, PrincipalIdParseError};
+pub use principal_set_id::{PrincipalSetId, PrincipalSetIdParseError};
 pub use resource_path::{PathSegment, ResourcePath, ResourcePathParseError};
 pub use resource_ref::{ResourceRef, ResourceRefParseError};
 pub use segment::SegmentError;
