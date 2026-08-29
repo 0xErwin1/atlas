@@ -787,9 +787,12 @@ async fn task_service_move_task_inverted_anchors_returns_exhausted() {
     assert!(
         matches!(
             result,
-            Err(atlas_domain::DomainError::PositionExhausted { .. })
+            Err(atlas_domain::DomainError::ComponentConflict {
+                code: atlas_domain::error::acta_conflict::POSITION_EXHAUSTED,
+                ..
+            })
         ),
-        "inverted anchors must return PositionExhausted, got: {result:?}"
+        "inverted anchors must return a position-exhausted component conflict, got: {result:?}"
     );
 
     db.teardown().await;

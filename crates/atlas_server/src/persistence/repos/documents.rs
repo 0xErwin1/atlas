@@ -790,8 +790,8 @@ async fn update_locked_content_in(
         let patch = create_revision_patch(&base_content, &doc.content);
 
         return Err(DomainError::Conflict(RevisionConflict {
-            document_id: id,
-            current_revision_id: RevisionId(current_rev_uuid),
+            resource_id: id.0,
+            current_revision_id: current_rev_uuid,
             current_seq: doc.current_revision_seq,
             base_to_current_patch: patch,
         }));

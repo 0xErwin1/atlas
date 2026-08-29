@@ -3,7 +3,7 @@ use atlas_domain::{
     DomainError, PlatformStatusTemplateId,
     entities::boards_tasks::PositionBetween,
     entities::status_templates::{NewStatusTemplate, PlatformStatusTemplate, StatusTemplatePatch},
-    ids::ColumnId,
+    error::acta_conflict,
     position,
 };
 use chrono::Utc;
@@ -110,8 +110,9 @@ impl PlatformStatusTemplateRepo for PgPlatformStatusTemplateRepo {
                         Some(key) => key,
                         None => {
                             txn.rollback().await.map_err(db_err)?;
-                            return Err(DomainError::PositionExhausted {
-                                column_id: ColumnId(id.0),
+                            return Err(DomainError::ComponentConflict {
+                                code: acta_conflict::POSITION_EXHAUSTED,
+                                message: None,
                             });
                         }
                     }

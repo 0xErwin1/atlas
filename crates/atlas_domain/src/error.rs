@@ -1,64 +1,8 @@
-use crate::ids::{ColumnId, DocumentId, RevisionId};
-use thiserror::Error;
-use uuid::Uuid;
+pub use atlas_core::error::{DomainError, RevisionConflict};
 
-#[derive(Debug, Clone)]
-pub struct RevisionConflict {
-    pub document_id: DocumentId,
-    pub current_revision_id: RevisionId,
-    pub current_seq: i64,
-    pub base_to_current_patch: String,
-}
-
-#[derive(Debug, Error)]
-pub enum DomainError {
-    #[error("entity not found: {entity} {id}")]
-    NotFound { entity: &'static str, id: Uuid },
-
-    #[error("conflict: stale revision")]
-    Conflict(RevisionConflict),
-
-    #[error("invalid input: {message}")]
-    InvalidInput { message: String },
-
-    #[error("already exists: {message}")]
-    AlreadyExists { message: String },
-
-    #[error("restore is blocked by a deleted parent")]
-    RestoreParentDeleted { kind: &'static str },
-
-    #[error("restore is blocked by a live conflicting identity")]
-    RestoreIdentityConflict { kind: &'static str },
-
-    #[error("internal error: {message}")]
-    Internal { message: String },
-
-    #[error("forbidden: {message}")]
-    Forbidden { message: String },
-
-    #[error("comment draft conflict: {reason}")]
-    CommentDraftConflict { reason: String },
-
-    #[error("comment draft is gone: {reason}")]
-    CommentDraftGone { reason: String },
-
-    /// Fractional position space in column `column_id` is exhausted: no midpoint
-    /// can be computed between the two anchors. The adapter must rebalance the
+pub mod acta_conflict {
+    /// Fractional position space in a column is exhausted: no midpoint can be
+    /// computed between the two anchors. The adapter must rebalance the
     /// column's keys and retry, or surface a 409 to the caller.
-    #[error("position space exhausted in column {column_id}")]
-    PositionExhausted { column_id: ColumnId },
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn domain_error_display_not_empty() {
-        let err = DomainError::NotFound {
-            entity: "document",
-            id: Uuid::now_v7(),
-        };
-        assert!(!err.to_string().is_empty());
-    }
+    pub const POSITION_EXHAUSTED: &str = "position-exhausted";
 }

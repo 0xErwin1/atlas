@@ -249,9 +249,12 @@ async fn add_column_returns_position_exhausted_when_anchors_are_equal() {
     assert!(
         matches!(
             result,
-            Err(atlas_domain::DomainError::PositionExhausted { .. })
+            Err(atlas_domain::DomainError::ComponentConflict {
+                code: atlas_domain::error::acta_conflict::POSITION_EXHAUSTED,
+                ..
+            })
         ),
-        "expected PositionExhausted for equal anchors, got: {result:?}"
+        "expected position-exhausted component conflict for equal anchors, got: {result:?}"
     );
 
     db.teardown().await;

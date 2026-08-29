@@ -12,6 +12,7 @@ use atlas_domain::{
         ColumnCreatedPayload, ColumnDeletedPayload, DomainEvent,
     },
     entities::task_views::{ActorTypeFilter, AssigneeFilter, TaskSort, TaskViewFilters},
+    error::acta_conflict,
     ids::{
         BoardId, ChecklistItemId, ColumnId, FolderId, ProjectId, TaskActivityId, TaskId,
         TaskReferenceId,
@@ -453,8 +454,9 @@ impl BoardRepo for PgBoardRepo {
             || anchor_is_invalid(position.after.as_deref())
         {
             txn.rollback().await.map_err(db_err)?;
-            return Err(DomainError::PositionExhausted {
-                column_id: ColumnId(board_id.0),
+            return Err(DomainError::ComponentConflict {
+                code: acta_conflict::POSITION_EXHAUSTED,
+                message: None,
             });
         }
 
@@ -471,8 +473,9 @@ impl BoardRepo for PgBoardRepo {
                         Some(key) => key,
                         None => {
                             txn.rollback().await.map_err(db_err)?;
-                            return Err(DomainError::PositionExhausted {
-                                column_id: ColumnId(board_id.0),
+                            return Err(DomainError::ComponentConflict {
+                                code: acta_conflict::POSITION_EXHAUSTED,
+                                message: None,
                             });
                         }
                     }
@@ -562,7 +565,10 @@ impl BoardRepo for PgBoardRepo {
             || anchor_is_invalid(position.after.as_deref())
         {
             txn.rollback().await.map_err(db_err)?;
-            return Err(DomainError::PositionExhausted { column_id });
+            return Err(DomainError::ComponentConflict {
+                code: acta_conflict::POSITION_EXHAUSTED,
+                message: None,
+            });
         }
 
         let new_key =
@@ -578,7 +584,10 @@ impl BoardRepo for PgBoardRepo {
                         Some(key) => key,
                         None => {
                             txn.rollback().await.map_err(db_err)?;
-                            return Err(DomainError::PositionExhausted { column_id });
+                            return Err(DomainError::ComponentConflict {
+                                code: acta_conflict::POSITION_EXHAUSTED,
+                                message: None,
+                            });
                         }
                     }
                 }
@@ -923,25 +932,35 @@ impl PgTaskRepo {
         if anchor_is_invalid(position.before.as_deref())
             || anchor_is_invalid(position.after.as_deref())
         {
-            return Err(DomainError::PositionExhausted { column_id });
+            return Err(DomainError::ComponentConflict {
+                code: acta_conflict::POSITION_EXHAUSTED,
+                message: None,
+            });
         }
 
         match try_move_to_in(conn, ctx, id, column_id, board_id, project_id, &position).await {
             Ok(task) => Ok(task),
-            Err(DomainError::PositionExhausted { .. }) => {
+            Err(DomainError::ComponentConflict {
+                code: acta_conflict::POSITION_EXHAUSTED,
+                ..
+            }) => {
                 let remap = resequence_tasks_in_column(conn, ctx, column_id).await?;
                 let rebalanced = remap_anchors(&position, &remap);
 
                 // If both original anchors were specified but neither appears in
                 // the resequence map, they are phantom keys that do not correspond
                 // to any row in this column. Resequencing cannot help; return
-                // PositionExhausted rather than silently placing at the default midpoint.
+                // a component conflict rather than silently placing at the default
+                // midpoint.
                 if position.before.is_some()
                     && position.after.is_some()
                     && rebalanced.before.is_none()
                     && rebalanced.after.is_none()
                 {
-                    return Err(DomainError::PositionExhausted { column_id });
+                    return Err(DomainError::ComponentConflict {
+                        code: acta_conflict::POSITION_EXHAUSTED,
+                        message: None,
+                    });
                 }
 
                 try_move_to_in(conn, ctx, id, column_id, board_id, project_id, &rebalanced).await
@@ -990,8 +1009,9 @@ impl PgTaskRepo {
                 let remap = resequence_tasks_in_column(conn, ctx, new.column_id).await?;
                 let rebalanced = remap_anchors(&new.position, &remap);
                 position::try_between(rebalanced.before.as_deref(), rebalanced.after.as_deref())
-                    .ok_or(DomainError::PositionExhausted {
-                        column_id: new.column_id,
+                    .ok_or(DomainError::ComponentConflict {
+                        code: acta_conflict::POSITION_EXHAUSTED,
+                        message: None,
                     })?
             }
         };
@@ -1798,8 +1818,9 @@ impl PgTaskChecklistRepo {
                 let remap = resequence_checklist_items(conn, ctx, new.task_id).await?;
                 let rebalanced = remap_anchors(&new.position, &remap);
                 position::try_between(rebalanced.before.as_deref(), rebalanced.after.as_deref())
-                    .ok_or(DomainError::PositionExhausted {
-                        column_id: ColumnId(new.task_id.0),
+                    .ok_or(DomainError::ComponentConflict {
+                        code: acta_conflict::POSITION_EXHAUSTED,
+                        message: None,
                     })?
             }
         };
@@ -1867,8 +1888,9 @@ impl PgTaskChecklistRepo {
                     let remap = resequence_checklist_items(conn, ctx, task_id).await?;
                     let rebalanced = remap_anchors(&pos, &remap);
                     position::try_between(rebalanced.before.as_deref(), rebalanced.after.as_deref())
-                        .ok_or(DomainError::PositionExhausted {
-                            column_id: ColumnId(task_id.0),
+                        .ok_or(DomainError::ComponentConflict {
+                            code: acta_conflict::POSITION_EXHAUSTED,
+                            message: None,
                         })?
                 }
             };
@@ -2640,7 +2662,10 @@ async fn try_move_to_in(
     {
         Some(key) => key,
         None => {
-            return Err(DomainError::PositionExhausted { column_id });
+            return Err(DomainError::ComponentConflict {
+                code: acta_conflict::POSITION_EXHAUSTED,
+                message: None,
+            });
         }
     };
 
