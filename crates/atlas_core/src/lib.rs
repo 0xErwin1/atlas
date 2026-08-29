@@ -10,6 +10,7 @@
 
 pub mod capabilities;
 pub mod config;
+pub mod error;
 pub mod ids;
 pub mod position;
 pub mod registry;

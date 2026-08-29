@@ -296,7 +296,11 @@ async fn cas_stale_revision_returns_conflict() {
     assert!(result.is_err(), "stale revision must return conflict");
     match result.unwrap_err() {
         atlas_domain::DomainError::Conflict(conflict) => {
-            assert_eq!(conflict.document_id, doc.id);
+            assert_eq!(conflict.resource_id, doc.id.0);
+            assert_ne!(
+                conflict.current_revision_id, rev1.0,
+                "current_revision_id must be the advanced head, not the stale base"
+            );
         }
         other => panic!("expected Conflict, got {:?}", other),
     }

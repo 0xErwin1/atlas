@@ -1,5 +1,5 @@
 use atlas_api::{dtos::documents::ConflictProblemDto, problem::ProblemDetails};
-use atlas_domain::error::{DomainError, RevisionConflict};
+use atlas_domain::error::{DomainError, RevisionConflict, acta_conflict};
 use axum::{
     http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
@@ -133,7 +133,7 @@ impl IntoResponse for ApiError {
             ),
             ApiError::RevisionConflict(c) => {
                 let body = ConflictProblemDto::new(
-                    c.current_revision_id.0,
+                    c.current_revision_id,
                     c.current_seq,
                     c.base_to_current_patch,
                 );
@@ -209,7 +209,7 @@ fn domain_error_response(err: DomainError) -> Response {
         ),
         DomainError::Conflict(c) => {
             let body = ConflictProblemDto::new(
-                c.current_revision_id.0,
+                c.current_revision_id,
                 c.current_seq,
                 c.base_to_current_patch,
             );
@@ -286,15 +286,25 @@ fn domain_error_response(err: DomainError) -> Response {
                     .with_detail("An internal error occurred."),
             )
         }
-        DomainError::PositionExhausted { .. } => (
-            StatusCode::CONFLICT,
-            ProblemDetails::new(
-                "urn:atlas:error:position-exhausted",
-                "Position Exhausted",
-                409,
-            )
-            .with_hint("Retry the move; the server attempted to rebalance column positions."),
-        ),
+        DomainError::ComponentConflict { code, message } => match code {
+            acta_conflict::POSITION_EXHAUSTED => (
+                StatusCode::CONFLICT,
+                ProblemDetails::new(
+                    "urn:atlas:error:position-exhausted",
+                    "Position Exhausted",
+                    409,
+                )
+                .with_hint("Retry the move; the server attempted to rebalance column positions."),
+            ),
+            unknown => {
+                tracing::error!(code = %unknown, "unmapped component conflict code");
+                (
+                    StatusCode::CONFLICT,
+                    ProblemDetails::new("urn:atlas:error:conflict", "Conflict", 409)
+                        .with_detail(message.unwrap_or_else(|| "conflict".into())),
+                )
+            }
+        },
     };
 
     build_problem_response(status, problem)
