@@ -17,6 +17,7 @@ use crate::persistence::entities::identity::{
     capabilities_to_stored, membership, membership_from, session, session_from, user, user_from,
     user_ui_state, user_ui_state_from, workspace, workspace_from,
 };
+use atlas_postgres::db_err;
 
 pub use atlas_domain::entities::identity::{
     ActivationToken, ApiKey, NewActivationToken, NewApiKey, NewSession, NewUser, NewWorkspace,
@@ -1443,11 +1444,5 @@ impl ActivationTokenRepo for PgActivationTokenRepo {
             .await
             .map_err(db_err)?;
         Ok(())
-    }
-}
-
-fn db_err(e: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: e.to_string(),
     }
 }

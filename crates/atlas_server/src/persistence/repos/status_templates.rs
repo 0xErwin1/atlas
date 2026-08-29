@@ -13,6 +13,7 @@ use sea_orm::{
 };
 
 use crate::persistence::entities::status_templates::{status_template, status_template_from};
+use atlas_postgres::db_err;
 
 pub use atlas_domain::ports::status_templates::StatusTemplateRepo;
 
@@ -267,11 +268,5 @@ pub(crate) fn remap_anchors(
                 after: translate(&original.after),
             }
         }
-    }
-}
-
-fn db_err(e: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: e.to_string(),
     }
 }

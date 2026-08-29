@@ -21,6 +21,7 @@ use crate::persistence::entities::comments::{
     comment_attachment_draft_upload_from,
 };
 use crate::persistence::entities::documents::attachment;
+use atlas_postgres::db_err;
 
 pub struct PgCommentAttachmentDraftRepo {
     conn: DatabaseConnection,
@@ -326,12 +327,6 @@ fn actor_columns(actor: &Actor) -> (Option<uuid::Uuid>, Option<uuid::Uuid>) {
 fn internal_err(message: impl Into<String>) -> DomainError {
     DomainError::Internal {
         message: message.into(),
-    }
-}
-
-fn db_err(error: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: error.to_string(),
     }
 }
 

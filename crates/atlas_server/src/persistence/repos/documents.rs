@@ -45,6 +45,7 @@ use crate::persistence::repos::comment_attachment_drafts::{
     lock_active_draft_for_upload, record_upload_or_replay_in,
 };
 use crate::persistence::repos::{PgSearchIndexQueueRepo, PgSecurityAuditRepo};
+use atlas_postgres::db_err;
 
 pub use atlas_domain::ports::documents::{
     AttachmentRepo, AttachmentWriteIntentRepo, DocumentLinkRepo, DocumentRepo,
@@ -2749,12 +2750,6 @@ fn document_link_from_snapshot_row(
             .try_get::<DateTime<Utc>>("", "link_created_at")
             .map_err(db_err)?,
     }))
-}
-
-fn db_err(e: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: e.to_string(),
-    }
 }
 
 fn internal_err(msg: String) -> DomainError {

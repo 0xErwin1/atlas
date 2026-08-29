@@ -10,6 +10,7 @@ use atlas_domain::{
     ids::{FolderId, ProjectId, PropertyDefinitionId},
     permissions::{Principal, Visibility, VisibilityRole},
 };
+use atlas_postgres::db_err as internal_db_err;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
@@ -683,9 +684,7 @@ fn db_err(e: sea_orm::DbErr) -> DomainError {
         };
     }
 
-    DomainError::Internal {
-        message: e.to_string(),
-    }
+    internal_db_err(e)
 }
 
 fn internal_err(msg: String) -> DomainError {

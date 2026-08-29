@@ -14,6 +14,7 @@ use crate::persistence::entities::{
     boards_tasks::{board_column, task, task_reference},
     documents::document,
 };
+use atlas_postgres::db_err;
 
 /// Traversal bounds.
 ///
@@ -256,12 +257,6 @@ pub fn retain_edges_within(edges: Vec<GraphEdge>, visible: &HashSet<Uuid>) -> Ve
 /// Clamps a requested traversal depth into the supported range.
 pub fn resolve_depth(requested: Option<u32>) -> u32 {
     requested.unwrap_or(DEFAULT_DEPTH).clamp(1, MAX_DEPTH)
-}
-
-fn db_err(error: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: error.to_string(),
-    }
 }
 
 #[cfg(test)]

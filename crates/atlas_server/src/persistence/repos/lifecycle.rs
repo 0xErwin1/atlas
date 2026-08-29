@@ -12,6 +12,7 @@ use sea_orm::{
 };
 
 use crate::persistence::entities::lifecycle::{purge_operation, purge_operation_digest};
+use atlas_postgres::db_err;
 
 pub struct NewPurgeOperation {
     pub workspace_id: WorkspaceId,
@@ -322,10 +323,4 @@ fn purge_digest_from(model: purge_operation_digest::Model) -> Result<PurgeDigest
         last_error: model.last_error,
         last_attempt_at: model.last_attempt_at,
     })
-}
-
-fn db_err(error: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: error.to_string(),
-    }
 }

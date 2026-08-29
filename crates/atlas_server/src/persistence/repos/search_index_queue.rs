@@ -7,6 +7,7 @@ use atlas_domain::{
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
 
 use super::semantic_search::ResourceKindSql;
+use atlas_postgres::db_err;
 use uuid::Uuid;
 
 /// A resource waiting to be re-embedded.
@@ -364,12 +365,6 @@ impl QueueRow {
             attempt_count: self.attempt_count,
             enqueued_at: self.enqueued_at,
         })
-    }
-}
-
-fn db_err(e: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: e.to_string(),
     }
 }
 

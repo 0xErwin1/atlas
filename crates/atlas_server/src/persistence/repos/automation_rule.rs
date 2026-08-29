@@ -7,6 +7,7 @@ use sea_orm::{
 use uuid::Uuid;
 
 use crate::persistence::entities::automation_rule::automation_rules;
+use atlas_postgres::db_err;
 
 /// Fields that may be updated on an existing automation rule. `None` leaves the
 /// corresponding field unchanged; `Some(None)` clears a nullable field such as
@@ -213,11 +214,5 @@ impl PgAutomationRuleRepo {
         active.update(conn).await.map_err(db_err)?;
 
         Ok(())
-    }
-}
-
-fn db_err(e: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: e.to_string(),
     }
 }

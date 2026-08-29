@@ -14,6 +14,7 @@ use uuid::Uuid;
 use crate::persistence::live_ancestors::{
     board_chain_is_live_sql, folder_chain_is_live_sql, project_is_live_sql,
 };
+use atlas_postgres::db_err;
 
 pub struct PgSemanticIndexWriter {
     conn: DatabaseConnection,
@@ -649,10 +650,4 @@ fn vector_literal(values: &[f32]) -> String {
 
 fn token_count(text: &str) -> i32 {
     text.split_whitespace().count() as i32
-}
-
-fn db_err(e: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: e.to_string(),
-    }
 }

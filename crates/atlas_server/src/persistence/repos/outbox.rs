@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use crate::persistence::entities::events_outbox::event_outbox;
 use crate::persistence::entities::webhook_subscription::webhook_subscriptions;
+use atlas_postgres::db_err;
 
 /// Persistence operations for the transactional outbox and subscription
 /// matching needed by the dispatcher.
@@ -288,11 +289,5 @@ impl PgOutboxRepo {
 
         let result = conn.execute_raw(stmt).await.map_err(db_err)?;
         Ok(result.rows_affected() == 1)
-    }
-}
-
-fn db_err(e: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: e.to_string(),
     }
 }

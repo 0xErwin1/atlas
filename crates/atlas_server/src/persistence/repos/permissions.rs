@@ -15,6 +15,7 @@ use sea_orm::{
 use uuid::Uuid;
 
 use crate::persistence::entities::permissions::{group, group_member, permission_grant};
+use atlas_postgres::db_err;
 
 pub use atlas_domain::ports::permission_grant_repo::{PermissionGrantRepo, ResolutionQuery};
 
@@ -55,12 +56,6 @@ fn grant_from(m: permission_grant::Model) -> Result<PermissionGrant, DomainError
         created_at: m.created_at,
         updated_at: m.updated_at,
     })
-}
-
-fn db_err(e: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: e.to_string(),
-    }
 }
 
 /// Narrows a grant query to one resource. A workspace-scope grant is the row

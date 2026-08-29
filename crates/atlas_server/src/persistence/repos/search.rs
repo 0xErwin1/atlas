@@ -11,6 +11,7 @@ use sea_orm::{DatabaseConnection, FromQueryResult};
 use crate::persistence::live_ancestors::{
     board_chain_is_live_sql, folder_chain_is_live_sql, project_is_live_sql,
 };
+use atlas_postgres::db_err;
 
 pub struct PgSearchRepo {
     pub conn: DatabaseConnection,
@@ -860,10 +861,4 @@ fn micros_to_datetime(micros: i64) -> Result<DateTime<Utc>, DomainError> {
         .ok_or_else(|| DomainError::Internal {
             message: format!("cursor timestamp {micros} is out of range"),
         })
-}
-
-fn db_err(e: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: e.to_string(),
-    }
 }

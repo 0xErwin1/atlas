@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use crate::persistence::entities::integration_config::integration_configs;
 use crate::persistence::repos::identity::PgApiKeyRepo;
+use atlas_postgres::db_err;
 
 pub struct PgIntegrationConfigRepo;
 
@@ -189,10 +190,4 @@ fn random_unissued_token_hash() -> String {
     let mut bytes = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut bytes);
     format!("{:x}", Sha256::digest(bytes))
-}
-
-fn db_err(e: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: e.to_string(),
-    }
 }

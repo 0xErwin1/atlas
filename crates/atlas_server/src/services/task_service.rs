@@ -34,6 +34,7 @@ use crate::persistence::repos::{
     PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo,
     TaskActivityRepo as _,
 };
+use atlas_postgres::db_err;
 
 /// Result of a checklist item promotion: the three records committed atomically.
 pub struct PromotionResult {
@@ -1046,12 +1047,6 @@ impl TaskService {
         self.comments
             .update(ctx, CommentOwner::Task(task_id), comment_id, body)
             .await
-    }
-}
-
-fn db_err(e: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: e.to_string(),
     }
 }
 

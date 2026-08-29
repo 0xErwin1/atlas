@@ -10,6 +10,7 @@ use sea_orm::{
 };
 
 use crate::persistence::entities::saved_searches::{saved_search, saved_search_from};
+use atlas_postgres::db_err;
 
 pub use atlas_domain::ports::saved_searches::SavedSearchRepo;
 
@@ -230,11 +231,5 @@ fn owner_columns(actor: &atlas_domain::Actor) -> (Option<uuid::Uuid>, Option<uui
     match actor {
         atlas_domain::Actor::User(uid) => (Some(uid.0), None),
         atlas_domain::Actor::ApiKey(kid) => (None, Some(kid.0)),
-    }
-}
-
-fn db_err(e: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: e.to_string(),
     }
 }

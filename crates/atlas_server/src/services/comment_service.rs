@@ -14,6 +14,7 @@ use crate::persistence::{
     entities::{comments::comment_attachment_draft, documents::attachment},
     repos::{PgCommentLinkRepo, PgCommentRepo, PgSearchIndexQueueRepo, PgSecurityAuditRepo},
 };
+use atlas_postgres::db_err;
 
 /// Internal test seam for proving comment mutations commit as one transaction.
 #[doc(hidden)]
@@ -373,10 +374,4 @@ async fn tombstone_comment_attachments_in(
         .map_err(db_err)?;
 
     Ok(())
-}
-
-fn db_err(error: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: error.to_string(),
-    }
 }

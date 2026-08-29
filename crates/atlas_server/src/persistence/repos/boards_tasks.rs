@@ -40,6 +40,7 @@ use crate::persistence::live_ancestors::{
     live_project, live_task_ancestor_chain, live_task_chain,
 };
 use crate::persistence::repos::PgOutboxRepo;
+use atlas_postgres::db_err;
 
 pub use atlas_domain::ports::boards_tasks::{
     BoardRepo, TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo,
@@ -2819,12 +2820,6 @@ fn anchor_is_invalid(key: Option<&str>) -> bool {
     match key {
         None => false,
         Some(s) => fractional_index::FractionalIndex::from_string(s).is_err(),
-    }
-}
-
-fn db_err(e: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: e.to_string(),
     }
 }
 

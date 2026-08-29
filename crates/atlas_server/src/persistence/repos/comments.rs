@@ -16,6 +16,7 @@ use crate::persistence::entities::{
     documents::attachment,
 };
 use crate::persistence::live_ancestors::{live_document_chain, live_task_chain};
+use atlas_postgres::db_err;
 
 pub use atlas_domain::ports::comments::CommentRepo;
 
@@ -338,11 +339,5 @@ fn actor_columns(actor: &Actor) -> (Option<uuid::Uuid>, Option<uuid::Uuid>) {
     match actor {
         Actor::User(uid) => (Some(uid.0), None),
         Actor::ApiKey(kid) => (None, Some(kid.0)),
-    }
-}
-
-fn db_err(e: sea_orm::DbErr) -> DomainError {
-    DomainError::Internal {
-        message: e.to_string(),
     }
 }

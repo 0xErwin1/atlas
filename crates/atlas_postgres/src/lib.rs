@@ -7,6 +7,8 @@
 
 pub mod config;
 pub mod connect;
+pub mod error;
 
 pub use config::{PoolConfig, PostgresConfig};
 pub use connect::{connect, connect_options};
+pub use error::db_err;
