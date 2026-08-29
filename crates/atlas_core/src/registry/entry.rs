@@ -4,6 +4,7 @@ use super::{
 };
 
 /// Stable identity of a component within the registry (SHELL-REG-1).
+#[derive(Debug)]
 pub struct Identity {
     pub stable_id: ComponentId,
     pub kind: ComponentKind,
@@ -11,12 +12,14 @@ pub struct Identity {
 }
 
 /// A dependency on another component's contract (SHELL-REG-1).
+#[derive(Debug)]
 pub struct Dependency {
     pub component: ComponentId,
     pub min_contract: ContractVersion,
 }
 
 /// Capabilities provided and required by a component (SHELL-REG-1).
+#[derive(Debug)]
 pub struct Capabilities {
     pub provided: Vec<CapabilityId>,
     pub required_mandatory: Vec<CapabilityId>,
@@ -28,6 +31,7 @@ pub struct Capabilities {
 /// surface, such as a Module. `namespace` is the URL namespace segment
 /// (e.g. `"acta"`), not a `ComponentId`, because the mount point is a URL
 /// token.
+#[derive(Debug)]
 pub struct Api {
     pub namespace: Option<String>,
     pub routes: Vec<RouteDeclaration>,
@@ -35,6 +39,7 @@ pub struct Api {
 }
 
 /// Diagnostics endpoints declared by a component (SHELL-REG-1).
+#[derive(Debug)]
 pub struct Diagnostics {
     pub health: bool,
     pub readiness: bool,
@@ -42,6 +47,7 @@ pub struct Diagnostics {
 }
 
 /// Experience integration points declared by a component (SHELL-REG-1).
+#[derive(Debug)]
 pub struct Experience {
     pub navigation_providers: Vec<String>,
     pub context_providers: Vec<String>,
@@ -49,11 +55,13 @@ pub struct Experience {
 
 /// A background worker declared by a component. Start/drain ordering derives
 /// from `ComponentEntry.dependencies`, not from per-worker fields.
+#[derive(Debug)]
 pub struct WorkerDeclaration {
     pub name: String,
 }
 
 /// The complete registry entry for one component (SHELL-REG-1, SHELL-INT-3).
+#[derive(Debug)]
 pub struct ComponentEntry {
     pub identity: Identity,
     pub dependencies: Vec<Dependency>,
@@ -229,6 +237,14 @@ mod tests {
         assert!(entry.config.is_some());
         assert_eq!(entry.workers.len(), 1);
         assert_eq!(entry.satellites.len(), 1);
+    }
+
+    #[test]
+    fn component_entry_and_nested_aggregates_derive_debug() {
+        let entry = minimal_module_entry();
+        let debug_output = format!("{entry:?}");
+
+        assert!(debug_output.contains("storage.filesystem"));
     }
 
     #[test]

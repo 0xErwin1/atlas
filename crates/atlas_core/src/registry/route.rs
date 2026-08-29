@@ -170,6 +170,7 @@ impl fmt::Display for RoutePath {
 impl_string_conversions!(RoutePath, RoutePathError);
 
 /// A declared HTTP route on a component's API surface (SHELL-REG-1, SHELL-CLI-2, SHELL-API-3).
+#[derive(Debug)]
 pub struct RouteDeclaration {
     pub method: HttpMethod,
     pub path: RoutePath,

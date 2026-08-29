@@ -1,6 +1,7 @@
 use crate::ids::ActionId;
 
 /// Authorization surface declared by a component (SHELL-REG-1).
+#[derive(Debug)]
 pub struct Authorization {
     pub resource_kinds: Vec<String>,
     pub actions: Vec<ActionId>,
