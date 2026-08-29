@@ -641,9 +641,11 @@ dependencies = [
  "async-trait",
  "bytes",
  "chrono",
+ "fractional_index",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "uuid",
 ]
 
 [[package]]
@@ -684,6 +686,7 @@ name = "atlas_domain"
 version = "0.0.0"
 dependencies = [
  "async-trait",
+ "atlas_core",
  "bytes",
  "chrono",
  "diffy-imara",

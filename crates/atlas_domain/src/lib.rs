@@ -16,16 +16,16 @@ pub mod frontmatter;
 pub mod ids;
 pub mod permissions;
 pub mod ports;
-pub mod position;
 pub mod revision;
 pub mod search;
 pub mod semantic_search;
-pub mod slug;
 pub mod wikilink;
 
+pub use atlas_core::position;
+pub use atlas_core::slug;
+pub use atlas_core::slug::{resolve_collision, slugify};
 pub use frontmatter::{parse_frontmatter_yaml, strip_frontmatter};
 pub use ports::attachment_store::AttachmentStore;
-pub use slug::{resolve_collision, slugify};
 pub use wikilink::{
     ParsedWikilink, WikilinkTarget, classify_wikilink, parse_wikilink_target, parse_wikilinks,
     rename_file_links,

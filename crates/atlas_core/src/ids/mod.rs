@@ -1,4 +1,5 @@
 pub mod action_id;
+pub mod newtype;
 pub mod principal_id;
 pub mod principal_set_id;
 pub mod resource_path;
@@ -6,6 +7,8 @@ pub mod resource_ref;
 pub mod segment;
 pub mod selector;
 pub mod specificity;
+
+pub use crate::define_id;
 
 pub use action_id::{ActionId, ActionIdParseError};
 pub use principal_id::{PrincipalId, PrincipalIdParseError};
