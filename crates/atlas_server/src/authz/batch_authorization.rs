@@ -678,7 +678,7 @@ fn validate_subject_chain(chain: &ResourceChain, family: SubjectFamily) -> Resul
 
     let mut seen = BTreeSet::new();
     for segment in &chain.segments {
-        if !seen.insert(resource_key(&segment.resource)) {
+        if !seen.insert(segment.resource.clone()) {
             return Err(invalid_subject_chain());
         }
     }
@@ -800,7 +800,7 @@ fn decode_grants(
 
     for grant in grants {
         let resource = decode_resource(grant.resource)?;
-        if !resources.insert(resource_key(&resource)) {
+        if !resources.insert(resource.clone()) {
             return Err(DomainError::Internal {
                 message: "batch principal facts contained duplicate grants".into(),
             });
@@ -974,40 +974,11 @@ fn distinct_resources(facts: &[SubjectFact]) -> Vec<ResourceRef> {
 
     for fact in facts {
         for segment in &fact.chain.segments {
-            resources.insert(resource_key(&segment.resource));
+            resources.insert(segment.resource.clone());
         }
     }
 
-    resources.into_iter().map(resource_from_key).collect()
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
-enum ResourceKey {
-    Workspace,
-    Project(Uuid),
-    Folder(Uuid),
-    Document(Uuid),
-    Board(Uuid),
-}
-
-fn resource_key(resource: &ResourceRef) -> ResourceKey {
-    match resource {
-        ResourceRef::Workspace => ResourceKey::Workspace,
-        ResourceRef::Project(id) => ResourceKey::Project(id.0),
-        ResourceRef::Folder(id) => ResourceKey::Folder(id.0),
-        ResourceRef::Document(id) => ResourceKey::Document(id.0),
-        ResourceRef::Board(id) => ResourceKey::Board(id.0),
-    }
-}
-
-fn resource_from_key(key: ResourceKey) -> ResourceRef {
-    match key {
-        ResourceKey::Workspace => ResourceRef::Workspace,
-        ResourceKey::Project(id) => ResourceRef::Project(atlas_domain::ids::ProjectId(id)),
-        ResourceKey::Folder(id) => ResourceRef::Folder(atlas_domain::ids::FolderId(id)),
-        ResourceKey::Document(id) => ResourceRef::Document(atlas_domain::ids::DocumentId(id)),
-        ResourceKey::Board(id) => ResourceRef::Board(atlas_domain::ids::BoardId(id)),
-    }
+    resources.into_iter().collect()
 }
 
 fn authorize_fact(
@@ -1124,7 +1095,7 @@ fn validate_user_facts(facts: &UserFacts) -> Result<(), DomainError> {
 fn validate_grants(grants: &[(ResourceRef, ResourceRole)]) -> Result<(), DomainError> {
     let mut seen = BTreeSet::new();
     for (resource, role) in grants {
-        if !seen.insert(resource_key(resource)) {
+        if !seen.insert(resource.clone()) {
             return Err(DomainError::Internal {
                 message: "batch authorization source returned duplicate grants".into(),
             });
@@ -1143,4 +1114,67 @@ fn validate_scopes(scopes: &[Capability]) -> Result<(), DomainError> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod distinct_resources_tests {
+    use super::*;
+    use atlas_domain::ids::{BoardId, DocumentId, FolderId, ProjectId};
+    use atlas_domain::permissions::ChainSegment;
+
+    fn segment(resource: ResourceRef) -> ChainSegment {
+        ChainSegment {
+            resource,
+            visibility: None,
+        }
+    }
+
+    #[test]
+    fn distinct_resources_dedupes_and_orders_a_mixed_chain_set() {
+        let project = ProjectId(Uuid::now_v7());
+        let folder = FolderId(Uuid::now_v7());
+        let document = DocumentId(Uuid::now_v7());
+        let board = BoardId(Uuid::now_v7());
+
+        let facts = vec![
+            SubjectFact {
+                ordinal: 0,
+                chain: ResourceChain {
+                    segments: vec![
+                        segment(ResourceRef::Document(document)),
+                        segment(ResourceRef::Folder(folder)),
+                        segment(ResourceRef::Project(project)),
+                        segment(ResourceRef::Workspace),
+                    ],
+                },
+                family: SubjectFamily::Documents,
+            },
+            SubjectFact {
+                ordinal: 1,
+                chain: ResourceChain {
+                    segments: vec![
+                        segment(ResourceRef::Board(board)),
+                        segment(ResourceRef::Project(project)),
+                        segment(ResourceRef::Workspace),
+                    ],
+                },
+                family: SubjectFamily::Tasks,
+            },
+        ];
+
+        let resources = distinct_resources(&facts);
+
+        assert_eq!(
+            resources,
+            vec![
+                ResourceRef::Workspace,
+                ResourceRef::Project(project),
+                ResourceRef::Folder(folder),
+                ResourceRef::Document(document),
+                ResourceRef::Board(board),
+            ],
+            "duplicate Workspace and Project segments across chains must collapse to one \
+             entry each, and the result must follow ResourceRef's derived variant order"
+        );
+    }
 }

@@ -11,7 +11,9 @@
 pub mod capabilities;
 pub mod config;
 pub mod ids;
+pub mod position;
 pub mod registry;
+pub mod slug;
 
 pub use ids::{
     ActionId, ActionIdParseError, PathSegment, PrincipalId, PrincipalIdParseError, PrincipalSetId,

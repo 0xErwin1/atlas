@@ -4,6 +4,8 @@ use crate::error::DomainError;
 use crate::ids::{ApiKeyId, BoardId, DocumentId, FolderId, GroupId, ProjectId, TaskId, UserId};
 use serde::{Deserialize, Serialize};
 
+pub mod resource_ref_codec;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ResourceRole {
     Viewer,
@@ -302,7 +304,7 @@ pub enum Principal {
     Group(GroupId),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ResourceRef {
     Workspace,
     Project(ProjectId),
