@@ -257,7 +257,7 @@ impl DocumentRepo for PgDocumentRepo {
                           AND user_id = $2
                     )
                     OR EXISTS (
-                        SELECT 1 FROM users
+                        SELECT 1 FROM custos.users
                         WHERE id = $2
                           AND (is_root OR is_system_admin)
                           AND disabled_at IS NULL
@@ -314,19 +314,19 @@ impl DocumentRepo for PgDocumentRepo {
               AND (
                     {membership_clause}
                     OR EXISTS (
-                        SELECT 1 FROM permission_grants
+                        SELECT 1 FROM custos.permission_grants
                         WHERE workspace_id = $1
                           AND {principal_col} = $2
                           AND resource_ref = 'acta::workspace::' || $1::text
                     )
                     OR EXISTS (
-                        SELECT 1 FROM permission_grants
+                        SELECT 1 FROM custos.permission_grants
                         WHERE workspace_id = $1
                           AND {principal_col} = $2
                           AND resource_ref = 'acta::document::' || d.id::text
                     )
                     OR EXISTS (
-                        SELECT 1 FROM permission_grants
+                        SELECT 1 FROM custos.permission_grants
                         WHERE workspace_id = $1
                           AND {principal_col} = $2
                           AND resource_ref = 'acta::project::' || d.project_id::text
@@ -352,7 +352,7 @@ impl DocumentRepo for PgDocumentRepo {
                             SELECT 'acta::project::' || project_id::text FROM ancestors
                             WHERE project_id IS NOT NULL
                         )
-                        SELECT 1 FROM permission_grants pg
+                        SELECT 1 FROM custos.permission_grants pg
                         JOIN ancestor_refs ON ancestor_refs.resource_ref = pg.resource_ref
                         WHERE pg.workspace_id = $1
                           AND pg.{principal_col} = $2

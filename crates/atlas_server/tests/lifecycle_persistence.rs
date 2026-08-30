@@ -21,7 +21,7 @@ async fn seed_commit_audit(
     let audit_id = SecurityAuditId::new();
     conn.execute_raw(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
-        "INSERT INTO security_audit_log (id, workspace_id, actor_user_id, action, target_type, metadata, created_at) \
+        "INSERT INTO custos.security_audit_log (id, workspace_id, actor_user_id, action, target_type, metadata, created_at) \
          VALUES ($1, $2, $3, 'resource.purge_committed', 'document', '{}'::jsonb, now())",
         [audit_id.0.into(), workspace_id.into(), user_id.into()],
     ))

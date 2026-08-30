@@ -144,7 +144,7 @@ pub(crate) async fn post_activate(
 
     let token_rows = TokenRow::find_by_statement(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
-        "SELECT id, user_id FROM user_activation_tokens \
+        "SELECT id, user_id FROM custos.user_activation_tokens \
          WHERE token_hash = $1 AND consumed_at IS NULL AND expires_at > now() \
          LIMIT 1 FOR UPDATE",
         [token_hash.into()],
@@ -173,7 +173,7 @@ pub(crate) async fn post_activate(
 
     let user_state_rows = UserStateRow::find_by_statement(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
-        "SELECT disabled_at FROM users WHERE id = $1 LIMIT 1",
+        "SELECT disabled_at FROM custos.users WHERE id = $1 LIMIT 1",
         [user_id.0.into()],
     ))
     .all(&txn)
@@ -195,7 +195,7 @@ pub(crate) async fn post_activate(
     let consume_result = txn
         .execute_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "UPDATE user_activation_tokens \
+            "UPDATE custos.user_activation_tokens \
              SET consumed_at = $1 \
              WHERE id = $2 AND consumed_at IS NULL",
             [now.into(), token_id.0.into()],
@@ -216,7 +216,7 @@ pub(crate) async fn post_activate(
     let activate_result = txn
         .execute_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "UPDATE users SET password_hash = $1, activated_at = $2, updated_at = $3 \
+            "UPDATE custos.users SET password_hash = $1, activated_at = $2, updated_at = $3 \
              WHERE id = $4 AND activated_at IS NULL",
             [
                 password_hash.into(),
@@ -238,7 +238,7 @@ pub(crate) async fn post_activate(
     let session_id = SessionId::new();
     txn.execute_raw(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
-        "INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at) \
+        "INSERT INTO custos.sessions (id, user_id, token_hash, expires_at, created_at) \
          VALUES ($1, $2, $3, $4, $5)",
         [
             session_id.0.into(),

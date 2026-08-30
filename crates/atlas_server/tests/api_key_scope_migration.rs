@@ -41,12 +41,25 @@ const ALL_TWENTY: &[&str] = &[
 #[tokio::test]
 async fn pre_migration_key_is_grandfathered_to_all_twenty_scopes_after_backfill() {
     // Stop one migration short of the scopes migration, so `api_keys` has no
-    // `scopes` column yet — this is the exact pre-migration shape.
+    // `scopes` column yet — this is the exact pre-migration shape. At this step
+    // `custos_new()` (including the S3d SET SCHEMA migration) has not run yet,
+    // so `users`/`api_keys` still physically live in `public`. Seeding via raw
+    // SQL rather than `support::seed_workspace` is deliberate: the repo layer
+    // goes through sea-orm entities that now hardcode `schema_name = "custos"`,
+    // which would look for a table that does not exist yet at this migration step.
     let db = TestDb::create_with_migration_steps(Some(37))
         .await
         .expect("create db at pre-scopes migration state");
 
-    let (_ws, user) = seed_workspace(&db, "pre-scopes-migration").await;
+    // custos-schema-gate:off — pre-schema-move fixture, see the doc comment above.
+    let user_id = uuid::Uuid::now_v7();
+    db.conn()
+        .execute_unprepared(&format!(
+            "INSERT INTO users (id, username, display_name, is_root, is_system_admin, created_at, updated_at) \
+             VALUES ('{user_id}', 'pre-scopes-migration', 'Pre Scopes Migration', false, false, now(), now())"
+        ))
+        .await
+        .expect("seed pre-migration-shaped user row");
 
     let key_id = uuid::Uuid::now_v7();
     db.conn()
@@ -54,9 +67,10 @@ async fn pre_migration_key_is_grandfathered_to_all_twenty_scopes_after_backfill(
             sea_orm::DatabaseBackend::Postgres,
             "INSERT INTO api_keys (id, workspace_id, created_by_user_id, name, token_hash, type, created_at, is_global) \
              VALUES ($1, NULL, $2, 'pre-migration-key', 'pre-migration-hash', 'agent', now(), false)",
-            [key_id.into(), user.id.0.into()],
+            [key_id.into(), user_id.into()],
         ))
         .await
+        // custos-schema-gate:on
         .expect("insert pre-migration-shaped api key row");
 
     db.run_remaining_migrations()
@@ -65,7 +79,7 @@ async fn pre_migration_key_is_grandfathered_to_all_twenty_scopes_after_backfill(
 
     let row = ScopesRow::find_by_statement(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
-        "SELECT scopes FROM api_keys WHERE id = $1",
+        "SELECT scopes FROM custos.api_keys WHERE id = $1",
         [key_id.into()],
     ))
     .one(db.conn())
@@ -100,7 +114,7 @@ async fn post_migration_insert_without_scopes_defaults_to_empty() {
     db.conn()
         .execute_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "INSERT INTO api_keys (id, workspace_id, created_by_user_id, name, token_hash, type, created_at, is_global) \
+            "INSERT INTO custos.api_keys (id, workspace_id, created_by_user_id, name, token_hash, type, created_at, is_global) \
              VALUES ($1, NULL, $2, 'post-migration-key', 'post-migration-hash', 'agent', now(), false)",
             [key_id.into(), user.id.0.into()],
         ))
@@ -109,7 +123,7 @@ async fn post_migration_insert_without_scopes_defaults_to_empty() {
 
     let row = ScopesRow::find_by_statement(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
-        "SELECT scopes FROM api_keys WHERE id = $1",
+        "SELECT scopes FROM custos.api_keys WHERE id = $1",
         [key_id.into()],
     ))
     .one(db.conn())

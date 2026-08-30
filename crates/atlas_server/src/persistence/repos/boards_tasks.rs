@@ -1773,7 +1773,7 @@ impl TaskAssigneeRepo for PgTaskAssigneeRepo {
             "SELECT ta.task_id, ta.workspace_id, ta.assignee_user_id, ta.assignee_api_key_id,
                     ta.assigned_by_user_id, ta.assigned_by_api_key_id, ta.assigned_at
              FROM task_assignees ta
-             LEFT JOIN api_keys ak ON ak.id = ta.assignee_api_key_id
+             LEFT JOIN custos.api_keys ak ON ak.id = ta.assignee_api_key_id
              WHERE ta.workspace_id = $1
                AND ta.task_id = $2
                AND (ta.assignee_api_key_id IS NULL OR ak.revoked_at IS NULL)",
@@ -1820,7 +1820,7 @@ impl TaskAssigneeRepo for PgTaskAssigneeRepo {
             "SELECT ta.task_id, ta.workspace_id, ta.assignee_user_id, ta.assignee_api_key_id,
                     ta.assigned_by_user_id, ta.assigned_by_api_key_id, ta.assigned_at
              FROM task_assignees ta
-             LEFT JOIN api_keys ak ON ak.id = ta.assignee_api_key_id
+             LEFT JOIN custos.api_keys ak ON ak.id = ta.assignee_api_key_id
              WHERE ta.workspace_id = $1
                AND ta.task_id IN ({placeholders})
                AND (ta.assignee_api_key_id IS NULL OR ak.revoked_at IS NULL)"

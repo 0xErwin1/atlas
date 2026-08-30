@@ -88,6 +88,9 @@ async fn backfill_encodes_every_target_kind_exactly_like_the_codec() {
     let board_id = Uuid::now_v7();
     let user_id = Uuid::now_v7();
 
+    // custos-schema-gate:off — frozen at `historical_count` steps, before
+    // `custos_new()` (and the SET SCHEMA migration) has run; `users` and
+    // `permission_grants` still physically live in `public` here.
     db.conn()
         .execute_unprepared(&format!(
             "INSERT INTO users (id, username, display_name, is_root, is_system_admin, created_at, updated_at) \
@@ -127,6 +130,7 @@ async fn backfill_encodes_every_target_kind_exactly_like_the_codec() {
         ))
         .await
         .expect("seed pre-migration grant rows");
+    // custos-schema-gate:on
 
     db.run_remaining_migrations()
         .await
@@ -141,7 +145,7 @@ async fn backfill_encodes_every_target_kind_exactly_like_the_codec() {
     let rows = Row::find_by_statement(Statement::from_string(
         sea_orm::DatabaseBackend::Postgres,
         format!(
-            "SELECT id, resource_ref FROM permission_grants WHERE workspace_id = '{workspace_id}' ORDER BY resource_ref"
+            "SELECT id, resource_ref FROM custos.permission_grants WHERE workspace_id = '{workspace_id}' ORDER BY resource_ref"
         ),
     ))
     .all(db.conn())
@@ -285,7 +289,7 @@ async fn down_restores_target_columns_and_survives_a_forward_only_orphan() {
 
     db.conn()
         .execute_unprepared(&format!(
-            "INSERT INTO users (id, username, display_name, is_root, is_system_admin, created_at, updated_at) VALUES ('{user_id}', 'user-{user_id}', 'User', false, false, now(), now()); \
+            "INSERT INTO custos.users (id, username, display_name, is_root, is_system_admin, created_at, updated_at) VALUES ('{user_id}', 'user-{user_id}', 'User', false, false, now(), now()); \
              INSERT INTO workspaces (id, name, slug, created_at, updated_at) VALUES ('{workspace_id}', 'Workspace', 'workspace-{workspace_id}', now(), now()); \
              INSERT INTO projects (id, workspace_id, name, slug, task_prefix, next_task_number, visibility, created_by_user_id, created_at, updated_at) VALUES ('{project_id}', '{workspace_id}', 'Project', 'project-{project_id}', 'PRJ', 1, 'workspace', '{user_id}', now(), now()); \
              INSERT INTO folders (id, workspace_id, project_id, name, created_by_user_id, created_at, updated_at) VALUES ('{folder_id}', '{workspace_id}', '{project_id}', 'Folder', '{user_id}', now(), now()); \
@@ -304,7 +308,7 @@ async fn down_restores_target_columns_and_survives_a_forward_only_orphan() {
 
     db.conn()
         .execute_unprepared(&format!(
-            "INSERT INTO permission_grants (id, workspace_id, user_id, resource_ref, role, created_at, updated_at) VALUES \
+            "INSERT INTO custos.permission_grants (id, workspace_id, user_id, resource_ref, role, created_at, updated_at) VALUES \
              ('{workspace_grant_id}', '{workspace_id}', '{user_id}', 'acta::workspace::{workspace_id}', 'viewer', now(), now()), ('{project_grant_id}', '{workspace_id}', '{user_id}', 'acta::project::{project_id}', 'viewer', now(), now()), \
              ('{folder_grant_id}', '{workspace_id}', '{user_id}', 'acta::folder::{folder_id}', 'viewer', now(), now()), ('{document_grant_id}', '{workspace_id}', '{user_id}', 'acta::document::{document_id}', 'viewer', now(), now()), \
              ('{board_grant_id}', '{workspace_id}', '{user_id}', 'acta::board::{board_id}', 'viewer', now(), now()), ('{orphan_grant_id}', '{workspace_id}', '{user_id}', 'acta::document::{orphan_document_id}', 'viewer', now(), now())"
@@ -312,7 +316,13 @@ async fn down_restores_target_columns_and_survives_a_forward_only_orphan() {
         .await
         .expect("seed post-migration grant rows, including one orphaned by a never-live target");
 
-    ComposedMigrator::down(db.conn(), Some(1))
+    // Reverts two steps, not one: S3d appended `m20260830_000051_custos_set_schema`
+    // after this migration in `custos_new()`, so "the last applied migration" is
+    // now the schema move rather than the O1 migration under test here. Reverting
+    // two steps undoes the schema move first (moving the eight tables back to
+    // `public`) and then O1's own down(), landing on the same pre-O1,
+    // unqualified-table-name state this test asserted before S3d existed.
+    ComposedMigrator::down(db.conn(), Some(2))
         .await
         .expect("down survives an orphaned grant");
 
@@ -325,6 +335,8 @@ async fn down_restores_target_columns_and_survives_a_forward_only_orphan() {
         board_id: Option<Uuid>,
     }
 
+    // custos-schema-gate:off — after the two-step down() above, SET SCHEMA has
+    // been reverted, so `permission_grants` is back in `public` at this point.
     let rows = TargetRow::find_by_statement(Statement::from_string(
         sea_orm::DatabaseBackend::Postgres,
         format!("SELECT id, project_id, folder_id, document_id, board_id FROM permission_grants WHERE workspace_id = '{workspace_id}'"),
@@ -332,6 +344,7 @@ async fn down_restores_target_columns_and_survives_a_forward_only_orphan() {
     .all(db.conn())
     .await
     .expect("query restored target columns");
+    // custos-schema-gate:on
 
     assert!(
         !rows.iter().any(|row| row.id == orphan_grant_id),

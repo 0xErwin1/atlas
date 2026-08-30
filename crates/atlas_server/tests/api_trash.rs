@@ -234,7 +234,7 @@ async fn count_purge_side_effects(db: &support::TestDb, target_id: uuid::Uuid) -
             sea_orm::DatabaseBackend::Postgres,
             "SELECT \
                 (SELECT count(*)::bigint FROM purge_operations WHERE target_id = $1) AS operations, \
-                (SELECT count(*)::bigint FROM security_audit_log WHERE target_id = $1 AND action = 'resource.purge_committed') AS audits",
+                (SELECT count(*)::bigint FROM custos.security_audit_log WHERE target_id = $1 AND action = 'resource.purge_committed') AS audits",
             [target_id.into()],
         ))
         .await

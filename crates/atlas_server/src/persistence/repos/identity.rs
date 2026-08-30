@@ -150,7 +150,7 @@ impl WorkspaceRepo for PgWorkspaceRepo {
 
         let rows = WorkspaceIdRow::find_by_statement(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT DISTINCT workspace_id FROM permission_grants WHERE api_key_id = $1",
+            "SELECT DISTINCT workspace_id FROM custos.permission_grants WHERE api_key_id = $1",
             [api_key_id.0.into()],
         ))
         .all(&self.conn)

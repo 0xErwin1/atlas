@@ -309,7 +309,7 @@ async fn actor_check_allows_both_null_after_on_delete_set_null() {
     let result = db
         .conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO security_audit_log
+            r#"INSERT INTO custos.security_audit_log
                (id, workspace_id, actor_user_id, actor_api_key_id, action, target_type, metadata, created_at)
                VALUES
                (gen_random_uuid(), '{ws_id}', NULL, NULL, 'user.disabled', 'user', '{{}}', now())"#
@@ -335,7 +335,7 @@ async fn actor_check_rejects_both_set_actors() {
     let result = db
         .conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO security_audit_log
+            r#"INSERT INTO custos.security_audit_log
                (id, workspace_id, actor_user_id, actor_api_key_id, action, target_type, metadata, created_at)
                VALUES
                (gen_random_uuid(), '{ws_id}', '{user_id}', '{user_id}', 'user.disabled', 'user', '{{}}', now())"#
@@ -729,7 +729,9 @@ async fn actor_fk_on_delete_set_null_nulls_actor_but_keeps_row() {
 
     let victim_id = victim.id.0;
     db.conn()
-        .execute_unprepared(&format!("DELETE FROM users WHERE id = '{victim_id}'"))
+        .execute_unprepared(&format!(
+            "DELETE FROM custos.users WHERE id = '{victim_id}'"
+        ))
         .await
         .expect("delete victim user");
 

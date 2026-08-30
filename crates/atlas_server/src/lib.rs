@@ -83,7 +83,7 @@ pub mod desktop_gate_support {
             .await?;
 
         db.execute_unprepared(&format!(
-            "UPDATE users SET activated_at = now() WHERE id = '{}'",
+            "UPDATE custos.users SET activated_at = now() WHERE id = '{}'",
             user.id.0
         ))
         .await?;

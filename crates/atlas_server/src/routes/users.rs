@@ -186,7 +186,7 @@ pub(crate) async fn regenerate_activation_link(
         use sea_orm::ConnectionTrait;
         txn.execute_raw(sea_orm::Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "INSERT INTO user_activation_tokens \
+            "INSERT INTO custos.user_activation_tokens \
                 (id, user_id, token_hash, expires_at, consumed_at, created_at) \
              VALUES ($1, $2, $3, $4, NULL, $5)",
             [
@@ -683,7 +683,7 @@ async fn create_pending_user_txn(
     let user_insert = txn
         .execute_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "INSERT INTO users \
+            "INSERT INTO custos.users \
                 (id, username, display_name, email, password_hash, is_root, is_system_admin, \
                  disabled_at, activated_at, created_at, updated_at) \
              VALUES ($1, $2, $3, $4, NULL, $5, $6, NULL, NULL, $7, $8)",
@@ -741,7 +741,7 @@ async fn create_pending_user_txn(
     let token_id = ActivationTokenId::new();
     txn.execute_raw(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
-        "INSERT INTO user_activation_tokens \
+        "INSERT INTO custos.user_activation_tokens \
             (id, user_id, token_hash, expires_at, consumed_at, created_at) \
          VALUES ($1, $2, $3, $4, NULL, $5)",
         [

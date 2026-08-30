@@ -11,7 +11,7 @@ pub mod security_audit_log {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "security_audit_log")]
+    #[sea_orm(schema_name = "custos", table_name = "security_audit_log")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
