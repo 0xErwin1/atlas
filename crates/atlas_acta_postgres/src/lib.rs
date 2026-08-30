@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
+
 //! Postgres persistence for Acta: sea-orm entities, repository
 //! implementations, and schema migrations for Acta-owned tables, moved out of
 //! `atlas_server::persistence` (mirrors `atlas_custos_postgres`).

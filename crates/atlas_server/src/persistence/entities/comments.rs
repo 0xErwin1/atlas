@@ -85,64 +85,17 @@ pub mod comment_link_event {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
-pub mod comment_attachment_draft {
-    use super::*;
-
-    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "comment_attachment_drafts")]
-    pub struct Model {
-        #[sea_orm(primary_key, auto_increment = false)]
-        pub id: Uuid,
-        pub workspace_id: Uuid,
-        pub task_id: Option<Uuid>,
-        pub document_id: Option<Uuid>,
-        pub created_by_user_id: Option<Uuid>,
-        pub created_by_api_key_id: Option<Uuid>,
-        pub create_token: String,
-        pub create_digest: Vec<u8>,
-        pub state: String,
-        pub finalized_comment_id: Option<Uuid>,
-        pub final_body_digest: Option<Vec<u8>>,
-        pub final_request_digest: Option<Vec<u8>>,
-        pub expires_at: DateTime<Utc>,
-        pub terminal_at: Option<DateTime<Utc>>,
-        pub created_at: DateTime<Utc>,
-        pub updated_at: DateTime<Utc>,
-    }
-
-    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
-
-    impl ActiveModelBehavior for ActiveModel {}
-}
-
-pub mod comment_attachment_draft_upload {
-    use super::*;
-
-    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "comment_attachment_draft_uploads")]
-    pub struct Model {
-        #[sea_orm(primary_key, auto_increment = false)]
-        pub draft_id: Uuid,
-        #[sea_orm(primary_key, auto_increment = false)]
-        pub upload_token: String,
-        pub original_attachment_id: Uuid,
-        pub attachment_id: Option<Uuid>,
-        pub request_digest: Vec<u8>,
-        pub payload_digest: Vec<u8>,
-        pub file_name: String,
-        pub content_type: String,
-        pub size_bytes: i64,
-        pub deleted_at: Option<DateTime<Utc>>,
-        pub created_at: DateTime<Utc>,
-        pub updated_at: DateTime<Utc>,
-    }
-
-    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
-
-    impl ActiveModelBehavior for ActiveModel {}
-}
+// R1 scaffolding: `comment_attachment_draft`'s and
+// `comment_attachment_draft_upload`'s entity structs now live in
+// `atlas_acta_postgres::entities::documents` (S4 PR2). Their `_from`
+// conversions below stay here because they call `actor_from_columns`, which
+// lives in `boards_tasks` and only moves to `atlas_acta_postgres` in PR3.
+// Re-exporting the entity structs keeps every existing
+// `crate::persistence::entities::comments::comment_attachment_draft*` call
+// site unaffected by the move (retired at S5 per the S2/S3 plan).
+pub use atlas_acta_postgres::entities::documents::{
+    comment_attachment_draft, comment_attachment_draft_upload,
+};
 
 pub fn comment_from(m: comment::Model) -> Comment {
     Comment {
