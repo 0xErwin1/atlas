@@ -27,7 +27,8 @@ async fn add_agent(
     );
     db.api_key_repo()
         .create(
-            &ctx,
+            atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+            &ctx.actor,
             NewApiKey {
                 name: name.to_string(),
                 token_hash: format!("hash-{name}"),
@@ -602,7 +603,8 @@ async fn agent_with_all_capabilities_and_editor_grant_cannot_create_project_gran
     let key = db
         .api_key_repo()
         .create(
-            &ctx,
+            atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+            &ctx.actor,
             NewApiKey {
                 name: "grant-allcap-agent".to_string(),
                 token_hash: hash,
@@ -614,8 +616,8 @@ async fn agent_with_all_capabilities_and_editor_grant_cannot_create_project_gran
         .await
         .expect("create all-capability agent key");
 
-    use atlas_domain::entities::permissions::NewPermissionGrant;
     use atlas_domain::ids::{ApiKeyId, ProjectId};
+    use atlas_server::authz::policy::NewPermissionGrant;
     use atlas_server::persistence::repos::PermissionGrantRepo;
     let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
         conn: db.conn().clone(),

@@ -209,7 +209,8 @@ async fn create_api_key(
     let ctx = support::ctx(ws, user);
     let created = repo
         .create(
-            &ctx,
+            atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+            &ctx.actor,
             NewApiKey {
                 name: "scope-key".into(),
                 token_hash: format!("hash-{}", uuid::Uuid::now_v7()),
@@ -230,8 +231,8 @@ async fn grant_to_api_key(
     project_id: Option<atlas_domain::ids::ProjectId>,
     folder_id: Option<atlas_domain::ids::FolderId>,
 ) {
-    use atlas_domain::entities::permissions::NewPermissionGrant;
     use atlas_domain::permissions::ResourceRole;
+    use atlas_server::authz::policy::NewPermissionGrant;
     use atlas_server::persistence::repos::{PermissionGrantRepo, PgPermissionGrantRepo};
     let repo = PgPermissionGrantRepo {
         conn: db.conn().clone(),

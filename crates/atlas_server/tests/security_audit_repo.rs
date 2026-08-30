@@ -20,7 +20,7 @@ use sea_orm::{ConnectionTrait, TransactionTrait};
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 fn user_event(
-    ws_id: Option<atlas_domain::ids::WorkspaceId>,
+    ws_id: Option<atlas_custos::WorkspaceScope>,
     actor_id: UserId,
 ) -> NewSecurityAuditEvent {
     NewSecurityAuditEvent {
@@ -51,14 +51,19 @@ async fn append_in_inserts_user_actor_row() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let (ws, user) = support::seed_workspace(&db, "sal-user-actor").await;
 
-    let event = user_event(Some(ws.id), user.id);
+    let event = user_event(Some(atlas_custos::WorkspaceScope(ws.id.0)), user.id);
     PgSecurityAuditRepo::append_in(db.conn(), event)
         .await
         .expect("append_in");
 
     let repo = PgSecurityAuditRepo::new(db.conn().clone());
     let rows = repo
-        .list_for_workspace(ws.id, &AuditFilters::default(), None, 10)
+        .list_for_workspace(
+            atlas_custos::WorkspaceScope(ws.id.0),
+            &AuditFilters::default(),
+            None,
+            10,
+        )
         .await
         .expect("list_for_workspace");
 
@@ -67,7 +72,10 @@ async fn append_in_inserts_user_actor_row() {
         rows[0].actor,
         Actor::User(atlas_domain::UserAttributionId(user.id.0))
     );
-    assert_eq!(rows[0].workspace_id, Some(ws.id));
+    assert_eq!(
+        rows[0].workspace_id,
+        Some(atlas_custos::WorkspaceScope(ws.id.0))
+    );
 
     db.teardown().await;
 }
@@ -86,7 +94,8 @@ async fn append_in_inserts_api_key_actor_row() {
     let key = db
         .api_key_repo()
         .create(
-            &ctx,
+            atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+            &ctx.actor,
             NewApiKey {
                 name: "sal-key".into(),
                 token_hash,
@@ -150,7 +159,12 @@ async fn append_in_platform_event_has_null_workspace() {
     );
 
     let ws_rows = repo
-        .list_for_workspace(ws.id, &AuditFilters::default(), None, 10)
+        .list_for_workspace(
+            atlas_custos::WorkspaceScope(ws.id.0),
+            &AuditFilters::default(),
+            None,
+            10,
+        )
         .await
         .expect("list_for_workspace");
     assert_eq!(
@@ -174,7 +188,7 @@ async fn append_in_metadata_json_round_trips() {
     });
 
     let event = NewSecurityAuditEvent {
-        workspace_id: Some(ws.id),
+        workspace_id: Some(atlas_custos::WorkspaceScope(ws.id.0)),
         actor: Actor::User(atlas_domain::UserAttributionId(user.id.0)),
         action: SecurityAction::MembershipRoleChanged,
         target_type: "user".into(),
@@ -188,7 +202,12 @@ async fn append_in_metadata_json_round_trips() {
 
     let repo = PgSecurityAuditRepo::new(db.conn().clone());
     let rows = repo
-        .list_for_workspace(ws.id, &AuditFilters::default(), None, 10)
+        .list_for_workspace(
+            atlas_custos::WorkspaceScope(ws.id.0),
+            &AuditFilters::default(),
+            None,
+            10,
+        )
         .await
         .expect("list_for_workspace");
 
@@ -210,15 +229,23 @@ async fn append_in_inside_rolled_back_txn_leaves_no_row() {
 
     let txn = db.conn().begin().await.expect("begin txn");
 
-    PgSecurityAuditRepo::append_in(&txn, user_event(Some(ws.id), user.id))
-        .await
-        .expect("append_in inside txn");
+    PgSecurityAuditRepo::append_in(
+        &txn,
+        user_event(Some(atlas_custos::WorkspaceScope(ws.id.0)), user.id),
+    )
+    .await
+    .expect("append_in inside txn");
 
     txn.rollback().await.expect("rollback");
 
     let repo = PgSecurityAuditRepo::new(db.conn().clone());
     let rows = repo
-        .list_for_workspace(ws.id, &AuditFilters::default(), None, 10)
+        .list_for_workspace(
+            atlas_custos::WorkspaceScope(ws.id.0),
+            &AuditFilters::default(),
+            None,
+            10,
+        )
         .await
         .expect("list_for_workspace after rollback");
 
@@ -238,15 +265,23 @@ async fn append_in_inside_committed_txn_persists_row() {
 
     let txn = db.conn().begin().await.expect("begin txn");
 
-    PgSecurityAuditRepo::append_in(&txn, user_event(Some(ws.id), user.id))
-        .await
-        .expect("append_in inside txn");
+    PgSecurityAuditRepo::append_in(
+        &txn,
+        user_event(Some(atlas_custos::WorkspaceScope(ws.id.0)), user.id),
+    )
+    .await
+    .expect("append_in inside txn");
 
     txn.commit().await.expect("commit");
 
     let repo = PgSecurityAuditRepo::new(db.conn().clone());
     let rows = repo
-        .list_for_workspace(ws.id, &AuditFilters::default(), None, 10)
+        .list_for_workspace(
+            atlas_custos::WorkspaceScope(ws.id.0),
+            &AuditFilters::default(),
+            None,
+            10,
+        )
         .await
         .expect("list_for_workspace after commit");
 
@@ -330,7 +365,7 @@ async fn list_for_workspace_returns_newest_first() {
         PgSecurityAuditRepo::append_in(
             db.conn(),
             NewSecurityAuditEvent {
-                workspace_id: Some(ws.id),
+                workspace_id: Some(atlas_custos::WorkspaceScope(ws.id.0)),
                 actor: Actor::User(atlas_domain::UserAttributionId(user.id.0)),
                 action,
                 target_type: "user".into(),
@@ -345,7 +380,12 @@ async fn list_for_workspace_returns_newest_first() {
     }
 
     let rows = repo
-        .list_for_workspace(ws.id, &AuditFilters::default(), None, 10)
+        .list_for_workspace(
+            atlas_custos::WorkspaceScope(ws.id.0),
+            &AuditFilters::default(),
+            None,
+            10,
+        )
         .await
         .expect("list_for_workspace");
 
@@ -371,14 +411,22 @@ async fn list_for_workspace_keyset_paginates() {
     let repo = PgSecurityAuditRepo::new(db.conn().clone());
 
     for _ in 0..5 {
-        PgSecurityAuditRepo::append_in(db.conn(), user_event(Some(ws.id), user.id))
-            .await
-            .expect("append");
+        PgSecurityAuditRepo::append_in(
+            db.conn(),
+            user_event(Some(atlas_custos::WorkspaceScope(ws.id.0)), user.id),
+        )
+        .await
+        .expect("append");
         tokio::time::sleep(std::time::Duration::from_millis(2)).await;
     }
 
     let page1 = repo
-        .list_for_workspace(ws.id, &AuditFilters::default(), None, 3)
+        .list_for_workspace(
+            atlas_custos::WorkspaceScope(ws.id.0),
+            &AuditFilters::default(),
+            None,
+            3,
+        )
         .await
         .expect("page1");
     assert_eq!(page1.len(), 3, "first page must have 3 rows");
@@ -390,7 +438,12 @@ async fn list_for_workspace_keyset_paginates() {
     };
 
     let page2 = repo
-        .list_for_workspace(ws.id, &AuditFilters::default(), Some(cursor), 10)
+        .list_for_workspace(
+            atlas_custos::WorkspaceScope(ws.id.0),
+            &AuditFilters::default(),
+            Some(cursor),
+            10,
+        )
         .await
         .expect("page2");
     assert_eq!(page2.len(), 2, "second page must have the remaining 2 rows");
@@ -420,7 +473,7 @@ async fn list_for_workspace_filter_by_action() {
         PgSecurityAuditRepo::append_in(
             db.conn(),
             NewSecurityAuditEvent {
-                workspace_id: Some(ws.id),
+                workspace_id: Some(atlas_custos::WorkspaceScope(ws.id.0)),
                 actor: Actor::User(atlas_domain::UserAttributionId(user.id.0)),
                 action,
                 target_type: "user".into(),
@@ -437,7 +490,7 @@ async fn list_for_workspace_filter_by_action() {
         ..Default::default()
     };
     let rows = repo
-        .list_for_workspace(ws.id, &filters, None, 10)
+        .list_for_workspace(atlas_custos::WorkspaceScope(ws.id.0), &filters, None, 10)
         .await
         .expect("filtered list");
 
@@ -469,20 +522,26 @@ async fn list_for_workspace_filter_by_actor_user_id() {
 
     let repo = PgSecurityAuditRepo::new(db.conn().clone());
 
-    PgSecurityAuditRepo::append_in(db.conn(), user_event(Some(ws.id), user_a.id))
-        .await
-        .expect("append a");
+    PgSecurityAuditRepo::append_in(
+        db.conn(),
+        user_event(Some(atlas_custos::WorkspaceScope(ws.id.0)), user_a.id),
+    )
+    .await
+    .expect("append a");
 
-    PgSecurityAuditRepo::append_in(db.conn(), user_event(Some(ws.id), user_b.id))
-        .await
-        .expect("append b");
+    PgSecurityAuditRepo::append_in(
+        db.conn(),
+        user_event(Some(atlas_custos::WorkspaceScope(ws.id.0)), user_b.id),
+    )
+    .await
+    .expect("append b");
 
     let filters = AuditFilters {
         actor_user_id: Some(user_a.id),
         ..Default::default()
     };
     let rows = repo
-        .list_for_workspace(ws.id, &filters, None, 10)
+        .list_for_workspace(atlas_custos::WorkspaceScope(ws.id.0), &filters, None, 10)
         .await
         .expect("filtered by actor");
 
@@ -501,23 +560,29 @@ async fn list_for_workspace_filter_by_date_range() {
     let (ws, user) = support::seed_workspace(&db, "sal-date-filter").await;
     let repo = PgSecurityAuditRepo::new(db.conn().clone());
 
-    PgSecurityAuditRepo::append_in(db.conn(), user_event(Some(ws.id), user.id))
-        .await
-        .expect("append before");
+    PgSecurityAuditRepo::append_in(
+        db.conn(),
+        user_event(Some(atlas_custos::WorkspaceScope(ws.id.0)), user.id),
+    )
+    .await
+    .expect("append before");
 
     let mid = chrono::Utc::now();
     tokio::time::sleep(std::time::Duration::from_millis(5)).await;
 
-    PgSecurityAuditRepo::append_in(db.conn(), user_event(Some(ws.id), user.id))
-        .await
-        .expect("append after");
+    PgSecurityAuditRepo::append_in(
+        db.conn(),
+        user_event(Some(atlas_custos::WorkspaceScope(ws.id.0)), user.id),
+    )
+    .await
+    .expect("append after");
 
     let filters = AuditFilters {
         from: Some(mid),
         ..Default::default()
     };
     let rows = repo
-        .list_for_workspace(ws.id, &filters, None, 10)
+        .list_for_workspace(atlas_custos::WorkspaceScope(ws.id.0), &filters, None, 10)
         .await
         .expect("date-filtered list");
 
@@ -534,16 +599,24 @@ async fn workspace_and_platform_events_are_partitioned() {
     let (ws, user) = support::seed_workspace(&db, "sal-partition").await;
     let repo = PgSecurityAuditRepo::new(db.conn().clone());
 
-    PgSecurityAuditRepo::append_in(db.conn(), user_event(Some(ws.id), user.id))
-        .await
-        .expect("workspace event");
+    PgSecurityAuditRepo::append_in(
+        db.conn(),
+        user_event(Some(atlas_custos::WorkspaceScope(ws.id.0)), user.id),
+    )
+    .await
+    .expect("workspace event");
 
     PgSecurityAuditRepo::append_in(db.conn(), platform_event(user.id))
         .await
         .expect("platform event");
 
     let ws_rows = repo
-        .list_for_workspace(ws.id, &AuditFilters::default(), None, 10)
+        .list_for_workspace(
+            atlas_custos::WorkspaceScope(ws.id.0),
+            &AuditFilters::default(),
+            None,
+            10,
+        )
         .await
         .expect("workspace rows");
     let pl_rows = repo
@@ -578,7 +651,7 @@ async fn audit_row_survives_target_deleted_no_fk_on_target_id() {
     let target_id = uuid::Uuid::now_v7();
 
     let event = NewSecurityAuditEvent {
-        workspace_id: Some(ws.id),
+        workspace_id: Some(atlas_custos::WorkspaceScope(ws.id.0)),
         actor: Actor::User(atlas_domain::UserAttributionId(user.id.0)),
         action: SecurityAction::UserDisabled,
         target_type: "user".into(),
@@ -591,7 +664,12 @@ async fn audit_row_survives_target_deleted_no_fk_on_target_id() {
         .expect("append event");
 
     let rows = repo
-        .list_for_workspace(ws.id, &AuditFilters::default(), None, 10)
+        .list_for_workspace(
+            atlas_custos::WorkspaceScope(ws.id.0),
+            &AuditFilters::default(),
+            None,
+            10,
+        )
         .await
         .expect("list before delete");
     assert_eq!(rows.len(), 1);
@@ -600,7 +678,12 @@ async fn audit_row_survives_target_deleted_no_fk_on_target_id() {
     // We verify the row still exists after the referenced entity is gone by simply confirming
     // the row persists (there is nothing to delete since target_id has no FK constraint).
     let rows_after = repo
-        .list_for_workspace(ws.id, &AuditFilters::default(), None, 10)
+        .list_for_workspace(
+            atlas_custos::WorkspaceScope(ws.id.0),
+            &AuditFilters::default(),
+            None,
+            10,
+        )
         .await
         .expect("list after (no FK on target_id — row must persist)");
     assert_eq!(
@@ -632,7 +715,7 @@ async fn actor_fk_on_delete_set_null_nulls_actor_but_keeps_row() {
         .expect("create victim user");
 
     let event = NewSecurityAuditEvent {
-        workspace_id: Some(ws.id),
+        workspace_id: Some(atlas_custos::WorkspaceScope(ws.id.0)),
         actor: Actor::User(atlas_domain::UserAttributionId(victim.id.0)),
         action: SecurityAction::MembershipRemoved,
         target_type: "user".into(),
@@ -651,7 +734,12 @@ async fn actor_fk_on_delete_set_null_nulls_actor_but_keeps_row() {
         .expect("delete victim user");
 
     let rows = repo
-        .list_for_workspace(ws.id, &AuditFilters::default(), None, 10)
+        .list_for_workspace(
+            atlas_custos::WorkspaceScope(ws.id.0),
+            &AuditFilters::default(),
+            None,
+            10,
+        )
         .await
         .expect("list after actor delete");
 

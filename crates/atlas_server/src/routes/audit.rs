@@ -72,7 +72,12 @@ pub(crate) async fn list_workspace_audit(
 
     let repo = PgSecurityAuditRepo::new((*state.db).clone());
     let mut rows = repo
-        .list_for_workspace(owner_or_admin.workspace.id, &filters, cursor, limit + 1)
+        .list_for_workspace(
+            atlas_custos::WorkspaceScope(owner_or_admin.workspace.id.0),
+            &filters,
+            cursor,
+            limit + 1,
+        )
         .await
         .map_err(ApiError::Domain)?;
 

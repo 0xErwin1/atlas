@@ -19,10 +19,11 @@ use atlas_api::dtos::{
 use atlas_client::ClientError;
 use atlas_domain::{
     Actor, WorkspaceCtx,
-    entities::{identity::MemberRole, permissions::NewPermissionGrant},
+    entities::identity::MemberRole,
     ids::{ApiKeyId, ProjectId},
     permissions::ResourceRole,
 };
+use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::persistence::repos::{
     MembershipRepo, NewUser, PermissionGrantRepo, PgGroupRepo, PgPermissionGrantRepo, UserRepo,
 };
@@ -916,7 +917,7 @@ async fn upsert_group_grant_reads_back_correct_row() {
     use atlas_domain::entities::groups::NewGroup;
     let group = group_repo
         .create(NewGroup {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope(ws.id.0),
             name: "gg-upsert-group".to_string(),
             created_by: owner_user.id,
         })

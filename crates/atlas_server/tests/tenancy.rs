@@ -25,7 +25,10 @@ async fn api_key_repo_workspace_isolation() {
 
     let repo = db.api_key_repo();
 
-    let keys_a = repo.list(&ctx_a).await.expect("list keys for workspace A");
+    let keys_a = repo
+        .list(atlas_custos::WorkspaceScope(ctx_a.workspace_id.0))
+        .await
+        .expect("list keys for workspace A");
     assert!(
         keys_a.is_empty(),
         "workspace A must not see workspace B's api keys"

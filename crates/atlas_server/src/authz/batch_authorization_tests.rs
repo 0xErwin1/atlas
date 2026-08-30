@@ -3,14 +3,15 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
+use super::policy::{ChainSegment, ResourceChain};
 use async_trait::async_trait;
 use atlas_domain::{
     DomainError,
     entities::identity::MemberRole,
     ids::{ApiKeyId, DocumentId, ProjectId, UserId, WorkspaceId},
     permissions::{
-        Capability, CapabilityAction, CapabilityFamily, ChainSegment, Principal, ResourceChain,
-        ResourceRef, ResourceRole, Visibility, VisibilityRole,
+        Capability, CapabilityAction, CapabilityFamily, Principal, ResourceRef, ResourceRole,
+        Visibility, VisibilityRole,
     },
 };
 use uuid::Uuid;

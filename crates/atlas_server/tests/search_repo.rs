@@ -18,7 +18,6 @@ use atlas_domain::{
     entities::{
         boards_tasks::{NewBoard, NewTask, PositionBetween},
         documents::NewDocument,
-        permissions::NewPermissionGrant,
         workspace_core::NewProject,
     },
     ids::{BoardId, DocumentId, ProjectId, UserId, WorkspaceId},
@@ -26,6 +25,7 @@ use atlas_domain::{
     ports::search::{SearchAfter, SearchRepo, SortKey},
     search::{SearchQuery, SearchSort, TypeSet},
 };
+use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::persistence::repos::{
     BoardRepo, DocumentRepo, FolderRepo, PermissionGrantRepo, PgBoardRepo, PgDocumentRepo,
     PgFolderRepo, PgPermissionGrantRepo, PgProjectRepo, PgSearchRepo, PgTaskRepo, ProjectRepo,

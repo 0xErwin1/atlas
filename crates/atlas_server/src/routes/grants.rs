@@ -29,10 +29,7 @@ use atlas_api::{
 };
 use atlas_domain::{
     Actor,
-    entities::{
-        permissions::NewPermissionGrant,
-        security_audit::{NewSecurityAuditEvent, SecurityAction},
-    },
+    entities::security_audit::{NewSecurityAuditEvent, SecurityAction},
     ids::{ApiKeyId, GroupId, UserId},
     permissions::{
         Principal, ResourceRef, ResourceRole, ShareDenied, authorize_grant_target, authorize_share,
@@ -43,6 +40,7 @@ use crate::{
     authz::{
         Authorized, EditorMin, GrantsRead,
         authorized::{ProjectRes, WorkspaceRes},
+        policy::{NewPermissionGrant, PermissionGrant, PermissionGrantId},
     },
     error::ApiError,
     persistence::repos::{
@@ -143,7 +141,7 @@ pub(crate) async fn create_project_grant(
     PgSecurityAuditRepo::append_in(
         &txn,
         NewSecurityAuditEvent {
-            workspace_id: Some(auth.workspace.id),
+            workspace_id: Some(atlas_custos::WorkspaceScope(auth.workspace.id.0)),
             actor,
             action: SecurityAction::GrantCreated,
             target_type: "grant".to_string(),
@@ -246,7 +244,7 @@ pub(crate) async fn delete_project_grant(
     Path(params): Path<ProjectGrantPath>,
 ) -> Result<StatusCode, ApiError> {
     let grant_uuid = params.grant_id;
-    let grant_id = atlas_domain::entities::permissions::PermissionGrantId(grant_uuid);
+    let grant_id = PermissionGrantId(grant_uuid);
 
     let grant_repo = PgPermissionGrantRepo {
         conn: (*state.db).clone(),
@@ -256,7 +254,7 @@ pub(crate) async fn delete_project_grant(
         .find_by_id(
             auth.workspace.id,
             &ResourceRef::Project(auth.resource.0.id),
-            atlas_domain::entities::permissions::PermissionGrantId(grant_uuid),
+            PermissionGrantId(grant_uuid),
         )
         .await
         .map_err(|e| ApiError::Internal {
@@ -297,7 +295,7 @@ pub(crate) async fn delete_project_grant(
     PgSecurityAuditRepo::append_in(
         &txn,
         NewSecurityAuditEvent {
-            workspace_id: Some(auth.workspace.id),
+            workspace_id: Some(atlas_custos::WorkspaceScope(auth.workspace.id.0)),
             actor,
             action: SecurityAction::GrantRevoked,
             target_type: "grant".to_string(),
@@ -404,7 +402,7 @@ pub(crate) async fn create_workspace_grant(
     PgSecurityAuditRepo::append_in(
         &txn,
         NewSecurityAuditEvent {
-            workspace_id: Some(auth.workspace.id),
+            workspace_id: Some(atlas_custos::WorkspaceScope(auth.workspace.id.0)),
             actor,
             action: SecurityAction::GrantCreated,
             target_type: "grant".to_string(),
@@ -509,7 +507,7 @@ pub(crate) async fn delete_workspace_grant(
     Path(params): Path<WorkspaceGrantPath>,
 ) -> Result<StatusCode, ApiError> {
     let grant_uuid = params.grant_id;
-    let grant_id = atlas_domain::entities::permissions::PermissionGrantId(grant_uuid);
+    let grant_id = PermissionGrantId(grant_uuid);
 
     let grant_repo = PgPermissionGrantRepo {
         conn: (*state.db).clone(),
@@ -519,7 +517,7 @@ pub(crate) async fn delete_workspace_grant(
         .find_by_id(
             auth.workspace.id,
             &ResourceRef::Workspace,
-            atlas_domain::entities::permissions::PermissionGrantId(grant_uuid),
+            PermissionGrantId(grant_uuid),
         )
         .await
         .map_err(|e| ApiError::Internal {
@@ -560,7 +558,7 @@ pub(crate) async fn delete_workspace_grant(
     PgSecurityAuditRepo::append_in(
         &txn,
         NewSecurityAuditEvent {
-            workspace_id: Some(auth.workspace.id),
+            workspace_id: Some(atlas_custos::WorkspaceScope(auth.workspace.id.0)),
             actor,
             action: SecurityAction::GrantRevoked,
             target_type: "grant".to_string(),
@@ -694,7 +692,7 @@ async fn parse_principal(
 
             use atlas_domain::ports::group_repo::GroupRepo as GroupRepoTrait;
             let group = group_repo
-                .get(gid, *workspace_id)
+                .get(gid, atlas_custos::WorkspaceScope(workspace_id.0))
                 .await
                 .map_err(|e| ApiError::Internal {
                     message: e.to_string(),
@@ -740,10 +738,7 @@ fn role_str(r: ResourceRole) -> String {
     }
 }
 
-fn grant_to_dto(
-    grant: &atlas_domain::entities::permissions::PermissionGrant,
-    principal: &GrantPrincipal,
-) -> GrantDto {
+fn grant_to_dto(grant: &PermissionGrant, principal: &GrantPrincipal) -> GrantDto {
     GrantDto {
         id: grant.id.0,
         principal: GrantPrincipal {
@@ -770,7 +765,7 @@ fn share_denied_to_api_error(denied: ShareDenied) -> ApiError {
     ApiError::Forbidden { message }
 }
 
-fn grant_domain_to_dto(grant: &atlas_domain::entities::permissions::PermissionGrant) -> GrantDto {
+fn grant_domain_to_dto(grant: &PermissionGrant) -> GrantDto {
     let (principal_type, principal_id) = if let Some(uid) = grant.user_id {
         ("user".to_string(), uid.0)
     } else if let Some(kid) = grant.api_key_id {

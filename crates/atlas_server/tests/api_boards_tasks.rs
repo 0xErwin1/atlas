@@ -20,9 +20,10 @@ use atlas_api::dtos::{
 use atlas_api::problem::ProblemDetails;
 use atlas_client::ClientError;
 use atlas_domain::{
-    Actor, WorkspaceCtx, entities::identity::MemberRole, entities::permissions::NewPermissionGrant,
-    ids::BoardId, ids::UserId, permissions::ResourceRole,
+    Actor, WorkspaceCtx, entities::identity::MemberRole, ids::BoardId, ids::UserId,
+    permissions::ResourceRole,
 };
+use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::persistence::repos::{
     MembershipRepo, NewUser, PermissionGrantRepo, PgPermissionGrantRepo, UserRepo,
 };

@@ -637,7 +637,7 @@ async fn semantic_search_api_key_scope_filters_hit_families() {
     PgPermissionGrantRepo {
         conn: db.conn().clone(),
     }
-    .upsert(atlas_domain::entities::permissions::NewPermissionGrant {
+    .upsert(atlas_server::authz::policy::NewPermissionGrant {
         workspace_id: ws.id,
         user_id: None,
         api_key_id: Some(key_id),

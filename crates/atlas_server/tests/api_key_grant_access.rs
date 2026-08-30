@@ -17,7 +17,8 @@ use atlas_api::dtos::{
     boards_tasks::{CreateBoardRequest, CreateColumnRequest, CreateTaskRequest},
 };
 use atlas_client::ClientError;
-use atlas_domain::{Actor, WorkspaceCtx, entities::permissions::NewPermissionGrant};
+use atlas_domain::{Actor, WorkspaceCtx};
+use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::persistence::repos::{
     ApiKeyRepo, MembershipRepo, NewApiKey, NewUser, PermissionGrantRepo, PgPermissionGrantRepo,
     UserRepo,
@@ -47,7 +48,8 @@ async fn create_ungrant_key(
     let key = db
         .api_key_repo()
         .create(
-            &ctx,
+            atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+            &ctx.actor,
             NewApiKey {
                 name: name.to_string(),
                 token_hash: hash,
@@ -511,7 +513,8 @@ async fn data_migration_backfills_grant_for_existing_workspace_key() {
     let key = db
         .api_key_repo()
         .create(
-            &ctx,
+            atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+            &ctx.actor,
             NewApiKey {
                 name: "migrated-key".to_string(),
                 token_hash: "atlas_migrated_hash_b205".to_string(),

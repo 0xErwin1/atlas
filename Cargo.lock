@@ -649,6 +649,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas_custos"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "atlas_core",
+ "chrono",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "atlas_desktop"
 version = "0.0.0"
 dependencies = [
@@ -687,6 +699,7 @@ version = "0.0.0"
 dependencies = [
  "async-trait",
  "atlas_core",
+ "atlas_custos",
  "bytes",
  "chrono",
  "diffy-imara",
@@ -745,6 +758,7 @@ dependencies = [
  "atlas_api",
  "atlas_client",
  "atlas_core",
+ "atlas_custos",
  "atlas_domain",
  "atlas_postgres",
  "atlas_test_db",

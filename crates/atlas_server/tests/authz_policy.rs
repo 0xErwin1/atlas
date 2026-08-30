@@ -6,10 +6,10 @@ use atlas_domain::entities::identity::MemberRole;
 use atlas_domain::error::DomainError;
 use atlas_domain::ids::{ApiKeyId, BoardId, DocumentId, ProjectId, TaskId, UserId};
 use atlas_domain::permissions::{
-    Capability, CapabilityAction, CapabilityFamily, ChainSegment, Principal, ResolutionInput,
-    ResourceChain, ResourceRef, ResourceRole, ShareDenied, Visibility, VisibilityRole,
-    authorize_share, resolve, validate_reference,
+    Capability, CapabilityAction, CapabilityFamily, Principal, ResourceRef, ResourceRole,
+    ShareDenied, Visibility, VisibilityRole, authorize_share, validate_reference,
 };
+use atlas_server::authz::policy::{ChainSegment, ResolutionInput, ResourceChain, resolve};
 
 fn user_principal() -> Principal {
     Principal::User(UserId::new())

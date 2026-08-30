@@ -65,9 +65,14 @@ async fn fetch_audit(
     let repo = PgSecurityAuditRepo {
         conn: db.conn().clone(),
     };
-    repo.list_for_workspace(ws_id, &AuditFilters::default(), None, 100)
-        .await
-        .expect("list audit")
+    repo.list_for_workspace(
+        atlas_custos::WorkspaceScope(ws_id.0),
+        &AuditFilters::default(),
+        None,
+        100,
+    )
+    .await
+    .expect("list audit")
 }
 
 // ---------------------------------------------------------------------------

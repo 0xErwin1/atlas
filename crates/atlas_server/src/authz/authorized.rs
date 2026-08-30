@@ -15,13 +15,13 @@ use atlas_domain::{
     entities::workspace_core::Project,
     ids::{ApiKeyId, DocumentId, FolderId, ProjectId, UserId},
     permissions::{
-        Capability, CapabilityAction, CapabilityFamily, ChainSegment, Principal, ResolutionInput,
-        ResourceChain, ResourceRef, ResourceRole, Visibility,
+        Capability, CapabilityAction, CapabilityFamily, Principal, ResourceRef, ResourceRole,
+        Visibility,
     },
-    ports::permission_grant_repo::ResolutionQuery,
 };
 
 use super::batch_authorization::ProjectionAuthContext;
+use super::policy::{ChainSegment, ResolutionInput, ResolutionQuery, ResourceChain, resolve};
 use crate::{
     auth::middleware::Principal as MiddlewarePrincipal,
     error::ApiError,
@@ -1325,7 +1325,7 @@ async fn resolve_grant_role(
         grants: &grants,
     };
 
-    Ok(atlas_domain::permissions::resolve(&input))
+    Ok(resolve(&input))
 }
 
 /// Resolves an api key's effective role under two invariants:

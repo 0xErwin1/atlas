@@ -86,7 +86,7 @@ impl PgPurgeOperationRepo {
             commit_audit_id: Set(operation.commit_audit_id.0),
             status: Set(PurgeStatus::DbCommitted.as_str().into()),
             attempts: Set(0),
-            last_action: Set(PurgeStatus::DbCommitted.security_action().as_str().into()),
+            last_action: Set(PurgeStatus::DbCommitted.audit_action_str().into()),
             last_executor_type: Set(PurgeExecutor::User.as_str().into()),
             last_executor_id: Set(Some(operation.original_actor_user_id.0)),
             last_error: Set(None),
@@ -134,7 +134,7 @@ impl PgPurgeOperationRepo {
         let updated = purge_operation::ActiveModel {
             status: Set(status.as_str().into()),
             attempts: Set(attempts),
-            last_action: Set(status.security_action().as_str().into()),
+            last_action: Set(status.audit_action_str().into()),
             last_executor_type: Set(executor.as_str().into()),
             last_executor_id: Set(None),
             last_error: Set(error),
@@ -267,9 +267,9 @@ fn purge_operation_from(model: purge_operation::Model) -> Result<PurgeOperation,
         .map_err(|message| DomainError::Internal {
             message: format!("invalid stored purge status: {message}"),
         })?;
-    let expected_action = status.security_action();
+    let expected_action = status.audit_action_str();
 
-    if model.last_action != expected_action.as_str() {
+    if model.last_action != expected_action {
         return Err(DomainError::Internal {
             message: "stored purge status and action do not match".into(),
         });
@@ -296,7 +296,7 @@ fn purge_operation_from(model: purge_operation::Model) -> Result<PurgeOperation,
         commit_audit_id: SecurityAuditId(model.commit_audit_id),
         status,
         attempts,
-        last_action: expected_action,
+        last_action: expected_action.to_string(),
         last_executor: executor,
         last_error: model.last_error,
         created_at: model.created_at,

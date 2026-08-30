@@ -702,8 +702,13 @@ pub struct PgApiKeyRepo {
 
 #[async_trait]
 impl ApiKeyRepo for PgApiKeyRepo {
-    async fn create(&self, ctx: &WorkspaceCtx, new: NewApiKey) -> Result<ApiKey, DomainError> {
-        let created_by_user_id = match ctx.actor {
+    async fn create(
+        &self,
+        scope: atlas_custos::WorkspaceScope,
+        created_by: &Actor,
+        new: NewApiKey,
+    ) -> Result<ApiKey, DomainError> {
+        let created_by_user_id = match created_by {
             Actor::User(uid) => uid.0,
             Actor::ApiKey(_) => {
                 return Err(DomainError::InvalidInput {
@@ -713,7 +718,7 @@ impl ApiKeyRepo for PgApiKeyRepo {
         };
         let model = api_key::ActiveModel {
             id: Set(ApiKeyId::new().0),
-            workspace_id: Set(Some(ctx.workspace_id.0)),
+            workspace_id: Set(Some(scope.0)),
             created_by_user_id: Set(created_by_user_id),
             name: Set(new.name),
             token_hash: Set(new.token_hash),
@@ -798,7 +803,7 @@ impl ApiKeyRepo for PgApiKeyRepo {
 
         Ok(rows.into_iter().next().map(|r| ApiKey {
             id: ApiKeyId(r.id),
-            workspace_id: r.workspace_id.map(WorkspaceId),
+            workspace_id: r.workspace_id.map(atlas_custos::WorkspaceScope),
             created_by_user_id: UserId(r.created_by_user_id),
             name: r.name,
             token_hash: r.token_hash,
@@ -812,13 +817,17 @@ impl ApiKeyRepo for PgApiKeyRepo {
         }))
     }
 
-    async fn revoke(&self, ctx: &WorkspaceCtx, id: ApiKeyId) -> Result<(), DomainError> {
+    async fn revoke(
+        &self,
+        scope: atlas_custos::WorkspaceScope,
+        id: ApiKeyId,
+    ) -> Result<(), DomainError> {
         use sea_orm::IntoActiveModel;
 
         let txn = self.conn.begin().await.map_err(db_err)?;
 
         let row = api_key::Entity::find_by_id(id.0)
-            .filter(api_key::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(api_key::Column::WorkspaceId.eq(scope.0))
             .one(&txn)
             .await
             .map_err(db_err)?
@@ -880,9 +889,9 @@ impl ApiKeyRepo for PgApiKeyRepo {
         Ok(())
     }
 
-    async fn list(&self, ctx: &WorkspaceCtx) -> Result<Vec<ApiKey>, DomainError> {
+    async fn list(&self, scope: atlas_custos::WorkspaceScope) -> Result<Vec<ApiKey>, DomainError> {
         api_key::Entity::find()
-            .filter(api_key::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(api_key::Column::WorkspaceId.eq(scope.0))
             .filter(api_key::Column::RevokedAt.is_null())
             .all(&self.conn)
             .await
@@ -925,7 +934,7 @@ impl ApiKeyRepo for PgApiKeyRepo {
 
     async fn list_granted_in_workspace(
         &self,
-        workspace_id: WorkspaceId,
+        scope: atlas_custos::WorkspaceScope,
     ) -> Result<Vec<ApiKey>, DomainError> {
         #[derive(Debug, sea_orm::FromQueryResult)]
         struct Row {
@@ -953,7 +962,7 @@ impl ApiKeyRepo for PgApiKeyRepo {
              WHERE g.workspace_id = $1
                AND k.revoked_at IS NULL
              ORDER BY k.created_at",
-            [workspace_id.0.into()],
+            [scope.0.into()],
         ))
         .all(&self.conn)
         .await
@@ -963,7 +972,7 @@ impl ApiKeyRepo for PgApiKeyRepo {
             .into_iter()
             .map(|r| ApiKey {
                 id: ApiKeyId(r.id),
-                workspace_id: r.workspace_id.map(WorkspaceId),
+                workspace_id: r.workspace_id.map(atlas_custos::WorkspaceScope),
                 created_by_user_id: UserId(r.created_by_user_id),
                 name: r.name,
                 token_hash: r.token_hash,

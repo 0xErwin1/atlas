@@ -51,8 +51,7 @@ use atlas_domain::{
         DocumentId, TaskActivityId, TaskId, TaskReferenceId, UserId,
     },
     permissions::{
-        Capability, CapabilityAction, CapabilityFamily, ChainSegment, Principal, ResolutionInput,
-        ResourceChain, ResourceRef, ResourceRole,
+        Capability, CapabilityAction, CapabilityFamily, Principal, ResourceRef, ResourceRole,
     },
     ports::{
         boards_tasks::{WorkspaceActivityFilters, WorkspaceActivityScope},
@@ -68,7 +67,9 @@ use crate::{
         batch_authorization::{
             BatchAuthorizationService, PgBatchAuthorizationSource, ProjectionSubject,
         },
-        build_board_chain, build_document_chain, enforce_api_key_scope, resolve_effective_role,
+        build_board_chain, build_document_chain, enforce_api_key_scope,
+        policy::{ChainSegment, ResolutionInput, ResourceChain, resolve},
+        resolve_effective_role,
     },
     error::ApiError,
     persistence::entities::boards_tasks::task,
@@ -602,7 +603,7 @@ async fn board_assignees_by_task(
         PgApiKeyRepo {
             conn: (*state.db).clone(),
         }
-        .list_granted_in_workspace(ctx.workspace_id)
+        .list_granted_in_workspace(atlas_custos::WorkspaceScope(ctx.workspace_id.0))
         .await
         .map_err(ApiError::Domain)?
         .into_iter()
@@ -780,7 +781,7 @@ async fn enrich_activity_entries(
         PgApiKeyRepo {
             conn: (*state.db).clone(),
         }
-        .list_granted_in_workspace(ctx.workspace_id)
+        .list_granted_in_workspace(atlas_custos::WorkspaceScope(ctx.workspace_id.0))
         .await
         .map_err(ApiError::Domain)?
         .into_iter()
@@ -4601,7 +4602,7 @@ async fn compute_workspace_activity_scope(
             grants: &all_grants,
         };
 
-        if atlas_domain::permissions::resolve(&input).is_some() {
+        if resolve(&input).is_some() {
             accessible_project_ids.push(project.id);
         }
     }
@@ -4650,7 +4651,7 @@ async fn enrich_workspace_activity_entries(
         PgApiKeyRepo {
             conn: (*state.db).clone(),
         }
-        .list_granted_in_workspace(ctx.workspace_id)
+        .list_granted_in_workspace(atlas_custos::WorkspaceScope(ctx.workspace_id.0))
         .await
         .map_err(ApiError::Domain)?
         .into_iter()

@@ -14,6 +14,7 @@ pub mod config;
 pub mod error;
 pub mod ids;
 pub mod position;
+pub mod principal;
 pub mod registry;
 pub mod slug;
 
@@ -24,6 +25,7 @@ pub use ids::{
     ResourceRefParseError, ResourceSelector, ResourceSelectorParseError, SegmentError,
     SelectorSegment, Specificity,
 };
+pub use principal::Principal;
 
 #[cfg(test)]
 mod tests {

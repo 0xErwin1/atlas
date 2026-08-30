@@ -105,7 +105,12 @@ async fn delete_audit_idempotency_records_safe_lifecycle_events() {
 
     let audit = PgSecurityAuditRepo::new(db.conn().clone());
     let rows = audit
-        .list_for_workspace(workspace.id, &AuditFilters::default(), None, 100)
+        .list_for_workspace(
+            atlas_custos::WorkspaceScope(workspace.id.0),
+            &AuditFilters::default(),
+            None,
+            100,
+        )
         .await
         .expect("list audit rows");
     let deleted: Vec<_> = rows
@@ -130,7 +135,10 @@ async fn delete_audit_idempotency_records_safe_lifecycle_events() {
             .find(|row| row.target_type == kind && row.target_id == Some(target_id))
             .expect("lifecycle row for deleted resource");
 
-        assert_eq!(row.workspace_id, Some(workspace.id));
+        assert_eq!(
+            row.workspace_id,
+            Some(atlas_custos::WorkspaceScope(workspace.id.0))
+        );
         assert_eq!(row.actor, ctx.actor);
         assert_eq!(row.metadata, json!({ "kind": kind, "outcome": "deleted" }));
     }
@@ -151,7 +159,12 @@ async fn delete_audit_idempotency_records_safe_lifecycle_events() {
     );
 
     let retried_rows = audit
-        .list_for_workspace(workspace.id, &AuditFilters::default(), None, 100)
+        .list_for_workspace(
+            atlas_custos::WorkspaceScope(workspace.id.0),
+            &AuditFilters::default(),
+            None,
+            100,
+        )
         .await
         .expect("list audit rows after retries");
     assert_eq!(

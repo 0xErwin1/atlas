@@ -308,7 +308,8 @@ async fn draft_resolution_conceals_api_key_and_workspace_mismatches() {
     let api_key = db
         .api_key_repo()
         .create(
-            &ctx,
+            atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+            &ctx.actor,
             NewApiKey {
                 name: "draft-concealment-key".into(),
                 token_hash: format!("hash-{}", uuid::Uuid::now_v7()),

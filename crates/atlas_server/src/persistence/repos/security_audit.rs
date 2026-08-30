@@ -6,7 +6,6 @@ use atlas_domain::{
         AuditCursor, AuditFilters, NewSecurityAuditEvent, SecurityAction, SecurityAuditEvent,
     },
     entities::task_views::ActorTypeFilter,
-    ids::WorkspaceId,
     ports::security_audit::SecurityAuditRepo,
 };
 use chrono::Utc;
@@ -66,7 +65,7 @@ impl PgSecurityAuditRepo {
         Self::append_in(
             conn,
             NewSecurityAuditEvent {
-                workspace_id: Some(ctx.workspace_id),
+                workspace_id: Some(atlas_custos::WorkspaceScope(ctx.workspace_id.0)),
                 actor: ctx.actor,
                 action: SecurityAction::ResourceDeleted,
                 target_type: kind.as_str().to_string(),
@@ -89,7 +88,7 @@ impl PgSecurityAuditRepo {
         Self::append_in(
             conn,
             NewSecurityAuditEvent {
-                workspace_id: Some(ctx.workspace_id),
+                workspace_id: Some(atlas_custos::WorkspaceScope(ctx.workspace_id.0)),
                 actor: ctx.actor,
                 action: SecurityAction::ResourceRestored,
                 target_type: kind.as_str().to_string(),
@@ -134,7 +133,7 @@ impl PgSecurityAuditRepo {
 impl SecurityAuditRepo for PgSecurityAuditRepo {
     async fn list_for_workspace(
         &self,
-        ws: WorkspaceId,
+        ws: atlas_custos::WorkspaceScope,
         filters: &AuditFilters,
         cursor: Option<AuditCursor>,
         limit: u64,
@@ -234,7 +233,7 @@ impl SecurityAuditRepo for PgSecurityAuditRepo {
             .into_iter()
             .map(|r| SecurityAuditEvent {
                 id: SecurityAuditId(r.id),
-                workspace_id: r.workspace_id.map(WorkspaceId),
+                workspace_id: r.workspace_id.map(atlas_custos::WorkspaceScope),
                 actor: actor_from_row(r.actor_user_id, r.actor_api_key_id),
                 action: r.action,
                 target_type: r.target_type,
@@ -343,7 +342,7 @@ impl SecurityAuditRepo for PgSecurityAuditRepo {
             .into_iter()
             .map(|r| SecurityAuditEvent {
                 id: SecurityAuditId(r.id),
-                workspace_id: r.workspace_id.map(WorkspaceId),
+                workspace_id: r.workspace_id.map(atlas_custos::WorkspaceScope),
                 actor: actor_from_row(r.actor_user_id, r.actor_api_key_id),
                 action: r.action,
                 target_type: r.target_type,

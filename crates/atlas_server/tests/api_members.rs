@@ -9,9 +9,9 @@ mod support;
 
 use atlas_client::{AtlasClient, ClientError};
 use atlas_domain::{
-    Actor, WorkspaceCtx, entities::identity::MemberRole, entities::permissions::NewPermissionGrant,
-    permissions::ResourceRole,
+    Actor, WorkspaceCtx, entities::identity::MemberRole, permissions::ResourceRole,
 };
+use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::persistence::repos::{
     ApiKeyRepo, MembershipRepo, NewApiKey, NewUser, PermissionGrantRepo, PgPermissionGrantRepo,
     UserRepo,
@@ -61,7 +61,8 @@ async fn add_agent(
     );
     db.api_key_repo()
         .create(
-            &ctx,
+            atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+            &ctx.actor,
             NewApiKey {
                 name: name.to_string(),
                 token_hash: format!("hash-{name}"),
@@ -206,8 +207,8 @@ async fn list_members_returns_role_for_user_members_and_no_role_for_api_key_prin
     let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
         conn: db.conn().clone(),
     };
-    use atlas_domain::entities::permissions::NewPermissionGrant;
     use atlas_domain::permissions::ResourceRole;
+    use atlas_server::authz::policy::NewPermissionGrant;
     grant_repo
         .upsert(NewPermissionGrant {
             workspace_id: ws.id,
@@ -466,7 +467,8 @@ async fn workspace_owner_or_admin_api_key_returns_403() {
     );
     api_key_repo
         .create(
-            &ctx,
+            atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+            &ctx.actor,
             atlas_server::persistence::repos::NewApiKey {
                 name: "test-key-403".to_string(),
                 token_hash,

@@ -7,7 +7,6 @@ use uuid::Uuid;
 use crate::{
     DomainError,
     actor::WorkspaceCtx,
-    entities::security_audit::SecurityAction,
     ids::{PurgeOperationId, SecurityAuditId, UserId, WorkspaceId},
 };
 
@@ -77,12 +76,19 @@ impl PurgeStatus {
         }
     }
 
-    pub const fn security_action(self) -> SecurityAction {
+    /// The `security_audit_log.action` string this purge status maps to.
+    ///
+    /// Acta cannot name `SecurityAction` (a Custos type) directly (D5); this
+    /// returns the identical literal each `SecurityAction` variant produces.
+    /// `atlas_server::services::trash_service` maps back to `SecurityAction`
+    /// at the composition layer, and an `atlas_server` guard test asserts the
+    /// two catalogs stay in lockstep.
+    pub const fn audit_action_str(self) -> &'static str {
         match self {
-            Self::DbCommitted => SecurityAction::ResourcePurgeCommitted,
-            Self::CleanupPending => SecurityAction::ResourcePurgeCleanupPending,
-            Self::CleanupFailed => SecurityAction::ResourcePurgeCleanupFailed,
-            Self::Complete => SecurityAction::ResourcePurgeCompleted,
+            Self::DbCommitted => "resource.purge_committed",
+            Self::CleanupPending => "resource.purge_cleanup_pending",
+            Self::CleanupFailed => "resource.purge_cleanup_failed",
+            Self::Complete => "resource.purge_completed",
         }
     }
 }
@@ -151,7 +157,7 @@ pub struct PurgeOperation {
     pub commit_audit_id: SecurityAuditId,
     pub status: PurgeStatus,
     pub attempts: u32,
-    pub last_action: SecurityAction,
+    pub last_action: String,
     pub last_executor: PurgeExecutor,
     pub last_error: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -195,4 +201,48 @@ pub trait TrashLifecycleRepo: Send + Sync {
         ctx: &WorkspaceCtx,
         target: RestoreTarget,
     ) -> Result<Option<PurgeOperation>, DomainError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lifecycle_kinds_are_limited_to_restorable_resources() {
+        let cases = [
+            (TrashKind::Project, "project"),
+            (TrashKind::Folder, "folder"),
+            (TrashKind::Document, "document"),
+            (TrashKind::Comment, "comment"),
+            (TrashKind::Attachment, "attachment"),
+        ];
+
+        assert_eq!(TrashKind::ALL.len(), cases.len());
+
+        for (kind, value) in cases {
+            assert_eq!(kind.as_str(), value);
+            assert_eq!(value.parse::<TrashKind>(), Ok(kind));
+        }
+
+        for descendant in ["board", "column", "task", "subtask", "revision"] {
+            assert!(descendant.parse::<TrashKind>().is_err());
+        }
+    }
+
+    #[test]
+    fn purge_statuses_have_closed_audit_actions() {
+        let cases = [
+            (PurgeStatus::DbCommitted, "resource.purge_committed"),
+            (
+                PurgeStatus::CleanupPending,
+                "resource.purge_cleanup_pending",
+            ),
+            (PurgeStatus::CleanupFailed, "resource.purge_cleanup_failed"),
+            (PurgeStatus::Complete, "resource.purge_completed"),
+        ];
+
+        for (status, action) in cases {
+            assert_eq!(status.audit_action_str(), action);
+        }
+    }
 }

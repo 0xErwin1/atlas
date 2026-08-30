@@ -1,7 +1,8 @@
+use atlas_custos::WorkspaceScope;
 use atlas_domain::{
     Actor,
     entities::security_audit::SecurityAuditEvent,
-    ids::{SecurityAuditId, UserId, WorkspaceId},
+    ids::{SecurityAuditId, UserId},
 };
 use chrono::{DateTime, Utc};
 use sea_orm::entity::prelude::*;
@@ -46,7 +47,7 @@ pub fn actor_from_columns(user_id: Option<Uuid>, api_key_id: Option<Uuid>) -> Ac
 pub fn audit_event_from(m: security_audit_log::Model) -> SecurityAuditEvent {
     SecurityAuditEvent {
         id: SecurityAuditId(m.id),
-        workspace_id: m.workspace_id.map(WorkspaceId),
+        workspace_id: m.workspace_id.map(WorkspaceScope),
         actor: actor_from_columns(m.actor_user_id, m.actor_api_key_id),
         action: m.action,
         target_type: m.target_type,

@@ -35,10 +35,15 @@ use support::{TestDb, TestServer, login_user_with_workspace};
 
 async fn count_workspace_audit_rows(db: &TestDb, ws_id: WorkspaceId) -> usize {
     let repo = PgSecurityAuditRepo::new(db.conn().clone());
-    repo.list_for_workspace(ws_id, &AuditFilters::default(), None, 100)
-        .await
-        .expect("list_for_workspace")
-        .len()
+    repo.list_for_workspace(
+        atlas_custos::WorkspaceScope(ws_id.0),
+        &AuditFilters::default(),
+        None,
+        100,
+    )
+    .await
+    .expect("list_for_workspace")
+    .len()
 }
 
 async fn audit_rows_for_workspace(
@@ -46,9 +51,14 @@ async fn audit_rows_for_workspace(
     ws_id: WorkspaceId,
 ) -> Vec<atlas_domain::entities::security_audit::SecurityAuditEvent> {
     let repo = PgSecurityAuditRepo::new(db.conn().clone());
-    repo.list_for_workspace(ws_id, &AuditFilters::default(), None, 100)
-        .await
-        .expect("list_for_workspace")
+    repo.list_for_workspace(
+        atlas_custos::WorkspaceScope(ws_id.0),
+        &AuditFilters::default(),
+        None,
+        100,
+    )
+    .await
+    .expect("list_for_workspace")
 }
 
 async fn add_member_to_ws(
@@ -126,7 +136,8 @@ async fn create_agent_key(
     );
     db.api_key_repo()
         .create(
-            &ctx,
+            atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+            &ctx.actor,
             NewApiKey {
                 name: name.to_string(),
                 token_hash: format!("hash-{name}"),
@@ -161,7 +172,10 @@ async fn audit_membership_role_changed_happy_path_writes_one_row() {
 
     let row = &rows[0];
     assert_eq!(row.action, "membership.role_changed");
-    assert_eq!(row.workspace_id, Some(ws.id));
+    assert_eq!(
+        row.workspace_id,
+        Some(atlas_custos::WorkspaceScope(ws.id.0))
+    );
     assert_eq!(
         row.actor,
         Actor::User(atlas_domain::UserAttributionId(owner_user.id.0))
@@ -313,7 +327,10 @@ async fn audit_membership_removed_happy_path_writes_one_row() {
 
     let row = &rows[0];
     assert_eq!(row.action, "membership.removed");
-    assert_eq!(row.workspace_id, Some(ws.id));
+    assert_eq!(
+        row.workspace_id,
+        Some(atlas_custos::WorkspaceScope(ws.id.0))
+    );
     assert_eq!(
         row.actor,
         Actor::User(atlas_domain::UserAttributionId(owner_user.id.0))
@@ -426,7 +443,10 @@ async fn audit_project_grant_created_happy_path_writes_one_row() {
     assert_eq!(grant_rows.len(), 1, "exactly one grant.created audit row");
 
     let row = grant_rows[0];
-    assert_eq!(row.workspace_id, Some(ws.id));
+    assert_eq!(
+        row.workspace_id,
+        Some(atlas_custos::WorkspaceScope(ws.id.0))
+    );
     assert_eq!(
         row.actor,
         Actor::User(atlas_domain::UserAttributionId(owner_user.id.0))
@@ -572,7 +592,10 @@ async fn audit_project_grant_revoked_happy_path_writes_one_row() {
     );
 
     let row = revoke_rows[0];
-    assert_eq!(row.workspace_id, Some(ws.id));
+    assert_eq!(
+        row.workspace_id,
+        Some(atlas_custos::WorkspaceScope(ws.id.0))
+    );
     assert_eq!(
         row.actor,
         Actor::User(atlas_domain::UserAttributionId(owner_user.id.0))
@@ -659,7 +682,10 @@ async fn audit_workspace_grant_created_happy_path_writes_one_row() {
     assert_eq!(grant_rows.len(), 1, "exactly one grant.created audit row");
 
     let row = grant_rows[0];
-    assert_eq!(row.workspace_id, Some(ws.id));
+    assert_eq!(
+        row.workspace_id,
+        Some(atlas_custos::WorkspaceScope(ws.id.0))
+    );
     assert_eq!(
         row.actor,
         Actor::User(atlas_domain::UserAttributionId(owner_user.id.0))
@@ -770,7 +796,10 @@ async fn audit_workspace_grant_revoked_happy_path_writes_one_row() {
     );
 
     let row = revoke_rows[0];
-    assert_eq!(row.workspace_id, Some(ws.id));
+    assert_eq!(
+        row.workspace_id,
+        Some(atlas_custos::WorkspaceScope(ws.id.0))
+    );
     assert_eq!(
         row.actor,
         Actor::User(atlas_domain::UserAttributionId(owner_user.id.0))

@@ -242,7 +242,8 @@ async fn create_granted_agent(
     let key = db
         .api_key_repo()
         .create(
-            &ctx,
+            atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+            &ctx.actor,
             NewApiKey {
                 name: name.to_string(),
                 token_hash: hash,

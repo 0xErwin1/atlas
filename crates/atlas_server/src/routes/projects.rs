@@ -14,7 +14,6 @@ use atlas_api::{
 use atlas_domain::{
     Actor, WorkspaceCtx,
     entities::events::{DomainEvent, ProjectCreatedPayload},
-    entities::permissions::NewPermissionGrant,
     entities::workspace_core::{NewProject, UpdateProject},
     permissions::{
         Capability, CapabilityAction, CapabilityFamily, Principal, ResourceRole, ShareDenied,
@@ -26,6 +25,7 @@ use crate::{
     authz::{
         Authorized, EditorMin, ProjectsCreate, ProjectsDelete, ProjectsRead, ProjectsUpdate,
         ViewerMin, WorkspaceMember, authorized::ProjectRes, enforce_api_key_scope,
+        policy::NewPermissionGrant,
     },
     error::ApiError,
     persistence::repos::{PgOutboxRepo, PgPermissionGrantRepo, PgProjectRepo, ProjectRepo},

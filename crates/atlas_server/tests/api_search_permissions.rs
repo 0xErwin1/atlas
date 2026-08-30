@@ -30,11 +30,11 @@ use atlas_domain::{
         boards_tasks::{NewBoard, NewTask, PositionBetween},
         documents::NewDocument,
         identity::MemberRole,
-        permissions::NewPermissionGrant,
         workspace_core::NewProject,
     },
     permissions::{ResourceRole, Visibility, VisibilityRole},
 };
+use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::{
     auth::tokens::{generate_api_key, hash_token},
     persistence::repos::{
@@ -174,7 +174,8 @@ async fn create_api_key_with_scopes(
         conn: db.conn().clone(),
     }
     .create(
-        &ctx,
+        atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+        &ctx.actor,
         NewApiKey {
             name: name.to_string(),
             token_hash,

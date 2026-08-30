@@ -373,7 +373,12 @@ async fn self_role_change_writes_zero_audit_rows() {
 
     let repo = PgSecurityAuditRepo::new(db.conn().clone());
     let rows = repo
-        .list_for_workspace(ws.id, &AuditFilters::default(), None, 100)
+        .list_for_workspace(
+            atlas_custos::WorkspaceScope(ws.id.0),
+            &AuditFilters::default(),
+            None,
+            100,
+        )
         .await
         .expect("list_for_workspace");
 

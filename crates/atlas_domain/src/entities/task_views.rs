@@ -43,12 +43,12 @@ pub enum AssigneeFilter {
 }
 
 /// Creator actor-type filter (powers the "Agent activity" predefined view).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ActorTypeFilter {
-    User,
-    ApiKey,
-}
+///
+/// Relocated to `atlas_core::attribution` (D4) since it is shared by both
+/// `AuditFilters` (Custos) and `TaskViewFilters` (Acta); re-exported here to
+/// keep every existing `entities::task_views::ActorTypeFilter` import path
+/// compiling.
+pub use atlas_core::attribution::ActorTypeFilter;
 
 /// Sort order for a task view listing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

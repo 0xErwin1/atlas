@@ -41,7 +41,7 @@ async fn insert_workspace_audit_row(
     PgSecurityAuditRepo::append_in(
         db.conn(),
         NewSecurityAuditEvent {
-            workspace_id: Some(ws_id),
+            workspace_id: Some(atlas_custos::WorkspaceScope(ws_id.0)),
             actor: Actor::User(atlas_domain::UserAttributionId(actor_user_id.0)),
             action,
             target_type: "user".to_string(),
@@ -413,7 +413,8 @@ async fn seed_api_key_for_user(
     let token_hash = atlas_server::auth::tokens::hash_token("audit-test-api-key-secret-unique-123");
     db.api_key_repo()
         .create(
-            &ctx,
+            atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+            &ctx.actor,
             NewApiKey {
                 name: "audit-actor-filter-key".into(),
                 token_hash,
@@ -436,7 +437,7 @@ async fn insert_workspace_audit_row_api_key(
     PgSecurityAuditRepo::append_in(
         db.conn(),
         NewSecurityAuditEvent {
-            workspace_id: Some(ws_id),
+            workspace_id: Some(atlas_custos::WorkspaceScope(ws_id.0)),
             actor: Actor::ApiKey(atlas_domain::ApiKeyAttributionId(api_key_id.0)),
             action,
             target_type: "user".to_string(),

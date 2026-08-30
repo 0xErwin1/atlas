@@ -1,27 +1,5 @@
-use crate::ids::{GroupId, UserId, WorkspaceId};
-use chrono::{DateTime, Utc};
+//! Group entities relocated to `atlas_custos::entities::groups` (S2d).
+//! Re-exported here to keep every existing `crate::entities::groups::*`
+//! import path compiling.
 
-#[derive(Debug, Clone)]
-pub struct Group {
-    pub id: GroupId,
-    pub workspace_id: WorkspaceId,
-    pub name: String,
-    pub created_by: UserId,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub deleted_at: Option<DateTime<Utc>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct NewGroup {
-    pub workspace_id: WorkspaceId,
-    pub name: String,
-    pub created_by: UserId,
-}
-
-#[derive(Debug, Clone)]
-pub struct GroupMember {
-    pub group_id: GroupId,
-    pub user_id: UserId,
-    pub created_at: DateTime<Utc>,
-}
+pub use atlas_custos::entities::groups::{Group, GroupMember, NewGroup};

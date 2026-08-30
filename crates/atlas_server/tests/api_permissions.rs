@@ -142,8 +142,8 @@ async fn agent_cannot_share_project() {
     )
     .await;
 
-    use atlas_domain::entities::permissions::NewPermissionGrant;
     use atlas_domain::ids::{ApiKeyId, ProjectId};
+    use atlas_server::authz::policy::NewPermissionGrant;
     let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
         conn: db.conn().clone(),
     };
@@ -283,7 +283,7 @@ async fn editor_cannot_grant_admin() {
     let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
         conn: db.conn().clone(),
     };
-    use atlas_domain::entities::permissions::NewPermissionGrant;
+    use atlas_server::authz::policy::NewPermissionGrant;
     grant_repo
         .upsert(NewPermissionGrant {
             workspace_id: ws.id,
@@ -352,7 +352,7 @@ async fn viewer_cannot_update_project() {
     let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
         conn: db.conn().clone(),
     };
-    use atlas_domain::entities::permissions::NewPermissionGrant;
+    use atlas_server::authz::policy::NewPermissionGrant;
     grant_repo
         .upsert(NewPermissionGrant {
             workspace_id: ws.id,
@@ -451,8 +451,8 @@ async fn agent_with_grant_sees_private_project_in_list() {
     let agent_client =
         atlas_client::AtlasClient::new(server.base_url()).with_token(key_created.secret.clone());
 
-    use atlas_domain::entities::permissions::NewPermissionGrant;
     use atlas_domain::ids::{ApiKeyId, ProjectId};
+    use atlas_server::authz::policy::NewPermissionGrant;
     let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
         conn: db.conn().clone(),
     };
@@ -606,7 +606,7 @@ async fn user_with_workspace_scoped_grant_sees_private_projects_in_list() {
     )
     .await;
 
-    use atlas_domain::entities::permissions::NewPermissionGrant;
+    use atlas_server::authz::policy::NewPermissionGrant;
     let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
         conn: db.conn().clone(),
     };
@@ -667,8 +667,8 @@ async fn share_denied_403_does_not_leak_variant_name() {
         .await
         .expect("create api key");
 
-    use atlas_domain::entities::permissions::NewPermissionGrant;
     use atlas_domain::ids::{ApiKeyId, ProjectId};
+    use atlas_server::authz::policy::NewPermissionGrant;
     let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
         conn: db.conn().clone(),
     };
