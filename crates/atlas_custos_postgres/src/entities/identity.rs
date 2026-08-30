@@ -15,7 +15,7 @@ pub mod user {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "users")]
+    #[sea_orm(schema_name = "custos", table_name = "users")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
@@ -41,7 +41,7 @@ pub mod activation_token {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "user_activation_tokens")]
+    #[sea_orm(schema_name = "custos", table_name = "user_activation_tokens")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
@@ -62,7 +62,7 @@ pub mod session {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "sessions")]
+    #[sea_orm(schema_name = "custos", table_name = "sessions")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
@@ -84,7 +84,7 @@ pub mod api_key {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "api_keys")]
+    #[sea_orm(schema_name = "custos", table_name = "api_keys")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,

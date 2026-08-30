@@ -2,7 +2,9 @@
 
 mod support;
 
+use atlas_acta::actor::{Actor, UserAttributionId, WorkspaceCtx};
 use atlas_acta::entities::documents::NewDocument;
+use atlas_acta::ids::WorkspaceId;
 use atlas_server::persistence::repos::{DocumentRepo, PgDocumentRepo};
 use migration::Migrator;
 use sea_orm::{ConnectionTrait, Statement};
@@ -11,6 +13,56 @@ use support::TestDb;
 
 const COMMENT_FREEDOM_MIGRATION_STEPS: u32 = 39;
 const COMMENT_ATTACHMENT_DRAFT_MIGRATION_STEPS: u32 = 40;
+
+/// Seeds a user and workspace via raw SQL against the still-`public` schema.
+///
+/// `support::seed_workspace` goes through `PgUserRepo`/`PgWorkspaceRepo`, whose
+/// sea-orm entities now hardcode `schema_name = "custos"` (S3d). At the
+/// migration steps these tests freeze at, `custos_new()` (which includes the
+/// SET SCHEMA migration) has not run yet, so `users` still physically lives in
+/// `public` and the entity-based repos would look for a table that does not
+/// exist yet. Raw SQL matching the DB's actual pre-migration shape avoids that.
+async fn seed_pre_custos_schema_workspace(
+    db: &TestDb,
+    slug: &str,
+) -> (WorkspaceCtx, uuid::Uuid, uuid::Uuid) {
+    // custos-schema-gate:off — pre-schema-move fixture, see the doc comment above.
+    let user_id = uuid::Uuid::now_v7();
+    let workspace_id = uuid::Uuid::now_v7();
+
+    db.conn()
+        .execute_unprepared(&format!(
+            "INSERT INTO users (id, username, display_name, is_root, is_system_admin, created_at, updated_at) \
+             VALUES ('{user_id}', '{slug}', 'Test User', false, false, now(), now())"
+        ))
+        .await
+        .expect("seed pre-migration-shaped user row");
+    // custos-schema-gate:on
+
+    db.conn()
+        .execute_unprepared(&format!(
+            "INSERT INTO workspaces (id, name, slug, created_at, updated_at) \
+             VALUES ('{workspace_id}', 'Workspace', '{slug}', now(), now())"
+        ))
+        .await
+        .expect("seed workspace row");
+
+    db.conn()
+        .execute_unprepared(&format!(
+            "INSERT INTO workspace_memberships (id, workspace_id, user_id, role, created_at, updated_at) \
+             VALUES ('{}', '{workspace_id}', '{user_id}', 'owner', now(), now())",
+            uuid::Uuid::now_v7()
+        ))
+        .await
+        .expect("seed membership row");
+
+    let ctx = WorkspaceCtx::new(
+        WorkspaceId(workspace_id),
+        Actor::User(UserAttributionId(user_id)),
+    );
+
+    (ctx, workspace_id, user_id)
+}
 
 async fn seed_live_comment_owned_records(
     conn: &sea_orm::DatabaseConnection,
@@ -90,8 +142,8 @@ async fn comment_freedom_down_rejects_live_comment_attachment_without_destructiv
     let db = TestDb::create_with_migration_steps(Some(COMMENT_FREEDOM_MIGRATION_STEPS))
         .await
         .expect("create database before comment freedom migration");
-    let (workspace, user) = support::seed_workspace(&db, "comment-freedom-down-blocked").await;
-    let ctx = support::ctx(&workspace, &user);
+    let (ctx, workspace_id, user_id) =
+        seed_pre_custos_schema_workspace(&db, "comment-freedom-down-blocked").await;
     let document = PgDocumentRepo::new(db.conn().clone(), 10)
         .create(
             &ctx,
@@ -112,7 +164,7 @@ async fn comment_freedom_down_rejects_live_comment_attachment_without_destructiv
         .expect("apply comment freedom migration");
 
     let (comment_id, attachment_id) =
-        seed_live_comment_owned_records(db.conn(), workspace.id.0, user.id.0, document.id.0).await;
+        seed_live_comment_owned_records(db.conn(), workspace_id, user_id, document.id.0).await;
 
     let error = Migrator::down(db.conn(), Some(1))
         .await
@@ -278,8 +330,8 @@ async fn comment_attachment_drafts_down_preserves_live_draft_ledger_and_digest_c
     let db = TestDb::create_with_migration_steps(Some(COMMENT_ATTACHMENT_DRAFT_MIGRATION_STEPS))
         .await
         .expect("create database before comment attachment drafts migration");
-    let (workspace, user) = support::seed_workspace(&db, "comment-draft-down-blocked").await;
-    let ctx = support::ctx(&workspace, &user);
+    let (ctx, workspace_id, user_id) =
+        seed_pre_custos_schema_workspace(&db, "comment-draft-down-blocked").await;
     let document = PgDocumentRepo::new(db.conn().clone(), 10)
         .create(
             &ctx,
@@ -315,12 +367,12 @@ async fn comment_attachment_drafts_down_preserves_live_draft_ledger_and_digest_c
              VALUES ('{draft_id}', 'upload-token', '{attachment_id}', '{attachment_id}', '\\x{}', '\\x{}', 'draft.txt', 'text/plain', 1); \
              INSERT INTO attachment_write_intents (id, digest, created_at) \
              VALUES ('{}', '{digest}', now())",
-            workspace.id.0,
+            workspace_id,
             document.id.0,
-            user.id.0,
+            user_id,
             "01".repeat(32),
-            workspace.id.0,
-            user.id.0,
+            workspace_id,
+            user_id,
             "02".repeat(32),
             "03".repeat(32),
             uuid::Uuid::now_v7(),

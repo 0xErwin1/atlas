@@ -27,7 +27,7 @@ pub async fn count_orphaned_grants(conn: &impl ConnectionTrait) -> Result<u64, D
         sea_orm::DatabaseBackend::Postgres,
         r#"
         SELECT count(*) AS count
-        FROM permission_grants g
+        FROM custos.permission_grants g
         WHERE (g.resource_ref LIKE 'acta::project::%'
                 AND NOT EXISTS (
                     SELECT 1 FROM projects p

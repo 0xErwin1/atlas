@@ -1111,7 +1111,7 @@ async fn resource_deleted_audit_count(
     db.conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT count(*) AS count FROM security_audit_log \
+            "SELECT count(*) AS count FROM custos.security_audit_log \
              WHERE action = 'resource.deleted' AND target_type = $1 AND target_id = $2",
             [target_type.into(), target_id.into()],
         ))
@@ -1133,7 +1133,7 @@ async fn assert_resource_deleted_audit(
         .conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT workspace_id, actor_user_id, metadata FROM security_audit_log \
+            "SELECT workspace_id, actor_user_id, metadata FROM custos.security_audit_log \
              WHERE action = 'resource.deleted' AND target_type = $1 AND target_id = $2",
             [target_type.into(), target_id.into()],
         ))

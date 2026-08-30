@@ -1585,8 +1585,8 @@ async fn build_resolution_query(
             sea_orm::DatabaseBackend::Postgres,
             r#"
             SELECT gm.group_id
-            FROM group_members gm
-            JOIN groups g ON g.id = gm.group_id
+            FROM custos.group_members gm
+            JOIN custos.groups g ON g.id = gm.group_id
             WHERE gm.user_id = $1
               AND g.workspace_id = $2
               AND g.deleted_at IS NULL

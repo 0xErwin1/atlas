@@ -100,7 +100,7 @@ impl PgPermissionGrantRepo {
         conn.execute_raw(sea_orm::Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             r#"
-            INSERT INTO permission_grants
+            INSERT INTO custos.permission_grants
                 (id, workspace_id, user_id, api_key_id, group_id, resource_ref,
                  role, created_by_user_id, created_by_api_key_id,
                  created_at, updated_at)
@@ -203,7 +203,7 @@ impl PgPermissionGrantRepo {
         let sql = format!(
             r#"
             SELECT resource_ref, role
-            FROM permission_grants
+            FROM custos.permission_grants
             WHERE workspace_id = $1
               AND {principal_condition}
             "#,
@@ -258,7 +258,7 @@ impl PgPermissionGrantRepo {
         let sql = format!(
             r#"
             SELECT EXISTS (
-                SELECT 1 FROM permission_grants
+                SELECT 1 FROM custos.permission_grants
                 WHERE workspace_id = $1
                   AND {principal_condition}
             ) AS present
@@ -321,7 +321,7 @@ impl PermissionGrantRepoTrait for PgPermissionGrantRepo {
                     .join(", ");
 
                 format!(
-                    "(user_id = ${uid_param} OR (group_id = ANY(ARRAY[{group_placeholders}]::uuid[]) AND NOT EXISTS (SELECT 1 FROM groups g WHERE g.id = permission_grants.group_id AND g.deleted_at IS NOT NULL)))"
+                    "(user_id = ${uid_param} OR (group_id = ANY(ARRAY[{group_placeholders}]::uuid[]) AND NOT EXISTS (SELECT 1 FROM custos.groups g WHERE g.id = permission_grants.group_id AND g.deleted_at IS NOT NULL)))"
                 )
             }
         } else if let Some(kid) = query.api_key_id {
@@ -344,7 +344,7 @@ impl PermissionGrantRepoTrait for PgPermissionGrantRepo {
         let sql = format!(
             r#"
             SELECT resource_ref, role
-            FROM permission_grants
+            FROM custos.permission_grants
             WHERE workspace_id = ${ws_param}
               AND {principal_condition}
               AND resource_ref = ANY(ARRAY[{resource_ref_placeholders}]::text[])

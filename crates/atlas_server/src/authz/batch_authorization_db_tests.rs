@@ -316,7 +316,7 @@ async fn query_b_reloads_user_membership_and_active_state() {
 
     db.conn
         .execute_unprepared(&format!(
-            "UPDATE users SET disabled_at = now() WHERE id = '{user_id}'"
+            "UPDATE custos.users SET disabled_at = now() WHERE id = '{user_id}'"
         ))
         .await
         .expect("disable user");
@@ -341,19 +341,19 @@ async fn query_b_reloads_key_creator_and_live_group_grant_facts() {
     seed_workspace_user(&db.conn, workspace_id, creator_id, true).await;
     db.conn
         .execute_unprepared(&format!(
-            "INSERT INTO api_keys (id, workspace_id, created_by_user_id, name, token_hash, type, created_at, is_global, scopes) \
+            "INSERT INTO custos.api_keys (id, workspace_id, created_by_user_id, name, token_hash, type, created_at, is_global, scopes) \
              VALUES ('{key_id}', NULL, '{creator_id}', 'key', 'hash', 'agent', now(), false, ARRAY['docs:read'])"
         ))
         .await
         .expect("insert key");
     db.conn
         .execute_unprepared(&format!(
-            "INSERT INTO groups (id, workspace_id, name, created_by, created_at, updated_at) \
+            "INSERT INTO custos.groups (id, workspace_id, name, created_by, created_at, updated_at) \
              VALUES ('{group_id}', '{workspace_id}', 'group', '{creator_id}', now(), now()); \
-             INSERT INTO group_members (group_id, user_id, created_at) VALUES ('{group_id}', '{creator_id}', now()); \
-             INSERT INTO permission_grants (id, workspace_id, api_key_id, resource_ref, role, created_at, updated_at) \
+             INSERT INTO custos.group_members (group_id, user_id, created_at) VALUES ('{group_id}', '{creator_id}', now()); \
+             INSERT INTO custos.permission_grants (id, workspace_id, api_key_id, resource_ref, role, created_at, updated_at) \
              VALUES ('{}', '{workspace_id}', '{key_id}', 'acta::workspace::{workspace_id}', 'viewer', now(), now()); \
-             INSERT INTO permission_grants (id, workspace_id, group_id, resource_ref, role, created_at, updated_at) \
+             INSERT INTO custos.permission_grants (id, workspace_id, group_id, resource_ref, role, created_at, updated_at) \
              VALUES ('{}', '{workspace_id}', '{group_id}', 'acta::workspace::{workspace_id}', 'editor', now(), now())",
             Uuid::now_v7(),
             Uuid::now_v7(),
@@ -375,9 +375,9 @@ async fn query_b_reloads_key_creator_and_live_group_grant_facts() {
 
     db.conn
         .execute_unprepared(&format!(
-            "UPDATE api_keys SET revoked_at = now(), expires_at = now() - interval '1 second', is_global = true, scopes = ARRAY['tasks:read'] WHERE id = '{key_id}'; \
-             UPDATE groups SET deleted_at = now() WHERE id = '{group_id}'; \
-             UPDATE users SET disabled_at = now() WHERE id = '{creator_id}'"
+            "UPDATE custos.api_keys SET revoked_at = now(), expires_at = now() - interval '1 second', is_global = true, scopes = ARRAY['tasks:read'] WHERE id = '{key_id}'; \
+             UPDATE custos.groups SET deleted_at = now() WHERE id = '{group_id}'; \
+             UPDATE custos.users SET disabled_at = now() WHERE id = '{creator_id}'"
         ))
         .await
         .expect("mutate current authority facts");
@@ -408,7 +408,7 @@ async fn query_b_reloads_key_creator_and_live_group_grant_facts() {
 
     db.conn
         .execute_unprepared(&format!(
-            "DELETE FROM permission_grants WHERE api_key_id = '{key_id}'"
+            "DELETE FROM custos.permission_grants WHERE api_key_id = '{key_id}'"
         ))
         .await
         .expect("remove direct key grant");
@@ -434,7 +434,7 @@ async fn query_b_rejects_unknown_scopes_and_propagates_sql_failures() {
     seed_workspace_user(&db.conn, workspace_id, creator_id, true).await;
     db.conn
         .execute_unprepared(&format!(
-            "INSERT INTO api_keys (id, workspace_id, created_by_user_id, name, token_hash, type, created_at, is_global, scopes) \
+            "INSERT INTO custos.api_keys (id, workspace_id, created_by_user_id, name, token_hash, type, created_at, is_global, scopes) \
              VALUES ('{key_id}', NULL, '{creator_id}', 'key', 'hash', 'agent', now(), false, ARRAY['unknown:read'])"
         ))
         .await
@@ -448,7 +448,7 @@ async fn query_b_rejects_unknown_scopes_and_propagates_sql_failures() {
     assert!(source.load_principal_facts(&context, &[]).await.is_err());
 
     db.conn
-        .execute_unprepared("DROP TABLE permission_grants")
+        .execute_unprepared("DROP TABLE custos.permission_grants")
         .await
         .expect("remove query dependency");
     assert!(source.load_principal_facts(&context, &[]).await.is_err());
@@ -476,10 +476,10 @@ async fn group_grant_resolution_excludes_a_soft_deleted_group() {
     seed_workspace_user(&db.conn, workspace_id, user_id, true).await;
     db.conn
         .execute_unprepared(&format!(
-            "INSERT INTO groups (id, workspace_id, name, created_by, created_at, updated_at) \
+            "INSERT INTO custos.groups (id, workspace_id, name, created_by, created_at, updated_at) \
              VALUES ('{group_id}', '{workspace_id}', 'group', '{user_id}', now(), now()); \
-             INSERT INTO group_members (group_id, user_id, created_at) VALUES ('{group_id}', '{user_id}', now()); \
-             INSERT INTO permission_grants (id, workspace_id, group_id, resource_ref, role, created_at, updated_at) \
+             INSERT INTO custos.group_members (group_id, user_id, created_at) VALUES ('{group_id}', '{user_id}', now()); \
+             INSERT INTO custos.permission_grants (id, workspace_id, group_id, resource_ref, role, created_at, updated_at) \
              VALUES ('{}', '{workspace_id}', '{group_id}', 'acta::workspace::{workspace_id}', 'editor', now(), now())",
             Uuid::now_v7(),
         ))
@@ -507,7 +507,7 @@ async fn group_grant_resolution_excludes_a_soft_deleted_group() {
 
     db.conn
         .execute_unprepared(&format!(
-            "UPDATE groups SET deleted_at = now() WHERE id = '{group_id}'"
+            "UPDATE custos.groups SET deleted_at = now() WHERE id = '{group_id}'"
         ))
         .await
         .expect("soft-delete group");
@@ -849,7 +849,7 @@ async fn agent_cap_does_not_bypass_the_read_capability_gate() {
 
     db.conn
         .execute_unprepared(&format!(
-            "UPDATE api_keys SET scopes = ARRAY[]::text[] WHERE id = '{key_id}'"
+            "UPDATE custos.api_keys SET scopes = ARRAY[]::text[] WHERE id = '{key_id}'"
         ))
         .await
         .expect("strip the capability scope");
@@ -1015,10 +1015,10 @@ async fn batch_principal_facts_excludes_a_soft_deleted_group_grant() {
     seed_minimal_document(&db.conn, workspace_id, user_id, document_id).await;
     db.conn
         .execute_unprepared(&format!(
-            "INSERT INTO groups (id, workspace_id, name, created_by, created_at, updated_at) \
+            "INSERT INTO custos.groups (id, workspace_id, name, created_by, created_at, updated_at) \
              VALUES ('{group_id}', '{workspace_id}', 'group', '{user_id}', now(), now()); \
-             INSERT INTO group_members (group_id, user_id, created_at) VALUES ('{group_id}', '{user_id}', now()); \
-             INSERT INTO permission_grants (id, workspace_id, group_id, resource_ref, role, created_at, updated_at) \
+             INSERT INTO custos.group_members (group_id, user_id, created_at) VALUES ('{group_id}', '{user_id}', now()); \
+             INSERT INTO custos.permission_grants (id, workspace_id, group_id, resource_ref, role, created_at, updated_at) \
              VALUES ('{}', '{workspace_id}', '{group_id}', 'acta::workspace::{workspace_id}', 'editor', now(), now())",
             Uuid::now_v7(),
         ))
@@ -1036,7 +1036,7 @@ async fn batch_principal_facts_excludes_a_soft_deleted_group_grant() {
 
     db.conn
         .execute_unprepared(&format!(
-            "UPDATE groups SET deleted_at = now() WHERE id = '{group_id}'"
+            "UPDATE custos.groups SET deleted_at = now() WHERE id = '{group_id}'"
         ))
         .await
         .expect("soft-delete group");
@@ -1238,7 +1238,7 @@ async fn seed_workspace_scope_grant(
         GrantPrincipal::ApiKey(id) => ("api_key_id", id),
     };
     conn.execute_unprepared(&format!(
-        "INSERT INTO permission_grants (id, workspace_id, {column}, resource_ref, role, created_at, updated_at) \
+        "INSERT INTO custos.permission_grants (id, workspace_id, {column}, resource_ref, role, created_at, updated_at) \
          VALUES ('{}', '{workspace_id}', '{id}', 'acta::workspace::{workspace_id}', '{role}', now(), now())",
         Uuid::now_v7(),
     ))
@@ -1259,7 +1259,7 @@ async fn seed_api_key(
         .collect::<Vec<_>>()
         .join(", ");
     conn.execute_unprepared(&format!(
-        "INSERT INTO api_keys (id, workspace_id, created_by_user_id, name, token_hash, type, created_at, is_global, scopes) \
+        "INSERT INTO custos.api_keys (id, workspace_id, created_by_user_id, name, token_hash, type, created_at, is_global, scopes) \
          VALUES ('{key_id}', NULL, '{creator_id}', 'key', 'hash', 'agent', now(), {is_global}, ARRAY[{scopes_sql}])"
     ))
     .await
@@ -1268,7 +1268,7 @@ async fn seed_api_key(
 
 async fn seed_user(conn: &DatabaseConnection, user_id: Uuid, is_root: bool, is_system_admin: bool) {
     conn.execute_unprepared(&format!(
-        "INSERT INTO users (id, username, display_name, is_root, is_system_admin, created_at, updated_at) \
+        "INSERT INTO custos.users (id, username, display_name, is_root, is_system_admin, created_at, updated_at) \
          VALUES ('{user_id}', 'user-{user_id}', 'User', {is_root}, {is_system_admin}, now(), now())"
     ))
     .await
@@ -1356,7 +1356,7 @@ async fn seed_workspace_user(
     member: bool,
 ) {
     conn.execute_unprepared(&format!(
-        "INSERT INTO users (id, username, display_name, is_root, is_system_admin, created_at, updated_at) \
+        "INSERT INTO custos.users (id, username, display_name, is_root, is_system_admin, created_at, updated_at) \
          VALUES ('{user_id}', 'user-{user_id}', 'User', false, false, now(), now()); \
          INSERT INTO workspaces (id, name, slug, created_at, updated_at) \
          VALUES ('{workspace_id}', 'Workspace', 'workspace-{workspace_id}', now(), now())"

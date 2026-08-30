@@ -82,7 +82,7 @@ impl UserRepo for PgUserRepo {
             sea_orm::DatabaseBackend::Postgres,
             "SELECT id, username, display_name, email, password_hash, is_root, is_system_admin, \
                     disabled_at, activated_at, created_at, updated_at \
-             FROM users WHERE lower(username) = $1 LIMIT 1",
+             FROM custos.users WHERE lower(username) = $1 LIMIT 1",
             [lower.into()],
         ))
         .all(&self.conn)
@@ -420,7 +420,7 @@ impl SessionRepo for PgSessionRepo {
         self.conn
             .execute_raw(sea_orm::Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
-                "UPDATE sessions SET revoked_at = now()
+                "UPDATE custos.sessions SET revoked_at = now()
                  WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()",
                 [user_id.0.into()],
             ))
@@ -438,7 +438,7 @@ impl SessionRepo for PgSessionRepo {
         self.conn
             .execute_raw(sea_orm::Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
-                "UPDATE sessions SET revoked_at = now()
+                "UPDATE custos.sessions SET revoked_at = now()
                  WHERE user_id = $1 AND id <> $2
                    AND revoked_at IS NULL AND expires_at > now()",
                 [user_id.0.into(), keep_session_id.0.into()],
@@ -458,7 +458,7 @@ impl SessionRepo for PgSessionRepo {
         self.conn
             .execute_raw(sea_orm::Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
-                "UPDATE sessions
+                "UPDATE custos.sessions
                  SET last_used_at = now(),
                      expires_at = LEAST(now() + ($2 * interval '1 hour'), created_at + ($3 * interval '1 hour'))
                  WHERE id = $1
@@ -563,8 +563,8 @@ impl ApiKeyRepo for PgApiKeyRepo {
             "SELECT k.id, k.workspace_id, k.created_by_user_id, k.name, k.token_hash,
                     k.type AS type_, k.expires_at, k.last_used_at, k.revoked_at, k.created_at,
                     k.is_global, k.scopes
-             FROM api_keys k
-             JOIN users u ON u.id = k.created_by_user_id
+             FROM custos.api_keys k
+             JOIN custos.users u ON u.id = k.created_by_user_id
              WHERE k.token_hash = $1
                AND k.revoked_at IS NULL
                AND (k.expires_at IS NULL OR k.expires_at > now())
@@ -660,8 +660,8 @@ impl ApiKeyRepo for PgApiKeyRepo {
             "SELECT DISTINCT k.id, k.workspace_id, k.created_by_user_id, k.name, k.token_hash,
                     k.type AS type_, k.expires_at, k.last_used_at, k.revoked_at, k.created_at,
                     k.is_global, k.scopes
-             FROM api_keys k
-             JOIN permission_grants g ON g.api_key_id = k.id
+             FROM custos.api_keys k
+             JOIN custos.permission_grants g ON g.api_key_id = k.id
              WHERE g.workspace_id = $1
                AND k.revoked_at IS NULL
              ORDER BY k.created_at",
@@ -826,7 +826,7 @@ impl PgApiKeyRepo {
         self.conn
             .execute_raw(sea_orm::Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
-                "UPDATE api_keys
+                "UPDATE custos.api_keys
                  SET last_used_at = now()
                  WHERE id = $1
                    AND (last_used_at IS NULL OR last_used_at < now() - interval '60 seconds')",
@@ -883,7 +883,7 @@ impl ActivationTokenRepo for PgActivationTokenRepo {
             .conn
             .execute_raw(Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
-                "UPDATE user_activation_tokens \
+                "UPDATE custos.user_activation_tokens \
                  SET consumed_at = $1 \
                  WHERE id = $2 AND consumed_at IS NULL",
                 [Utc::now().into(), id.0.into()],
@@ -905,7 +905,7 @@ impl ActivationTokenRepo for PgActivationTokenRepo {
         self.conn
             .execute_raw(Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
-                "UPDATE user_activation_tokens \
+                "UPDATE custos.user_activation_tokens \
                  SET consumed_at = now() \
                  WHERE user_id = $1 AND consumed_at IS NULL",
                 [user_id.0.into()],

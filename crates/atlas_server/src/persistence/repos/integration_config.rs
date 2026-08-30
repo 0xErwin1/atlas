@@ -170,7 +170,7 @@ impl PgIntegrationConfigRepo {
 
         conn.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            "UPDATE api_keys SET revoked_at = $1 WHERE id = $2 AND revoked_at IS NULL",
+            "UPDATE custos.api_keys SET revoked_at = $1 WHERE id = $2 AND revoked_at IS NULL",
             [Utc::now().into(), api_key_id.into()],
         ))
         .await

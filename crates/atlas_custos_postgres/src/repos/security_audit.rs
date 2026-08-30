@@ -135,7 +135,7 @@ impl SecurityAuditRepo for PgSecurityAuditRepo {
             r#"
             SELECT id, workspace_id, actor_user_id, actor_api_key_id,
                    action, target_type, target_id, metadata, created_at
-            FROM security_audit_log
+            FROM custos.security_audit_log
             WHERE workspace_id = ${ws_param}
               {actor_cond}
               {actor_type_cond}
@@ -244,7 +244,7 @@ impl SecurityAuditRepo for PgSecurityAuditRepo {
             r#"
             SELECT id, workspace_id, actor_user_id, actor_api_key_id,
                    action, target_type, target_id, metadata, created_at
-            FROM security_audit_log
+            FROM custos.security_audit_log
             WHERE workspace_id IS NULL
               {actor_cond}
               {actor_type_cond}

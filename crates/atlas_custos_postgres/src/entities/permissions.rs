@@ -5,7 +5,7 @@ pub mod group {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "groups")]
+    #[sea_orm(schema_name = "custos", table_name = "groups")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
@@ -27,7 +27,7 @@ pub mod group_member {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "group_members")]
+    #[sea_orm(schema_name = "custos", table_name = "group_members")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub group_id: Uuid,
@@ -46,7 +46,7 @@ pub mod permission_grant {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "permission_grants")]
+    #[sea_orm(schema_name = "custos", table_name = "permission_grants")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,

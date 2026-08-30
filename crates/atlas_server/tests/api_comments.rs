@@ -1286,7 +1286,7 @@ async fn full_feeds_retain_deleted_comment_events_without_deleted_comment_data_o
 
     db.conn()
         .execute_unprepared(&format!(
-            "UPDATE users SET disabled_at = now() WHERE id = '{}'",
+            "UPDATE custos.users SET disabled_at = now() WHERE id = '{}'",
             owner_user.id.0
         ))
         .await
@@ -1658,7 +1658,7 @@ async fn disabled_or_revoked_principals_are_rejected_before_full_feed_projection
 
     db.conn()
         .execute_unprepared(&format!(
-            "UPDATE users SET disabled_at = now() WHERE id = '{}'",
+            "UPDATE custos.users SET disabled_at = now() WHERE id = '{}'",
             user.id.0
         ))
         .await
@@ -1673,7 +1673,7 @@ async fn disabled_or_revoked_principals_are_rejected_before_full_feed_projection
 
     db.conn()
         .execute_unprepared(&format!(
-            "UPDATE users SET disabled_at = NULL WHERE id = '{}'",
+            "UPDATE custos.users SET disabled_at = NULL WHERE id = '{}'",
             user.id.0
         ))
         .await
@@ -1693,7 +1693,7 @@ async fn disabled_or_revoked_principals_are_rejected_before_full_feed_projection
         .expect("create api key");
     db.conn()
         .execute_unprepared(&format!(
-            "UPDATE api_keys SET revoked_at = now() WHERE id = '{}'",
+            "UPDATE custos.api_keys SET revoked_at = now() WHERE id = '{}'",
             api_key.id
         ))
         .await
@@ -1721,7 +1721,7 @@ async fn disabled_or_revoked_principals_are_rejected_before_full_feed_projection
         .expect("create creator-disabled key");
     db.conn()
         .execute_unprepared(&format!(
-            "UPDATE users SET disabled_at = now() WHERE id = '{}'",
+            "UPDATE custos.users SET disabled_at = now() WHERE id = '{}'",
             user.id.0
         ))
         .await
@@ -2222,14 +2222,14 @@ async fn list_comments_preserves_global_api_key_author_name() {
     // return it, while the create path (`get_by_id`) still would.
     db.conn()
         .execute_unprepared(&format!(
-            "UPDATE api_keys SET is_global = true WHERE id = '{}'",
+            "UPDATE custos.api_keys SET is_global = true WHERE id = '{}'",
             api_key.id
         ))
         .await
         .expect("promote api key to global");
     db.conn()
         .execute_unprepared(&format!(
-            "DELETE FROM permission_grants WHERE api_key_id = '{}'",
+            "DELETE FROM custos.permission_grants WHERE api_key_id = '{}'",
             api_key.id
         ))
         .await

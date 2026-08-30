@@ -126,7 +126,7 @@ impl TestDb {
 pub(crate) async fn activate_user_in_db(db: &TestDb, user_id: uuid::Uuid) {
     db.conn()
         .execute_unprepared(&format!(
-            "UPDATE users SET activated_at = now() WHERE id = '{user_id}'"
+            "UPDATE custos.users SET activated_at = now() WHERE id = '{user_id}'"
         ))
         .await
         .expect("activate user");
@@ -409,7 +409,7 @@ pub(crate) async fn login_root_user(server: &TestServer, db: &TestDb) -> AtlasCl
 /// Expires all sessions in the test database immediately.
 pub(crate) async fn expire_all_sessions(db: &TestDb) {
     db.conn()
-        .execute_unprepared("UPDATE sessions SET expires_at = now() - interval '1 second'")
+        .execute_unprepared("UPDATE custos.sessions SET expires_at = now() - interval '1 second'")
         .await
         .expect("expire sessions");
 }

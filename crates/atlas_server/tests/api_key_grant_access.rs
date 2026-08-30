@@ -311,7 +311,7 @@ async fn granted_api_key_is_denied_after_its_creator_is_disabled() {
 
     db.conn()
         .execute_unprepared(&format!(
-            "UPDATE users SET disabled_at = now() WHERE id = '{}'",
+            "UPDATE custos.users SET disabled_at = now() WHERE id = '{}'",
             owner_user.id.0
         ))
         .await

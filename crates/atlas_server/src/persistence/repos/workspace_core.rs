@@ -241,7 +241,7 @@ impl ProjectRepo for PgProjectRepo {
                           AND role IN ('owner', 'admin')
                     )
                     OR EXISTS (
-                        SELECT 1 FROM users
+                        SELECT 1 FROM custos.users
                         WHERE id = $2
                           AND (is_root OR is_system_admin)
                           AND disabled_at IS NULL
@@ -285,13 +285,13 @@ impl ProjectRepo for PgProjectRepo {
                     {visibility_clause}
                     OR {membership_clause}
                     OR EXISTS (
-                        SELECT 1 FROM permission_grants
+                        SELECT 1 FROM custos.permission_grants
                         WHERE workspace_id = $1
                           AND {principal_col} = $2
                           AND resource_ref = 'acta::workspace::' || $1::text
                     )
                     OR EXISTS (
-                        SELECT 1 FROM permission_grants
+                        SELECT 1 FROM custos.permission_grants
                         WHERE workspace_id = $1
                           AND {principal_col} = $2
                           AND resource_ref = 'acta::project::' || p.id::text

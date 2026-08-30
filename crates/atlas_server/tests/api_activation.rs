@@ -28,7 +28,7 @@ async fn password_hash_is_nullable_after_migration() {
     // column is NOT NULL.
     db.conn()
         .execute_unprepared(
-            "INSERT INTO users (id, username, display_name, email, password_hash, is_root, is_system_admin, disabled_at, activated_at, created_at, updated_at)
+            "INSERT INTO custos.users (id, username, display_name, email, password_hash, is_root, is_system_admin, disabled_at, activated_at, created_at, updated_at)
              VALUES (gen_random_uuid(), 'null-pw-test', 'Null PW', NULL, NULL, false, false, NULL, NULL, now(), now())"
         )
         .await
@@ -45,7 +45,7 @@ async fn activated_at_column_exists_after_migration() {
     use sea_orm::ConnectionTrait;
     let result = db
         .conn()
-        .execute_unprepared("SELECT activated_at FROM users LIMIT 1")
+        .execute_unprepared("SELECT activated_at FROM custos.users LIMIT 1")
         .await;
 
     assert!(result.is_ok(), "activated_at column must exist on users");
@@ -64,7 +64,7 @@ async fn existing_users_have_activated_at_set_after_migration() {
     // inserting a row with an explicit activated_at and reading it back.
     db.conn()
         .execute_unprepared(
-            "INSERT INTO users (id, username, display_name, email, password_hash, is_root, is_system_admin, disabled_at, activated_at, created_at, updated_at)
+            "INSERT INTO custos.users (id, username, display_name, email, password_hash, is_root, is_system_admin, disabled_at, activated_at, created_at, updated_at)
              VALUES (gen_random_uuid(), 'backfill-test', 'Backfill', NULL, '$argon2id$v=19$m=19456,t=2,p=1$test$hash', false, false, NULL, now(), now(), now())"
         )
         .await
@@ -77,7 +77,7 @@ async fn existing_users_have_activated_at_set_after_migration() {
     }
     let rows = Row::find_by_statement(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
-        "SELECT activated_at FROM users WHERE username = 'backfill-test' LIMIT 1",
+        "SELECT activated_at FROM custos.users WHERE username = 'backfill-test' LIMIT 1",
         [],
     ))
     .all(db.conn())
@@ -101,7 +101,7 @@ async fn user_activation_tokens_table_exists() {
     let result = db
         .conn()
         .execute_unprepared(
-            "SELECT id, user_id, token_hash, expires_at, consumed_at, created_at FROM user_activation_tokens LIMIT 1",
+            "SELECT id, user_id, token_hash, expires_at, consumed_at, created_at FROM custos.user_activation_tokens LIMIT 1",
         )
         .await;
 
@@ -303,7 +303,7 @@ async fn find_by_username_roundtrips_some_password_hash_and_activated_at() {
     // (simulates an activated account).
     db.conn()
         .execute_unprepared(
-            "INSERT INTO users (id, username, display_name, email, password_hash, is_root, is_system_admin, disabled_at, activated_at, created_at, updated_at)
+            "INSERT INTO custos.users (id, username, display_name, email, password_hash, is_root, is_system_admin, disabled_at, activated_at, created_at, updated_at)
              VALUES (gen_random_uuid(), 'roundtrip-some', 'RT Some', NULL, '$argon2id$v=19$m=19456,t=2,p=1$test$hash', false, false, NULL, now(), now(), now())"
         )
         .await
@@ -333,7 +333,7 @@ async fn find_by_username_roundtrips_none_password_hash_for_pending_user() {
     // Insert a pending user with NULL password_hash and NULL activated_at.
     db.conn()
         .execute_unprepared(
-            "INSERT INTO users (id, username, display_name, email, password_hash, is_root, is_system_admin, disabled_at, activated_at, created_at, updated_at)
+            "INSERT INTO custos.users (id, username, display_name, email, password_hash, is_root, is_system_admin, disabled_at, activated_at, created_at, updated_at)
              VALUES (gen_random_uuid(), 'roundtrip-none', 'RT None', NULL, NULL, false, false, NULL, NULL, now(), now())"
         )
         .await
@@ -367,7 +367,7 @@ async fn login_pending_user_returns_401_not_an_oracle() {
     // Insert a pending user: NULL password_hash, NULL activated_at.
     db.conn()
         .execute_unprepared(
-            "INSERT INTO users (id, username, display_name, email, password_hash, is_root, is_system_admin, disabled_at, activated_at, created_at, updated_at)
+            "INSERT INTO custos.users (id, username, display_name, email, password_hash, is_root, is_system_admin, disabled_at, activated_at, created_at, updated_at)
              VALUES (gen_random_uuid(), 'pending-login', 'Pending', NULL, NULL, false, false, NULL, NULL, now(), now())"
         )
         .await
@@ -1167,7 +1167,7 @@ async fn post_activate_pre_consumed_token_returns_404_no_state_change() {
     let token_hash = hash_token(&token);
     db.conn()
         .execute_unprepared(&format!(
-            "UPDATE user_activation_tokens \
+            "UPDATE custos.user_activation_tokens \
              SET consumed_at = now() \
              WHERE token_hash = '{}' AND consumed_at IS NULL",
             token_hash
@@ -1299,8 +1299,8 @@ async fn post_activate_concurrent_requests_exactly_one_wins() {
     let session_counts = SessionCount::find_by_statement(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
         "SELECT COUNT(*) AS n \
-         FROM sessions s \
-         JOIN users u ON u.id = s.user_id \
+         FROM custos.sessions s \
+         JOIN custos.users u ON u.id = s.user_id \
          WHERE u.username = 'concurrent-race'",
         [],
     ))

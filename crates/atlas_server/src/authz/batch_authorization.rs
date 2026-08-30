@@ -527,7 +527,7 @@ WITH requested AS (
     UNION ALL
     SELECT requested.workspace_id, keys.created_by_user_id
     FROM requested
-    JOIN api_keys keys ON keys.id = requested.principal_id
+    JOIN custos.api_keys keys ON keys.id = requested.principal_id
     WHERE requested.principal_type = 'api_key'
 ), user_grants AS (
     SELECT principal_users.user_id,
@@ -536,15 +536,15 @@ WITH requested AS (
                'role', grants.role
            )) FILTER (WHERE grants.id IS NOT NULL), '[]'::jsonb) AS grants
     FROM principal_users
-    LEFT JOIN permission_grants grants ON grants.workspace_id = principal_users.workspace_id
+    LEFT JOIN custos.permission_grants grants ON grants.workspace_id = principal_users.workspace_id
         AND (
             grants.user_id = principal_users.user_id
             OR (
                 grants.group_id IS NOT NULL
                 AND EXISTS (
                     SELECT 1
-                    FROM group_members
-                    JOIN groups ON groups.id = group_members.group_id
+                    FROM custos.group_members
+                    JOIN custos.groups ON groups.id = group_members.group_id
                     WHERE group_members.group_id = grants.group_id
                       AND group_members.user_id = principal_users.user_id
                       AND groups.workspace_id = principal_users.workspace_id
@@ -567,7 +567,7 @@ WITH requested AS (
                'role', grants.role
            )) FILTER (WHERE grants.id IS NOT NULL), '[]'::jsonb) AS grants
     FROM requested
-    LEFT JOIN permission_grants grants ON grants.workspace_id = requested.workspace_id
+    LEFT JOIN custos.permission_grants grants ON grants.workspace_id = requested.workspace_id
         AND grants.api_key_id = requested.principal_id
         AND (
             grants.resource_ref = 'acta::workspace::' || requested.workspace_id::text
@@ -588,7 +588,7 @@ WITH requested AS (
         'grants', COALESCE(user_grants.grants, '[]'::jsonb)
     ) AS facts
     FROM requested
-    LEFT JOIN users ON users.id = requested.principal_id
+    LEFT JOIN custos.users ON users.id = requested.principal_id
     LEFT JOIN workspace_memberships memberships
         ON memberships.workspace_id = requested.workspace_id AND memberships.user_id = users.id
     LEFT JOIN user_grants ON user_grants.user_id = users.id
@@ -612,8 +612,8 @@ WITH requested AS (
         )
     ) AS facts
     FROM requested
-    LEFT JOIN api_keys keys ON keys.id = requested.principal_id
-    LEFT JOIN users creator ON creator.id = keys.created_by_user_id
+    LEFT JOIN custos.api_keys keys ON keys.id = requested.principal_id
+    LEFT JOIN custos.users creator ON creator.id = keys.created_by_user_id
     LEFT JOIN workspace_memberships creator_membership
         ON creator_membership.workspace_id = requested.workspace_id
         AND creator_membership.user_id = creator.id

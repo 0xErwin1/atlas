@@ -73,7 +73,7 @@ async fn a_grant_naming_a_vanished_project_is_orphaned() {
 
     db.conn()
         .execute_unprepared(&format!(
-            "INSERT INTO permission_grants \
+            "INSERT INTO custos.permission_grants \
              (id, workspace_id, user_id, resource_ref, role, created_at, updated_at) \
              VALUES ('{}', '{}', '{}', '{resource_ref}', 'viewer', now(), now())",
             uuid::Uuid::now_v7(),

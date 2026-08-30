@@ -550,19 +550,19 @@ fn build_doc_permission(
         {owner_admin_clause}
         OR ({member_clause} AND p.id IS NOT NULL AND p.visibility <> 'private')
         OR EXISTS (
-            SELECT 1 FROM permission_grants
+            SELECT 1 FROM custos.permission_grants
             WHERE workspace_id = $1
               AND {principal_col} = $2
               AND resource_ref = 'acta::workspace::' || $1::text
         )
         OR EXISTS (
-            SELECT 1 FROM permission_grants
+            SELECT 1 FROM custos.permission_grants
             WHERE workspace_id = $1
               AND {principal_col} = $2
               AND resource_ref = 'acta::document::' || d.id::text
         )
         OR EXISTS (
-            SELECT 1 FROM permission_grants
+            SELECT 1 FROM custos.permission_grants
             WHERE workspace_id = $1
               AND {principal_col} = $2
               AND resource_ref = 'acta::project::' || d.project_id::text
@@ -588,7 +588,7 @@ fn build_doc_permission(
                 SELECT 'acta::project::' || project_id::text FROM ancestors
                 WHERE project_id IS NOT NULL
             )
-            SELECT 1 FROM permission_grants pg
+            SELECT 1 FROM custos.permission_grants pg
             JOIN ancestor_refs ON ancestor_refs.resource_ref = pg.resource_ref
             WHERE pg.workspace_id = $1
               AND pg.{principal_col} = $2
@@ -607,19 +607,19 @@ fn build_task_permission(
         {owner_admin_clause}
         OR ({member_clause} AND p.id IS NOT NULL AND p.visibility <> 'private')
         OR EXISTS (
-            SELECT 1 FROM permission_grants
+            SELECT 1 FROM custos.permission_grants
             WHERE workspace_id = $1
               AND {principal_col} = $2
               AND resource_ref = 'acta::workspace::' || $1::text
         )
         OR EXISTS (
-            SELECT 1 FROM permission_grants
+            SELECT 1 FROM custos.permission_grants
             WHERE workspace_id = $1
               AND {principal_col} = $2
               AND resource_ref = 'acta::project::' || t.project_id::text
         )
         OR EXISTS (
-            SELECT 1 FROM permission_grants
+            SELECT 1 FROM custos.permission_grants
             WHERE workspace_id = $1
               AND {principal_col} = $2
               AND resource_ref = 'acta::board::' || t.board_id::text

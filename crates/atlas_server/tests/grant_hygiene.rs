@@ -36,7 +36,7 @@ async fn grant_row_count(db: &support::TestDb, resource_ref: &str) -> i64 {
 
     Row::find_by_statement(sea_orm::Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
-        "SELECT count(*)::bigint AS count FROM permission_grants WHERE resource_ref = $1",
+        "SELECT count(*)::bigint AS count FROM custos.permission_grants WHERE resource_ref = $1",
         [resource_ref.into()],
     ))
     .one(db.conn())
