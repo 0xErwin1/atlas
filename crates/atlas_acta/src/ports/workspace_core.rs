@@ -5,9 +5,9 @@ use crate::{
         UpdateProject,
     },
     ids::{FolderId, ProjectId, PropertyDefinitionId},
-    permissions::Principal,
 };
 use async_trait::async_trait;
+use atlas_core::principal::Principal;
 
 #[async_trait]
 pub trait PropertyDefinitionRepo: Send + Sync {

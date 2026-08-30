@@ -3,7 +3,7 @@
 mod support;
 
 use atlas_domain::{
-    entities::lifecycle::{PurgeExecutor, PurgeStatus, RestoreTarget, TrashKind},
+    entities::lifecycle::{PurgeExecutor, PurgeStatus, RestoreTarget, SecurityAuditRef, TrashKind},
     ids::{SecurityAuditId, UserId},
 };
 use atlas_server::persistence::repos::{NewPurgeOperation, PgPurgeOperationRepo};
@@ -46,7 +46,7 @@ async fn purge_repo_persists_each_status_with_its_derived_audit_action() {
                 workspace_id: workspace.id,
                 target: target.clone(),
                 original_actor_user_id: UserId(user.id.0),
-                commit_audit_id: audit_id,
+                commit_audit_id: SecurityAuditRef(audit_id.0),
             },
         )
         .await
@@ -57,6 +57,9 @@ async fn purge_repo_persists_each_status_with_its_derived_audit_action() {
     assert_eq!(created.target.kind, TrashKind::Document);
     assert_eq!(created.last_action.as_str(), "resource.purge_committed");
     assert_eq!(created.last_executor, PurgeExecutor::User);
+    // Characterizes the `SecurityAuditId` -> `SecurityAuditRef` -> DB -> `SecurityAuditRef`
+    // round trip introduced by the crate split: the stored uuid must survive unchanged.
+    assert_eq!(created.commit_audit_id, SecurityAuditRef(audit_id.0));
 
     let pending = repo
         .record_attempt_in(
@@ -155,7 +158,7 @@ async fn purge_operation_rejects_contradictory_status_and_action() {
                     target_id: uuid::Uuid::now_v7(),
                 },
                 original_actor_user_id: UserId(user.id.0),
-                commit_audit_id: audit_id,
+                commit_audit_id: SecurityAuditRef(audit_id.0),
             },
         )
         .await

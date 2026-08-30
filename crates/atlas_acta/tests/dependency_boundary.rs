@@ -5,31 +5,30 @@
     clippy::indexing_slicing
 )]
 
-//! Enforces that `atlas_custos` depends only on `atlas_core` (plus std/third-party
-//! deps) and never on `atlas_domain`, `atlas_acta`, or any application crate.
+//! Enforces that `atlas_acta` depends only on `atlas_core` (plus std/third-party
+//! deps) and never on `atlas_custos`, `atlas_domain`, or any application crate.
 //!
-//! `atlas_custos` is meant to compose with `atlas_acta` only through
-//! `atlas_server`, never directly — pulling `atlas_domain` (which still holds
-//! every Acta module through S2d) back in here would reintroduce the coupling
-//! the crate split exists to remove. This test is the enforcement mechanism for
-//! that invariant, matching `crates/atlas_postgres/tests/dependency_boundary.rs`.
+//! `atlas_acta` is meant to compose with `atlas_custos` only through
+//! `atlas_server`, never directly. This test is the enforcement mechanism for
+//! that invariant over the `custos ↮ acta` direction, matching
+//! `crates/atlas_custos/tests/dependency_boundary.rs`.
 
 use serde_json::Value;
 use std::collections::{HashSet, VecDeque};
 use std::process::Command;
 
-/// Product/application crates `atlas_custos` must never reach, directly or
+/// Product/application crates `atlas_acta` must never reach, directly or
 /// transitively.
 const FORBIDDEN: &[&str] = &[
+    "atlas_custos",
     "atlas_domain",
-    "atlas_acta",
     "atlas_api",
     "atlas_server",
     "migration",
 ];
 
 #[test]
-fn atlas_custos_dependency_closure_excludes_forbidden_crates() {
+fn atlas_acta_dependency_closure_excludes_forbidden_crates() {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let workspace_manifest = format!("{manifest_dir}/../../Cargo.toml");
 
@@ -53,13 +52,13 @@ fn atlas_custos_dependency_closure_excludes_forbidden_crates() {
     let metadata: Value =
         serde_json::from_slice(&output.stdout).expect("cargo metadata produced invalid JSON");
 
-    let closure = dependency_closure(&metadata, "atlas_custos");
+    let closure = dependency_closure(&metadata, "atlas_acta");
 
     for forbidden in FORBIDDEN {
         assert!(
             !closure.contains(*forbidden),
-            "atlas_custos's dependency closure includes forbidden crate `{forbidden}`; \
-             atlas_custos must depend only on atlas_core"
+            "atlas_acta's dependency closure includes forbidden crate `{forbidden}`; \
+             atlas_acta must depend only on atlas_core"
         );
     }
 }

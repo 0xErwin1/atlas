@@ -1,6 +1,6 @@
+use crate::platform::UserUiState;
 use atlas_domain::entities::identity::{
-    ActivationToken, ApiKey, ApiKeyType, MemberRole, Session, User, UserUiState, Workspace,
-    WorkspaceMembership,
+    ActivationToken, ApiKey, ApiKeyType, MemberRole, Session, User, Workspace, WorkspaceMembership,
 };
 use atlas_domain::ids::{
     ActivationTokenId, ApiKeyId, MembershipId, SessionId, UserId, WorkspaceId,

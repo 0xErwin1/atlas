@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 use uuid::Uuid;
 
-use crate::{DomainError, permissions::Principal};
+use crate::DomainError;
+use atlas_core::principal::Principal;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ResourceKind {

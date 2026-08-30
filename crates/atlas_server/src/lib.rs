@@ -19,6 +19,7 @@ pub mod hybrid_search;
 pub mod live;
 pub mod middleware;
 pub mod persistence;
+pub mod platform;
 pub mod presence;
 pub mod routes;
 pub mod search_indexer;

@@ -8,9 +8,9 @@
 //! accepting it would let S3c read a cross-workspace grant as if it were
 //! scoped to the caller's own workspace.
 
-use crate::error::DomainError;
 use crate::ids::WorkspaceId;
 use crate::permissions::ResourceRef;
+use atlas_core::error::DomainError;
 
 const PRODUCT: &str = "acta";
 

@@ -587,6 +587,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas_acta"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "atlas_core",
+ "bytes",
+ "chrono",
+ "diffy-imara",
+ "fractional_index",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "atlas_api"
 version = "0.0.0"
 dependencies = [
@@ -698,6 +715,7 @@ name = "atlas_domain"
 version = "0.0.0"
 dependencies = [
  "async-trait",
+ "atlas_acta",
  "atlas_core",
  "atlas_custos",
  "bytes",

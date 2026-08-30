@@ -9,17 +9,15 @@
 )]
 
 pub mod actor;
-pub mod document_lines;
 pub mod entities;
 pub mod error;
-pub mod frontmatter;
 pub mod ids;
 pub mod permissions;
 pub mod ports;
-pub mod revision;
-pub mod search;
-pub mod semantic_search;
-pub mod wikilink;
+
+/// Acta-owned top-level modules relocated to `atlas_acta` (S2d). Re-exported
+/// here to keep every existing `crate::*` import path compiling.
+pub use atlas_acta::{document_lines, frontmatter, revision, search, semantic_search, wikilink};
 
 pub use atlas_core::position;
 pub use atlas_core::slug;

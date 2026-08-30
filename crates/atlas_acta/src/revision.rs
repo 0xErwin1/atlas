@@ -1,4 +1,4 @@
-use crate::error::DomainError;
+use atlas_core::error::DomainError;
 use diffy_imara::{apply, create_patch};
 
 /// Creates a unified diff patch from `old` to `new`.

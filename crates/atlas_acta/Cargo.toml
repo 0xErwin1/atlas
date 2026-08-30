@@ -1,5 +1,5 @@
 [package]
-name = "atlas_domain"
+name = "atlas_acta"
 version = "0.0.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -8,8 +8,6 @@ repository.workspace = true
 
 [dependencies]
 atlas_core.workspace = true
-atlas_custos.workspace = true
-atlas_acta.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

@@ -1,13 +1,10 @@
-pub mod boards_tasks;
-pub mod comments;
-pub mod documents;
-pub mod events;
 pub mod groups;
 pub mod identity;
-pub mod lifecycle;
-pub mod saved_searches;
 pub mod security_audit;
-pub mod status_templates;
-pub mod tags;
-pub mod task_views;
-pub mod workspace_core;
+
+/// Acta-owned entities relocated to `atlas_acta::entities` (S2d). Re-exported
+/// here to keep every existing `crate::entities::*` import path compiling.
+pub use atlas_acta::entities::{
+    boards_tasks, comments, documents, events, lifecycle, saved_searches, status_templates, tags,
+    task_views, workspace_core,
+};

@@ -1,7 +1,8 @@
 use atlas_domain::{
     Actor, AttachmentStore, DomainError, WorkspaceCtx,
     entities::lifecycle::{
-        PurgeExecutor, PurgeOperation, PurgeStatus, RestoreTarget, TrashItem, TrashKind,
+        PurgeExecutor, PurgeOperation, PurgeStatus, RestoreTarget, SecurityAuditRef, TrashItem,
+        TrashKind,
     },
     ids::{UserId, WorkspaceId},
 };
@@ -219,7 +220,7 @@ impl TrashService {
                     workspace_id: ctx.workspace_id,
                     target: target.clone(),
                     original_actor_user_id: actor,
-                    commit_audit_id: audit_id,
+                    commit_audit_id: SecurityAuditRef(audit_id.0),
                 },
             )
             .await?;
