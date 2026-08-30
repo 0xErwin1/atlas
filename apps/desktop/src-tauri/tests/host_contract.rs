@@ -2,12 +2,12 @@
 
 use atlas_desktop::{
     CloseBehavior, DesktopApiRequest, DesktopConfiguration, DesktopPreferences, DesktopSession,
-    InMemorySecretStore, Lifecycle, LifecycleAction, SecretStore, SessionScope, SessionState,
-    StreamFrame, StreamTermination, SurfaceableWindow, TransportKind, WorkspaceEvent,
+    ExternalUrlError, InMemorySecretStore, Lifecycle, LifecycleAction, SecretStore, SessionScope,
+    SessionState, StreamFrame, StreamTermination, SurfaceableWindow, TransportKind, WorkspaceEvent,
     build_authenticated_api_request, build_authenticated_request,
     classify_workspace_stream_terminal, close_behavior, desktop_state_directory_from,
     install_file_logging, process_workspace_sse_chunk, sanitize_download_file_name,
-    surface_existing_window, unique_download_path,
+    surface_existing_window, unique_download_path, validate_external_url,
 };
 use std::{
     fs,
@@ -39,6 +39,56 @@ fn rejects_noncanonical_or_non_https_origins() {
         SessionScope::new(ORIGIN, "user-1").map(|scope| scope.origin().to_owned()),
         Ok(ORIGIN.to_owned())
     );
+}
+
+#[test]
+fn external_url_validation_accepts_only_http_and_https() {
+    for accepted in [
+        "https://atlas.example.test/t/task/ATL-1",
+        "http://localhost:5173/x",
+        "HTTPS://atlas.example.test",
+    ] {
+        assert!(
+            validate_external_url(accepted).is_ok(),
+            "{accepted} must be accepted"
+        );
+    }
+
+    for (rejected, expected) in [
+        ("file:///etc/passwd", ExternalUrlError::UnsupportedScheme),
+        ("javascript:alert(1)", ExternalUrlError::UnsupportedScheme),
+        (
+            "data:text/html,<script>",
+            ExternalUrlError::UnsupportedScheme,
+        ),
+        ("smb://host/share", ExternalUrlError::UnsupportedScheme),
+        ("mailto:a@b.test", ExternalUrlError::UnsupportedScheme),
+        ("atlas://x", ExternalUrlError::UnsupportedScheme),
+        ("ftp://h/f", ExternalUrlError::UnsupportedScheme),
+        ("", ExternalUrlError::Malformed),
+        ("not a url", ExternalUrlError::Malformed),
+        ("//no-scheme", ExternalUrlError::Malformed),
+    ] {
+        assert_eq!(
+            validate_external_url(rejected),
+            Err(expected),
+            "{rejected} must be rejected"
+        );
+    }
+}
+
+#[test]
+fn external_url_validation_rejects_embedded_credentials() {
+    for with_credentials in [
+        "https://user:pw@atlas.example.test",
+        "https://user@atlas.example.test",
+    ] {
+        assert_eq!(
+            validate_external_url(with_credentials),
+            Err(ExternalUrlError::CredentialsPresent),
+            "{with_credentials} must be rejected"
+        );
+    }
 }
 
 #[test]

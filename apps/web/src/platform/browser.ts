@@ -56,5 +56,14 @@ export function createBrowserPlatformTransport(): PlatformTransport {
     saveDownload() {
       return Promise.resolve({ error: 'downloads are saved by the browser' });
     },
+    // With `noopener` the browser returns null even when the tab opened, so the
+    // return value cannot distinguish success from a blocked popup.
+    openExternal(url) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+      return Promise.resolve({});
+    },
+    publicBase() {
+      return globalThis.location?.origin ?? '';
+    },
   };
 }

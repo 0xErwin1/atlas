@@ -42,6 +42,7 @@ axum = { version = "0.8", optional = true }
 axum-server = { version = "0.7", features = ["tls-rustls"], optional = true }
 futures.workspace = true
 keyring.workspace = true
+opener = "0.8"
 reqwest.workspace = true
 rcgen = { version = "0.14", optional = true }
 rand = { workspace = true, optional = true }
