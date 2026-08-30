@@ -16,7 +16,7 @@ use sha2::{Digest, Sha256};
 
 use crate::persistence::{
     entities::{comments::comment_attachment_draft, documents::attachment},
-    repos::{PgCommentLinkRepo, PgCommentRepo, PgSearchIndexQueueRepo, PgSecurityAuditRepo},
+    repos::{PgCommentLinkRepo, PgCommentRepo, PgSearchIndexQueueRepo, append_resource_deleted_in},
 };
 use atlas_postgres::db_err;
 
@@ -256,7 +256,7 @@ impl CommentService {
         PgCommentRepo::soft_delete_at_in(&txn, ctx, owner, comment_id, deleted_at).await?;
 
         tombstone_comment_attachments_in(&txn, ctx, comment_id, deleted_at).await?;
-        PgSecurityAuditRepo::append_resource_deleted_in(
+        append_resource_deleted_in(
             &txn,
             ctx,
             atlas_acta::entities::lifecycle::TrashKind::Comment,
@@ -265,7 +265,7 @@ impl CommentService {
         .await?;
 
         for attachment_id in attachment_ids {
-            PgSecurityAuditRepo::append_resource_deleted_in(
+            append_resource_deleted_in(
                 &txn,
                 ctx,
                 atlas_acta::entities::lifecycle::TrashKind::Attachment,

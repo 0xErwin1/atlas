@@ -1,4 +1,5 @@
-use atlas_acta::actor::Actor;
+use atlas_core::Attribution;
+use atlas_core::attribution::{ApiKeyAttributionId, UserAttributionId};
 use atlas_core::principal::UserId;
 use atlas_custos::WorkspaceScope;
 use atlas_custos::entities::security_audit::SecurityAuditEvent;
@@ -30,16 +31,16 @@ pub mod security_audit_log {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
-/// Reconstructs `Actor` from the XOR actor columns in a `security_audit_log` row.
+/// Reconstructs `Attribution` from the XOR actor columns in a `security_audit_log` row.
 ///
 /// The DB CHECK constraint guarantees exactly one is non-null. The both-null arm
 /// is unreachable in a valid DB but is handled defensively with a fabricated actor
 /// rather than panicking.
-pub fn actor_from_columns(user_id: Option<Uuid>, api_key_id: Option<Uuid>) -> Actor {
+pub fn actor_from_columns(user_id: Option<Uuid>, api_key_id: Option<Uuid>) -> Attribution {
     match (user_id, api_key_id) {
-        (Some(uid), None) => Actor::User(atlas_acta::actor::UserAttributionId(uid)),
-        (None, Some(kid)) => Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(kid)),
-        _ => Actor::User(atlas_acta::actor::UserAttributionId(UserId::new().0)),
+        (Some(uid), None) => Attribution::User(UserAttributionId(uid)),
+        (None, Some(kid)) => Attribution::ApiKey(ApiKeyAttributionId(kid)),
+        _ => Attribution::User(UserAttributionId(UserId::new().0)),
     }
 }
 
@@ -64,27 +65,23 @@ mod tests {
     fn actor_from_columns_user() {
         let uid = Uuid::now_v7();
         let actor = actor_from_columns(Some(uid), None);
-        assert!(
-            matches!(actor, Actor::User(id) if id == atlas_acta::actor::UserAttributionId(uid))
-        );
+        assert!(matches!(actor, Attribution::User(id) if id == UserAttributionId(uid)));
     }
 
     #[test]
     fn actor_from_columns_api_key() {
         let kid = Uuid::now_v7();
         let actor = actor_from_columns(None, Some(kid));
-        assert!(
-            matches!(actor, Actor::ApiKey(id) if id == atlas_acta::actor::ApiKeyAttributionId(kid))
-        );
+        assert!(matches!(actor, Attribution::ApiKey(id) if id == ApiKeyAttributionId(kid)));
     }
 
     /// Known latent bug, out of scope for this slice, defect candidate post-E2:
     /// a `(None, None)` row silently becomes an attributed-to-a-random-user
-    /// record. Pin the control flow only (returns `Actor::User(_)` without
+    /// record. Pin the control flow only (returns `Attribution::User(_)` without
     /// erroring); never assert the specific random uuid.
     #[test]
     fn actor_from_columns_none_none_falls_back_to_random_user_actor() {
         let actor = actor_from_columns(None, None);
-        assert!(matches!(actor, Actor::User(_)));
+        assert!(matches!(actor, Attribution::User(_)));
     }
 }

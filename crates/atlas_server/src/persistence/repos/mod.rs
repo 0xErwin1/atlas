@@ -76,7 +76,10 @@ pub use workspace_core::{
 };
 
 pub use permissions::{PermissionGrantRepo, PgGroupRepo, PgPermissionGrantRepo};
-pub use security_audit::{PgSecurityAuditRepo, SecurityAuditRepoTrait as SecurityAuditRepo};
+pub use security_audit::{
+    PgSecurityAuditRepo, SecurityAuditRepoTrait as SecurityAuditRepo, append_resource_deleted_in,
+    append_resource_purge_committed_in, append_resource_restored_in,
+};
 #[allow(unreachable_pub)]
 mod saved_searches;
 

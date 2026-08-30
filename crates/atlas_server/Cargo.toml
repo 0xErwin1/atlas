@@ -24,6 +24,7 @@ atlas_core.workspace = true
 atlas_custos.workspace = true
 atlas_acta.workspace = true
 atlas_postgres.workspace = true
+atlas_custos_postgres.workspace = true
 atlas_api = { workspace = true, features = ["openapi"] }
 axum.workspace = true
 axum-extra.workspace = true

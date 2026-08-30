@@ -31,7 +31,7 @@ use crate::persistence::entities::workspace_core::{
     visibility_from_cols,
 };
 use crate::persistence::live_ancestors::{live_folder_chain, live_project};
-use crate::persistence::repos::{PgOutboxRepo, PgSecurityAuditRepo};
+use crate::persistence::repos::{PgOutboxRepo, append_resource_deleted_in};
 
 pub use atlas_acta::ports::workspace_core::FolderRepo;
 pub use atlas_acta::ports::workspace_core::ProjectRepo;
@@ -457,8 +457,7 @@ impl ProjectRepo for PgProjectRepo {
         active.updated_at = Set(Utc::now());
         active.update(&txn).await.map_err(db_err)?;
 
-        PgSecurityAuditRepo::append_resource_deleted_in(&txn, ctx, TrashKind::Project, id.0)
-            .await?;
+        append_resource_deleted_in(&txn, ctx, TrashKind::Project, id.0).await?;
 
         txn.commit().await.map_err(db_err)?;
         Ok(())
@@ -664,7 +663,7 @@ impl FolderRepo for PgFolderRepo {
         )
         .await?;
 
-        PgSecurityAuditRepo::append_resource_deleted_in(&txn, ctx, TrashKind::Folder, id.0).await?;
+        append_resource_deleted_in(&txn, ctx, TrashKind::Folder, id.0).await?;
 
         txn.commit().await.map_err(db_err)?;
         Ok(())
