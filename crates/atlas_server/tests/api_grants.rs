@@ -627,14 +627,14 @@ async fn agent_with_all_capabilities_and_editor_grant_cannot_create_project_gran
     };
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
             user_id: None,
             api_key_id: Some(ApiKeyId(key.id.0)),
             group_id: None,
-            project_id: Some(ProjectId(project.id)),
-            folder_id: None,
-            document_id: None,
-            board_id: None,
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Project(ProjectId(project.id)),
+                ws.id,
+            ),
             role: atlas_server::authz::ResourceRole::Editor,
             created_by_user_id: Some(owner_user.id),
             created_by_api_key_id: None,

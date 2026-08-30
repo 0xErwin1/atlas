@@ -35,14 +35,14 @@ async fn upsert_creates_and_updates_on_conflict() {
         .expect("create project");
 
     let grant = NewPermissionGrant {
-        workspace_id: ws.id,
+        workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
         user_id: Some(user.id),
         api_key_id: None,
         group_id: None,
-        project_id: Some(project.id),
-        folder_id: None,
-        document_id: None,
-        board_id: None,
+        resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+            &atlas_acta::permissions::ResourceRef::Project(project.id),
+            ws.id,
+        ),
         role: ResourceRole::Viewer,
         created_by_user_id: Some(user.id),
         created_by_api_key_id: None,
@@ -95,14 +95,14 @@ async fn load_grants_for_resolution_returns_matching_grants() {
     // Workspace-scope grant (all targets null).
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
             user_id: Some(user.id),
             api_key_id: None,
             group_id: None,
-            project_id: None,
-            folder_id: None,
-            document_id: None,
-            board_id: None,
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Workspace,
+                ws.id,
+            ),
             role: ResourceRole::Viewer,
             created_by_user_id: Some(user.id),
             created_by_api_key_id: None,
@@ -113,14 +113,14 @@ async fn load_grants_for_resolution_returns_matching_grants() {
     // Project-scope grant.
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
             user_id: Some(user.id),
             api_key_id: None,
             group_id: None,
-            project_id: Some(project.id),
-            folder_id: None,
-            document_id: None,
-            board_id: None,
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Project(project.id),
+                ws.id,
+            ),
             role: ResourceRole::Editor,
             created_by_user_id: Some(user.id),
             created_by_api_key_id: None,
@@ -130,28 +130,40 @@ async fn load_grants_for_resolution_returns_matching_grants() {
 
     let grants = grant_repo
         .load_grants_for_resolution(ResolutionQuery {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope(ws.id.0),
             user_id: Some(user.id.0),
             api_key_id: None,
             group_ids: vec![],
-            chain_projects: vec![project.id.0],
-            chain_folders: vec![],
-            doc_id: None,
-            board_id: None,
+            resource_refs: vec![
+                atlas_acta::permissions::resource_ref_codec::to_core(
+                    &ResourceRef::Workspace,
+                    ws.id,
+                ),
+                atlas_acta::permissions::resource_ref_codec::to_core(
+                    &ResourceRef::Project(project.id),
+                    ws.id,
+                ),
+            ],
         })
         .await
         .expect("load_grants_for_resolution");
 
     assert_eq!(grants.len(), 2, "should return ws-scope and project-scope");
+    let workspace_ref =
+        atlas_acta::permissions::resource_ref_codec::to_core(&ResourceRef::Workspace, ws.id);
+    let project_ref = atlas_acta::permissions::resource_ref_codec::to_core(
+        &ResourceRef::Project(project.id),
+        ws.id,
+    );
     assert!(
         grants
             .iter()
-            .any(|(r, role)| r == &ResourceRef::Workspace && *role == ResourceRole::Viewer)
+            .any(|(r, role)| r == &workspace_ref && *role == ResourceRole::Viewer)
     );
     assert!(
-        grants.iter().any(
-            |(r, role)| r == &ResourceRef::Project(project.id) && *role == ResourceRole::Editor
-        )
+        grants
+            .iter()
+            .any(|(r, role)| r == &project_ref && *role == ResourceRole::Editor)
     );
 
     db.teardown().await;
@@ -169,14 +181,14 @@ async fn load_grants_cross_tenant_returns_empty() {
 
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws_a.id,
+            workspace_id: atlas_custos::WorkspaceScope((ws_a.id).0),
             user_id: Some(user_a.id),
             api_key_id: None,
             group_id: None,
-            project_id: None,
-            folder_id: None,
-            document_id: None,
-            board_id: None,
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Workspace,
+                ws_a.id,
+            ),
             role: ResourceRole::Editor,
             created_by_user_id: Some(user_a.id),
             created_by_api_key_id: None,
@@ -186,14 +198,14 @@ async fn load_grants_cross_tenant_returns_empty() {
 
     let grants = grant_repo
         .load_grants_for_resolution(ResolutionQuery {
-            workspace_id: ws_b.id,
+            workspace_id: atlas_custos::WorkspaceScope(ws_b.id.0),
             user_id: Some(user_a.id.0),
             api_key_id: None,
             group_ids: vec![],
-            chain_projects: vec![],
-            chain_folders: vec![],
-            doc_id: None,
-            board_id: None,
+            resource_refs: vec![atlas_acta::permissions::resource_ref_codec::to_core(
+                &ResourceRef::Workspace,
+                ws_b.id,
+            )],
         })
         .await
         .expect("cross-tenant query");

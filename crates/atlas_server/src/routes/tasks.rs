@@ -925,7 +925,11 @@ async fn validate_assignee_is_workspace_member(
                 conn: (*state.db).clone(),
             };
             let has_grant = grant_repo
-                .principal_has_any_grant_in_workspace(ctx.workspace_id, None, Some(*kid))
+                .principal_has_any_grant_in_workspace(
+                    atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+                    None,
+                    Some(*kid),
+                )
                 .await
                 .map_err(|e| ApiError::Internal {
                     message: e.to_string(),
@@ -4594,11 +4598,25 @@ async fn compute_workspace_activity_scope(
         conn: (*state.db).clone(),
     };
 
-    // Load all grants for this principal across the workspace once.
-    let all_grants = grant_repo
-        .list_all_for_principal_in_workspace(ctx.workspace_id, user_id, api_key_id)
+    // Load all grants for this principal across the workspace once. The port
+    // returns the opaque `atlas_core::ids::ResourceRef`; decode back to the
+    // Acta enum `resolve()` compares against `ChainSegment.resource`.
+    let raw_grants = grant_repo
+        .list_all_for_principal_in_workspace(
+            atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+            user_id,
+            api_key_id,
+        )
         .await
         .map_err(ApiError::Domain)?;
+
+    let mut all_grants = Vec::with_capacity(raw_grants.len());
+    for (resource_ref, role) in raw_grants {
+        let resource =
+            atlas_acta::permissions::resource_ref_codec::from_core(&resource_ref, ctx.workspace_id)
+                .map_err(ApiError::Domain)?;
+        all_grants.push((resource, role));
+    }
 
     // Enumerate all projects and resolve access per project.
     let project_repo = PgProjectRepo {

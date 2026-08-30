@@ -92,14 +92,14 @@ async fn list_members_returns_users_and_agents() {
     };
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
             user_id: None,
             api_key_id: Some(agent.id),
             group_id: None,
-            project_id: None,
-            folder_id: None,
-            document_id: None,
-            board_id: None,
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Workspace,
+                ws.id,
+            ),
             role: ResourceRole::Editor,
             created_by_user_id: Some(owner_user.id),
             created_by_api_key_id: None,
@@ -212,14 +212,14 @@ async fn list_members_returns_role_for_user_members_and_no_role_for_api_key_prin
     use atlas_server::authz::policy::NewPermissionGrant;
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
             user_id: None,
             api_key_id: Some(agent.id),
             group_id: None,
-            project_id: None,
-            folder_id: None,
-            document_id: None,
-            board_id: None,
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Workspace,
+                ws.id,
+            ),
             role: ResourceRole::Editor,
             created_by_user_id: Some(owner_user.id),
             created_by_api_key_id: None,

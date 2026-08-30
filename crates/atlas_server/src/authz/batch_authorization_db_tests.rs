@@ -494,7 +494,16 @@ async fn group_grant_resolution_excludes_a_soft_deleted_group() {
         .load_grants_for_resolution(resolution_query(workspace_id, user_id, group_id))
         .await
         .expect("live group grant resolves");
-    assert_eq!(grants, vec![(ResourceRef::Workspace, ResourceRole::Editor)]);
+    assert_eq!(
+        grants,
+        vec![(
+            atlas_acta::permissions::resource_ref_codec::to_core(
+                &ResourceRef::Workspace,
+                WorkspaceId(workspace_id)
+            ),
+            ResourceRole::Editor
+        )]
+    );
 
     db.conn
         .execute_unprepared(&format!(
@@ -1142,14 +1151,14 @@ async fn seed_minimal_document(
 
 fn resolution_query(workspace_id: Uuid, user_id: Uuid, group_id: Uuid) -> ResolutionQuery {
     ResolutionQuery {
-        workspace_id: WorkspaceId(workspace_id),
+        workspace_id: atlas_custos::WorkspaceScope(workspace_id),
         user_id: Some(user_id),
         api_key_id: None,
         group_ids: vec![group_id],
-        chain_projects: Vec::new(),
-        chain_folders: Vec::new(),
-        doc_id: None,
-        board_id: None,
+        resource_refs: vec![atlas_acta::permissions::resource_ref_codec::to_core(
+            &ResourceRef::Workspace,
+            WorkspaceId(workspace_id),
+        )],
     }
 }
 

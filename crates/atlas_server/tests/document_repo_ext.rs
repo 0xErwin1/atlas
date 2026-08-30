@@ -238,15 +238,19 @@ async fn grant_to_api_key(
     let repo = PgPermissionGrantRepo {
         conn: db.conn().clone(),
     };
+    let resource = if let Some(pid) = project_id {
+        atlas_acta::permissions::ResourceRef::Project(pid)
+    } else if let Some(fid) = folder_id {
+        atlas_acta::permissions::ResourceRef::Folder(fid)
+    } else {
+        atlas_acta::permissions::ResourceRef::Workspace
+    };
     repo.upsert(NewPermissionGrant {
-        workspace_id: ws.id,
+        workspace_id: atlas_custos::WorkspaceScope(ws.id.0),
         user_id: None,
         api_key_id: Some(api_key_id),
         group_id: None,
-        project_id,
-        folder_id,
-        document_id: None,
-        board_id: None,
+        resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(&resource, ws.id),
         role: ResourceRole::Viewer,
         created_by_user_id: None,
         created_by_api_key_id: None,

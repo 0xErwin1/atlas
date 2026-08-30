@@ -103,14 +103,14 @@ pub(crate) async fn create_project(
     PgPermissionGrantRepo::upsert_in(
         &txn,
         NewPermissionGrant {
-            workspace_id: auth.workspace.id,
+            workspace_id: atlas_custos::WorkspaceScope(auth.workspace.id.0),
             user_id: created_by_user_id,
             api_key_id: created_by_api_key_id,
             group_id: None,
-            project_id: Some(project.id),
-            folder_id: None,
-            document_id: None,
-            board_id: None,
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Project(project.id),
+                auth.workspace.id,
+            ),
             role: creator_role,
             created_by_user_id,
             created_by_api_key_id,

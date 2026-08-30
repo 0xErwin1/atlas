@@ -663,14 +663,14 @@ async fn api_key_resolution_unaffected_by_groups() {
 
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
             user_id: None,
             api_key_id: Some(ApiKeyId(key.id)),
             group_id: None,
-            project_id: Some(ProjectId(project.id)),
-            folder_id: None,
-            document_id: None,
-            board_id: None,
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Project(ProjectId(project.id)),
+                ws.id,
+            ),
             role: ResourceRole::Editor,
             created_by_user_id: Some(owner_user.id),
             created_by_api_key_id: None,
@@ -927,14 +927,14 @@ async fn upsert_group_grant_reads_back_correct_row() {
     // First upsert: Viewer.
     let g1 = grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
             user_id: None,
             api_key_id: None,
             group_id: Some(group.id),
-            project_id: Some(ProjectId(project.id)),
-            folder_id: None,
-            document_id: None,
-            board_id: None,
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Project(ProjectId(project.id)),
+                ws.id,
+            ),
             role: ResourceRole::Viewer,
             created_by_user_id: Some(owner_user.id),
             created_by_api_key_id: None,
@@ -948,14 +948,14 @@ async fn upsert_group_grant_reads_back_correct_row() {
     // Second upsert (same unique key): Editor — must UPDATE not duplicate.
     let g2 = grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
             user_id: None,
             api_key_id: None,
             group_id: Some(group.id),
-            project_id: Some(ProjectId(project.id)),
-            folder_id: None,
-            document_id: None,
-            board_id: None,
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Project(ProjectId(project.id)),
+                ws.id,
+            ),
             role: ResourceRole::Editor,
             created_by_user_id: Some(owner_user.id),
             created_by_api_key_id: None,
@@ -974,8 +974,11 @@ async fn upsert_group_grant_reads_back_correct_row() {
     use atlas_server::persistence::repos::PermissionGrantRepo;
     let all = grant_repo
         .list_for_resource(
-            ws.id,
-            &atlas_acta::permissions::ResourceRef::Project(ProjectId(project.id)),
+            atlas_custos::WorkspaceScope(ws.id.0),
+            &atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Project(ProjectId(project.id)),
+                ws.id,
+            ),
             None,
             100,
         )

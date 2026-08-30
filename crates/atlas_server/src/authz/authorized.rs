@@ -1328,11 +1328,24 @@ async fn resolve_grant_role(
             message: e.to_string(),
         })?;
 
+    // `load_grants_for_resolution` returns the opaque `atlas_core::ids::ResourceRef`
+    // (the Custos port never sees an Acta type); decode back to the Acta
+    // `ResourceRef` enum `resolve()` compares against `ChainSegment.resource`.
+    let mut decoded_grants = Vec::with_capacity(grants.len());
+    for (resource_ref, role) in grants {
+        let resource =
+            atlas_acta::permissions::resource_ref_codec::from_core(&resource_ref, workspace.id)
+                .map_err(|e| ApiError::Internal {
+                    message: e.to_string(),
+                })?;
+        decoded_grants.push((resource, role));
+    }
+
     let input = ResolutionInput {
         principal,
         membership,
         chain,
-        grants: &grants,
+        grants: &decoded_grants,
     };
 
     Ok(resolve(&input))
@@ -1492,7 +1505,11 @@ pub async fn api_key_can_access_workspace(
 
     let grant_repo = PgPermissionGrantRepo { conn: db.clone() };
     let has_grant = grant_repo
-        .principal_has_any_grant_in_workspace(workspace.id, None, Some(key_id))
+        .principal_has_any_grant_in_workspace(
+            atlas_custos::WorkspaceScope(workspace.id.0),
+            None,
+            Some(key_id),
+        )
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
@@ -1526,7 +1543,11 @@ async fn creator_can_reach_workspace(
 
     let grant_repo = PgPermissionGrantRepo { conn: db.clone() };
     grant_repo
-        .principal_has_any_grant_in_workspace(workspace.id, Some(user_id), None)
+        .principal_has_any_grant_in_workspace(
+            atlas_custos::WorkspaceScope(workspace.id.0),
+            Some(user_id),
+            None,
+        )
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
@@ -1583,29 +1604,30 @@ async fn build_resolution_query(
         vec![]
     };
 
-    let mut chain_projects = Vec::new();
-    let mut chain_folders = Vec::new();
-    let mut doc_id = None;
-    let mut board_id = None;
-
+    // Every resource this query might match, encoded as the canonical
+    // resource_ref string: the workspace-scope ref (always present) plus one
+    // ref per chain resource actually requested. `atlas_acta`'s codec owns
+    // this conversion — the moved `PermissionGrantRepo` port only ever sees
+    // the already-encoded, opaque `atlas_core::ids::ResourceRef`.
+    let mut resource_refs = vec![atlas_acta::permissions::resource_ref_codec::to_core(
+        &ResourceRef::Workspace,
+        workspace.id,
+    )];
     for seg in &chain.segments {
-        match &seg.resource {
-            ResourceRef::Project(pid) => chain_projects.push(pid.0),
-            ResourceRef::Folder(fid) => chain_folders.push(fid.0),
-            ResourceRef::Document(did) => doc_id = Some(did.0),
-            ResourceRef::Board(bid) => board_id = Some(bid.0),
-            ResourceRef::Workspace => {}
+        if matches!(seg.resource, ResourceRef::Workspace) {
+            continue;
         }
+        resource_refs.push(atlas_acta::permissions::resource_ref_codec::to_core(
+            &seg.resource,
+            workspace.id,
+        ));
     }
 
     Ok(ResolutionQuery {
-        workspace_id: workspace.id,
+        workspace_id: atlas_custos::WorkspaceScope(workspace.id.0),
         user_id,
         api_key_id,
         group_ids,
-        chain_projects,
-        chain_folders,
-        doc_id,
-        board_id,
+        resource_refs,
     })
 }

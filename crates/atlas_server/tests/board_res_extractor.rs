@@ -173,14 +173,14 @@ async fn folder_scope_grant_yields_effective_access_on_board_in_that_folder() {
     };
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
             user_id: Some(viewer.id),
             api_key_id: None,
             group_id: None,
-            project_id: None,
-            folder_id: Some(folder.id),
-            document_id: None,
-            board_id: None,
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Folder(folder.id),
+                ws.id,
+            ),
             role: ResourceRole::Viewer,
             created_by_user_id: Some(owner.id),
             created_by_api_key_id: None,
@@ -204,19 +204,32 @@ async fn folder_scope_grant_yields_effective_access_on_board_in_that_folder() {
         })
         .collect();
 
-    let grants = grant_repo
+    let mut resource_refs = vec![atlas_acta::permissions::resource_ref_codec::to_core(
+        &ResourceRef::Workspace,
+        ws.id,
+    )];
+    resource_refs.extend(chain_folder_ids.iter().map(|id| {
+        atlas_acta::permissions::resource_ref_codec::to_core(
+            &ResourceRef::Folder(atlas_acta::ids::FolderId(*id)),
+            ws.id,
+        )
+    }));
+    let raw_grants = grant_repo
         .load_grants_for_resolution(ResolutionQuery {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope(ws.id.0),
             user_id: Some(viewer.id.0),
             api_key_id: None,
             group_ids: vec![],
-            chain_projects: vec![],
-            chain_folders: chain_folder_ids,
-            doc_id: None,
-            board_id: None,
+            resource_refs,
         })
         .await
         .expect("load_grants_for_resolution");
+    let mut grants = Vec::with_capacity(raw_grants.len());
+    for (resource_ref, role) in raw_grants {
+        let resource = atlas_acta::permissions::resource_ref_codec::from_core(&resource_ref, ws.id)
+            .expect("decode resource ref");
+        grants.push((resource, role));
+    }
 
     let principal = Principal::User(viewer.id);
     let input = ResolutionInput {

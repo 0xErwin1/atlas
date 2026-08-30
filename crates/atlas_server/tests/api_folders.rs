@@ -895,14 +895,14 @@ async fn move_folder_underprivileged_destination_returns_404() {
     };
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
             user_id: Some(caller_domain_user.id),
             api_key_id: None,
             group_id: None,
-            project_id: None,
-            folder_id: Some(atlas_acta::ids::FolderId(source.id)),
-            document_id: None,
-            board_id: None,
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Folder(atlas_acta::ids::FolderId(source.id)),
+                ws.id,
+            ),
             role: atlas_server::authz::ResourceRole::Editor,
             created_by_user_id: Some(owner_user.id),
             created_by_api_key_id: None,

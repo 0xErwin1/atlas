@@ -350,7 +350,7 @@ async fn resolve_resource_labels(
         grants
             .iter()
             .filter(|g| seen.insert(g.workspace_id.0))
-            .map(|g| g.workspace_id)
+            .map(|g| WorkspaceId(g.workspace_id.0))
             .collect()
     };
 
@@ -365,9 +365,20 @@ async fn resolve_resource_labels(
         }
     }
 
+    // `resource_ref` is opaque; decode it against the grant's own workspace to
+    // recover the Acta `ResourceRef` and pull out a project-scope grant's id.
     let project_grants: Vec<(ProjectId, WorkspaceId)> = grants
         .iter()
-        .filter_map(|g| g.project_id.map(|pid| (pid, g.workspace_id)))
+        .filter_map(|g| {
+            let workspace_id = WorkspaceId(g.workspace_id.0);
+            match atlas_acta::permissions::resource_ref_codec::from_core(
+                &g.resource_ref,
+                workspace_id,
+            ) {
+                Ok(atlas_acta::permissions::ResourceRef::Project(pid)) => Some((pid, workspace_id)),
+                _ => None,
+            }
+        })
         .collect();
 
     let mut project_map: HashMap<ProjectId, (String, String)> = HashMap::new();
@@ -491,12 +502,17 @@ fn grant_to_api_key_grant_dto(
         ResourceRole::Admin => "admin".to_string(),
     };
 
+    let workspace_id = WorkspaceId(grant.workspace_id.0);
     let workspace_slug = ws_map
-        .get(&grant.workspace_id)
+        .get(&workspace_id)
         .map(|(slug, _)| slug.clone())
-        .unwrap_or_else(|| grant.workspace_id.0.to_string());
+        .unwrap_or_else(|| workspace_id.0.to_string());
 
-    if let Some(pid) = grant.project_id {
+    let resource =
+        atlas_acta::permissions::resource_ref_codec::from_core(&grant.resource_ref, workspace_id)
+            .ok();
+
+    if let Some(atlas_acta::permissions::ResourceRef::Project(pid)) = resource {
         let (project_slug, project_name) = project_map
             .get(&pid)
             .map(|(slug, name)| (slug.clone(), name.clone()))
@@ -513,7 +529,7 @@ fn grant_to_api_key_grant_dto(
         };
     }
 
-    if let Some(fid) = grant.folder_id {
+    if let Some(atlas_acta::permissions::ResourceRef::Folder(fid)) = resource {
         return ApiKeyGrantDto {
             id: grant.id.0,
             role,
@@ -525,7 +541,7 @@ fn grant_to_api_key_grant_dto(
         };
     }
 
-    if let Some(did) = grant.document_id {
+    if let Some(atlas_acta::permissions::ResourceRef::Document(did)) = resource {
         return ApiKeyGrantDto {
             id: grant.id.0,
             role,
@@ -537,7 +553,7 @@ fn grant_to_api_key_grant_dto(
         };
     }
 
-    if let Some(bid) = grant.board_id {
+    if let Some(atlas_acta::permissions::ResourceRef::Board(bid)) = resource {
         return ApiKeyGrantDto {
             id: grant.id.0,
             role,
@@ -550,9 +566,9 @@ fn grant_to_api_key_grant_dto(
     }
 
     let ws_label = ws_map
-        .get(&grant.workspace_id)
+        .get(&workspace_id)
         .map(|(_, name)| name.clone())
-        .unwrap_or_else(|| grant.workspace_id.0.to_string());
+        .unwrap_or_else(|| workspace_id.0.to_string());
 
     ApiKeyGrantDto {
         id: grant.id.0,
@@ -737,14 +753,14 @@ async fn create_initial_grant(
     };
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: workspace.id,
+            workspace_id: atlas_custos::WorkspaceScope(workspace.id.0),
             user_id: None,
             api_key_id: Some(key_id),
             group_id: None,
-            project_id: None,
-            folder_id: None,
-            document_id: None,
-            board_id: None,
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Workspace,
+                workspace.id,
+            ),
             role,
             created_by_user_id: Some(user_id),
             created_by_api_key_id: None,
