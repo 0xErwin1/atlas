@@ -21,13 +21,14 @@ use atlas_postgres::db_err;
 
 pub use atlas_domain::entities::identity::{
     ActivationToken, ApiKey, NewActivationToken, NewApiKey, NewSession, NewUser, NewWorkspace,
-    Session, User, UserUiState, Workspace,
+    Session, User, Workspace,
 };
 
 pub use atlas_domain::ports::identity::{
-    ActivationTokenRepo, ApiKeyRepo, MembershipRepo, SessionRepo, UiStateRepo, UserRepo,
-    WorkspaceRepo,
+    ActivationTokenRepo, ApiKeyRepo, MembershipRepo, SessionRepo, UserRepo, WorkspaceRepo,
 };
+
+pub use crate::platform::{UiStateRepo, UserUiState};
 
 pub struct PgWorkspaceRepo {
     pub conn: DatabaseConnection,

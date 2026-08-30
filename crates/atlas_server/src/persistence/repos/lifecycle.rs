@@ -1,9 +1,10 @@
 use atlas_domain::{
     DomainError,
     entities::lifecycle::{
-        PurgeDigest, PurgeExecutor, PurgeOperation, PurgeStatus, RestoreTarget, TrashKind,
+        PurgeDigest, PurgeExecutor, PurgeOperation, PurgeStatus, RestoreTarget, SecurityAuditRef,
+        TrashKind,
     },
-    ids::{PurgeOperationId, SecurityAuditId, UserId, WorkspaceId},
+    ids::{PurgeOperationId, UserId, WorkspaceId},
 };
 use chrono::Utc;
 use sea_orm::{
@@ -18,7 +19,7 @@ pub struct NewPurgeOperation {
     pub workspace_id: WorkspaceId,
     pub target: RestoreTarget,
     pub original_actor_user_id: UserId,
-    pub commit_audit_id: SecurityAuditId,
+    pub commit_audit_id: SecurityAuditRef,
 }
 
 pub struct PgPurgeOperationRepo;
@@ -293,7 +294,7 @@ fn purge_operation_from(model: purge_operation::Model) -> Result<PurgeOperation,
             target_id: model.target_id,
         },
         original_actor_user_id: UserId(model.original_actor_user_id),
-        commit_audit_id: SecurityAuditId(model.commit_audit_id),
+        commit_audit_id: SecurityAuditRef(model.commit_audit_id),
         status,
         attempts,
         last_action: expected_action.to_string(),

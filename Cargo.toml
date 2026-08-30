@@ -2,6 +2,7 @@
 members = [
     "crates/atlas_core",
     "crates/atlas_custos",
+    "crates/atlas_acta",
     "crates/atlas_domain",
     "crates/atlas_api",
     "crates/atlas_client",
@@ -17,6 +18,7 @@ members = [
 default-members = [
     "crates/atlas_core",
     "crates/atlas_custos",
+    "crates/atlas_acta",
     "crates/atlas_domain",
     "crates/atlas_api",
     "crates/atlas_client",
@@ -38,6 +40,7 @@ license = "Apache-2.0"
 # Internal crates (path deps)
 atlas_core     = { path = "crates/atlas_core" }
 atlas_custos   = { path = "crates/atlas_custos" }
+atlas_acta     = { path = "crates/atlas_acta" }
 atlas_domain   = { path = "crates/atlas_domain" }
 atlas_api      = { path = "crates/atlas_api" }
 atlas_client   = { path = "crates/atlas_client" }

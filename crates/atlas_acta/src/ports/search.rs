@@ -3,9 +3,9 @@ use uuid::Uuid;
 
 use crate::{
     DomainError, WorkspaceCtx,
-    permissions::Principal,
     search::{SearchHit, SearchQuery},
 };
+use atlas_core::principal::Principal;
 
 /// Sort discriminant for the search result ordering key.
 ///

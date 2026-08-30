@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::{
     DomainError,
     actor::WorkspaceCtx,
-    ids::{PurgeOperationId, SecurityAuditId, UserId, WorkspaceId},
+    ids::{PurgeOperationId, UserId, WorkspaceId},
 };
 
 /// Resource kinds that have independent Trash, restore, and purge lifecycles.
@@ -148,13 +148,24 @@ pub struct RestoreTarget {
     pub target_id: Uuid,
 }
 
+/// Opaque reference to a Custos security-audit record. Custos owns the
+/// record; Acta holds only its identity, never dereferencing it or naming
+/// `SecurityAuditId` (a Custos type) directly, mirroring the `WorkspaceScope`
+/// pattern (D2). `atlas_server` converts to/from the real `SecurityAuditId`
+/// at the composition layer via its `.0` uuid — no behavior change. Whether a
+/// database FK backs this reference is a decision for S3/S4 under the
+/// cross-schema FK rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct SecurityAuditRef(pub Uuid);
+
 #[derive(Debug, Clone)]
 pub struct PurgeOperation {
     pub id: PurgeOperationId,
     pub workspace_id: WorkspaceId,
     pub target: RestoreTarget,
     pub original_actor_user_id: UserId,
-    pub commit_audit_id: SecurityAuditId,
+    pub commit_audit_id: SecurityAuditRef,
     pub status: PurgeStatus,
     pub attempts: u32,
     pub last_action: String,
@@ -244,5 +255,21 @@ mod tests {
         for (status, action) in cases {
             assert_eq!(status.audit_action_str(), action);
         }
+    }
+
+    #[test]
+    fn security_audit_ref_round_trips_the_same_uuid() {
+        let uuid = Uuid::now_v7();
+        let audit_ref = SecurityAuditRef(uuid);
+
+        assert_eq!(audit_ref.0, uuid);
+    }
+
+    #[test]
+    fn distinct_uuids_produce_distinct_security_audit_refs() {
+        let a = SecurityAuditRef(Uuid::now_v7());
+        let b = SecurityAuditRef(Uuid::now_v7());
+
+        assert_ne!(a, b);
     }
 }

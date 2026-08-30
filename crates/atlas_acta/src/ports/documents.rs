@@ -6,9 +6,9 @@ use crate::{
         TaskDescriptionLinks, WorkspaceAttachment, WorkspaceAttachmentQuery,
     },
     ids::{AttachmentId, DocumentId, FolderId, ProjectId, RevisionId, TaskId},
-    permissions::Principal,
 };
 use async_trait::async_trait;
+use atlas_core::principal::Principal;
 use uuid::Uuid;
 
 /// Restricts document listings by whether documents are assigned to a folder.
