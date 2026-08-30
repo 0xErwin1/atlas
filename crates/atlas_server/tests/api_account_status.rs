@@ -123,7 +123,10 @@ async fn disabled_assignee_is_visible_and_marked_deactivated() {
 
     support::activate_user_in_db(&db, member_user.id.0).await;
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(owner.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(owner.id.0)),
+    );
     db.membership_repo()
         .add(&ctx, member_user.id, MemberRole::Member)
         .await
@@ -191,7 +194,10 @@ async fn pending_user_assignable_and_marked_pending() {
         .await
         .expect("create pending user");
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(owner.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(owner.id.0)),
+    );
     db.membership_repo()
         .add(&ctx, pending_user.id, MemberRole::Member)
         .await
@@ -258,7 +264,10 @@ async fn new_assignment_to_disabled_user_returns_422() {
 
     support::activate_user_in_db(&db, disabled_user.id.0).await;
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(owner.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(owner.id.0)),
+    );
     db.membership_repo()
         .add(&ctx, disabled_user.id, MemberRole::Member)
         .await
@@ -328,7 +337,10 @@ async fn existing_assignment_stays_visible_after_user_disabled() {
 
     support::activate_user_in_db(&db, member_user.id.0).await;
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(owner.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(owner.id.0)),
+    );
     db.membership_repo()
         .add(&ctx, member_user.id, MemberRole::Member)
         .await
@@ -383,7 +395,10 @@ async fn member_list_marks_account_status_correctly() {
     let (client, ws, _owner) =
         support::login_user_with_workspace(&server, &db, "acst-t05-owner").await;
 
-    let ctx = WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(_owner.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        atlas_domain::Actor::User(atlas_domain::UserAttributionId(_owner.id.0)),
+    );
 
     // Active member.
     let active_user = db
@@ -513,7 +528,10 @@ async fn attribution_actor_has_no_account_status() {
 
     support::activate_user_in_db(&db, member_user.id.0).await;
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(owner.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(owner.id.0)),
+    );
     db.membership_repo()
         .add(&ctx, member_user.id, MemberRole::Member)
         .await
@@ -617,7 +635,10 @@ async fn board_summary_marks_disabled_assignee_deactivated() {
 
     support::activate_user_in_db(&db, member_user.id.0).await;
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(owner.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(owner.id.0)),
+    );
     db.membership_repo()
         .add(&ctx, member_user.id, MemberRole::Member)
         .await

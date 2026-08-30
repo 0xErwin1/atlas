@@ -117,7 +117,10 @@ async fn copy_document_into_specific_folder() {
     let target_folder = db
         .folder_repo()
         .create(
-            &WorkspaceCtx::new(ws.id, Actor::User(user.id)),
+            &WorkspaceCtx::new(
+                ws.id,
+                Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+            ),
             atlas_domain::entities::workspace_core::NewFolder {
                 project_id: Some(ProjectId(project.id)),
                 parent_folder_id: None,
@@ -170,7 +173,10 @@ async fn copy_folder_recursively_duplicates_subtree() {
         .await
         .expect("create project");
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
 
     let top = db
         .folder_repo()

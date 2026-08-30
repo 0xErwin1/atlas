@@ -92,7 +92,10 @@ async fn add_member(
         .await
         .expect("create user");
 
-    let ctx = WorkspaceCtx::new(ws_id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws_id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     db.membership_repo()
         .add(&ctx, user.id, role)
         .await
@@ -303,7 +306,10 @@ async fn self_role_change_admin_returns_403() {
 
     support::activate_user_in_db(&db, admin_user.id.0).await;
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(admin_user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(admin_user.id.0)),
+    );
     db.membership_repo()
         .add(&ctx, admin_user.id, MemberRole::Admin)
         .await
@@ -397,7 +403,10 @@ async fn system_admin_self_role_change_returns_403() {
     let (sysadmin_client, sysadmin_user) =
         create_and_login_system_admin(&server, &db, "sp-comp-sysadmin").await;
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(sysadmin_user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(sysadmin_user.id.0)),
+    );
     db.membership_repo()
         .add(&ctx, sysadmin_user.id, MemberRole::Admin)
         .await

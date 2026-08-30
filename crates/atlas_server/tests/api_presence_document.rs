@@ -291,7 +291,10 @@ async fn document_second_principal_join_broadcasts_both() {
     // A plain member; a workspace-visibility document is viewable by any member.
     let (member_client, member) =
         support::login_user(&server, &db, "doc-presence-join-member").await;
-    let member_ctx = WorkspaceCtx::new(ws.id, Actor::User(member.id));
+    let member_ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(member.id.0)),
+    );
     db.membership_repo()
         .add(&member_ctx, member.id, MemberRole::Member)
         .await
@@ -409,7 +412,10 @@ async fn document_leave_broadcasts_removal() {
 
     let (member_client, member) =
         support::login_user(&server, &db, "doc-presence-leave-member").await;
-    let member_ctx = WorkspaceCtx::new(ws.id, Actor::User(member.id));
+    let member_ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(member.id.0)),
+    );
     db.membership_repo()
         .add(&member_ctx, member.id, MemberRole::Member)
         .await
@@ -482,7 +488,10 @@ async fn document_heartbeat_rejected_for_non_viewer() {
     // A plain member with no grant cannot view a Private project's document.
     let (member_client, member) =
         support::login_user(&server, &db, "doc-presence-authz-member").await;
-    let member_ctx = WorkspaceCtx::new(ws.id, Actor::User(member.id));
+    let member_ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(member.id.0)),
+    );
     db.membership_repo()
         .add(&member_ctx, member.id, MemberRole::Member)
         .await
@@ -531,7 +540,10 @@ async fn document_presence_not_leaked_to_non_viewer_over_sse() {
     // on the private project, so they cannot view its document.
     let (outsider_client, outsider) =
         support::login_user(&server, &db, "doc-presence-leak-outsider").await;
-    let outsider_ctx = WorkspaceCtx::new(ws.id, Actor::User(outsider.id));
+    let outsider_ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(outsider.id.0)),
+    );
     db.membership_repo()
         .add(&outsider_ctx, outsider.id, MemberRole::Member)
         .await

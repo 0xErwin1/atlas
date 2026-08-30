@@ -228,8 +228,8 @@ async fn enrich_audit_entries(
 
     for row in &rows {
         match &row.actor {
-            Actor::User(uid) => user_ids.push(*uid),
-            Actor::ApiKey(kid) => key_ids.push(*kid),
+            Actor::User(uid) => user_ids.push(UserId(uid.0)),
+            Actor::ApiKey(kid) => key_ids.push(ApiKeyId(kid.0)),
         }
 
         if let Some(tid) = row.target_id {

@@ -40,7 +40,10 @@ fn task_created_event() -> DomainEvent {
 async fn listener_forwards_committed_outbox_event_to_subscriber() {
     let db = support::TestDb::create().await.expect("TestDb");
     let (ws, user) = support::seed_workspace(&db, "live-forward").await;
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
 
     let pool = db.conn().get_postgres_connection_pool().clone();
     let hub = LiveEventHub::new(16);

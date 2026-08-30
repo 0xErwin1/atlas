@@ -42,7 +42,7 @@ async fn insert_workspace_audit_row(
         db.conn(),
         NewSecurityAuditEvent {
             workspace_id: Some(ws_id),
-            actor: Actor::User(actor_user_id),
+            actor: Actor::User(atlas_domain::UserAttributionId(actor_user_id.0)),
             action,
             target_type: "user".to_string(),
             target_id: Some(uuid::Uuid::now_v7()),
@@ -58,7 +58,7 @@ async fn insert_platform_audit_row(db: &TestDb, actor_user_id: UserId, action: S
         db.conn(),
         NewSecurityAuditEvent {
             workspace_id: None,
-            actor: Actor::User(actor_user_id),
+            actor: Actor::User(atlas_domain::UserAttributionId(actor_user_id.0)),
             action,
             target_type: "user".to_string(),
             target_id: Some(uuid::Uuid::now_v7()),
@@ -135,7 +135,10 @@ async fn workspace_audit_admin_sees_rows() {
         login_user_with_workspace(&server, &db, "audit-ws-admin-user").await;
 
     // Add them as Admin to the first workspace too.
-    let ctx = atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(admin_user.id));
+    let ctx = atlas_domain::WorkspaceCtx::new(
+        ws.id,
+        atlas_domain::Actor::User(atlas_domain::UserAttributionId(admin_user.id.0)),
+    );
     db.membership_repo()
         .add(&ctx, admin_user.id, MemberRole::Admin)
         .await
@@ -165,7 +168,10 @@ async fn workspace_audit_member_forbidden() {
     // Create a member user via login_user_with_workspace then add as member to ws
     let (member_client, _, member_user) =
         login_user_with_workspace(&server, &db, "audit-member-plain-user").await;
-    let ctx = atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(member_user.id));
+    let ctx = atlas_domain::WorkspaceCtx::new(
+        ws.id,
+        atlas_domain::Actor::User(atlas_domain::UserAttributionId(member_user.id.0)),
+    );
     db.membership_repo()
         .add(&ctx, member_user.id, MemberRole::Member)
         .await
@@ -400,7 +406,10 @@ async fn seed_api_key_for_user(
     ws_id: WorkspaceId,
     user: &atlas_server::persistence::repos::User,
 ) -> atlas_domain::entities::identity::ApiKey {
-    let ctx = atlas_domain::WorkspaceCtx::new(ws_id, Actor::User(user.id));
+    let ctx = atlas_domain::WorkspaceCtx::new(
+        ws_id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     let token_hash = atlas_server::auth::tokens::hash_token("audit-test-api-key-secret-unique-123");
     db.api_key_repo()
         .create(
@@ -428,7 +437,7 @@ async fn insert_workspace_audit_row_api_key(
         db.conn(),
         NewSecurityAuditEvent {
             workspace_id: Some(ws_id),
-            actor: Actor::ApiKey(api_key_id),
+            actor: Actor::ApiKey(atlas_domain::ApiKeyAttributionId(api_key_id.0)),
             action,
             target_type: "user".to_string(),
             target_id: Some(uuid::Uuid::now_v7()),
@@ -509,7 +518,7 @@ async fn platform_audit_filter_actor_user() {
         db.conn(),
         NewSecurityAuditEvent {
             workspace_id: None,
-            actor: Actor::ApiKey(key.id),
+            actor: Actor::ApiKey(atlas_domain::ApiKeyAttributionId(key.id.0)),
             action: SecurityAction::UserDisabled,
             target_type: "user".to_string(),
             target_id: Some(uuid::Uuid::now_v7()),

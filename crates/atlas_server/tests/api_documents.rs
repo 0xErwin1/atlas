@@ -2512,7 +2512,10 @@ async fn move_to_foreign_workspace_folder_is_rejected() {
     let foreign_folder = db
         .folder_repo()
         .create(
-            &WorkspaceCtx::new(ws_b.id, Actor::User(bob_user.id)),
+            &WorkspaceCtx::new(
+                ws_b.id,
+                Actor::User(atlas_domain::UserAttributionId(bob_user.id.0)),
+            ),
             atlas_domain::entities::workspace_core::NewFolder {
                 project_id: None,
                 parent_folder_id: None,
@@ -2588,7 +2591,10 @@ async fn move_into_folder_adopts_folder_project() {
     let folder_b = db
         .folder_repo()
         .create(
-            &WorkspaceCtx::new(ws.id, Actor::User(user.id)),
+            &WorkspaceCtx::new(
+                ws.id,
+                Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+            ),
             atlas_domain::entities::workspace_core::NewFolder {
                 project_id: Some(atlas_domain::ids::ProjectId(project_b.id)),
                 parent_folder_id: None,
@@ -2666,7 +2672,10 @@ async fn move_into_other_project_folder_without_access_is_rejected() {
     let folder_b = db
         .folder_repo()
         .create(
-            &WorkspaceCtx::new(ws.id, Actor::User(owner_user.id)),
+            &WorkspaceCtx::new(
+                ws.id,
+                Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+            ),
             atlas_domain::entities::workspace_core::NewFolder {
                 project_id: Some(ProjectId(project_b.id)),
                 parent_folder_id: None,
@@ -2737,7 +2746,10 @@ async fn move_within_authorized_project_folder_succeeds() {
     let folder_a = db
         .folder_repo()
         .create(
-            &WorkspaceCtx::new(ws.id, Actor::User(owner_user.id)),
+            &WorkspaceCtx::new(
+                ws.id,
+                Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+            ),
             atlas_domain::entities::workspace_core::NewFolder {
                 project_id: Some(ProjectId(project_a.id)),
                 parent_folder_id: None,
@@ -2799,7 +2811,10 @@ async fn document_moves_batch_preserves_order_and_prior_successes() {
     let destination = db
         .folder_repo()
         .create(
-            &WorkspaceCtx::new(ws.id, Actor::User(user.id)),
+            &WorkspaceCtx::new(
+                ws.id,
+                Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+            ),
             atlas_domain::entities::workspace_core::NewFolder {
                 project_id: Some(atlas_domain::ids::ProjectId(project.id)),
                 parent_folder_id: None,
@@ -2933,7 +2948,10 @@ async fn document_moves_batch_hides_inaccessible_sources_and_destinations() {
     let source_folder = db
         .folder_repo()
         .create(
-            &WorkspaceCtx::new(ws.id, Actor::User(owner_user.id)),
+            &WorkspaceCtx::new(
+                ws.id,
+                Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+            ),
             NewFolder {
                 project_id: Some(ProjectId(source_project.id)),
                 parent_folder_id: None,
@@ -2945,7 +2963,10 @@ async fn document_moves_batch_hides_inaccessible_sources_and_destinations() {
     let hidden_destination = db
         .folder_repo()
         .create(
-            &WorkspaceCtx::new(ws.id, Actor::User(owner_user.id)),
+            &WorkspaceCtx::new(
+                ws.id,
+                Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+            ),
             NewFolder {
                 project_id: Some(ProjectId(destination_project.id)),
                 parent_folder_id: None,
@@ -3024,7 +3045,10 @@ async fn document_moves_batch_hides_inaccessible_sources_and_destinations() {
     let foreign_folder = db
         .folder_repo()
         .create(
-            &WorkspaceCtx::new(foreign_ws.id, Actor::User(foreign_user.id)),
+            &WorkspaceCtx::new(
+                foreign_ws.id,
+                Actor::User(atlas_domain::UserAttributionId(foreign_user.id.0)),
+            ),
             NewFolder {
                 project_id: Some(ProjectId(foreign_project.id)),
                 parent_folder_id: None,
@@ -3098,7 +3122,10 @@ async fn document_moves_batch_rejects_an_oversized_envelope_before_processing() 
     let folder = db
         .folder_repo()
         .create(
-            &WorkspaceCtx::new(ws.id, Actor::User(user.id)),
+            &WorkspaceCtx::new(
+                ws.id,
+                Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+            ),
             atlas_domain::entities::workspace_core::NewFolder {
                 project_id: Some(atlas_domain::ids::ProjectId(project.id)),
                 parent_folder_id: None,
@@ -3178,7 +3205,10 @@ async fn document_moves_batch_rejects_more_than_one_hundred_items_before_process
     let folder = db
         .folder_repo()
         .create(
-            &WorkspaceCtx::new(ws.id, Actor::User(user.id)),
+            &WorkspaceCtx::new(
+                ws.id,
+                Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+            ),
             atlas_domain::entities::workspace_core::NewFolder {
                 project_id: Some(atlas_domain::ids::ProjectId(project.id)),
                 parent_folder_id: None,
@@ -3264,7 +3294,10 @@ async fn member_client_with_document_grant(
         .expect("create member");
     support::activate_user_in_db(db, user.id.0).await;
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     db.membership_repo()
         .add(&ctx, user.id, MemberRole::Member)
         .await
@@ -3356,7 +3389,10 @@ async fn create_into_foreign_project_folder_is_rejected() {
     let folder_b = db
         .folder_repo()
         .create(
-            &WorkspaceCtx::new(ws.id, Actor::User(owner_user.id)),
+            &WorkspaceCtx::new(
+                ws.id,
+                Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+            ),
             atlas_domain::entities::workspace_core::NewFolder {
                 project_id: Some(ProjectId(project_b.id)),
                 parent_folder_id: None,
@@ -3408,7 +3444,10 @@ async fn create_into_same_project_folder_succeeds() {
     let folder_a = db
         .folder_repo()
         .create(
-            &WorkspaceCtx::new(ws.id, Actor::User(owner_user.id)),
+            &WorkspaceCtx::new(
+                ws.id,
+                Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+            ),
             atlas_domain::entities::workspace_core::NewFolder {
                 project_id: Some(ProjectId(project_a.id)),
                 parent_folder_id: None,
@@ -3477,7 +3516,10 @@ async fn viewer_cannot_create_document() {
 
     support::activate_user_in_db(&db, viewer_user.id.0).await;
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(viewer_user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(viewer_user.id.0)),
+    );
     db.membership_repo()
         .add(&ctx, viewer_user.id, MemberRole::Member)
         .await
@@ -3653,7 +3695,10 @@ async fn member_client_with_optional_project_grant(
 
     support::activate_user_in_db(db, user.id.0).await;
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     db.membership_repo()
         .add(&ctx, user.id, MemberRole::Member)
         .await

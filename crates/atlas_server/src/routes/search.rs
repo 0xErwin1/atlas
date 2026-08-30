@@ -489,10 +489,14 @@ fn hit_to_dto(hit: atlas_domain::search::SearchHit) -> SearchHitDto {
 
 fn principal_to_actor(principal: &atlas_domain::permissions::Principal) -> Actor {
     match principal {
-        atlas_domain::permissions::Principal::User(uid) => Actor::User(*uid),
-        atlas_domain::permissions::Principal::ApiKey(kid) => Actor::ApiKey(*kid),
+        atlas_domain::permissions::Principal::User(uid) => {
+            Actor::User(atlas_domain::UserAttributionId(uid.0))
+        }
+        atlas_domain::permissions::Principal::ApiKey(kid) => {
+            Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0))
+        }
         atlas_domain::permissions::Principal::Group(_) => {
-            Actor::User(atlas_domain::ids::UserId(uuid::Uuid::nil()))
+            Actor::User(atlas_domain::UserAttributionId(uuid::Uuid::nil()))
         }
     }
 }

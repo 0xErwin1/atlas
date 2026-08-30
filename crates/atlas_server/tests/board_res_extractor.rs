@@ -83,7 +83,10 @@ async fn create_board_in_folder(
     name: &str,
 ) -> atlas_domain::entities::boards_tasks::Board {
     let repo = PgBoardRepo::new(db.conn().clone());
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     repo.create_board(
         &ctx,
         NewBoard {

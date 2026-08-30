@@ -78,7 +78,10 @@ async fn update_role_changes_role_and_bumps_updated_at() {
         .await
         .expect("create member");
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(member.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(member.id.0)),
+    );
     let original = db
         .membership_repo()
         .add(&ctx, member.id, MemberRole::Member)
@@ -128,7 +131,10 @@ async fn update_role_on_non_member_returns_not_found() {
         .await
         .expect("create stranger");
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(stranger.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(stranger.id.0)),
+    );
     let result = db
         .membership_repo()
         .update_role(&ctx, stranger.id, MemberRole::Admin)
@@ -147,7 +153,10 @@ async fn update_role_on_non_member_returns_not_found() {
 async fn membership_removal_conflicts_while_the_member_has_retained_draft_state() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let (ws, owner) = support::seed_workspace(&db, "retained-draft-member-owner").await;
-    let owner_ctx = WorkspaceCtx::new(ws.id, Actor::User(owner.id));
+    let owner_ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(owner.id.0)),
+    );
     let member = db
         .user_repo()
         .create(NewUser {

@@ -11,7 +11,7 @@
 use atlas_domain::{
     Actor, DomainError, WorkspaceCtx,
     entities::boards_tasks::{NewTask, PositionBetween},
-    ids::{ApiKeyId, BoardId, ColumnId, ProjectId, TaskId, WorkspaceId},
+    ids::{BoardId, ColumnId, ProjectId, TaskId, WorkspaceId},
 };
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait};
 use uuid::Uuid;
@@ -184,7 +184,7 @@ impl AutomationService {
 
         let ctx = WorkspaceCtx::new(
             WorkspaceId(workspace_id),
-            Actor::ApiKey(ApiKeyId(integration_api_key_id)),
+            Actor::ApiKey(atlas_domain::ApiKeyAttributionId(integration_api_key_id)),
         );
 
         let new_task = NewTask {
@@ -266,7 +266,7 @@ impl AutomationService {
 
         let ctx = WorkspaceCtx::new(
             WorkspaceId(workspace_id),
-            Actor::ApiKey(ApiKeyId(integration_api_key_id)),
+            Actor::ApiKey(atlas_domain::ApiKeyAttributionId(integration_api_key_id)),
         );
 
         match task_svc.add_comment(&ctx, TaskId(task_row.id), body).await {

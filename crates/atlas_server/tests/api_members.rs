@@ -37,7 +37,10 @@ async fn add_member(
         .await
         .expect("create user");
 
-    let ctx = WorkspaceCtx::new(ws_id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws_id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     db.membership_repo()
         .add(&ctx, user.id, role)
         .await
@@ -52,7 +55,10 @@ async fn add_agent(
     creator: atlas_domain::ids::UserId,
     name: &str,
 ) -> atlas_domain::entities::identity::ApiKey {
-    let ctx = WorkspaceCtx::new(ws_id, Actor::User(creator));
+    let ctx = WorkspaceCtx::new(
+        ws_id,
+        Actor::User(atlas_domain::UserAttributionId(creator.0)),
+    );
     db.api_key_repo()
         .create(
             &ctx,
@@ -155,7 +161,10 @@ async fn list_members_visible_to_plain_member() {
             .await
             .expect("create login user");
         support::activate_user_in_db(&db, user.id.0).await;
-        let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+        let ctx = WorkspaceCtx::new(
+            ws.id,
+            Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        );
         db.membership_repo()
             .add(&ctx, user.id, MemberRole::Member)
             .await
@@ -305,7 +314,10 @@ async fn login_member_with_role(
 
     support::activate_user_in_db(db, user.id.0).await;
 
-    let ctx = WorkspaceCtx::new(ws_id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws_id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     db.membership_repo()
         .add(&ctx, user.id, role)
         .await
@@ -448,7 +460,10 @@ async fn workspace_owner_or_admin_api_key_returns_403() {
     let token_hash = atlas_server::auth::tokens::hash_token(&plain_token);
 
     let api_key_repo = db.api_key_repo();
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(owner_user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+    );
     api_key_repo
         .create(
             &ctx,
@@ -1554,7 +1569,10 @@ async fn add_root_member(
 ) -> atlas_domain::entities::identity::User {
     let user = create_root_user(db, username).await;
 
-    let ctx = WorkspaceCtx::new(ws_id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws_id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     db.membership_repo()
         .add(&ctx, user.id, role)
         .await

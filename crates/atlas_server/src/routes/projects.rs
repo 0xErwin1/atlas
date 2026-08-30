@@ -380,9 +380,9 @@ fn parse_visibility(
 
 fn principal_to_actor(principal: &Principal) -> Actor {
     match principal {
-        Principal::User(uid) => Actor::User(*uid),
-        Principal::ApiKey(kid) => Actor::ApiKey(*kid),
-        Principal::Group(_) => Actor::User(atlas_domain::ids::UserId(uuid::Uuid::nil())),
+        Principal::User(uid) => Actor::User(atlas_domain::UserAttributionId(uid.0)),
+        Principal::ApiKey(kid) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0)),
+        Principal::Group(_) => Actor::User(atlas_domain::UserAttributionId(uuid::Uuid::nil())),
     }
 }
 
@@ -398,11 +398,13 @@ fn workspace_member_to_principal(member: &WorkspaceMember) -> Principal {
 
 fn member_to_actor(member: &WorkspaceMember) -> atlas_domain::Actor {
     if let Some(user) = &member.user {
-        atlas_domain::Actor::User(user.id)
+        atlas_domain::Actor::User(atlas_domain::UserAttributionId(user.id.0))
     } else if let Some(kid) = member.api_key_id {
-        atlas_domain::Actor::ApiKey(kid)
+        atlas_domain::Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0))
     } else {
-        atlas_domain::Actor::User(atlas_domain::ids::UserId::new())
+        atlas_domain::Actor::User(atlas_domain::UserAttributionId(
+            atlas_domain::ids::UserId::new().0,
+        ))
     }
 }
 

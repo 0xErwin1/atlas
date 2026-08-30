@@ -176,7 +176,10 @@ async fn change_password_rejects_api_key_principal() {
 
     let raw_secret = "atlas_settings_agent_secret_token";
     let token_hash = atlas_server::auth::tokens::hash_token(raw_secret);
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(owner_user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+    );
     db.api_key_repo()
         .create(
             &ctx,
@@ -347,7 +350,10 @@ async fn update_me_rejects_api_key_principal() {
 
     let raw_secret = "atlas_profile_agent_secret_token";
     let token_hash = atlas_server::auth::tokens::hash_token(raw_secret);
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(owner_user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+    );
     db.api_key_repo()
         .create(
             &ctx,

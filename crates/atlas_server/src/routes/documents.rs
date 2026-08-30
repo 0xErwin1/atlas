@@ -3161,19 +3161,19 @@ pub(crate) fn make_actor_dto(
 
 pub(crate) fn principal_to_actor(principal: &Principal) -> Actor {
     match principal {
-        Principal::User(uid) => Actor::User(*uid),
-        Principal::ApiKey(kid) => Actor::ApiKey(*kid),
-        Principal::Group(_) => Actor::User(atlas_domain::ids::UserId(uuid::Uuid::nil())),
+        Principal::User(uid) => Actor::User(atlas_domain::UserAttributionId(uid.0)),
+        Principal::ApiKey(kid) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0)),
+        Principal::Group(_) => Actor::User(atlas_domain::UserAttributionId(uuid::Uuid::nil())),
     }
 }
 
 pub(crate) fn member_to_actor(member: &WorkspaceMember) -> Actor {
     if let Some(user) = &member.user {
-        Actor::User(user.id)
+        Actor::User(atlas_domain::UserAttributionId(user.id.0))
     } else if let Some(kid) = member.api_key_id {
-        Actor::ApiKey(kid)
+        Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0))
     } else {
-        Actor::User(UserId::new())
+        Actor::User(atlas_domain::UserAttributionId(UserId::new().0))
     }
 }
 

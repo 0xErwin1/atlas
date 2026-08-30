@@ -156,7 +156,10 @@ async fn relevance_tie_no_duplicate_no_gap() {
 
     let (client, ws, user) = support::login_user_with_workspace(&server, &db, "pag-rel-tie").await;
     let token = client.token().expect("token");
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
 
     // Same title AND content → identical ts_rank_cd score for the same query.
     let unique = "tiescoreuniq17";
@@ -211,7 +214,10 @@ async fn updated_tie_no_duplicate_no_gap() {
 
     let (client, ws, user) = support::login_user_with_workspace(&server, &db, "pag-upd-tie").await;
     let token = client.token().expect("token");
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
 
     let unique = "tieupduniqs18";
     let mut expected_ids: HashSet<Uuid> = HashSet::new();
@@ -270,7 +276,10 @@ async fn updated_tie_deterministic_no_duplicate_no_gap() {
 
     let (client, ws, user) = support::login_user_with_workspace(&server, &db, "pag-upd-det").await;
     let token = client.token().expect("token");
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
 
     let unique = "tieupddetu19x";
 
@@ -379,7 +388,10 @@ async fn multipage_relevance_sort_no_duplicate_no_gap() {
 
     let (client, ws, user) = support::login_user_with_workspace(&server, &db, "pag-rel-mp").await;
     let token = client.token().expect("token");
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
 
     let unique = "multipgreluniq19";
     let mut expected_ids: HashSet<Uuid> = HashSet::new();
@@ -436,7 +448,10 @@ async fn multipage_updated_sort_no_duplicate_no_gap() {
 
     let (client, ws, user) = support::login_user_with_workspace(&server, &db, "pag-upd-mp").await;
     let token = client.token().expect("token");
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
 
     let unique = "multipgupduniq20";
     let mut expected_ids: HashSet<Uuid> = HashSet::new();

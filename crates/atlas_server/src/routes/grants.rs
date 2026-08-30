@@ -103,8 +103,8 @@ pub(crate) async fn create_project_grant(
     };
 
     let actor = match &auth.principal {
-        Principal::User(uid) => Actor::User(*uid),
-        Principal::ApiKey(kid) => Actor::ApiKey(*kid),
+        Principal::User(uid) => Actor::User(atlas_domain::UserAttributionId(uid.0)),
+        Principal::ApiKey(kid) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0)),
         Principal::Group(_) => {
             return Err(ApiError::Forbidden {
                 message: "groups cannot be grant actors".into(),
@@ -268,8 +268,8 @@ pub(crate) async fn delete_project_grant(
         .map_err(share_denied_to_api_error)?;
 
     let actor = match &auth.principal {
-        Principal::User(uid) => Actor::User(*uid),
-        Principal::ApiKey(kid) => Actor::ApiKey(*kid),
+        Principal::User(uid) => Actor::User(atlas_domain::UserAttributionId(uid.0)),
+        Principal::ApiKey(kid) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0)),
         Principal::Group(_) => {
             return Err(ApiError::Forbidden {
                 message: "groups cannot be grant actors".into(),
@@ -364,8 +364,8 @@ pub(crate) async fn create_workspace_grant(
     };
 
     let actor = match &auth.principal {
-        Principal::User(uid) => Actor::User(*uid),
-        Principal::ApiKey(kid) => Actor::ApiKey(*kid),
+        Principal::User(uid) => Actor::User(atlas_domain::UserAttributionId(uid.0)),
+        Principal::ApiKey(kid) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0)),
         Principal::Group(_) => {
             return Err(ApiError::Forbidden {
                 message: "groups cannot be grant actors".into(),
@@ -531,8 +531,8 @@ pub(crate) async fn delete_workspace_grant(
         .map_err(share_denied_to_api_error)?;
 
     let actor = match &auth.principal {
-        Principal::User(uid) => Actor::User(*uid),
-        Principal::ApiKey(kid) => Actor::ApiKey(*kid),
+        Principal::User(uid) => Actor::User(atlas_domain::UserAttributionId(uid.0)),
+        Principal::ApiKey(kid) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0)),
         Principal::Group(_) => {
             return Err(ApiError::Forbidden {
                 message: "groups cannot be grant actors".into(),
@@ -630,8 +630,10 @@ async fn parse_principal(
             let membership_repo = crate::persistence::repos::PgMembershipRepo {
                 conn: (*state.db).clone(),
             };
-            let ctx =
-                atlas_domain::WorkspaceCtx::new(*workspace_id, atlas_domain::Actor::User(uid));
+            let ctx = atlas_domain::WorkspaceCtx::new(
+                *workspace_id,
+                atlas_domain::Actor::User(atlas_domain::UserAttributionId(uid.0)),
+            );
             let m = membership_repo
                 .find(&ctx, uid)
                 .await

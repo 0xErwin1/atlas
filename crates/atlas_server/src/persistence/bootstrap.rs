@@ -70,7 +70,10 @@ pub async fn run_bootstrap(cfg: &BootstrapConfig, conn: &DatabaseConnection) -> 
         .await
         .map_err(|e| e.to_string())?;
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(root.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(root.id.0)),
+    );
     membership_repo
         .add(&ctx, root.id, MemberRole::Owner)
         .await
@@ -104,7 +107,10 @@ pub async fn run_dev_seed(cfg: &BootstrapConfig, conn: &DatabaseConnection) -> R
         .next()
         .ok_or_else(|| "root workspace must exist after bootstrap".to_string())?;
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(root.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(root.id.0)),
+    );
 
     let existing = project_repo
         .find_by_slug(&ctx, "sandbox")

@@ -257,7 +257,7 @@ pub(crate) async fn post_activate(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: None,
-            actor: Actor::User(user_id),
+            actor: Actor::User(atlas_domain::UserAttributionId(user_id.0)),
             action: SecurityAction::AccountActivated,
             target_type: "user".to_string(),
             target_id: Some(user_id.0),

@@ -168,7 +168,10 @@ async fn semantic_search_returns_compact_page_without_lexical_route_change() {
     let (client, ws, user) = support::login_user_with_workspace(&server, &db, "sem-hit").await;
     let token = client.token().expect("must be logged in");
     let http = reqwest::Client::new();
-    let ctx = WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        atlas_domain::Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
 
     let doc = PgDocumentRepo::new(db.conn().clone(), 50)
         .create(
@@ -277,7 +280,10 @@ async fn seed_corpus_with_empty_queue(
     ws: &atlas_domain::entities::identity::Workspace,
     user: &atlas_domain::entities::identity::User,
 ) {
-    let ctx = WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        atlas_domain::Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
 
     PgDocumentRepo::new(db.conn().clone(), 50)
         .create(
@@ -505,7 +511,10 @@ async fn semantic_search_api_key_scope_filters_hit_families() {
     let (owner, ws, user) = support::login_user_with_workspace(&server, &db, "sem-scope").await;
     let owner_token = owner.token().expect("must be logged in");
     let http = reqwest::Client::new();
-    let ctx = WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        atlas_domain::Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
 
     let doc = PgDocumentRepo::new(db.conn().clone(), 50)
         .create(

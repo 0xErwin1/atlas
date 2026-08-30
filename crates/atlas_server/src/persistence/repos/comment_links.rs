@@ -9,7 +9,7 @@ use atlas_domain::{
         CommentBacklink, CommentFeedCursor, CommentFeedEntry, CommentFeedPage, CommentLink,
         CommentLinkEvent, CommentLinkEventKind, CommentLinkTarget, CommentOwner,
     },
-    ids::{ApiKeyId, CommentId, CommentLinkEventId, DocumentId, TaskId, UserId},
+    ids::{CommentId, CommentLinkEventId, DocumentId, TaskId},
     ports::comments::CommentLinkRepo,
     wikilink::{CommentAttachmentUrlOwner, CommentLinkCandidate},
 };
@@ -672,8 +672,8 @@ fn feed_entry_from_row(row: sea_orm::QueryResult) -> Result<CommentFeedEntry, Do
     let actor_type = row.try_get::<String>("", "actor_type").map_err(row_err)?;
     let actor_id = row.try_get::<uuid::Uuid>("", "actor_id").map_err(row_err)?;
     let actor = match actor_type.as_str() {
-        "user" => Actor::User(UserId(actor_id)),
-        "api_key" => Actor::ApiKey(ApiKeyId(actor_id)),
+        "user" => Actor::User(atlas_domain::UserAttributionId(actor_id)),
+        "api_key" => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(actor_id)),
         _ => {
             return Err(DomainError::Internal {
                 message: "unknown comment link event actor".into(),

@@ -121,7 +121,10 @@ async fn add_member(
 
     db.membership_repo()
         .add(
-            &WorkspaceCtx::new(workspace_id, Actor::User(user.id)),
+            &WorkspaceCtx::new(
+                workspace_id,
+                Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+            ),
             user.id,
             MemberRole::Owner,
         )

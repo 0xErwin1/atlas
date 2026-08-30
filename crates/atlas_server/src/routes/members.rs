@@ -45,8 +45,8 @@ pub(crate) async fn list_workspace_members(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<PrincipalDto>>, ApiError> {
     let actor = match (&member.user, &member.api_key_id) {
-        (Some(user), _) => Actor::User(user.id),
-        (None, Some(key_id)) => Actor::ApiKey(*key_id),
+        (Some(user), _) => Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        (None, Some(key_id)) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(key_id.0)),
         (None, None) => return Err(ApiError::Unauthorized),
     };
     let ctx = atlas_domain::WorkspaceCtx::new(member.workspace.id, actor);
@@ -180,8 +180,10 @@ pub(crate) async fn add_member(
         });
     }
 
-    let ctx =
-        atlas_domain::WorkspaceCtx::new(caller.workspace.id, Actor::User(caller.caller_user_id));
+    let ctx = atlas_domain::WorkspaceCtx::new(
+        caller.workspace.id,
+        Actor::User(atlas_domain::UserAttributionId(caller.caller_user_id.0)),
+    );
 
     let membership_repo = PgMembershipRepo {
         conn: (*state.db).clone(),
@@ -214,7 +216,7 @@ pub(crate) async fn add_member(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: Some(caller.workspace.id),
-            actor: Actor::User(caller.caller_user_id),
+            actor: Actor::User(atlas_domain::UserAttributionId(caller.caller_user_id.0)),
             action: SecurityAction::MembershipAdded,
             target_type: "user".to_string(),
             target_id: Some(target_user_id.0),
@@ -271,8 +273,10 @@ pub(crate) async fn list_assignable_users(
     caller: WorkspaceOwnerOrAdmin,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<UserDto>>, ApiError> {
-    let ctx =
-        atlas_domain::WorkspaceCtx::new(caller.workspace.id, Actor::User(caller.caller_user_id));
+    let ctx = atlas_domain::WorkspaceCtx::new(
+        caller.workspace.id,
+        Actor::User(atlas_domain::UserAttributionId(caller.caller_user_id.0)),
+    );
 
     let membership_repo = PgMembershipRepo {
         conn: (*state.db).clone(),
@@ -358,8 +362,10 @@ pub(crate) async fn update_member_role(
     let membership_repo = PgMembershipRepo { conn: conn.clone() };
     let user_repo = PgUserRepo { conn: conn.clone() };
 
-    let ctx =
-        atlas_domain::WorkspaceCtx::new(caller.workspace.id, Actor::User(caller.caller_user_id));
+    let ctx = atlas_domain::WorkspaceCtx::new(
+        caller.workspace.id,
+        Actor::User(atlas_domain::UserAttributionId(caller.caller_user_id.0)),
+    );
 
     let target_membership = membership_repo
         .find(&ctx, target_user_id)
@@ -409,7 +415,7 @@ pub(crate) async fn update_member_role(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: Some(caller.workspace.id),
-            actor: Actor::User(caller.caller_user_id),
+            actor: Actor::User(atlas_domain::UserAttributionId(caller.caller_user_id.0)),
             action: SecurityAction::MembershipRoleChanged,
             target_type: "user".to_string(),
             target_id: Some(target_user_id.0),
@@ -472,8 +478,10 @@ pub(crate) async fn remove_member(
     let membership_repo = PgMembershipRepo { conn: conn.clone() };
     let user_repo = PgUserRepo { conn };
 
-    let ctx =
-        atlas_domain::WorkspaceCtx::new(caller.workspace.id, Actor::User(caller.caller_user_id));
+    let ctx = atlas_domain::WorkspaceCtx::new(
+        caller.workspace.id,
+        Actor::User(atlas_domain::UserAttributionId(caller.caller_user_id.0)),
+    );
 
     let target_membership = membership_repo
         .find(&ctx, target_user_id)
@@ -508,7 +516,7 @@ pub(crate) async fn remove_member(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: Some(caller.workspace.id),
-            actor: Actor::User(caller.caller_user_id),
+            actor: Actor::User(atlas_domain::UserAttributionId(caller.caller_user_id.0)),
             action: SecurityAction::MembershipRemoved,
             target_type: "user".to_string(),
             target_id: Some(target_user_id.0),

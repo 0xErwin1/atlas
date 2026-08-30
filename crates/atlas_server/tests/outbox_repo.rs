@@ -17,7 +17,10 @@ use sea_orm::{EntityTrait, TransactionTrait};
 use uuid::Uuid;
 
 fn make_ctx(ws_id: WorkspaceId, user: &atlas_server::persistence::repos::User) -> WorkspaceCtx {
-    WorkspaceCtx::new(ws_id, Actor::User(user.id))
+    WorkspaceCtx::new(
+        ws_id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    )
 }
 
 fn task_created_event() -> DomainEvent {

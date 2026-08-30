@@ -31,7 +31,7 @@ pub use wikilink::{
     rename_file_links,
 };
 
-pub use actor::{Actor, WorkspaceCtx};
+pub use actor::{Actor, ApiKeyAttributionId, UserAttributionId, WorkspaceCtx};
 pub use error::{DomainError, RevisionConflict};
 pub use ids::{
     ApiKeyId, AttachmentId, BoardId, ChecklistItemId, ColumnId, CommentDraftId, CommentId,

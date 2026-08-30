@@ -276,7 +276,7 @@ mod tests {
 
         assert_eq!(
             comment.created_by,
-            atlas_domain::Actor::ApiKey(atlas_domain::ApiKeyId(key_id))
+            atlas_domain::Actor::ApiKey(atlas_domain::ApiKeyAttributionId(key_id))
         );
     }
 }

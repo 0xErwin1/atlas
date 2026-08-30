@@ -166,7 +166,10 @@ async fn create_api_key_with_scopes(
     let raw_token = generate_api_key();
     let token_hash = hash_token(&raw_token);
 
-    let ctx = WorkspaceCtx::new(ws_id, Actor::User(creator_id));
+    let ctx = WorkspaceCtx::new(
+        ws_id,
+        Actor::User(atlas_domain::UserAttributionId(creator_id.0)),
+    );
     let key = PgApiKeyRepo {
         conn: db.conn().clone(),
     }
@@ -467,7 +470,10 @@ async fn cross_tenant_task_isolation() {
 
         support::activate_user_in_db(&db, user.id.0).await;
 
-        let member_ctx = WorkspaceCtx::new(ws_a.id, Actor::User(user.id));
+        let member_ctx = WorkspaceCtx::new(
+            ws_a.id,
+            Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        );
         db.membership_repo()
             .add(&member_ctx, user.id, MemberRole::Owner)
             .await
@@ -536,7 +542,10 @@ async fn workspace_member_sees_own_documents() {
 
     let (client, ws, user) =
         support::login_user_with_workspace(&server, &db, "perm-member-own").await;
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     let token = client.token().expect("token");
 
     let unique = "perm_member_own9d";
@@ -596,7 +605,10 @@ async fn task_visible_to_member_not_to_outsider() {
     // The workspace owner: logged in so they can hit the authenticated route.
     let (owner_client, ws, owner_user) =
         support::login_user_with_workspace(&server, &db, "perm-board-owner").await;
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(owner_user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+    );
     let owner_token = owner_client.token().expect("owner token").to_string();
 
     let unique = "perm_board9f";
@@ -830,7 +842,10 @@ async fn plain_member_can_reach_search() {
 
     let (member_client, member) =
         support::login_user(&server, &db, "gate-plainmember-member").await;
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(member.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(member.id.0)),
+    );
     db.membership_repo()
         .add(&ctx, member.id, MemberRole::Member)
         .await
@@ -865,11 +880,17 @@ async fn cross_tenant_document_isolation_via_http() {
 
     let (alice_client, ws_a, user_a) =
         support::login_user_with_workspace(&server, &db, "perm-ctdoc-alice").await;
-    let ctx_a = WorkspaceCtx::new(ws_a.id, Actor::User(user_a.id));
+    let ctx_a = WorkspaceCtx::new(
+        ws_a.id,
+        Actor::User(atlas_domain::UserAttributionId(user_a.id.0)),
+    );
 
     let (_, ws_b, user_b) =
         support::login_user_with_workspace(&server, &db, "perm-ctdoc-bob").await;
-    let ctx_b = WorkspaceCtx::new(ws_b.id, Actor::User(user_b.id));
+    let ctx_b = WorkspaceCtx::new(
+        ws_b.id,
+        Actor::User(atlas_domain::UserAttributionId(user_b.id.0)),
+    );
 
     let unique = "perm_ctdoc9g";
     let alice_doc_id = seed_document(&db, &ctx_a, &format!("Doc {unique}"), unique).await;
@@ -1250,7 +1271,10 @@ async fn human_member_sees_all_families() {
     let server = support::TestServer::spawn(&db).await;
 
     let (client, ws, user) = support::login_user_with_workspace(&server, &db, "s2-human-all").await;
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     let token = client.token().expect("token");
 
     let unique = "s2capshuman9q";

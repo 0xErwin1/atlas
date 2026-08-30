@@ -235,7 +235,10 @@ async fn create_granted_agent(
     let plain = format!("atlas_{name}_secret");
     let hash = atlas_server::auth::tokens::hash_token(&plain);
 
-    let ctx = WorkspaceCtx::new(ws_id, Actor::User(creator));
+    let ctx = WorkspaceCtx::new(
+        ws_id,
+        Actor::User(atlas_domain::UserAttributionId(creator.0)),
+    );
     let key = db
         .api_key_repo()
         .create(
@@ -500,7 +503,10 @@ async fn sweep_then_broadcast_delivers_empty_actors() {
     let server = support::TestServer::spawn_with_state(state.clone()).await;
 
     let (client, ws, user) = support::login_user_with_workspace(&server, &db, "p2-sweeper").await;
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     let token = client.token().expect("token").to_string();
 
     let (project_id, board_id) = seed_project_and_board(

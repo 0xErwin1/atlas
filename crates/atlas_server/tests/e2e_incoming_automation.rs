@@ -116,7 +116,10 @@ async fn e2e_github_workflow_run_fires_automation_and_dispatches_webhook() {
     let base_url = server.base_url();
     let ws_slug = &ws.slug;
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
 
     // Seed project, board, and column so the automation rule has valid targets.
     let project = PgProjectRepo {

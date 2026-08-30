@@ -16,15 +16,15 @@ pub enum Owner {
 impl Owner {
     pub fn from_actor(actor: &Actor) -> Self {
         match actor {
-            Actor::User(uid) => Owner::User(*uid),
-            Actor::ApiKey(kid) => Owner::ApiKey(*kid),
+            Actor::User(uid) => Owner::User(UserId(uid.0)),
+            Actor::ApiKey(kid) => Owner::ApiKey(ApiKeyId(kid.0)),
         }
     }
 
     pub fn matches_actor(&self, actor: &Actor) -> bool {
         match (self, actor) {
-            (Owner::User(oid), Actor::User(aid)) => oid == aid,
-            (Owner::ApiKey(oid), Actor::ApiKey(aid)) => oid == aid,
+            (Owner::User(oid), Actor::User(aid)) => oid.0 == aid.0,
+            (Owner::ApiKey(oid), Actor::ApiKey(aid)) => oid.0 == aid.0,
             _ => false,
         }
     }

@@ -225,7 +225,10 @@ async fn rename_workspace_agent_without_config_update_gets_403() {
 
     let plain = "atlas_ws_rename_deny_secret";
     let hash = atlas_server::auth::tokens::hash_token(plain);
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(owner_user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+    );
     let key = db
         .api_key_repo()
         .create(
@@ -300,7 +303,10 @@ async fn rename_workspace_agent_with_config_update_succeeds() {
 
     let plain = "atlas_ws_rename_allow_secret";
     let hash = atlas_server::auth::tokens::hash_token(plain);
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(owner_user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+    );
     let key = db
         .api_key_repo()
         .create(
@@ -626,7 +632,10 @@ async fn api_key_with_grant_sees_workspace_in_list() {
 
     let plain = "atlas_ak_list_single_secret";
     let hash = atlas_server::auth::tokens::hash_token(plain);
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(owner_user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+    );
     let key = db
         .api_key_repo()
         .create(
@@ -690,7 +699,10 @@ async fn api_key_with_grants_in_two_workspaces_sees_both_distinct() {
 
     let plain = "atlas_ak_list_two_secret";
     let hash = atlas_server::auth::tokens::hash_token(plain);
-    let ctx_a = WorkspaceCtx::new(ws_a.id, Actor::User(owner_a_user.id));
+    let ctx_a = WorkspaceCtx::new(
+        ws_a.id,
+        Actor::User(atlas_domain::UserAttributionId(owner_a_user.id.0)),
+    );
     let key = db
         .api_key_repo()
         .create(
@@ -798,7 +810,10 @@ async fn api_key_with_no_grant_sees_empty_workspace_list() {
 
     let plain = "atlas_ak_list_empty_secret";
     let hash = atlas_server::auth::tokens::hash_token(plain);
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(owner_user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+    );
     db.api_key_repo()
         .create(
             &ctx,

@@ -1,11 +1,7 @@
-use crate::ids::{ApiKeyId, UserId, WorkspaceId};
-use serde::{Deserialize, Serialize};
+use crate::ids::WorkspaceId;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Actor {
-    User(UserId),
-    ApiKey(ApiKeyId),
-}
+pub use atlas_core::Attribution as Actor;
+pub use atlas_core::attribution::{ApiKeyAttributionId, UserAttributionId};
 
 #[derive(Debug, Clone)]
 pub struct WorkspaceCtx {

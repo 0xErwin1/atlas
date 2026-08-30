@@ -132,7 +132,10 @@ impl TrashService {
             txn.commit().await.map_err(db_err)?;
             return Ok(false);
         };
-        let ctx = WorkspaceCtx::new(WorkspaceId(row.workspace_id), Actor::User(actor));
+        let ctx = WorkspaceCtx::new(
+            WorkspaceId(row.workspace_id),
+            Actor::User(atlas_domain::UserAttributionId(actor.0)),
+        );
         self.ensure_restore_safe(&txn, &ctx, kind, target_id)
             .await?;
         txn.execute_raw(Statement::from_sql_and_values(
@@ -193,7 +196,10 @@ impl TrashService {
             });
         }
 
-        let ctx = WorkspaceCtx::new(WorkspaceId(row.workspace_id), Actor::User(actor));
+        let ctx = WorkspaceCtx::new(
+            WorkspaceId(row.workspace_id),
+            Actor::User(atlas_domain::UserAttributionId(actor.0)),
+        );
         if let Some(operation) = operations
             .find_by_target_in(&txn, ctx.workspace_id, &target)
             .await?

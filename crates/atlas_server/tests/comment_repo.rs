@@ -11,18 +11,19 @@ use async_trait::async_trait;
 use atlas_domain::ids::CommentDraftId;
 use atlas_domain::ports::comments::CommentLinkRepo;
 use atlas_domain::{
-    Actor, AttachmentStore, DomainError,
+    Actor, AttachmentStore, DomainError, WorkspaceCtx,
     entities::boards_tasks::{NewBoard, NewTask, PositionBetween},
     entities::comments::{CommentFeedEntry, CommentLinkTarget, CommentOwner, NewComment},
     entities::documents::NewAttachment,
+    entities::identity::{ApiKeyType, NewApiKey},
     entities::workspace_core::NewProject,
     permissions::{Visibility, VisibilityRole},
 };
 use atlas_server::persistence::entities::comments::comment_attachment_draft;
 use atlas_server::persistence::repos::{
-    AttachmentWriteIntentRepo, BoardRepo, CommentRepo, DiskAttachmentStore, PgAttachmentLifecycle,
-    PgAttachmentRepo, PgAttachmentWriteIntentRepo, PgBoardRepo, PgCommentLinkRepo, PgCommentRepo,
-    PgProjectRepo, PgTaskRepo, ProjectRepo, TaskRepo,
+    ApiKeyRepo, AttachmentWriteIntentRepo, BoardRepo, CommentRepo, DiskAttachmentStore,
+    PgAttachmentLifecycle, PgAttachmentRepo, PgAttachmentWriteIntentRepo, PgBoardRepo,
+    PgCommentLinkRepo, PgCommentRepo, PgProjectRepo, PgTaskRepo, ProjectRepo, TaskRepo,
 };
 use atlas_server::services::CommentService;
 use chrono::{Duration, Utc};
@@ -171,7 +172,10 @@ async fn comment_create_and_get_roundtrips_body_and_author() {
     assert_eq!(created.body, "First comment");
     assert_eq!(created.task_id, Some(task.id));
     assert!(created.document_id.is_none());
-    assert_eq!(created.created_by, Actor::User(user.id));
+    assert_eq!(
+        created.created_by,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0))
+    );
     assert!(created.deleted_at.is_none());
 
     let fetched = repo
@@ -2824,6 +2828,227 @@ async fn same_digest_reconciler_race_recommits_intent_before_put() {
             .expect("stored object exists"),
         "the uploader must retain the object after finalization"
     );
+
+    db.teardown().await;
+}
+
+/// Characterizes the `comment_link_events` string discriminant (R3.2): a user
+/// actor round-trips through `actor_type = "user"` / `actor_id`.
+#[tokio::test]
+async fn comment_link_event_user_actor_round_trips_through_string_discriminant() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "comment-link-actor-user").await;
+    let ctx = support::ctx(&ws, &user);
+    let (project, board, column) =
+        seed_project_board_column(&db, &ctx, "comment-link-actor-user-proj", "AU").await;
+    let parent = seed_task(&db, &ctx, project.id, board.id, column.id, "Parent").await;
+    let target = seed_task(&db, &ctx, project.id, board.id, column.id, "Target").await;
+    let comment = PgCommentRepo::new(db.conn().clone())
+        .create(
+            &ctx,
+            NewComment {
+                owner: CommentOwner::Task(parent.id),
+                body: "user actor link".into(),
+            },
+        )
+        .await
+        .expect("create comment");
+    let links = PgCommentLinkRepo::new(db.conn().clone());
+
+    links
+        .replace_for_comment(&ctx, comment.id, vec![CommentLinkTarget::Task(target.id)])
+        .await
+        .expect("create link-added event");
+
+    let row = db
+        .conn()
+        .query_one_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            format!(
+                "SELECT actor_type, actor_id FROM comment_link_events WHERE comment_id = '{}'",
+                comment.id.0
+            ),
+        ))
+        .await
+        .expect("query event row")
+        .expect("event row present");
+    assert_eq!(
+        row.try_get::<String>("", "actor_type")
+            .expect("read actor_type"),
+        "user"
+    );
+    assert_eq!(
+        row.try_get::<uuid::Uuid>("", "actor_id")
+            .expect("read actor_id"),
+        user.id.0
+    );
+
+    let events = links
+        .feed_for_owner(&ctx, CommentOwner::Task(parent.id), None, 20)
+        .await
+        .expect("parent feed")
+        .entries;
+    assert_eq!(
+        events
+            .into_iter()
+            .filter_map(|entry| match entry {
+                CommentFeedEntry::Event(event) => Some(event.actor),
+                CommentFeedEntry::Comment(_) => None,
+            })
+            .collect::<Vec<_>>(),
+        vec![Actor::User(atlas_domain::UserAttributionId(user.id.0))]
+    );
+
+    db.teardown().await;
+}
+
+/// Characterizes the `comment_link_events` string discriminant (R3.2): an
+/// api-key actor round-trips through `actor_type = "api_key"` / `actor_id`.
+#[tokio::test]
+async fn comment_link_event_api_key_actor_round_trips_through_string_discriminant() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "comment-link-actor-key").await;
+    let ctx = support::ctx(&ws, &user);
+    let api_key = db
+        .api_key_repo()
+        .create(
+            &ctx,
+            NewApiKey {
+                name: "comment-link-actor-key".into(),
+                token_hash: format!("hash-{}", uuid::Uuid::now_v7()),
+                type_: ApiKeyType::Agent,
+                expires_at: None,
+                scopes: Vec::new(),
+            },
+        )
+        .await
+        .expect("create api key");
+    let api_key_ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::ApiKey(atlas_domain::ApiKeyAttributionId(api_key.id.0)),
+    );
+    let (project, board, column) =
+        seed_project_board_column(&db, &ctx, "comment-link-actor-key-proj", "AK").await;
+    let parent = seed_task(&db, &ctx, project.id, board.id, column.id, "Parent").await;
+    let target = seed_task(&db, &ctx, project.id, board.id, column.id, "Target").await;
+    let comment = PgCommentRepo::new(db.conn().clone())
+        .create(
+            &api_key_ctx,
+            NewComment {
+                owner: CommentOwner::Task(parent.id),
+                body: "api key actor link".into(),
+            },
+        )
+        .await
+        .expect("create comment");
+    let links = PgCommentLinkRepo::new(db.conn().clone());
+
+    links
+        .replace_for_comment(
+            &api_key_ctx,
+            comment.id,
+            vec![CommentLinkTarget::Task(target.id)],
+        )
+        .await
+        .expect("create link-added event");
+
+    let row = db
+        .conn()
+        .query_one_raw(Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            format!(
+                "SELECT actor_type, actor_id FROM comment_link_events WHERE comment_id = '{}'",
+                comment.id.0
+            ),
+        ))
+        .await
+        .expect("query event row")
+        .expect("event row present");
+    assert_eq!(
+        row.try_get::<String>("", "actor_type")
+            .expect("read actor_type"),
+        "api_key"
+    );
+    assert_eq!(
+        row.try_get::<uuid::Uuid>("", "actor_id")
+            .expect("read actor_id"),
+        api_key.id.0
+    );
+
+    let events = links
+        .feed_for_owner(&ctx, CommentOwner::Task(parent.id), None, 20)
+        .await
+        .expect("parent feed")
+        .entries;
+    assert_eq!(
+        events
+            .into_iter()
+            .filter_map(|entry| match entry {
+                CommentFeedEntry::Event(event) => Some(event.actor),
+                CommentFeedEntry::Comment(_) => None,
+            })
+            .collect::<Vec<_>>(),
+        vec![Actor::ApiKey(atlas_domain::ApiKeyAttributionId(
+            api_key.id.0
+        ))]
+    );
+
+    db.teardown().await;
+}
+
+/// Characterizes the current error path (R3.2) when `actor_type` on a
+/// `comment_link_events` row is neither `"user"` nor `"api_key"`.
+#[tokio::test]
+async fn comment_link_event_unknown_actor_type_fails_with_internal_error() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let (ws, user) = support::seed_workspace(&db, "comment-link-actor-unknown").await;
+    let ctx = support::ctx(&ws, &user);
+    let (project, board, column) =
+        seed_project_board_column(&db, &ctx, "comment-link-actor-unknown-proj", "UK").await;
+    let parent = seed_task(&db, &ctx, project.id, board.id, column.id, "Parent").await;
+    let target = seed_task(&db, &ctx, project.id, board.id, column.id, "Target").await;
+    let comment = PgCommentRepo::new(db.conn().clone())
+        .create(
+            &ctx,
+            NewComment {
+                owner: CommentOwner::Task(parent.id),
+                body: "unknown actor link".into(),
+            },
+        )
+        .await
+        .expect("create comment");
+    let links = PgCommentLinkRepo::new(db.conn().clone());
+
+    links
+        .replace_for_comment(&ctx, comment.id, vec![CommentLinkTarget::Task(target.id)])
+        .await
+        .expect("create link-added event");
+
+    // The `actor_type` CHECK constraint only allows `"user"`/`"api_key"`, so an
+    // unknown discriminant cannot occur through normal writes; drop it here to
+    // exercise the application-level defensive error path directly.
+    db.conn()
+        .execute_unprepared(
+            "ALTER TABLE comment_link_events DROP CONSTRAINT comment_link_events_actor_type_check",
+        )
+        .await
+        .expect("drop actor_type check constraint");
+    db.conn()
+        .execute_unprepared(&format!(
+            "UPDATE comment_link_events SET actor_type = 'robot' WHERE comment_id = '{}'",
+            comment.id.0
+        ))
+        .await
+        .expect("corrupt actor_type discriminant");
+
+    let error = links
+        .feed_for_owner(&ctx, CommentOwner::Task(parent.id), None, 20)
+        .await
+        .expect_err("unknown actor_type must fail");
+    assert!(matches!(
+        error,
+        DomainError::Internal { message } if message == "unknown comment link event actor"
+    ));
 
     db.teardown().await;
 }

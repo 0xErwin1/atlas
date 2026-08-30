@@ -2408,9 +2408,9 @@ impl TaskActivityRepo for PgTaskActivityRepo {
             .map(|row| {
                 let kind = activity_kind_from_str(&row.kind).map_err(internal_err)?;
                 let actor = if let Some(uid) = row.created_by_user_id {
-                    Actor::User(atlas_domain::ids::UserId(uid))
+                    Actor::User(atlas_domain::UserAttributionId(uid))
                 } else if let Some(kid) = row.created_by_api_key_id {
-                    Actor::ApiKey(atlas_domain::ids::ApiKeyId(kid))
+                    Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid))
                 } else {
                     return Err(DomainError::Internal {
                         message: "task_activity row has no actor".into(),
@@ -2884,5 +2884,44 @@ fn classify_reference_insert_err(e: sea_orm::DbErr, target_id: uuid::Uuid) -> Do
             id: target_id,
         },
         _ => db_err(e),
+    }
+}
+
+#[cfg(test)]
+mod actor_columns_tests {
+    use super::*;
+    use crate::persistence::entities::boards_tasks::actor_from_columns;
+    use atlas_domain::ids::{ApiKeyId, UserId};
+
+    #[test]
+    fn user_actor_round_trips_through_xor_columns() {
+        let actor = Actor::User(atlas_domain::UserAttributionId(UserId::new().0));
+        let (user_col, key_col) = actor_columns(&actor);
+
+        assert_eq!(
+            user_col,
+            Some(match actor {
+                Actor::User(uid) => uid.0,
+                _ => unreachable!(),
+            })
+        );
+        assert_eq!(key_col, None);
+        assert_eq!(actor_from_columns(user_col, key_col), actor);
+    }
+
+    #[test]
+    fn api_key_actor_round_trips_through_xor_columns() {
+        let actor = Actor::ApiKey(atlas_domain::ApiKeyAttributionId(ApiKeyId::new().0));
+        let (user_col, key_col) = actor_columns(&actor);
+
+        assert_eq!(user_col, None);
+        assert_eq!(
+            key_col,
+            Some(match actor {
+                Actor::ApiKey(kid) => kid.0,
+                _ => unreachable!(),
+            })
+        );
+        assert_eq!(actor_from_columns(user_col, key_col), actor);
     }
 }

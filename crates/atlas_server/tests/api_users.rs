@@ -448,7 +448,10 @@ async fn list_user_memberships_returns_workspaces_with_roles() {
 
     db.membership_repo()
         .add(
-            &WorkspaceCtx::new(ws_alpha.id, Actor::User(target.id)),
+            &WorkspaceCtx::new(
+                ws_alpha.id,
+                Actor::User(atlas_domain::UserAttributionId(target.id.0)),
+            ),
             target.id,
             MemberRole::Member,
         )
@@ -457,7 +460,10 @@ async fn list_user_memberships_returns_workspaces_with_roles() {
 
     db.membership_repo()
         .add(
-            &WorkspaceCtx::new(ws_beta.id, Actor::User(target.id)),
+            &WorkspaceCtx::new(
+                ws_beta.id,
+                Actor::User(atlas_domain::UserAttributionId(target.id.0)),
+            ),
             target.id,
             MemberRole::Admin,
         )

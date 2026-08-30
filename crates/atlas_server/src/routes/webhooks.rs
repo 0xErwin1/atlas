@@ -58,9 +58,13 @@ const KNOWN_EVENT_TYPES: &[&str] = &[
 
 fn principal_to_actor(p: &Principal) -> atlas_domain::Actor {
     match p {
-        Principal::User(uid) => atlas_domain::Actor::User(*uid),
-        Principal::ApiKey(kid) => atlas_domain::Actor::ApiKey(*kid),
-        Principal::Group(_) => atlas_domain::Actor::User(atlas_domain::ids::UserId(Uuid::nil())),
+        Principal::User(uid) => atlas_domain::Actor::User(atlas_domain::UserAttributionId(uid.0)),
+        Principal::ApiKey(kid) => {
+            atlas_domain::Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0))
+        }
+        Principal::Group(_) => {
+            atlas_domain::Actor::User(atlas_domain::UserAttributionId(Uuid::nil()))
+        }
     }
 }
 

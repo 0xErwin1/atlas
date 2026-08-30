@@ -109,7 +109,10 @@ async fn seed_document_in_ws(
     title: &str,
     content: &str,
 ) -> (atlas_domain::ids::DocumentId, Option<String>) {
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(owner.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(owner.id.0)),
+    );
     let repo = PgDocumentRepo::new(db.conn().clone(), 50);
     let doc = repo
         .create(
@@ -137,7 +140,10 @@ async fn create_api_key(
 ) -> (atlas_domain::ids::ApiKeyId, String) {
     let raw_token = generate_api_key();
     let token_hash = hash_token(&raw_token);
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(owner.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(owner.id.0)),
+    );
 
     let key = PgApiKeyRepo {
         conn: db.conn().clone(),
