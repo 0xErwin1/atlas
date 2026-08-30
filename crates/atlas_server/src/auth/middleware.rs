@@ -17,8 +17,8 @@ use crate::{
 /// The resolved authentication principal injected into request extensions.
 #[derive(Debug, Clone)]
 pub enum Principal {
-    User(atlas_domain::ids::UserId),
-    ApiKey(atlas_domain::ids::ApiKeyId),
+    User(atlas_core::principal::UserId),
+    ApiKey(atlas_core::principal::ApiKeyId),
 }
 
 /// Middleware that authenticates every request to the protected router.

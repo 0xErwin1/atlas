@@ -8,6 +8,16 @@ use axum::{
 };
 use serde::Deserialize;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::boards_tasks::Board;
+use atlas_acta::entities::boards_tasks::BoardColumn;
+use atlas_acta::entities::boards_tasks::ColumnPatch;
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::ids::BoardId;
+use atlas_acta::ids::ColumnId;
+use atlas_acta::ids::FolderId;
 use atlas_api::{
     dtos::boards_tasks::{
         BoardDto, BoardSummaryDto, ColumnDto, CreateBoardRequest, CreateColumnRequest,
@@ -15,12 +25,7 @@ use atlas_api::{
     },
     pagination::{Cursor, Page},
 };
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::boards_tasks::{Board, BoardColumn, ColumnPatch, NewBoard, PositionBetween},
-    ids::{BoardId, ColumnId, FolderId},
-    permissions::Principal,
-};
+use atlas_core::principal::Principal;
 
 use crate::{
     authz::{
@@ -51,9 +56,9 @@ pub(crate) struct ColumnPath {
 
 fn principal_to_actor(principal: &Principal) -> Actor {
     match principal {
-        Principal::User(uid) => Actor::User(atlas_domain::UserAttributionId(uid.0)),
-        Principal::ApiKey(kid) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0)),
-        Principal::Group(_) => Actor::User(atlas_domain::UserAttributionId(uuid::Uuid::nil())),
+        Principal::User(uid) => Actor::User(atlas_acta::actor::UserAttributionId(uid.0)),
+        Principal::ApiKey(kid) => Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(kid.0)),
+        Principal::Group(_) => Actor::User(atlas_acta::actor::UserAttributionId(uuid::Uuid::nil())),
     }
 }
 
@@ -424,7 +429,7 @@ pub(crate) async fn unarchive_board(
 async fn set_archived(
     state: &AppState,
     principal: &Principal,
-    workspace_id: atlas_domain::ids::WorkspaceId,
+    workspace_id: atlas_acta::ids::WorkspaceId,
     board_id: BoardId,
     archived: bool,
 ) -> Result<Json<BoardDto>, ApiError> {

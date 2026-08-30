@@ -5,18 +5,25 @@ use axum::{
     response::IntoResponse,
 };
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::boards_tasks::Priority;
+use atlas_acta::entities::task_views::ActorTypeFilter;
+use atlas_acta::entities::task_views::AssigneeFilter;
+use atlas_acta::entities::task_views::NewTaskView;
+use atlas_acta::entities::task_views::TaskSort;
+use atlas_acta::entities::task_views::TaskView;
+use atlas_acta::entities::task_views::TaskViewFilters;
+use atlas_acta::ids::BoardId;
+use atlas_acta::ids::ColumnId;
 use atlas_api::dtos::task_views::{
     CreateTaskViewRequest, TaskViewDto, TaskViewFiltersDto, UpdateTaskViewRequest,
 };
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::boards_tasks::Priority,
-    entities::task_views::{
-        ActorTypeFilter, AssigneeFilter, NewTaskView, TaskSort, TaskView, TaskViewFilters,
-    },
-    ids::{ApiKeyId, BoardId, ColumnId, UserId},
-    permissions::{Capability, CapabilityAction, CapabilityFamily},
-};
+use atlas_core::principal::ApiKeyId;
+use atlas_core::principal::UserId;
+use atlas_custos::capability::Capability;
+use atlas_custos::capability::CapabilityAction;
+use atlas_custos::capability::CapabilityFamily;
 
 use crate::{
     authz::{WorkspaceMember, enforce_api_key_scope},
@@ -54,8 +61,10 @@ async fn enforce_task_views_scope(
 
 fn actor_from_member(member: &WorkspaceMember) -> Result<Actor, ApiError> {
     match (&member.user, &member.api_key_id) {
-        (Some(user), _) => Ok(Actor::User(atlas_domain::UserAttributionId(user.id.0))),
-        (None, Some(key_id)) => Ok(Actor::ApiKey(atlas_domain::ApiKeyAttributionId(key_id.0))),
+        (Some(user), _) => Ok(Actor::User(atlas_acta::actor::UserAttributionId(user.id.0))),
+        (None, Some(key_id)) => Ok(Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(
+            key_id.0,
+        ))),
         (None, None) => Err(ApiError::Unauthorized),
     }
 }
@@ -296,7 +305,7 @@ pub(crate) async fn get_task_view(
         .find(&ctx, id.into())
         .await
         .map_err(ApiError::Domain)?
-        .ok_or(ApiError::Domain(atlas_domain::DomainError::NotFound {
+        .ok_or(ApiError::Domain(atlas_core::error::DomainError::NotFound {
             entity: "task_view",
             id,
         }))?;

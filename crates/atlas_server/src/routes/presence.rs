@@ -9,8 +9,9 @@
 
 use axum::{Json, extract::State, http::StatusCode};
 
+use atlas_acta::actor::WorkspaceCtx;
 use atlas_api::dtos::{boards_tasks::BoardPresenceResponse, documents::DocumentPresenceResponse};
-use atlas_domain::{WorkspaceCtx, permissions::Principal};
+use atlas_core::principal::Principal;
 
 use crate::{
     authz::{Authorized, BoardRes, BoardsRead, DocsRead, ViewerMin, authorized::DocumentSlugRes},

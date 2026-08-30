@@ -8,7 +8,8 @@
     )
 )]
 
-use atlas_domain::{parse_wikilink_target, strip_frontmatter};
+use atlas_acta::frontmatter::strip_frontmatter;
+use atlas_acta::wikilink::parse_wikilink_target;
 
 /// Upper bound on a wikilink inner span considered for de-UUID processing.
 const MAX_LINK_LEN: usize = 512;

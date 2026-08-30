@@ -36,21 +36,22 @@ Atlas is not run locally: it is deployed as containers, with its runtime configu
 
 ## Workspace layout
 
-Nine crates (plus the `atlas_test_db`/`atlas_test_harness` test utilities). The dependency direction is strict and **compiler-enforced** — `atlas_domain` and `atlas_core` are pure and never import HTTP/SQL.
+Ten crates (plus the `atlas_test_db`/`atlas_test_harness` test utilities). The dependency direction is strict and **compiler-enforced** — `atlas_core`, `atlas_custos`, and `atlas_acta` are pure and never import HTTP/SQL.
 
 | Crate | Role | May depend on |
 |-------|------|---------------|
 | `atlas_core` | Neutral V2 platform contracts: ids (`ActionId`, `ResourceRef`, …), registry types + `registry::build()`, capability traits, config contract (`ComponentConfig`, `EnvSource`, `Secret`) | serde, thiserror, async-trait, chrono, bytes — **no axum, no sea-orm, no tokio** |
 | `atlas_postgres` | Neutral Postgres runtime: pool config (`PostgresConfig`) and connection construction — **no product repos, no entities** | atlas_core, sea-orm |
-| `atlas_domain` | Pure types, value objects, errors, **repository ports** (traits taking `WorkspaceCtx`), pure permission/diff/position logic | serde, thiserror, uuid, chrono only — **no axum, no sea-orm, no tokio** |
-| `atlas_api` | Shared DTOs + OpenAPI schemas (the wire contract) | atlas_domain |
-| `atlas_client` | Typed HTTP client speaking `atlas_api`/`atlas_domain` types | atlas_api, atlas_domain, reqwest |
+| `atlas_custos` | Pure identity/auth types and **repository ports**: users, sessions, api keys, groups, security audit, capability scopes | serde, thiserror, uuid, chrono only — **no axum, no sea-orm, no tokio** |
+| `atlas_acta` | Pure workspace/content types and **repository ports**: workspaces, projects, folders, documents, boards/tasks, comments, permissions, wikilinks, revisions | atlas_core; serde, thiserror, uuid, chrono only — **no axum, no sea-orm, no tokio** |
+| `atlas_api` | Shared DTOs + OpenAPI schemas (the wire contract) | — |
+| `atlas_client` | Typed HTTP client speaking `atlas_api` types | atlas_api, reqwest |
 | `atlas_server` | axum binary; SeaORM **adapters** implementing the ports; auth, permissions, routing | everything |
-| `atlas_cli` | clap CLI over `atlas_client` | atlas_client |
+| `atlas_cli` | clap CLI over `atlas_client` | atlas_client, atlas_core, atlas_acta, atlas_custos |
 | `atlas_mcp` | MCP server (rmcp) over `atlas_client`; one tool per verb, resources resolved through `catalog.rs` | atlas_client |
 | `migration` | sea-orm-migration tool crate (run via `cargo run -p migration -- <up\|fresh>`) | — |
 
-Persistence pattern: SeaORM entities live in `atlas_server/src/persistence/entities/`, adapters in `.../repos/`, and map to/from domain types — SeaORM types never leak into `atlas_domain`.
+Persistence pattern: SeaORM entities live in `atlas_server/src/persistence/entities/`, adapters in `.../repos/`, and map to/from `atlas_acta`/`atlas_custos` types — SeaORM types never leak into those crates.
 
 ## Web frontend (`apps/web`)
 
@@ -58,7 +59,7 @@ A Vue 3 SPA (Vite, Pinia per-domain stores, vue-router, Tailwind v4) — one of 
 
 - **Generated API client.** A typed `openapi-fetch` client over `src/api/types.d.ts`, generated from the served OpenAPI by `gen-types`. After ANY backend contract change, regenerate it; never hand-edit `types.d.ts`. A thin wrapper adds the session cookie + CSRF header and surfaces the RFC 9457 `hint`.
 - **Forms.** Validate with **zod** through the shared `FormField` (`src/components/ui/FormField.vue`) + `validateForm` (`src/lib/validation.ts`); show the API `hint`, never a stack. No native browser validation bubbles.
-- **Editor.** Shared CodeMirror 6 "live preview" `MarkdownEditor` — markdown is the source of truth. Wikilinks are typed and readable: `[[task:ATL-80|Title]]`, `[[note:slug|Title]]`, `[[file:name.pdf]]`. No UUID appears in the text a person edits — a slug is assigned once at creation and never regenerated, so it is rename-stable. The id-bound `[[<uuid>|Title]]` and title-only `[[Title]]` forms still parse and mean exactly what they always did. Links render the target's current title. Both parsers must agree: `atlas_domain::wikilink` and `apps/web/src/lib/wikilink.ts`. Every wikilink-capable surface — note body, task description, comment composer and comment card — goes through `WikilinkEditor`, which owns the `[[` picker, title resolution and navigation; do not re-inline that wiring per host.
+- **Editor.** Shared CodeMirror 6 "live preview" `MarkdownEditor` — markdown is the source of truth. Wikilinks are typed and readable: `[[task:ATL-80|Title]]`, `[[note:slug|Title]]`, `[[file:name.pdf]]`. No UUID appears in the text a person edits — a slug is assigned once at creation and never regenerated, so it is rename-stable. The id-bound `[[<uuid>|Title]]` and title-only `[[Title]]` forms still parse and mean exactly what they always did. Links render the target's current title. Both parsers must agree: `atlas_acta::wikilink` and `apps/web/src/lib/wikilink.ts`. Every wikilink-capable surface — note body, task description, comment composer and comment card — goes through `WikilinkEditor`, which owns the `[[` picker, title resolution and navigation; do not re-inline that wiring per host.
 - **Shared components — reuse, never duplicate (non-negotiable).** Use the design-system primitives instead of re-implementing dropdowns, menus, toggles, confirmations, rows, headers, or empty states per panel: `Dropdown` (single-select), `Popover` (anchored surface), `ConfirmDialog`, `FormField` + `validateForm`, `SettingsTable`, `ExpandableRow` (collapsed-summary + inline manage panel), `PanelHeader` (title + subtitle + actions), `RowAction` (compact row button), `EmptyState` (full + `compact`). Shared **logic** is reused the same way, never re-inlined: `errorHint` (`lib/apiError`), `initials`/`formatDate` (`lib/format`), workspace/grant role helpers (`lib/workspaceRoles`, `lib/grantRoles`), `useLoadingMap` (`composables/`). The moment a visual/behavioral pattern recurs, extract one component or helper and have every call site use it; duplicated markup/CSS/logic across components is a defect to remove, not extend. Full rule in `CODE_STYLE.md` → TypeScript / Vue → Patterns.
 - **Tooling.** Biome (not eslint/prettier), Vitest, vue-tsc — all in `verify`. Match existing component/store patterns; same English-only, comment-sparing conventions as the Rust side (see `CODE_STYLE.md`).
 

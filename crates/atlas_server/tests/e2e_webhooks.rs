@@ -11,12 +11,13 @@ mod support;
 
 use std::sync::{Arc, Mutex};
 
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::boards_tasks::{NewBoard, PositionBetween},
-    entities::workspace_core::NewProject,
-    permissions::{Visibility, VisibilityRole},
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
 use atlas_server::{
     config::DispatcherConfig,
     dispatcher::{WebhookDispatcher, compute_signature},
@@ -114,7 +115,7 @@ async fn e2e_webhook_dispatched_on_task_creation() {
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
 
     let project_repo = PgProjectRepo {

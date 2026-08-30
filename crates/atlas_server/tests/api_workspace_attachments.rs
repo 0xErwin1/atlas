@@ -7,6 +7,7 @@
 
 mod support;
 
+use atlas_acta::ports::identity::MembershipRepo;
 use atlas_api::dtos::{
     CreateProjectRequest,
     boards_tasks::{
@@ -18,7 +19,6 @@ use atlas_api::dtos::{
     },
 };
 use atlas_client::AtlasClient;
-use atlas_domain::ports::identity::MembershipRepo;
 
 fn project_req(slug: &str, prefix: &str) -> CreateProjectRequest {
     CreateProjectRequest {
@@ -526,7 +526,7 @@ async fn the_listing_hides_files_in_projects_the_principal_cannot_see() {
         .add(
             &support::ctx(&ws, &member_user),
             member_user.id,
-            atlas_domain::entities::identity::MemberRole::Member,
+            atlas_acta::entities::identity::MemberRole::Member,
         )
         .await
         .expect("add member");

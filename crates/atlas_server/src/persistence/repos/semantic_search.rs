@@ -1,12 +1,14 @@
 use async_trait::async_trait;
-use atlas_domain::{
-    DomainError,
-    permissions::Principal,
-    semantic_search::{
-        EmbeddingInput, EmbeddingProvider, ResourceKind, SemanticIndexChunk, SemanticSearchHit,
-        SemanticSearchQuery, SemanticSearchRepo, SemanticSearchSource,
-    },
-};
+use atlas_acta::semantic_search::EmbeddingInput;
+use atlas_acta::semantic_search::EmbeddingProvider;
+use atlas_acta::semantic_search::ResourceKind;
+use atlas_acta::semantic_search::SemanticIndexChunk;
+use atlas_acta::semantic_search::SemanticSearchHit;
+use atlas_acta::semantic_search::SemanticSearchQuery;
+use atlas_acta::semantic_search::SemanticSearchRepo;
+use atlas_acta::semantic_search::SemanticSearchSource;
+use atlas_core::error::DomainError;
+use atlas_core::principal::Principal;
 use sea_orm::{ConnectionTrait, DatabaseConnection, FromQueryResult, Statement};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -77,7 +79,7 @@ impl PgSemanticIndexWriter {
     /// which is what a delete or an emptied body needs.
     pub async fn prune_chunks_beyond(
         &self,
-        workspace_id: atlas_domain::ids::WorkspaceId,
+        workspace_id: atlas_acta::ids::WorkspaceId,
         kind: ResourceKind,
         resource_id: Uuid,
         chunk_count: i32,
@@ -108,7 +110,7 @@ impl PgSemanticIndexWriter {
 
     pub async fn mark_resource_stale(
         &self,
-        workspace_id: atlas_domain::ids::WorkspaceId,
+        workspace_id: atlas_acta::ids::WorkspaceId,
         kind: ResourceKind,
         resource_id: Uuid,
     ) -> Result<(), DomainError> {

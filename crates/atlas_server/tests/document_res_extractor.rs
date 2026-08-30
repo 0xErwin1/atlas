@@ -4,13 +4,14 @@ mod support;
 
 use std::collections::HashMap;
 
-use atlas_domain::{
-    entities::documents::NewDocument,
-    entities::identity::MemberRole,
-    entities::workspace_core::NewFolder,
-    ids::{DocumentId, FolderId},
-    permissions::{Principal, ResourceRef, ResourceRole},
-};
+use atlas_acta::entities::documents::NewDocument;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::entities::workspace_core::NewFolder;
+use atlas_acta::ids::DocumentId;
+use atlas_acta::ids::FolderId;
+use atlas_acta::permissions::ResourceRef;
+use atlas_core::principal::Principal;
+use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::{NewPermissionGrant, ResolutionInput, ResolutionQuery, resolve};
 use atlas_server::{
     authz::authorized::{DocumentRes, DocumentSlugRes, FolderRes, ResolvedResource},
@@ -32,7 +33,7 @@ async fn create_doc(
     ws: &atlas_server::persistence::repos::Workspace,
     user: &atlas_server::persistence::repos::User,
     title: &str,
-) -> atlas_domain::entities::documents::Document {
+) -> atlas_acta::entities::documents::Document {
     create_doc_in_folder(db, ws, user, title, None).await
 }
 
@@ -42,7 +43,7 @@ async fn create_doc_in_folder(
     user: &atlas_server::persistence::repos::User,
     title: &str,
     folder_id: Option<FolderId>,
-) -> atlas_domain::entities::documents::Document {
+) -> atlas_acta::entities::documents::Document {
     let repo = PgDocumentRepo::new(db.conn().clone(), 50);
     let ctx = support::ctx(ws, user);
     repo.create(
@@ -65,7 +66,7 @@ async fn create_folder(
     ws: &atlas_server::persistence::repos::Workspace,
     user: &atlas_server::persistence::repos::User,
     parent: Option<FolderId>,
-) -> atlas_domain::entities::workspace_core::Folder {
+) -> atlas_acta::entities::workspace_core::Folder {
     let repo = PgFolderRepo {
         conn: db.conn().clone(),
     };

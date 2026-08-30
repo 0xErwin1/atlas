@@ -5,7 +5,8 @@
 //! node — costs one round trip per node and is exactly the loop this exists to
 //! collapse.
 
-use atlas_domain::{DomainError, ids::WorkspaceId};
+use atlas_acta::ids::WorkspaceId;
+use atlas_core::error::DomainError;
 use sea_orm::{ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;

@@ -2,12 +2,17 @@
 
 mod support;
 
-use atlas_domain::entities::boards_tasks::{NewBoard, NewTask, PositionBetween};
-use atlas_domain::entities::documents::NewDocument;
-use atlas_domain::entities::workspace_core::{
-    AppliesTo, NewFolder, NewProject, NewPropertyDefinition, PropertyKind,
-};
-use atlas_domain::permissions::{Visibility, VisibilityRole};
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::boards_tasks::NewTask;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::documents::NewDocument;
+use atlas_acta::entities::workspace_core::AppliesTo;
+use atlas_acta::entities::workspace_core::NewFolder;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::entities::workspace_core::NewPropertyDefinition;
+use atlas_acta::entities::workspace_core::PropertyKind;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
 use atlas_server::persistence::repos::{
     ApiKeyRepo, AttachmentRepo, BoardRepo, DocumentLinkRepo, DocumentRepo, FolderRepo,
     MembershipRepo, PgAttachmentRepo, PgBoardRepo, PgDocumentLinkRepo, PgDocumentRepo,
@@ -318,8 +323,8 @@ async fn board_repo_workspace_isolation() {
 
 #[tokio::test]
 async fn task_reference_repo_workspace_isolation() {
-    use atlas_domain::entities::boards_tasks::NewTaskReference;
-    use atlas_domain::entities::boards_tasks::ReferenceKind;
+    use atlas_acta::entities::boards_tasks::NewTaskReference;
+    use atlas_acta::entities::boards_tasks::ReferenceKind;
 
     let db = support::TestDb::create().await.expect("TestDb::create");
     let (ws_a, user_a) = support::seed_workspace(&db, "alice-taskref").await;
@@ -446,7 +451,7 @@ async fn task_reference_repo_workspace_isolation() {
 
 #[tokio::test]
 async fn document_link_repo_workspace_isolation() {
-    use atlas_domain::entities::documents::ExtractedLink;
+    use atlas_acta::entities::documents::ExtractedLink;
 
     let db = support::TestDb::create().await.expect("TestDb::create");
     let (ws_a, user_a) = support::seed_workspace(&db, "alice-doclink").await;
@@ -518,7 +523,7 @@ async fn document_link_repo_workspace_isolation() {
 
 #[tokio::test]
 async fn attachment_repo_workspace_isolation() {
-    use atlas_domain::entities::documents::NewAttachment;
+    use atlas_acta::entities::documents::NewAttachment;
 
     let db = support::TestDb::create().await.expect("TestDb::create");
     let (ws_a, user_a) = support::seed_workspace(&db, "alice-attach").await;
@@ -578,7 +583,7 @@ async fn attachment_repo_workspace_isolation() {
 
 #[tokio::test]
 async fn membership_repo_workspace_isolation() {
-    use atlas_domain::entities::identity::MemberRole;
+    use atlas_acta::entities::identity::MemberRole;
 
     let db = support::TestDb::create().await.expect("TestDb::create");
     let (ws_a, user_a) = support::seed_workspace(&db, "alice-member").await;

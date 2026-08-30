@@ -13,7 +13,8 @@ pub mod policy;
 
 pub use policy::{
     ChainSegment, NewPermissionGrant, PermissionGrant, PermissionGrantId, PermissionGrantRepo,
-    ResolutionInput, ResolutionQuery, ResourceChain, resolve,
+    ResolutionInput, ResolutionQuery, ResourceChain, ResourceRole, ShareDenied,
+    authorize_grant_target, authorize_share, resolve,
 };
 
 pub use authorized::{

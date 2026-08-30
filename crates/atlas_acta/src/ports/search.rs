@@ -10,7 +10,7 @@ use atlas_core::principal::Principal;
 /// Sort discriminant for the search result ordering key.
 ///
 /// Mirrors `atlas_api::pagination::SortKey` 1:1; the route maps between them.
-/// This type lives in `atlas_domain` to keep the port pure (no atlas_api dep).
+/// This type lives in `atlas_acta` to keep the port pure (no atlas_api dep).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SortKey {
     /// `ts_rank_cd` relevance score (`f32`).

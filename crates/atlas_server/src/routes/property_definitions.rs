@@ -6,17 +6,18 @@ use axum::{
 };
 use serde::Deserialize;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::workspace_core::AppliesTo;
+use atlas_acta::entities::workspace_core::NewPropertyDefinition;
+use atlas_acta::entities::workspace_core::PropertyDefinition;
+use atlas_acta::entities::workspace_core::PropertyKind;
+use atlas_acta::ids::PropertyDefinitionId;
 use atlas_api::dtos::property_definitions::{
     CreatePropertyDefinitionRequest, PropertyDefinitionDto,
 };
-use atlas_domain::{
-    Actor, DomainError, WorkspaceCtx,
-    entities::workspace_core::{
-        AppliesTo, NewPropertyDefinition, PropertyDefinition, PropertyKind,
-    },
-    ids::PropertyDefinitionId,
-    permissions::Principal,
-};
+use atlas_core::error::DomainError;
+use atlas_core::principal::Principal;
 
 use crate::{
     authz::{
@@ -31,9 +32,9 @@ use crate::{
 
 fn principal_to_actor(principal: &Principal) -> Actor {
     match principal {
-        Principal::User(uid) => Actor::User(atlas_domain::UserAttributionId(uid.0)),
-        Principal::ApiKey(kid) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0)),
-        Principal::Group(_) => Actor::User(atlas_domain::UserAttributionId(uuid::Uuid::nil())),
+        Principal::User(uid) => Actor::User(atlas_acta::actor::UserAttributionId(uid.0)),
+        Principal::ApiKey(kid) => Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(kid.0)),
+        Principal::Group(_) => Actor::User(atlas_acta::actor::UserAttributionId(uuid::Uuid::nil())),
     }
 }
 

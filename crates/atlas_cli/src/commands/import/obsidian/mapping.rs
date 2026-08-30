@@ -113,7 +113,7 @@ pub(crate) fn build_ops(docs: &[VaultDoc]) -> (Vec<BoardOp>, Vec<TaskOp>, Vec<Li
 mod tests {
     use std::path::PathBuf;
 
-    use atlas_domain::slugify;
+    use atlas_core::slug::slugify;
 
     use crate::commands::import::obsidian::frontmatter::parse_import_frontmatter;
     use crate::commands::import::obsidian::parser::VaultDoc;

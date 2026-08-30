@@ -517,7 +517,7 @@ mod tests {
     /// token — those are not valid scopes and are covered separately below.
     #[test]
     fn parse_scope_accepts_every_family_action() {
-        use atlas_domain::permissions::Capability;
+        use atlas_custos::capability::Capability;
 
         assert_eq!(
             Capability::ALL.len(),

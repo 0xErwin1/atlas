@@ -2,7 +2,8 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, State
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use atlas_domain::{AttachmentStore, semantic_search::EmbeddingProvider};
+use atlas_acta::ports::attachment_store::AttachmentStore;
+use atlas_acta::semantic_search::EmbeddingProvider;
 
 use crate::config::{
     DispatcherConfig, EmbeddingProviderKind, SearchConfig, ServerConfig, env_var_nonempty,

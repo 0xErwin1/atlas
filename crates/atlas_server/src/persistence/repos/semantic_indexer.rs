@@ -1,9 +1,9 @@
 use async_trait::async_trait;
-use atlas_domain::{
-    DomainError,
-    ids::WorkspaceId,
-    semantic_search::{ResourceKind, SemanticIndexChunk, SemanticIndexer},
-};
+use atlas_acta::ids::WorkspaceId;
+use atlas_acta::semantic_search::ResourceKind;
+use atlas_acta::semantic_search::SemanticIndexChunk;
+use atlas_acta::semantic_search::SemanticIndexer;
+use atlas_core::error::DomainError;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
 use std::sync::Arc;
 use uuid::Uuid;

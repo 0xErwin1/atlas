@@ -5,11 +5,13 @@ use axum::{
     response::IntoResponse,
 };
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::tags::NewTag;
+use atlas_acta::entities::tags::Tag;
+use atlas_acta::ids::TagId;
 use atlas_api::dtos::tags::{CreateTagRequest, TagDto, UpdateTagRequest};
-use atlas_domain::{
-    Actor, WorkspaceCtx, entities::tags::NewTag, entities::tags::Tag, ids::TagId,
-    permissions::Principal,
-};
+use atlas_core::principal::Principal;
 
 use crate::{
     authz::{
@@ -24,9 +26,9 @@ use crate::{
 
 fn principal_to_actor(principal: &Principal) -> Actor {
     match principal {
-        Principal::User(uid) => Actor::User(atlas_domain::UserAttributionId(uid.0)),
-        Principal::ApiKey(kid) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0)),
-        Principal::Group(_) => Actor::User(atlas_domain::UserAttributionId(uuid::Uuid::nil())),
+        Principal::User(uid) => Actor::User(atlas_acta::actor::UserAttributionId(uid.0)),
+        Principal::ApiKey(kid) => Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(kid.0)),
+        Principal::Group(_) => Actor::User(atlas_acta::actor::UserAttributionId(uuid::Uuid::nil())),
     }
 }
 

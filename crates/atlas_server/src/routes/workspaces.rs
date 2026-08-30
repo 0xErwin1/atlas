@@ -5,19 +5,27 @@ use axum::{
     response::IntoResponse,
 };
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::entities::identity::NewWorkspace;
+use atlas_acta::entities::identity::Workspace;
+use atlas_acta::entities::status_templates::NewStatusTemplate;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::ids::WorkspaceId;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
 use atlas_api::dtos::{
     AdminUpdateWorkspaceRequest, CreateWorkspaceRequest, UpdateWorkspaceRequest, WorkspaceDto,
 };
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::boards_tasks::NewBoard,
-    entities::identity::{MemberRole, NewWorkspace, Workspace},
-    entities::status_templates::NewStatusTemplate,
-    entities::workspace_core::NewProject,
-    ids::{UserId, WorkspaceId},
-    permissions::{Capability, CapabilityAction, CapabilityFamily, Visibility, VisibilityRole},
-    position, resolve_collision, slugify,
-};
+use atlas_core::position;
+use atlas_core::principal::UserId;
+use atlas_core::slug::resolve_collision;
+use atlas_core::slug::slugify;
+use atlas_custos::capability::Capability;
+use atlas_custos::capability::CapabilityAction;
+use atlas_custos::capability::CapabilityFamily;
 
 use crate::{
     auth::middleware::Principal,
@@ -102,7 +110,7 @@ pub(crate) async fn create_workspace(
 
     let ctx = WorkspaceCtx::new(
         workspace.id,
-        Actor::User(atlas_domain::UserAttributionId(user_id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user_id.0)),
     );
     membership_repo
         .add(&ctx, user_id, MemberRole::Owner)
@@ -133,7 +141,7 @@ async fn seed_default_content(
 ) -> Result<(), ApiError> {
     let ctx = WorkspaceCtx::new(
         workspace_id,
-        Actor::User(atlas_domain::UserAttributionId(creator.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(creator.0)),
     );
 
     let project = PgProjectRepo {
@@ -547,7 +555,7 @@ pub(crate) async fn admin_delete_workspace(
     Ok(StatusCode::NO_CONTENT)
 }
 
-fn workspace_to_dto(ws: &atlas_domain::entities::identity::Workspace) -> WorkspaceDto {
+fn workspace_to_dto(ws: &atlas_acta::entities::identity::Workspace) -> WorkspaceDto {
     WorkspaceDto {
         id: ws.id.0,
         name: ws.name.clone(),

@@ -2,16 +2,17 @@ use axum::{Json, extract::Query, extract::State};
 use serde::Deserialize;
 use std::collections::HashMap;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::entities::task_views::ActorTypeFilter;
 use atlas_api::{
     dtos::{audit::AuditEntryDto, documents::ActorDto},
     pagination::{Page, SearchCursor, SortKey},
 };
-use atlas_domain::{
-    Actor,
-    entities::security_audit::{AuditCursor, AuditFilters, SecurityAuditEvent},
-    entities::task_views::ActorTypeFilter,
-    ids::{ApiKeyId, UserId},
-};
+use atlas_core::principal::ApiKeyId;
+use atlas_core::principal::UserId;
+use atlas_custos::entities::security_audit::AuditCursor;
+use atlas_custos::entities::security_audit::AuditFilters;
+use atlas_custos::entities::security_audit::SecurityAuditEvent;
 
 use crate::{
     authz::{RequireUserAdmin, WorkspaceOwnerOrAdmin},
@@ -204,7 +205,7 @@ fn decode_cursor(raw: Option<&str>) -> Result<Option<AuditCursor>, ApiError> {
 
     Ok(Some(AuditCursor {
         created_at: ts,
-        id: atlas_domain::SecurityAuditId(sc.id),
+        id: atlas_custos::ids::SecurityAuditId(sc.id),
     }))
 }
 
@@ -269,7 +270,7 @@ async fn enrich_audit_entries(
     let user_repo = PgUserRepo {
         conn: (*state.db).clone(),
     };
-    let user_map: HashMap<uuid::Uuid, atlas_domain::entities::identity::User> = user_repo
+    let user_map: HashMap<uuid::Uuid, atlas_custos::entities::identity::User> = user_repo
         .list_by_ids(&all_user_ids)
         .await
         .map_err(ApiError::Domain)?
@@ -281,7 +282,7 @@ async fn enrich_audit_entries(
         conn: (*state.db).clone(),
     };
 
-    let key_map: HashMap<uuid::Uuid, atlas_domain::entities::identity::ApiKey> =
+    let key_map: HashMap<uuid::Uuid, atlas_custos::entities::identity::ApiKey> =
         if !key_ids.is_empty() || !target_key_ids.is_empty() {
             let all_key_uuids: Vec<uuid::Uuid> = {
                 let mut combined: Vec<uuid::Uuid> = key_ids.iter().map(|k| k.0).collect();

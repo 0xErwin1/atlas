@@ -7,9 +7,10 @@
 
 mod support;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
 use atlas_api::dtos::documents::CreateDocumentRequest;
 use atlas_client::ClientError;
-use atlas_domain::{Actor, WorkspaceCtx};
 use atlas_server::persistence::repos::{DocumentRepo, FolderRepo};
 
 fn doc_req(title: &str, content: Option<&str>) -> CreateDocumentRequest {
@@ -94,7 +95,7 @@ async fn copy_document_creates_independent_copy() {
 
 #[tokio::test]
 async fn copy_document_into_specific_folder() {
-    use atlas_domain::ids::ProjectId;
+    use atlas_acta::ids::ProjectId;
 
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
@@ -119,9 +120,9 @@ async fn copy_document_into_specific_folder() {
         .create(
             &WorkspaceCtx::new(
                 ws.id,
-                Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+                Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
             ),
-            atlas_domain::entities::workspace_core::NewFolder {
+            atlas_acta::entities::workspace_core::NewFolder {
                 project_id: Some(ProjectId(project.id)),
                 parent_folder_id: None,
                 name: "target".to_string(),
@@ -152,7 +153,8 @@ async fn copy_document_into_specific_folder() {
 
 #[tokio::test]
 async fn copy_folder_recursively_duplicates_subtree() {
-    use atlas_domain::ids::{FolderId, ProjectId};
+    use atlas_acta::ids::FolderId;
+    use atlas_acta::ids::ProjectId;
 
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
@@ -175,14 +177,14 @@ async fn copy_folder_recursively_duplicates_subtree() {
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
 
     let top = db
         .folder_repo()
         .create(
             &ctx,
-            atlas_domain::entities::workspace_core::NewFolder {
+            atlas_acta::entities::workspace_core::NewFolder {
                 project_id: Some(ProjectId(project.id)),
                 parent_folder_id: None,
                 name: "Top".to_string(),
@@ -195,7 +197,7 @@ async fn copy_folder_recursively_duplicates_subtree() {
         .folder_repo()
         .create(
             &ctx,
-            atlas_domain::entities::workspace_core::NewFolder {
+            atlas_acta::entities::workspace_core::NewFolder {
                 project_id: Some(ProjectId(project.id)),
                 parent_folder_id: Some(top.id),
                 name: "Child".to_string(),
@@ -209,7 +211,7 @@ async fn copy_folder_recursively_duplicates_subtree() {
     let top_doc = doc_repo
         .create(
             &ctx,
-            atlas_domain::entities::documents::NewDocument {
+            atlas_acta::entities::documents::NewDocument {
                 title: "Top Doc".to_string(),
                 slug: Some("top-doc".to_string()),
                 content: "top content".to_string(),
@@ -225,7 +227,7 @@ async fn copy_folder_recursively_duplicates_subtree() {
     let child_doc = doc_repo
         .create(
             &ctx,
-            atlas_domain::entities::documents::NewDocument {
+            atlas_acta::entities::documents::NewDocument {
                 title: "Child Doc".to_string(),
                 slug: Some("child-doc".to_string()),
                 content: "child content".to_string(),

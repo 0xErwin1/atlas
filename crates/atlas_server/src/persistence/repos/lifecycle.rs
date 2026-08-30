@@ -1,11 +1,14 @@
-use atlas_domain::{
-    DomainError,
-    entities::lifecycle::{
-        PurgeDigest, PurgeExecutor, PurgeOperation, PurgeStatus, RestoreTarget, SecurityAuditRef,
-        TrashKind,
-    },
-    ids::{PurgeOperationId, UserId, WorkspaceId},
-};
+use atlas_acta::entities::lifecycle::PurgeDigest;
+use atlas_acta::entities::lifecycle::PurgeExecutor;
+use atlas_acta::entities::lifecycle::PurgeOperation;
+use atlas_acta::entities::lifecycle::PurgeStatus;
+use atlas_acta::entities::lifecycle::RestoreTarget;
+use atlas_acta::entities::lifecycle::SecurityAuditRef;
+use atlas_acta::entities::lifecycle::TrashKind;
+use atlas_acta::ids::PurgeOperationId;
+use atlas_acta::ids::WorkspaceId;
+use atlas_core::error::DomainError;
+use atlas_core::principal::UserId;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel,

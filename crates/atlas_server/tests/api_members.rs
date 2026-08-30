@@ -7,10 +7,11 @@
 
 mod support;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::identity::MemberRole;
 use atlas_client::{AtlasClient, ClientError};
-use atlas_domain::{
-    Actor, WorkspaceCtx, entities::identity::MemberRole, permissions::ResourceRole,
-};
+use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::persistence::repos::{
     ApiKeyRepo, MembershipRepo, NewApiKey, NewUser, PermissionGrantRepo, PgPermissionGrantRepo,
@@ -20,10 +21,10 @@ use support::{TestDb, TestServer, login_user_with_workspace};
 
 async fn add_member(
     db: &TestDb,
-    ws_id: atlas_domain::ids::WorkspaceId,
+    ws_id: atlas_acta::ids::WorkspaceId,
     username: &str,
     role: MemberRole,
-) -> atlas_domain::entities::identity::User {
+) -> atlas_custos::entities::identity::User {
     let user = db
         .user_repo()
         .create(NewUser {
@@ -39,7 +40,7 @@ async fn add_member(
 
     let ctx = WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     db.membership_repo()
         .add(&ctx, user.id, role)
@@ -51,13 +52,13 @@ async fn add_member(
 
 async fn add_agent(
     db: &TestDb,
-    ws_id: atlas_domain::ids::WorkspaceId,
-    creator: atlas_domain::ids::UserId,
+    ws_id: atlas_acta::ids::WorkspaceId,
+    creator: atlas_core::principal::UserId,
     name: &str,
-) -> atlas_domain::entities::identity::ApiKey {
+) -> atlas_custos::entities::identity::ApiKey {
     let ctx = WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(creator.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(creator.0)),
     );
     db.api_key_repo()
         .create(
@@ -66,9 +67,9 @@ async fn add_agent(
             NewApiKey {
                 name: name.to_string(),
                 token_hash: format!("hash-{name}"),
-                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
+                type_: atlas_custos::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
-                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
+                scopes: atlas_custos::capability::Capability::ALL.to_vec(),
             },
         )
         .await
@@ -164,7 +165,7 @@ async fn list_members_visible_to_plain_member() {
         support::activate_user_in_db(&db, user.id.0).await;
         let ctx = WorkspaceCtx::new(
             ws.id,
-            Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+            Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
         );
         db.membership_repo()
             .add(&ctx, user.id, MemberRole::Member)
@@ -207,7 +208,7 @@ async fn list_members_returns_role_for_user_members_and_no_role_for_api_key_prin
     let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
         conn: db.conn().clone(),
     };
-    use atlas_domain::permissions::ResourceRole;
+    use atlas_server::authz::ResourceRole;
     use atlas_server::authz::policy::NewPermissionGrant;
     grant_repo
         .upsert(NewPermissionGrant {
@@ -289,10 +290,10 @@ async fn list_members_cross_tenant_returns_not_found() {
 async fn login_member_with_role(
     server: &TestServer,
     db: &TestDb,
-    ws_id: atlas_domain::ids::WorkspaceId,
+    ws_id: atlas_acta::ids::WorkspaceId,
     username: &str,
     role: MemberRole,
-) -> (AtlasClient, atlas_domain::entities::identity::User) {
+) -> (AtlasClient, atlas_custos::entities::identity::User) {
     use atlas_api::dtos::LoginRequest;
     use atlas_server::auth::password;
 
@@ -317,7 +318,7 @@ async fn login_member_with_role(
 
     let ctx = WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     db.membership_repo()
         .add(&ctx, user.id, role)
@@ -463,7 +464,7 @@ async fn workspace_owner_or_admin_api_key_returns_403() {
     let api_key_repo = db.api_key_repo();
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0)),
     );
     api_key_repo
         .create(
@@ -472,9 +473,9 @@ async fn workspace_owner_or_admin_api_key_returns_403() {
             atlas_server::persistence::repos::NewApiKey {
                 name: "test-key-403".to_string(),
                 token_hash,
-                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
+                type_: atlas_custos::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
-                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
+                scopes: atlas_custos::capability::Capability::ALL.to_vec(),
             },
         )
         .await
@@ -1276,7 +1277,7 @@ async fn delete_target_not_member_returns_404() {
 async fn create_non_member_user(
     db: &TestDb,
     username: &str,
-) -> atlas_domain::entities::identity::User {
+) -> atlas_custos::entities::identity::User {
     let user = db
         .user_repo()
         .create(NewUser {
@@ -1544,7 +1545,7 @@ async fn assignable_users_excludes_members_and_disabled() {
 // not (no regression). The guard is scoped strictly to a root target.
 
 /// Creates an activated ROOT user (not a member of any workspace).
-async fn create_root_user(db: &TestDb, username: &str) -> atlas_domain::entities::identity::User {
+async fn create_root_user(db: &TestDb, username: &str) -> atlas_custos::entities::identity::User {
     let user = db
         .user_repo()
         .create(NewUser {
@@ -1565,15 +1566,15 @@ async fn create_root_user(db: &TestDb, username: &str) -> atlas_domain::entities
 /// Creates an activated ROOT user and adds it to the workspace at `role`.
 async fn add_root_member(
     db: &TestDb,
-    ws_id: atlas_domain::ids::WorkspaceId,
+    ws_id: atlas_acta::ids::WorkspaceId,
     username: &str,
     role: MemberRole,
-) -> atlas_domain::entities::identity::User {
+) -> atlas_custos::entities::identity::User {
     let user = create_root_user(db, username).await;
 
     let ctx = WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     db.membership_repo()
         .add(&ctx, user.id, role)

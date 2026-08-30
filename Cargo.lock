@@ -619,9 +619,11 @@ dependencies = [
 name = "atlas_cli"
 version = "0.0.0"
 dependencies = [
+ "atlas_acta",
  "atlas_api",
  "atlas_client",
- "atlas_domain",
+ "atlas_core",
+ "atlas_custos",
  "chrono",
  "clap",
  "clap_complete",
@@ -642,7 +644,6 @@ name = "atlas_client"
 version = "0.0.0"
 dependencies = [
  "atlas_api",
- "atlas_domain",
  "reqwest 0.13.4",
  "serde",
  "serde_json",
@@ -711,32 +712,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "atlas_domain"
-version = "0.0.0"
-dependencies = [
- "async-trait",
- "atlas_acta",
- "atlas_core",
- "atlas_custos",
- "bytes",
- "chrono",
- "diffy-imara",
- "fractional_index",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "uuid",
-]
-
-[[package]]
 name = "atlas_mcp"
 version = "0.0.0"
 dependencies = [
  "anyhow",
  "atlas_api",
  "atlas_client",
- "atlas_domain",
  "axum",
  "base64 0.22.1",
  "chrono",
@@ -773,11 +754,11 @@ dependencies = [
  "anyhow",
  "argon2",
  "async-trait",
+ "atlas_acta",
  "atlas_api",
  "atlas_client",
  "atlas_core",
  "atlas_custos",
- "atlas_domain",
  "atlas_postgres",
  "atlas_test_db",
  "axum",

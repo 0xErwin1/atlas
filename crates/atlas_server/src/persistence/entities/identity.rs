@@ -1,11 +1,19 @@
 use crate::platform::UserUiState;
-use atlas_domain::entities::identity::{
-    ActivationToken, ApiKey, ApiKeyType, MemberRole, Session, User, Workspace, WorkspaceMembership,
-};
-use atlas_domain::ids::{
-    ActivationTokenId, ApiKeyId, MembershipId, SessionId, UserId, WorkspaceId,
-};
-use atlas_domain::permissions::Capability;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::entities::identity::Workspace;
+use atlas_acta::entities::identity::WorkspaceMembership;
+use atlas_acta::ids::MembershipId;
+use atlas_acta::ids::WorkspaceId;
+use atlas_core::principal::ApiKeyId;
+use atlas_core::principal::UserId;
+use atlas_custos::capability::Capability;
+use atlas_custos::entities::identity::ActivationToken;
+use atlas_custos::entities::identity::ApiKey;
+use atlas_custos::entities::identity::ApiKeyType;
+use atlas_custos::entities::identity::Session;
+use atlas_custos::entities::identity::User;
+use atlas_custos::ids::ActivationTokenId;
+use atlas_custos::ids::SessionId;
 use chrono::{DateTime, Utc};
 use sea_orm::entity::prelude::*;
 

@@ -1,5 +1,6 @@
 use async_trait::async_trait;
-use atlas_domain::{AttachmentStore, DomainError};
+use atlas_acta::ports::attachment_store::AttachmentStore;
+use atlas_core::error::DomainError;
 use bytes::Bytes;
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;

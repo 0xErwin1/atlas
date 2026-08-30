@@ -91,7 +91,7 @@ async fn dev_seeder_is_idempotent() {
         .expect("find root")
         .expect("root must exist");
 
-    let root_ws_id = atlas_domain::ids::WorkspaceId::new();
+    let root_ws_id = atlas_acta::ids::WorkspaceId::new();
     let _ = root_ws_id;
 
     let ws_repo = db.workspace_repo();

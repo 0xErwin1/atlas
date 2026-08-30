@@ -1,9 +1,11 @@
 use async_trait::async_trait;
-use atlas_domain::{
-    Actor, DomainError, WorkspaceCtx,
-    entities::comments::{Comment, CommentOwner, NewComment},
-    ids::CommentId,
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::comments::Comment;
+use atlas_acta::entities::comments::CommentOwner;
+use atlas_acta::entities::comments::NewComment;
+use atlas_acta::ids::CommentId;
+use atlas_core::error::DomainError;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, ConnectionTrait,
@@ -18,7 +20,7 @@ use crate::persistence::entities::{
 use crate::persistence::live_ancestors::{live_document_chain, live_task_chain};
 use atlas_postgres::db_err;
 
-pub use atlas_domain::ports::comments::CommentRepo;
+pub use atlas_acta::ports::comments::CommentRepo;
 
 pub struct PgCommentRepo {
     pub conn: DatabaseConnection,

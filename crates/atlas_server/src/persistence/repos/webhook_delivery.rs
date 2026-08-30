@@ -1,4 +1,4 @@
-use atlas_domain::DomainError;
+use atlas_core::error::DomainError;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter,

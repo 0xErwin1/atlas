@@ -1,7 +1,8 @@
-use atlas_domain::{
-    PlatformStatusTemplateId, StatusTemplateId, WorkspaceId,
-    entities::status_templates::{PlatformStatusTemplate, StatusTemplate},
-};
+use atlas_acta::entities::status_templates::PlatformStatusTemplate;
+use atlas_acta::entities::status_templates::StatusTemplate;
+use atlas_acta::ids::PlatformStatusTemplateId;
+use atlas_acta::ids::StatusTemplateId;
+use atlas_acta::ids::WorkspaceId;
 use chrono::{DateTime, Utc};
 use sea_orm::entity::prelude::*;
 

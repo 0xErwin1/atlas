@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use atlas_domain::AttachmentStore;
+use atlas_acta::ports::attachment_store::AttachmentStore;
 use atlas_server::persistence::repos::DiskAttachmentStore;
 use tempfile::TempDir;
 
@@ -67,7 +67,7 @@ async fn get_nonexistent_digest_returns_not_found() {
     let unknown = "b".repeat(64);
     let result = store.get(&unknown).await;
     assert!(
-        matches!(result, Err(atlas_domain::DomainError::NotFound { .. })),
+        matches!(result, Err(atlas_core::error::DomainError::NotFound { .. })),
         "expected NotFound, got {result:?}"
     );
 }

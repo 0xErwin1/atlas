@@ -5,20 +5,23 @@
 
 use std::collections::HashMap;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::comments::Comment;
+use atlas_acta::entities::comments::CommentFeedCursor;
+use atlas_acta::entities::comments::CommentFeedEntry;
+use atlas_acta::entities::comments::CommentLinkTarget;
+use atlas_acta::entities::comments::CommentOwner;
+use atlas_acta::ids::CommentId;
+use atlas_acta::ports::comments::CommentLinkRepo;
 use atlas_api::dtos::{
     boards_tasks::{
         CommentDto, CommentFeedEntryDto, CommentLinkProjectionDto, CommentLinkTargetDto,
     },
     documents::ActorDto,
 };
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::comments::{
-        Comment, CommentFeedCursor, CommentFeedEntry, CommentLinkTarget, CommentOwner,
-    },
-    ids::{ApiKeyId, CommentId, UserId},
-    ports::comments::CommentLinkRepo,
-};
+use atlas_core::principal::ApiKeyId;
+use atlas_core::principal::UserId;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -348,11 +351,11 @@ fn project_target(
     }
 }
 
-fn event_kind(kind: atlas_domain::entities::comments::CommentLinkEventKind) -> &'static str {
+fn event_kind(kind: atlas_acta::entities::comments::CommentLinkEventKind) -> &'static str {
     match kind {
-        atlas_domain::entities::comments::CommentLinkEventKind::LinkAdded => "link_added",
-        atlas_domain::entities::comments::CommentLinkEventKind::LinkRemoved => "link_removed",
-        atlas_domain::entities::comments::CommentLinkEventKind::CommentDeleted => "comment_deleted",
+        atlas_acta::entities::comments::CommentLinkEventKind::LinkAdded => "link_added",
+        atlas_acta::entities::comments::CommentLinkEventKind::LinkRemoved => "link_removed",
+        atlas_acta::entities::comments::CommentLinkEventKind::CommentDeleted => "comment_deleted",
     }
 }
 
@@ -398,7 +401,7 @@ async fn load_event_actors(
     for user in users {
         if user.disabled_at.is_none() {
             actors.insert(
-                actor_key(Actor::User(atlas_domain::UserAttributionId(user.id.0))),
+                actor_key(Actor::User(atlas_acta::actor::UserAttributionId(user.id.0))),
                 ActorDto {
                     r#type: "user".into(),
                     id: user.id.0,
@@ -412,7 +415,9 @@ async fn load_event_actors(
     for key in keys {
         if key.revoked_at.is_none() {
             actors.insert(
-                actor_key(Actor::ApiKey(atlas_domain::ApiKeyAttributionId(key.id.0))),
+                actor_key(Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(
+                    key.id.0,
+                ))),
                 ActorDto {
                     r#type: "api_key".into(),
                     id: key.id.0,

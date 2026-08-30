@@ -1,16 +1,20 @@
 use async_trait::async_trait;
-use atlas_domain::{
-    DomainError, WorkspaceCtx,
-    entities::documents::{
-        Attachment, AttachmentOwnerKind, AttachmentOwnerRef, WorkspaceAttachment,
-        WorkspaceAttachmentQuery,
-    },
-    ids::{
-        ApiKeyId, AttachmentId, CommentId, DocumentId, TaskId, UserId, WorkspaceId as DomainWsId,
-    },
-    permissions::Principal,
-    ports::documents::WorkspaceAttachmentRepo,
-};
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::documents::Attachment;
+use atlas_acta::entities::documents::AttachmentOwnerKind;
+use atlas_acta::entities::documents::AttachmentOwnerRef;
+use atlas_acta::entities::documents::WorkspaceAttachment;
+use atlas_acta::entities::documents::WorkspaceAttachmentQuery;
+use atlas_acta::ids::AttachmentId;
+use atlas_acta::ids::CommentId;
+use atlas_acta::ids::DocumentId;
+use atlas_acta::ids::TaskId;
+use atlas_acta::ids::WorkspaceId as DomainWsId;
+use atlas_acta::ports::documents::WorkspaceAttachmentRepo;
+use atlas_core::error::DomainError;
+use atlas_core::principal::ApiKeyId;
+use atlas_core::principal::Principal;
+use atlas_core::principal::UserId;
 use chrono::{DateTime, Utc};
 use sea_orm::{DatabaseConnection, FromQueryResult, Statement};
 

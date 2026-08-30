@@ -1,7 +1,7 @@
-use atlas_domain::{
-    ids::WorkspaceId,
-    semantic_search::{ResourceKind, SemanticIndexChunk, SemanticSearchSource},
-};
+use atlas_acta::ids::WorkspaceId;
+use atlas_acta::semantic_search::ResourceKind;
+use atlas_acta::semantic_search::SemanticIndexChunk;
+use atlas_acta::semantic_search::SemanticSearchSource;
 use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, PartialEq, Eq)]

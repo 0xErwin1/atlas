@@ -11,11 +11,18 @@
 //! `ResourceProvider` port. No resolution logic changed in this move.
 
 use async_trait::async_trait;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::ids::BoardId;
+use atlas_acta::ids::DocumentId;
+use atlas_acta::ids::FolderId;
+use atlas_acta::ids::ProjectId;
+use atlas_acta::ids::WorkspaceId;
+use atlas_acta::permissions::ResourceRef;
+use atlas_acta::permissions::Visibility;
+use atlas_core::error::DomainError;
+use atlas_core::principal::ApiKeyId;
+use atlas_core::principal::GroupId;
 use atlas_core::principal::{Principal, UserId};
-use atlas_domain::DomainError;
-use atlas_domain::entities::identity::MemberRole;
-use atlas_domain::ids::{ApiKeyId, BoardId, DocumentId, FolderId, GroupId, ProjectId, WorkspaceId};
-use atlas_domain::permissions::{ResourceRef, ResourceRole, Visibility};
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
@@ -210,10 +217,8 @@ pub fn resolve(input: &ResolutionInput<'_>) -> Option<ResourceRole> {
     None
 }
 
-fn visibility_role_to_resource_role(
-    vis: &atlas_domain::permissions::VisibilityRole,
-) -> ResourceRole {
-    use atlas_domain::permissions::VisibilityRole;
+fn visibility_role_to_resource_role(vis: &atlas_acta::permissions::VisibilityRole) -> ResourceRole {
+    use atlas_acta::permissions::VisibilityRole;
     match vis {
         VisibilityRole::Viewer => ResourceRole::Viewer,
         VisibilityRole::Editor => ResourceRole::Editor,
@@ -225,4 +230,58 @@ fn apply_agent_cap(principal: &Principal, role: Option<ResourceRole>) -> Option<
         Principal::ApiKey(_) => role.map(|r| r.min(ResourceRole::Editor)),
         Principal::User(_) | Principal::Group(_) => role,
     }
+}
+
+/// `ResourceRole`, `ShareDenied`, and the grant-authorization guards, relocated
+/// from `atlas_domain` (S2e). They stay in `atlas_server::authz` alongside
+/// `resolve()`, the only other consumer of these types.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ResourceRole {
+    Viewer,
+    Editor,
+    Admin,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShareDenied {
+    AgentsNeverManageGrants,
+    RoleExceedsGrantors,
+    InsufficientRoleToShare,
+    AgentCannotBeAdmin,
+}
+
+/// Enforces the agent cap at grant write time: an ApiKey principal can never be
+/// the target of an `Admin` grant. The cap is also applied at resolution time,
+/// but rejecting here prevents persisting a grant row that misrepresents the
+/// agent's effective role.
+pub fn authorize_grant_target(
+    target: &Principal,
+    role_in_play: ResourceRole,
+) -> Result<(), ShareDenied> {
+    if matches!(target, Principal::ApiKey(_)) && role_in_play == ResourceRole::Admin {
+        return Err(ShareDenied::AgentCannotBeAdmin);
+    }
+
+    Ok(())
+}
+
+/// Determines whether a principal with the given effective role may manage a grant for `role_in_play`.
+pub fn authorize_share(
+    actor: &Principal,
+    actor_effective: ResourceRole,
+    role_in_play: ResourceRole,
+) -> Result<(), ShareDenied> {
+    if matches!(actor, Principal::ApiKey(_) | Principal::Group(_)) {
+        return Err(ShareDenied::AgentsNeverManageGrants);
+    }
+
+    if actor_effective < ResourceRole::Editor {
+        return Err(ShareDenied::InsufficientRoleToShare);
+    }
+
+    if role_in_play > actor_effective {
+        return Err(ShareDenied::RoleExceedsGrantors);
+    }
+
+    Ok(())
 }

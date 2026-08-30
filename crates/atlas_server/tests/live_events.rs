@@ -10,11 +10,14 @@ mod support;
 use std::sync::Arc;
 use std::time::Duration;
 
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::events::{DomainEvent, TaskCreatedPayload},
-    ids::{BoardId, ColumnId, ProjectId, TaskId},
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::events::DomainEvent;
+use atlas_acta::entities::events::TaskCreatedPayload;
+use atlas_acta::ids::BoardId;
+use atlas_acta::ids::ColumnId;
+use atlas_acta::ids::ProjectId;
+use atlas_acta::ids::TaskId;
 use atlas_server::live::{LiveEvent, LiveEventHub};
 use atlas_server::persistence::repos::PgOutboxRepo;
 use sea_orm::TransactionTrait;
@@ -42,7 +45,7 @@ async fn listener_forwards_committed_outbox_event_to_subscriber() {
     let (ws, user) = support::seed_workspace(&db, "live-forward").await;
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
 
     let pool = db.conn().get_postgres_connection_pool().clone();

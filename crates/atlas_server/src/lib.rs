@@ -36,11 +36,11 @@ pub mod desktop_gate_support {
         MembershipRepo, NewUser, NewWorkspace, PgMembershipRepo, PgSessionRepo, PgUserRepo,
         PgWorkspaceRepo, SessionRepo, UserRepo, WorkspaceRepo,
     };
-    use atlas_domain::{
-        Actor, WorkspaceCtx,
-        entities::identity::MemberRole,
-        ids::{UserId, WorkspaceId},
-    };
+    use atlas_acta::actor::Actor;
+    use atlas_acta::actor::WorkspaceCtx;
+    use atlas_acta::entities::identity::MemberRole;
+    use atlas_acta::ids::WorkspaceId;
+    use atlas_core::principal::UserId;
     use sea_orm::{ConnectionTrait, DatabaseConnection};
 
     pub use crate::app;
@@ -98,7 +98,7 @@ pub mod desktop_gate_support {
             .await?;
         let ctx = WorkspaceCtx::new(
             workspace.id,
-            Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+            Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
         );
 
         PgMembershipRepo { conn: db.clone() }

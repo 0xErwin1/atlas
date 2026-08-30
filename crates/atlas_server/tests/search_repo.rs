@@ -13,18 +13,27 @@
 
 mod support;
 
-use atlas_domain::{
-    WorkspaceCtx,
-    entities::{
-        boards_tasks::{NewBoard, NewTask, PositionBetween},
-        documents::NewDocument,
-        workspace_core::NewProject,
-    },
-    ids::{BoardId, DocumentId, ProjectId, UserId, WorkspaceId},
-    permissions::{Principal, ResourceRole, Visibility, VisibilityRole},
-    ports::search::{SearchAfter, SearchRepo, SortKey},
-    search::{SearchQuery, SearchSort, TypeSet},
-};
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::boards_tasks::NewTask;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::documents::NewDocument;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::ids::BoardId;
+use atlas_acta::ids::DocumentId;
+use atlas_acta::ids::ProjectId;
+use atlas_acta::ids::WorkspaceId;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
+use atlas_acta::ports::search::SearchAfter;
+use atlas_acta::ports::search::SearchRepo;
+use atlas_acta::ports::search::SortKey;
+use atlas_acta::search::SearchQuery;
+use atlas_acta::search::SearchSort;
+use atlas_acta::search::TypeSet;
+use atlas_core::principal::Principal;
+use atlas_core::principal::UserId;
+use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::persistence::repos::{
     BoardRepo, DocumentRepo, FolderRepo, PermissionGrantRepo, PgBoardRepo, PgDocumentRepo,
@@ -127,9 +136,9 @@ async fn seed_project_and_board(
     slug: &str,
     prefix: &str,
 ) -> (
-    atlas_domain::entities::workspace_core::Project,
-    atlas_domain::entities::boards_tasks::Board,
-    atlas_domain::entities::boards_tasks::BoardColumn,
+    atlas_acta::entities::workspace_core::Project,
+    atlas_acta::entities::boards_tasks::Board,
+    atlas_acta::entities::boards_tasks::BoardColumn,
 ) {
     let project_repo = PgProjectRepo {
         conn: db.conn().clone(),
@@ -181,12 +190,12 @@ async fn seed_project_and_board(
 async fn seed_task(
     db: &support::TestDb,
     ctx: &WorkspaceCtx,
-    col_id: atlas_domain::ids::ColumnId,
+    col_id: atlas_acta::ids::ColumnId,
     board_id: BoardId,
     project_id: ProjectId,
     title: &str,
     description: &str,
-) -> atlas_domain::ids::TaskId {
+) -> atlas_acta::ids::TaskId {
     let repo = PgTaskRepo::new(db.conn().clone());
     let task = repo
         .create(
@@ -324,12 +333,12 @@ async fn add_member(
     db: &support::TestDb,
     ws_id: WorkspaceId,
     user_id: UserId,
-    role: atlas_domain::entities::identity::MemberRole,
+    role: atlas_acta::entities::identity::MemberRole,
 ) {
     use atlas_server::persistence::repos::MembershipRepo;
-    let ctx = atlas_domain::WorkspaceCtx::new(
+    let ctx = atlas_acta::actor::WorkspaceCtx::new(
         ws_id,
-        atlas_domain::Actor::User(atlas_domain::UserAttributionId(user_id.0)),
+        atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(user_id.0)),
     );
     db.membership_repo()
         .add(&ctx, user_id, role)
@@ -407,7 +416,7 @@ async fn seed_doc_in_project(
 // DISCRIMINATING: a plain workspace Member (not Owner/Admin) must NOT see a
 // document in a Private project owned by someone else without an explicit grant.
 //
-// This mirrors the domain `resolve()` authority (atlas_domain::permissions):
+// This mirrors the domain `resolve()` authority (atlas_server::authz::policy):
 // a member's only access to a Private-project resource is an explicit grant;
 // Private visibility contributes nothing (resolve() Rule 2, Visibility::Private
 // match arm yields no candidate).
@@ -433,7 +442,7 @@ async fn plain_member_does_not_see_private_project_document() {
         &db,
         ws.id,
         member_id,
-        atlas_domain::entities::identity::MemberRole::Member,
+        atlas_acta::entities::identity::MemberRole::Member,
     )
     .await;
 
@@ -456,9 +465,9 @@ async fn plain_member_does_not_see_private_project_document() {
     .await;
 
     let repo = PgSearchRepo::new(db.conn().clone());
-    let member_ctx = atlas_domain::WorkspaceCtx::new(
+    let member_ctx = atlas_acta::actor::WorkspaceCtx::new(
         ws.id,
-        atlas_domain::Actor::User(atlas_domain::UserAttributionId(member_id.0)),
+        atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(member_id.0)),
     );
     let hits = repo
         .search(
@@ -498,7 +507,7 @@ async fn plain_member_with_project_grant_sees_private_project_document() {
         &db,
         ws.id,
         member_id,
-        atlas_domain::entities::identity::MemberRole::Member,
+        atlas_acta::entities::identity::MemberRole::Member,
     )
     .await;
 
@@ -523,9 +532,9 @@ async fn plain_member_with_project_grant_sees_private_project_document() {
     grant_project(&db, ws.id, member_id, private_project, owner.id).await;
 
     let repo = PgSearchRepo::new(db.conn().clone());
-    let member_ctx = atlas_domain::WorkspaceCtx::new(
+    let member_ctx = atlas_acta::actor::WorkspaceCtx::new(
         ws.id,
-        atlas_domain::Actor::User(atlas_domain::UserAttributionId(member_id.0)),
+        atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(member_id.0)),
     );
     let hits = repo
         .search(
@@ -565,7 +574,7 @@ async fn plain_member_sees_workspace_visible_project_document() {
         &db,
         ws.id,
         member_id,
-        atlas_domain::entities::identity::MemberRole::Member,
+        atlas_acta::entities::identity::MemberRole::Member,
     )
     .await;
 
@@ -588,9 +597,9 @@ async fn plain_member_sees_workspace_visible_project_document() {
     .await;
 
     let repo = PgSearchRepo::new(db.conn().clone());
-    let member_ctx = atlas_domain::WorkspaceCtx::new(
+    let member_ctx = atlas_acta::actor::WorkspaceCtx::new(
         ws.id,
-        atlas_domain::Actor::User(atlas_domain::UserAttributionId(member_id.0)),
+        atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(member_id.0)),
     );
     let hits = repo
         .search(
@@ -682,7 +691,7 @@ async fn plain_member_task_visibility_follows_project() {
         &db,
         ws.id,
         member_id,
-        atlas_domain::entities::identity::MemberRole::Member,
+        atlas_acta::entities::identity::MemberRole::Member,
     )
     .await;
 
@@ -746,9 +755,9 @@ async fn plain_member_task_visibility_follows_project() {
     .await;
 
     let repo = PgSearchRepo::new(db.conn().clone());
-    let member_ctx = atlas_domain::WorkspaceCtx::new(
+    let member_ctx = atlas_acta::actor::WorkspaceCtx::new(
         ws.id,
-        atlas_domain::Actor::User(atlas_domain::UserAttributionId(member_id.0)),
+        atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(member_id.0)),
     );
     let hits = repo
         .search(
@@ -930,9 +939,9 @@ async fn cross_tenant_document_isolation() {
     // FTS index is GENERATED ALWAYS STORED, so it updates on insert.
     // Wait for any in-flight WAL flush (not needed for STORED, but be safe).
     let repo = PgSearchRepo::new(db.conn().clone());
-    let ctx = atlas_domain::WorkspaceCtx::new(
+    let ctx = atlas_acta::actor::WorkspaceCtx::new(
         ws_a.id,
-        atlas_domain::Actor::User(atlas_domain::UserAttributionId(alice.id.0)),
+        atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(alice.id.0)),
     );
     let principal = Principal::User(alice.id);
     let query = make_search_query("uniquetoken_xten_secret");
@@ -1001,9 +1010,9 @@ async fn intra_workspace_no_grant_excludes_document() {
     let repo = PgSearchRepo::new(db.conn().clone());
 
     // Owner (workspace member) can see the doc.
-    let owner_ctx = atlas_domain::WorkspaceCtx::new(
+    let owner_ctx = atlas_acta::actor::WorkspaceCtx::new(
         ws.id,
-        atlas_domain::Actor::User(atlas_domain::UserAttributionId(owner.id.0)),
+        atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(owner.id.0)),
     );
     let hits = repo
         .search(
@@ -1021,9 +1030,9 @@ async fn intra_workspace_no_grant_excludes_document() {
     assert!(!hits.is_empty(), "owner must see the document");
 
     // Stranger (not a workspace member, no grant) cannot see the doc.
-    let stranger_ctx = atlas_domain::WorkspaceCtx::new(
+    let stranger_ctx = atlas_acta::actor::WorkspaceCtx::new(
         ws.id,
-        atlas_domain::Actor::User(atlas_domain::UserAttributionId(stranger.id.0)),
+        atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(stranger.id.0)),
     );
     let stranger_hits = repo
         .search(
@@ -1076,9 +1085,9 @@ async fn direct_document_grant_surfaces_hit() {
     grant_doc(&db, ws.id, grantee.id, doc_id, owner.id).await;
 
     let repo = PgSearchRepo::new(db.conn().clone());
-    let grantee_ctx = atlas_domain::WorkspaceCtx::new(
+    let grantee_ctx = atlas_acta::actor::WorkspaceCtx::new(
         ws.id,
-        atlas_domain::Actor::User(atlas_domain::UserAttributionId(grantee.id.0)),
+        atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(grantee.id.0)),
     );
     let hits = repo
         .search(
@@ -1157,9 +1166,9 @@ async fn task_board_grant_surfaces_hit() {
     let repo = PgSearchRepo::new(db.conn().clone());
 
     // Grantee (board-level grant) can see the task.
-    let grantee_ctx = atlas_domain::WorkspaceCtx::new(
+    let grantee_ctx = atlas_acta::actor::WorkspaceCtx::new(
         ws.id,
-        atlas_domain::Actor::User(atlas_domain::UserAttributionId(grantee.id.0)),
+        atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(grantee.id.0)),
     );
     let grantee_hits = repo
         .search(
@@ -1180,9 +1189,9 @@ async fn task_board_grant_surfaces_hit() {
     );
 
     // Stranger (no grant, not a member) cannot see the task.
-    let stranger_ctx = atlas_domain::WorkspaceCtx::new(
+    let stranger_ctx = atlas_acta::actor::WorkspaceCtx::new(
         ws.id,
-        atlas_domain::Actor::User(atlas_domain::UserAttributionId(stranger.id.0)),
+        atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(stranger.id.0)),
     );
     let stranger_hits = repo
         .search(
@@ -1235,9 +1244,9 @@ async fn workspace_scope_grant_surfaces_all_documents() {
     grant_ws_scope(&db, ws.id, grantee.id, owner.id).await;
 
     let repo = PgSearchRepo::new(db.conn().clone());
-    let grantee_ctx = atlas_domain::WorkspaceCtx::new(
+    let grantee_ctx = atlas_acta::actor::WorkspaceCtx::new(
         ws.id,
-        atlas_domain::Actor::User(atlas_domain::UserAttributionId(grantee.id.0)),
+        atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(grantee.id.0)),
     );
     let hits = repo
         .search(
@@ -1519,7 +1528,7 @@ async fn status_filter_narrows_tasks_by_column_name() {
     let mut status_query = make_task_only_query("uniquetoken_statusf");
     status_query
         .filters
-        .push(atlas_domain::search::SearchFilter::Status(
+        .push(atlas_acta::search::SearchFilter::Status(
             "Backlog".to_string(),
         ));
 
@@ -1639,7 +1648,7 @@ async fn tag_filter_narrows_documents_and_tasks() {
     let mut tag_query = make_search_query("uniquetoken_tagf");
     tag_query
         .filters
-        .push(atlas_domain::search::SearchFilter::Tag("rust".to_string()));
+        .push(atlas_acta::search::SearchFilter::Tag("rust".to_string()));
 
     let hits = repo
         .search(&ctx, &principal, &tag_query, 50, None, false, true, true)
@@ -1756,14 +1765,14 @@ async fn task_hits_carry_readable_id_documents_do_not() {
 
     for hit in &hits {
         match hit.kind {
-            atlas_domain::search::SearchKind::Task => {
+            atlas_acta::search::SearchKind::Task => {
                 assert!(
                     hit.readable_id.is_some(),
                     "task hit must have readable_id; id={}",
                     hit.id
                 );
             }
-            atlas_domain::search::SearchKind::Document => {
+            atlas_acta::search::SearchKind::Document => {
                 assert!(
                     hit.readable_id.is_none(),
                     "document hit must NOT have readable_id; id={}",
@@ -1797,7 +1806,7 @@ async fn member_sees_in_folder_non_private_project_document() {
         &db,
         ws.id,
         member_id,
-        atlas_domain::entities::identity::MemberRole::Member,
+        atlas_acta::entities::identity::MemberRole::Member,
     )
     .await;
 
@@ -1816,7 +1825,7 @@ async fn member_sees_in_folder_non_private_project_document() {
     let folder = folder_repo
         .create(
             &ctx_owner,
-            atlas_domain::entities::workspace_core::NewFolder {
+            atlas_acta::entities::workspace_core::NewFolder {
                 project_id: Some(visible_project_id),
                 parent_folder_id: None,
                 name: "srch-foldvis-folder".to_string(),
@@ -1829,7 +1838,7 @@ async fn member_sees_in_folder_non_private_project_document() {
     let doc = doc_repo
         .create(
             &ctx_owner,
-            atlas_domain::entities::documents::NewDocument {
+            atlas_acta::entities::documents::NewDocument {
                 title: "Folder Doc".to_string(),
                 slug: None,
                 content: "uniquetoken_foldvis".to_string(),
@@ -1842,9 +1851,9 @@ async fn member_sees_in_folder_non_private_project_document() {
         .expect("seed doc in folder");
 
     let repo = PgSearchRepo::new(db.conn().clone());
-    let member_ctx = atlas_domain::WorkspaceCtx::new(
+    let member_ctx = atlas_acta::actor::WorkspaceCtx::new(
         ws.id,
-        atlas_domain::Actor::User(atlas_domain::UserAttributionId(member_id.0)),
+        atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(member_id.0)),
     );
     let hits = repo
         .search(
@@ -1982,7 +1991,7 @@ async fn member_gets_nothing_via_visibility_for_workspace_root_document() {
         &db,
         ws.id,
         member_id,
-        atlas_domain::entities::identity::MemberRole::Member,
+        atlas_acta::entities::identity::MemberRole::Member,
     )
     .await;
 
@@ -1996,9 +2005,9 @@ async fn member_gets_nothing_via_visibility_for_workspace_root_document() {
     .await;
 
     let repo = PgSearchRepo::new(db.conn().clone());
-    let member_ctx = atlas_domain::WorkspaceCtx::new(
+    let member_ctx = atlas_acta::actor::WorkspaceCtx::new(
         ws.id,
-        atlas_domain::Actor::User(atlas_domain::UserAttributionId(member_id.0)),
+        atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(member_id.0)),
     );
     let hits = repo
         .search(

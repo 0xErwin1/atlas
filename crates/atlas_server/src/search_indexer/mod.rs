@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use atlas_domain::semantic_search::SemanticIndexer;
+use atlas_acta::semantic_search::SemanticIndexer;
 use sea_orm::DatabaseConnection;
 use tokio::sync::watch;
 use tracing::{debug, error, warn};
@@ -68,7 +68,7 @@ impl SearchIndexWorker {
     /// Sequential on purpose: embedding providers bill and rate-limit per
     /// request, and the queue coalesces, so depth here costs latency on a
     /// background path rather than throughput on a user-facing one.
-    pub async fn drain_once(&self) -> Result<usize, atlas_domain::DomainError> {
+    pub async fn drain_once(&self) -> Result<usize, atlas_core::error::DomainError> {
         let claimed =
             PgSearchIndexQueueRepo::claim_batch(&self.db, self.batch_size, LEASE_SECONDS).await?;
 

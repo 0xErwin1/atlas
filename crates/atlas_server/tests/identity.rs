@@ -2,10 +2,11 @@
 
 mod support;
 
-use atlas_domain::{
-    Actor, DomainError, WorkspaceCtx,
-    entities::{documents::NewDocument, identity::MemberRole},
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::documents::NewDocument;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_core::error::DomainError;
 use atlas_server::persistence::repos::{
     DocumentRepo, MembershipRepo, NewSession, NewUser, PgDocumentRepo, SessionRepo, UserRepo,
 };
@@ -80,7 +81,7 @@ async fn update_role_changes_role_and_bumps_updated_at() {
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(member.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(member.id.0)),
     );
     let original = db
         .membership_repo()
@@ -133,7 +134,7 @@ async fn update_role_on_non_member_returns_not_found() {
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(stranger.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(stranger.id.0)),
     );
     let result = db
         .membership_repo()
@@ -155,7 +156,7 @@ async fn membership_removal_conflicts_while_the_member_has_retained_draft_state(
     let (ws, owner) = support::seed_workspace(&db, "retained-draft-member-owner").await;
     let owner_ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(owner.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(owner.id.0)),
     );
     let member = db
         .user_repo()

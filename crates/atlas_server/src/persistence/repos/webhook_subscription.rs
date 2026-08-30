@@ -1,4 +1,5 @@
-use atlas_domain::{Actor, DomainError};
+use atlas_acta::actor::Actor;
+use atlas_core::error::DomainError;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel,
@@ -192,11 +193,12 @@ fn actor_fields(actor: &Actor) -> (Option<Uuid>, Option<Uuid>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use atlas_domain::ids::{ApiKeyId, UserId};
+    use atlas_core::principal::ApiKeyId;
+    use atlas_core::principal::UserId;
 
     #[test]
     fn user_actor_populates_created_by_user_column_only() {
-        let actor = Actor::User(atlas_domain::UserAttributionId(UserId::new().0));
+        let actor = Actor::User(atlas_acta::actor::UserAttributionId(UserId::new().0));
         let (user_col, key_col) = actor_fields(&actor);
 
         assert_eq!(
@@ -211,7 +213,7 @@ mod tests {
 
     #[test]
     fn api_key_actor_populates_created_by_key_column_only() {
-        let actor = Actor::ApiKey(atlas_domain::ApiKeyAttributionId(ApiKeyId::new().0));
+        let actor = Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(ApiKeyId::new().0));
         let (user_col, key_col) = actor_fields(&actor);
 
         assert_eq!(user_col, None);

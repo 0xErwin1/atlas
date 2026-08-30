@@ -1,12 +1,25 @@
-use atlas_domain::actor::Actor;
-use atlas_domain::entities::boards_tasks::{
-    ActivityKind, AssigneeRef, Board, BoardColumn, ReferenceKind, Task, TaskActivity, TaskAssignee,
-    TaskChecklistItem, TaskReference,
-};
-use atlas_domain::ids::{
-    ApiKeyId, BoardId, ChecklistItemId, ColumnId, FolderId, ProjectId, TaskActivityId, TaskId,
-    TaskReferenceId, UserId, WorkspaceId,
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::entities::boards_tasks::ActivityKind;
+use atlas_acta::entities::boards_tasks::AssigneeRef;
+use atlas_acta::entities::boards_tasks::Board;
+use atlas_acta::entities::boards_tasks::BoardColumn;
+use atlas_acta::entities::boards_tasks::ReferenceKind;
+use atlas_acta::entities::boards_tasks::Task;
+use atlas_acta::entities::boards_tasks::TaskActivity;
+use atlas_acta::entities::boards_tasks::TaskAssignee;
+use atlas_acta::entities::boards_tasks::TaskChecklistItem;
+use atlas_acta::entities::boards_tasks::TaskReference;
+use atlas_acta::ids::BoardId;
+use atlas_acta::ids::ChecklistItemId;
+use atlas_acta::ids::ColumnId;
+use atlas_acta::ids::FolderId;
+use atlas_acta::ids::ProjectId;
+use atlas_acta::ids::TaskActivityId;
+use atlas_acta::ids::TaskId;
+use atlas_acta::ids::TaskReferenceId;
+use atlas_acta::ids::WorkspaceId;
+use atlas_core::principal::ApiKeyId;
+use atlas_core::principal::UserId;
 use chrono::{DateTime, Utc};
 use sea_orm::entity::prelude::*;
 
@@ -200,9 +213,9 @@ pub mod task_activity {
 /// rather than panicking; threading `Result` through every infallible read mapper is out of scope.
 pub fn actor_from_columns(user_id: Option<Uuid>, api_key_id: Option<Uuid>) -> Actor {
     match (user_id, api_key_id) {
-        (Some(uid), None) => Actor::User(atlas_domain::UserAttributionId(uid)),
-        (None, Some(kid)) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid)),
-        _ => Actor::User(atlas_domain::UserAttributionId(UserId::new().0)),
+        (Some(uid), None) => Actor::User(atlas_acta::actor::UserAttributionId(uid)),
+        (None, Some(kid)) => Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(kid)),
+        _ => Actor::User(atlas_acta::actor::UserAttributionId(UserId::new().0)),
     }
 }
 
@@ -251,7 +264,7 @@ pub fn task_from(m: task::Model) -> Task {
         priority: m
             .priority
             .as_deref()
-            .and_then(|s| atlas_domain::entities::boards_tasks::Priority::from_str(s).ok()),
+            .and_then(|s| atlas_acta::entities::boards_tasks::Priority::from_str(s).ok()),
         due_date: m.due_date,
         estimate: m.estimate,
         labels: m.labels,
@@ -279,7 +292,7 @@ pub fn task_reference_from(m: task_reference::Model) -> Result<TaskReference, St
         source_task_id: TaskId(m.source_task_id),
         kind,
         target_task_id: m.target_task_id.map(TaskId),
-        target_document_id: m.target_document_id.map(atlas_domain::ids::DocumentId),
+        target_document_id: m.target_document_id.map(atlas_acta::ids::DocumentId),
         created_by: actor_from_columns(m.created_by_user_id, m.created_by_api_key_id),
         created_at: m.created_at,
     })
@@ -322,7 +335,7 @@ pub fn task_activity_from(m: task_activity::Model) -> Result<TaskActivity, Strin
     use std::str::FromStr;
 
     let kind = activity_kind_from_str(&m.kind)?;
-    let payload: atlas_domain::entities::boards_tasks::ActivityPayload =
+    let payload: atlas_acta::entities::boards_tasks::ActivityPayload =
         serde_json::from_value(m.payload)
             .map_err(|e| format!("activity payload deserialize: {e}"))?;
 
@@ -364,20 +377,24 @@ pub fn activity_kind_from_str(s: &str) -> Result<ActivityKind, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use atlas_domain::entities::boards_tasks::Priority;
+    use atlas_acta::entities::boards_tasks::Priority;
 
     #[test]
     fn actor_from_columns_user() {
         let uid = Uuid::now_v7();
         let actor = actor_from_columns(Some(uid), None);
-        assert!(matches!(actor, Actor::User(id) if id == atlas_domain::UserAttributionId(uid)));
+        assert!(
+            matches!(actor, Actor::User(id) if id == atlas_acta::actor::UserAttributionId(uid))
+        );
     }
 
     #[test]
     fn actor_from_columns_api_key() {
         let kid = Uuid::now_v7();
         let actor = actor_from_columns(None, Some(kid));
-        assert!(matches!(actor, Actor::ApiKey(id) if id == atlas_domain::ApiKeyAttributionId(kid)));
+        assert!(
+            matches!(actor, Actor::ApiKey(id) if id == atlas_acta::actor::ApiKeyAttributionId(kid))
+        );
     }
 
     /// Known latent bug, out of scope for this slice, defect candidate post-E2:

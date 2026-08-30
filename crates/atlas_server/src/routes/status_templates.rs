@@ -6,15 +6,18 @@ use axum::{
 };
 use serde::Deserialize;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::boards_tasks::BoardColumn;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::status_templates::NewStatusTemplate;
+use atlas_acta::entities::status_templates::StatusTemplate;
+use atlas_acta::entities::status_templates::StatusTemplatePatch;
+use atlas_acta::ids::StatusTemplateId;
 use atlas_api::dtos::status_templates::{
     CreateStatusTemplateRequest, StatusTemplateDto, UpdateStatusTemplateRequest,
 };
-use atlas_domain::{
-    Actor, StatusTemplateId, WorkspaceCtx,
-    entities::boards_tasks::{BoardColumn, PositionBetween},
-    entities::status_templates::{NewStatusTemplate, StatusTemplate, StatusTemplatePatch},
-    permissions::Principal,
-};
+use atlas_core::principal::Principal;
 
 use crate::{
     authz::{
@@ -39,9 +42,9 @@ pub(crate) struct TemplatePath {
 
 fn principal_to_actor(principal: &Principal) -> Actor {
     match principal {
-        Principal::User(uid) => Actor::User(atlas_domain::UserAttributionId(uid.0)),
-        Principal::ApiKey(kid) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0)),
-        Principal::Group(_) => Actor::User(atlas_domain::UserAttributionId(uuid::Uuid::nil())),
+        Principal::User(uid) => Actor::User(atlas_acta::actor::UserAttributionId(uid.0)),
+        Principal::ApiKey(kid) => Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(kid.0)),
+        Principal::Group(_) => Actor::User(atlas_acta::actor::UserAttributionId(uuid::Uuid::nil())),
     }
 }
 
@@ -136,7 +139,7 @@ pub(crate) async fn create_status_template(
         .map_err(ApiError::Domain)?;
 
     let last_key = existing.last().map(|t| t.position_key.clone());
-    let position_key = atlas_domain::position::between(last_key.as_deref(), None);
+    let position_key = atlas_core::position::between(last_key.as_deref(), None);
 
     let repo = PgStatusTemplateRepo::new((*state.db).clone());
     let template = repo

@@ -5,19 +5,23 @@ use axum::{
 };
 use serde::Deserialize;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::ports::search::SearchAfter;
+use atlas_acta::ports::search::SearchRepo;
+use atlas_acta::ports::search::SortKey as DomainSortKey;
+use atlas_acta::search::SearchKind;
+use atlas_acta::search::SearchQuery;
+use atlas_acta::search::SearchSort;
+use atlas_acta::search::SearchWarning;
+use atlas_acta::search::TypeSet;
+use atlas_acta::search::parse_query;
+use atlas_acta::search::task_filter_on_notes;
 use atlas_api::{
     dtos::search::{SearchHitDto, SearchKindDto},
     pagination::{Page, SearchCursor, SortKey as ApiSortKey},
 };
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    permissions::CapabilityFamily,
-    ports::search::{SearchAfter, SearchRepo, SortKey as DomainSortKey},
-    search::{
-        SearchKind, SearchQuery, SearchSort, SearchWarning, TypeSet, parse_query,
-        task_filter_on_notes,
-    },
-};
+use atlas_custos::capability::CapabilityFamily;
 
 use crate::{
     authz::WorkspaceAccess, error::ApiError, hybrid_search, persistence::repos::PgSearchRepo,
@@ -217,7 +221,7 @@ pub(crate) async fn search(
 async fn fused_search(
     state: &AppState,
     ctx: &WorkspaceCtx,
-    principal: &atlas_domain::permissions::Principal,
+    principal: &atlas_core::principal::Principal,
     query: &SearchQuery,
     mode: SearchMode,
     limit: u64,
@@ -229,7 +233,7 @@ async fn fused_search(
     let provider = state.embedding_provider.clone();
     let vectors_ready = match provider {
         Some(_) => state.semantic_search_enabled_now().await.map_err(|error| {
-            ApiError::Domain(atlas_domain::DomainError::Internal {
+            ApiError::Domain(atlas_core::error::DomainError::Internal {
                 message: format!("semantic search schema readiness check failed: {error}"),
             })
         })?,
@@ -291,7 +295,7 @@ async fn fused_search(
 async fn page_from_fused(
     state: &AppState,
     ctx: &WorkspaceCtx,
-    lexical: &[atlas_domain::search::SearchHit],
+    lexical: &[atlas_acta::search::SearchHit],
     fused: Vec<hybrid_search::HybridHit>,
     limit: u64,
     cursor: Option<&str>,
@@ -420,9 +424,9 @@ fn apply_param_overrides(
     let task_only_present = query.filters.iter().any(|f| {
         matches!(
             f,
-            atlas_domain::search::SearchFilter::Status(_)
-                | atlas_domain::search::SearchFilter::Priority(_)
-                | atlas_domain::search::SearchFilter::Assignee(_)
+            atlas_acta::search::SearchFilter::Status(_)
+                | atlas_acta::search::SearchFilter::Priority(_)
+                | atlas_acta::search::SearchFilter::Assignee(_)
         )
     });
 
@@ -469,7 +473,7 @@ fn resolve_cursor(raw: Option<&str>, query: &SearchQuery) -> Result<Option<Searc
     }))
 }
 
-fn hit_to_dto(hit: atlas_domain::search::SearchHit) -> SearchHitDto {
+fn hit_to_dto(hit: atlas_acta::search::SearchHit) -> SearchHitDto {
     SearchHitDto {
         id: hit.id,
         kind: match hit.kind {
@@ -487,16 +491,16 @@ fn hit_to_dto(hit: atlas_domain::search::SearchHit) -> SearchHitDto {
     }
 }
 
-fn principal_to_actor(principal: &atlas_domain::permissions::Principal) -> Actor {
+fn principal_to_actor(principal: &atlas_core::principal::Principal) -> Actor {
     match principal {
-        atlas_domain::permissions::Principal::User(uid) => {
-            Actor::User(atlas_domain::UserAttributionId(uid.0))
+        atlas_core::principal::Principal::User(uid) => {
+            Actor::User(atlas_acta::actor::UserAttributionId(uid.0))
         }
-        atlas_domain::permissions::Principal::ApiKey(kid) => {
-            Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0))
+        atlas_core::principal::Principal::ApiKey(kid) => {
+            Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(kid.0))
         }
-        atlas_domain::permissions::Principal::Group(_) => {
-            Actor::User(atlas_domain::UserAttributionId(uuid::Uuid::nil()))
+        atlas_core::principal::Principal::Group(_) => {
+            Actor::User(atlas_acta::actor::UserAttributionId(uuid::Uuid::nil()))
         }
     }
 }
@@ -508,7 +512,11 @@ fn principal_to_actor(principal: &atlas_domain::permissions::Principal) -> Actor
 #[cfg(test)]
 mod tests {
     use super::*;
-    use atlas_domain::search::{SearchFilter, SearchQuery, SearchSort, SearchWarning, TypeSet};
+    use atlas_acta::search::SearchFilter;
+    use atlas_acta::search::SearchQuery;
+    use atlas_acta::search::SearchSort;
+    use atlas_acta::search::SearchWarning;
+    use atlas_acta::search::TypeSet;
 
     fn base_query() -> SearchQuery {
         SearchQuery {

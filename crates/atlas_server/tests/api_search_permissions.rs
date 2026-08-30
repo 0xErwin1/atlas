@@ -19,21 +19,27 @@
 
 mod support;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::boards_tasks::NewTask;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::documents::NewDocument;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
+use atlas_acta::ports::search::SearchRepo;
+use atlas_acta::search::SearchQuery;
+use atlas_acta::search::SearchSort;
+use atlas_acta::search::TypeSet;
 use atlas_api::dtos::search::{SearchHitDto, SearchKindDto};
 use atlas_api::pagination::Page;
-use atlas_domain::permissions::{Capability, CapabilityAction, CapabilityFamily, Principal};
-use atlas_domain::ports::search::SearchRepo;
-use atlas_domain::search::{SearchQuery, SearchSort, TypeSet};
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::{
-        boards_tasks::{NewBoard, NewTask, PositionBetween},
-        documents::NewDocument,
-        identity::MemberRole,
-        workspace_core::NewProject,
-    },
-    permissions::{ResourceRole, Visibility, VisibilityRole},
-};
+use atlas_core::principal::Principal;
+use atlas_custos::capability::Capability;
+use atlas_custos::capability::CapabilityAction;
+use atlas_custos::capability::CapabilityFamily;
+use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::{
     auth::tokens::{generate_api_key, hash_token},
@@ -99,9 +105,9 @@ async fn seed_workspace_with_member(
 /// Grants an API key workspace-scope access.
 async fn grant_ws_scope_for_key(
     db: &support::TestDb,
-    ws_id: atlas_domain::ids::WorkspaceId,
-    key_id: atlas_domain::ids::ApiKeyId,
-    grantor_id: atlas_domain::ids::UserId,
+    ws_id: atlas_acta::ids::WorkspaceId,
+    key_id: atlas_core::principal::ApiKeyId,
+    grantor_id: atlas_core::principal::UserId,
 ) {
     let repo = PgPermissionGrantRepo {
         conn: db.conn().clone(),
@@ -129,10 +135,10 @@ async fn grant_ws_scope_for_key(
 /// this grant must see the specific document and no other same-workspace document.
 async fn grant_doc_for_key(
     db: &support::TestDb,
-    ws_id: atlas_domain::ids::WorkspaceId,
-    key_id: atlas_domain::ids::ApiKeyId,
-    doc_id: atlas_domain::ids::DocumentId,
-    grantor_id: atlas_domain::ids::UserId,
+    ws_id: atlas_acta::ids::WorkspaceId,
+    key_id: atlas_core::principal::ApiKeyId,
+    doc_id: atlas_acta::ids::DocumentId,
+    grantor_id: atlas_core::principal::UserId,
 ) {
     let repo = PgPermissionGrantRepo {
         conn: db.conn().clone(),
@@ -158,17 +164,17 @@ async fn grant_doc_for_key(
 /// (key_id, raw_token).
 async fn create_api_key_with_scopes(
     db: &support::TestDb,
-    ws_id: atlas_domain::ids::WorkspaceId,
-    creator_id: atlas_domain::ids::UserId,
+    ws_id: atlas_acta::ids::WorkspaceId,
+    creator_id: atlas_core::principal::UserId,
     name: &str,
     scopes: Vec<Capability>,
-) -> (atlas_domain::ids::ApiKeyId, String) {
+) -> (atlas_core::principal::ApiKeyId, String) {
     let raw_token = generate_api_key();
     let token_hash = hash_token(&raw_token);
 
     let ctx = WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(creator_id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(creator_id.0)),
     );
     let key = PgApiKeyRepo {
         conn: db.conn().clone(),
@@ -179,7 +185,7 @@ async fn create_api_key_with_scopes(
         NewApiKey {
             name: name.to_string(),
             token_hash,
-            type_: atlas_domain::entities::identity::ApiKeyType::Agent,
+            type_: atlas_custos::entities::identity::ApiKeyType::Agent,
             expires_at: None,
             scopes,
         },
@@ -194,10 +200,10 @@ async fn create_api_key_with_scopes(
 /// (key_id, raw_token).
 async fn create_api_key_for_ws(
     db: &support::TestDb,
-    ws_id: atlas_domain::ids::WorkspaceId,
-    creator_id: atlas_domain::ids::UserId,
+    ws_id: atlas_acta::ids::WorkspaceId,
+    creator_id: atlas_core::principal::UserId,
     name: &str,
-) -> (atlas_domain::ids::ApiKeyId, String) {
+) -> (atlas_core::principal::ApiKeyId, String) {
     create_api_key_with_scopes(db, ws_id, creator_id, name, Capability::ALL.to_vec()).await
 }
 
@@ -213,7 +219,7 @@ async fn seed_document(
     ctx: &WorkspaceCtx,
     title: &str,
     content: &str,
-) -> atlas_domain::ids::DocumentId {
+) -> atlas_acta::ids::DocumentId {
     let repo = PgDocumentRepo::new(db.conn().clone(), 50);
     let doc = repo
         .create(
@@ -240,9 +246,9 @@ async fn seed_task_with_board(
     title: &str,
     description: &str,
 ) -> (
-    atlas_domain::ids::TaskId,
-    atlas_domain::ids::BoardId,
-    atlas_domain::ids::ProjectId,
+    atlas_acta::ids::TaskId,
+    atlas_acta::ids::BoardId,
+    atlas_acta::ids::ProjectId,
 ) {
     let project_repo = PgProjectRepo {
         conn: db.conn().clone(),
@@ -473,7 +479,7 @@ async fn cross_tenant_task_isolation() {
 
         let member_ctx = WorkspaceCtx::new(
             ws_a.id,
-            Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+            Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
         );
         db.membership_repo()
             .add(&member_ctx, user.id, MemberRole::Owner)
@@ -545,7 +551,7 @@ async fn workspace_member_sees_own_documents() {
         support::login_user_with_workspace(&server, &db, "perm-member-own").await;
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let token = client.token().expect("token");
 
@@ -608,7 +614,7 @@ async fn task_visible_to_member_not_to_outsider() {
         support::login_user_with_workspace(&server, &db, "perm-board-owner").await;
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0)),
     );
     let owner_token = owner_client.token().expect("owner token").to_string();
 
@@ -739,10 +745,10 @@ async fn api_key_no_grant_sees_no_rows_at_sql_level() {
 /// Grants a user a project-scope grant.
 async fn grant_project_for_user(
     db: &support::TestDb,
-    ws_id: atlas_domain::ids::WorkspaceId,
-    user_id: atlas_domain::ids::UserId,
-    project_id: atlas_domain::ids::ProjectId,
-    grantor_id: atlas_domain::ids::UserId,
+    ws_id: atlas_acta::ids::WorkspaceId,
+    user_id: atlas_core::principal::UserId,
+    project_id: atlas_acta::ids::ProjectId,
+    grantor_id: atlas_core::principal::UserId,
 ) {
     let repo = PgPermissionGrantRepo {
         conn: db.conn().clone(),
@@ -845,7 +851,7 @@ async fn plain_member_can_reach_search() {
         support::login_user(&server, &db, "gate-plainmember-member").await;
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(member.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(member.id.0)),
     );
     db.membership_repo()
         .add(&ctx, member.id, MemberRole::Member)
@@ -883,14 +889,14 @@ async fn cross_tenant_document_isolation_via_http() {
         support::login_user_with_workspace(&server, &db, "perm-ctdoc-alice").await;
     let ctx_a = WorkspaceCtx::new(
         ws_a.id,
-        Actor::User(atlas_domain::UserAttributionId(user_a.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user_a.id.0)),
     );
 
     let (_, ws_b, user_b) =
         support::login_user_with_workspace(&server, &db, "perm-ctdoc-bob").await;
     let ctx_b = WorkspaceCtx::new(
         ws_b.id,
-        Actor::User(atlas_domain::UserAttributionId(user_b.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user_b.id.0)),
     );
 
     let unique = "perm_ctdoc9g";
@@ -1274,7 +1280,7 @@ async fn human_member_sees_all_families() {
     let (client, ws, user) = support::login_user_with_workspace(&server, &db, "s2-human-all").await;
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let token = client.token().expect("token");
 

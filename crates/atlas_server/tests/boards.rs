@@ -7,12 +7,13 @@
 
 mod support;
 
-use atlas_domain::{
-    entities::boards_tasks::{NewBoard, PositionBetween},
-    entities::events::DomainEvent,
-    entities::workspace_core::{NewFolder, NewProject},
-    permissions::{Visibility, VisibilityRole},
-};
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::events::DomainEvent;
+use atlas_acta::entities::workspace_core::NewFolder;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
 use atlas_server::persistence::{
     entities::events_outbox::event_outbox,
     repos::{
@@ -24,10 +25,10 @@ use sea_orm::{EntityTrait, TransactionTrait};
 
 async fn make_project(
     db: &support::TestDb,
-    ctx: &atlas_domain::WorkspaceCtx,
+    ctx: &atlas_acta::actor::WorkspaceCtx,
     slug: &str,
     prefix: &str,
-) -> atlas_domain::entities::workspace_core::Project {
+) -> atlas_acta::entities::workspace_core::Project {
     PgProjectRepo {
         conn: db.conn().clone(),
     }
@@ -249,8 +250,8 @@ async fn add_column_returns_position_exhausted_when_anchors_are_equal() {
     assert!(
         matches!(
             result,
-            Err(atlas_domain::DomainError::ComponentConflict {
-                code: atlas_domain::error::acta_conflict::POSITION_EXHAUSTED,
+            Err(atlas_core::error::DomainError::ComponentConflict {
+                code: atlas_server::error::acta_conflict::POSITION_EXHAUSTED,
                 ..
             })
         ),

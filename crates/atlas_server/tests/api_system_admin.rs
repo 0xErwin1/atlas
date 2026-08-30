@@ -19,7 +19,7 @@ async fn create_user_with_flags(
     username: &str,
     is_root: bool,
     is_system_admin: bool,
-) -> atlas_domain::entities::identity::User {
+) -> atlas_custos::entities::identity::User {
     use atlas_server::auth::password;
 
     let hash = password::hash("TestPassword1!".to_string())

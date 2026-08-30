@@ -4,14 +4,19 @@ mod support;
 
 use std::collections::HashMap;
 
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::boards_tasks::NewBoard,
-    entities::identity::MemberRole,
-    entities::workspace_core::{NewFolder, NewProject},
-    ids::{BoardId, FolderId, ProjectId},
-    permissions::{Principal, ResourceRef, ResourceRole, Visibility},
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::entities::workspace_core::NewFolder;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::ids::BoardId;
+use atlas_acta::ids::FolderId;
+use atlas_acta::ids::ProjectId;
+use atlas_acta::permissions::ResourceRef;
+use atlas_acta::permissions::Visibility;
+use atlas_core::principal::Principal;
+use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::{NewPermissionGrant, ResolutionInput, ResolutionQuery, resolve};
 use atlas_server::{
     authz::authorized::{BoardRes, ResolvedResource},
@@ -56,7 +61,7 @@ async fn create_folder(
     db: &support::TestDb,
     ws: &atlas_server::persistence::repos::Workspace,
     user: &atlas_server::persistence::repos::User,
-) -> atlas_domain::entities::workspace_core::Folder {
+) -> atlas_acta::entities::workspace_core::Folder {
     let repo = PgFolderRepo {
         conn: db.conn().clone(),
     };
@@ -80,11 +85,11 @@ async fn create_board_in_folder(
     project_id: ProjectId,
     folder_id: Option<FolderId>,
     name: &str,
-) -> atlas_domain::entities::boards_tasks::Board {
+) -> atlas_acta::entities::boards_tasks::Board {
     let repo = PgBoardRepo::new(db.conn().clone());
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     repo.create_board(
         &ctx,

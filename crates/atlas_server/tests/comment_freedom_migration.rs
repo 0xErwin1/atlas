@@ -2,7 +2,7 @@
 
 mod support;
 
-use atlas_domain::entities::documents::NewDocument;
+use atlas_acta::entities::documents::NewDocument;
 use atlas_server::persistence::repos::{DocumentRepo, PgDocumentRepo};
 use migration::Migrator;
 use sea_orm::{ConnectionTrait, Statement};

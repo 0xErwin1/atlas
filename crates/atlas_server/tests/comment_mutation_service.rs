@@ -8,17 +8,21 @@ use std::sync::{
 };
 
 use async_trait::async_trait;
-use atlas_domain::{
-    AttachmentStore,
-    entities::{
-        boards_tasks::{NewBoard, NewTask, PositionBetween},
-        comments::{CommentFeedEntry, CommentLinkEventKind, CommentLinkTarget, CommentOwner},
-        documents::{AttachmentOwner, NewAttachment, NewDocument},
-        workspace_core::NewProject,
-    },
-    permissions::{Visibility, VisibilityRole},
-    ports::comments::CommentLinkRepo,
-};
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::boards_tasks::NewTask;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::comments::CommentFeedEntry;
+use atlas_acta::entities::comments::CommentLinkEventKind;
+use atlas_acta::entities::comments::CommentLinkTarget;
+use atlas_acta::entities::comments::CommentOwner;
+use atlas_acta::entities::documents::AttachmentOwner;
+use atlas_acta::entities::documents::NewAttachment;
+use atlas_acta::entities::documents::NewDocument;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
+use atlas_acta::ports::attachment_store::AttachmentStore;
+use atlas_acta::ports::comments::CommentLinkRepo;
 use atlas_server::{
     persistence::repos::{
         AttachmentRepo, BoardRepo, DiskAttachmentStore, DocumentRepo, PgAttachmentLifecycle,
@@ -31,9 +35,9 @@ use sea_orm::{ConnectionTrait, Statement};
 
 async fn seed_task(
     db: &support::TestDb,
-    ctx: &atlas_domain::WorkspaceCtx,
+    ctx: &atlas_acta::actor::WorkspaceCtx,
     title: &str,
-) -> atlas_domain::entities::boards_tasks::Task {
+) -> atlas_acta::entities::boards_tasks::Task {
     let project_id = uuid::Uuid::now_v7();
     let project_suffix = &project_id.to_string()[28..];
     let project = PgProjectRepo {
@@ -970,7 +974,7 @@ async fn explicit_attachment_delete_preserves_a_digest_referenced_in_another_wor
     db.teardown().await;
 }
 
-async fn comment_body(db: &support::TestDb, comment_id: atlas_domain::ids::CommentId) -> String {
+async fn comment_body(db: &support::TestDb, comment_id: atlas_acta::ids::CommentId) -> String {
     db.conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
@@ -984,10 +988,7 @@ async fn comment_body(db: &support::TestDb, comment_id: atlas_domain::ids::Comme
         .expect("comment body")
 }
 
-async fn comment_event_count(
-    db: &support::TestDb,
-    comment_id: atlas_domain::ids::CommentId,
-) -> i64 {
+async fn comment_event_count(db: &support::TestDb, comment_id: atlas_acta::ids::CommentId) -> i64 {
     db.conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
@@ -1003,7 +1004,7 @@ async fn comment_event_count(
 
 async fn comment_event_kinds(
     db: &support::TestDb,
-    comment_id: atlas_domain::ids::CommentId,
+    comment_id: atlas_acta::ids::CommentId,
 ) -> Vec<String> {
     db.conn()
         .query_all_raw(Statement::from_sql_and_values(
@@ -1039,7 +1040,7 @@ async fn table_count(db: &support::TestDb, table: &str) -> i64 {
         .expect("table count")
 }
 
-async fn comment_deleted(db: &support::TestDb, comment_id: atlas_domain::ids::CommentId) -> bool {
+async fn comment_deleted(db: &support::TestDb, comment_id: atlas_acta::ids::CommentId) -> bool {
     db.conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
@@ -1069,7 +1070,7 @@ async fn digest_has_cleanup_intent(db: &support::TestDb, digest: &str) -> bool {
 
 async fn attachment_is_tombstoned(
     db: &support::TestDb,
-    comment_id: atlas_domain::CommentId,
+    comment_id: atlas_acta::ids::CommentId,
 ) -> bool {
     db.conn()
         .query_one_raw(Statement::from_sql_and_values(
@@ -1087,7 +1088,7 @@ async fn attachment_is_tombstoned(
 
 async fn comment_attachment_id(
     db: &support::TestDb,
-    comment_id: atlas_domain::CommentId,
+    comment_id: atlas_acta::ids::CommentId,
 ) -> uuid::Uuid {
     db.conn()
         .query_one_raw(Statement::from_sql_and_values(
@@ -1178,21 +1179,21 @@ impl FailOnceDeleteStore {
 
 #[async_trait]
 impl AttachmentStore for FailOnceDeleteStore {
-    async fn put(&self, data: &[u8]) -> Result<String, atlas_domain::DomainError> {
+    async fn put(&self, data: &[u8]) -> Result<String, atlas_core::error::DomainError> {
         self.inner.put(data).await
     }
 
-    async fn get(&self, digest: &str) -> Result<bytes::Bytes, atlas_domain::DomainError> {
+    async fn get(&self, digest: &str) -> Result<bytes::Bytes, atlas_core::error::DomainError> {
         self.inner.get(digest).await
     }
 
-    async fn exists(&self, digest: &str) -> Result<bool, atlas_domain::DomainError> {
+    async fn exists(&self, digest: &str) -> Result<bool, atlas_core::error::DomainError> {
         self.inner.exists(digest).await
     }
 
-    async fn delete(&self, digest: &str) -> Result<(), atlas_domain::DomainError> {
+    async fn delete(&self, digest: &str) -> Result<(), atlas_core::error::DomainError> {
         if self.should_fail.swap(false, Ordering::SeqCst) {
-            return Err(atlas_domain::DomainError::Internal {
+            return Err(atlas_core::error::DomainError::Internal {
                 message: "injected post-commit object deletion failure".into(),
             });
         }

@@ -7,11 +7,12 @@
 
 mod support;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
 use atlas_api::dtos::{
     AdminUpdateWorkspaceRequest, CreateGrantRequest, GrantPrincipal, UpdateWorkspaceRequest,
 };
 use atlas_client::ClientError;
-use atlas_domain::{Actor, WorkspaceCtx};
 use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::persistence::repos::{
     ApiKeyRepo, NewApiKey, PermissionGrantRepo, PgPermissionGrantRepo, UserRepo,
@@ -228,7 +229,7 @@ async fn rename_workspace_agent_without_config_update_gets_403() {
     let hash = atlas_server::auth::tokens::hash_token(plain);
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0)),
     );
     let key = db
         .api_key_repo()
@@ -238,11 +239,11 @@ async fn rename_workspace_agent_without_config_update_gets_403() {
             NewApiKey {
                 name: "ws-rename-deny".to_string(),
                 token_hash: hash,
-                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
+                type_: atlas_custos::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
-                scopes: vec![atlas_domain::permissions::Capability {
-                    family: atlas_domain::permissions::CapabilityFamily::Tasks,
-                    action: atlas_domain::permissions::CapabilityAction::Read,
+                scopes: vec![atlas_custos::capability::Capability {
+                    family: atlas_custos::capability::CapabilityFamily::Tasks,
+                    action: atlas_custos::capability::CapabilityAction::Read,
                 }],
             },
         )
@@ -307,7 +308,7 @@ async fn rename_workspace_agent_with_config_update_succeeds() {
     let hash = atlas_server::auth::tokens::hash_token(plain);
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0)),
     );
     let key = db
         .api_key_repo()
@@ -317,11 +318,11 @@ async fn rename_workspace_agent_with_config_update_succeeds() {
             NewApiKey {
                 name: "ws-rename-allow".to_string(),
                 token_hash: hash,
-                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
+                type_: atlas_custos::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
-                scopes: vec![atlas_domain::permissions::Capability {
-                    family: atlas_domain::permissions::CapabilityFamily::Config,
-                    action: atlas_domain::permissions::CapabilityAction::Update,
+                scopes: vec![atlas_custos::capability::Capability {
+                    family: atlas_custos::capability::CapabilityFamily::Config,
+                    action: atlas_custos::capability::CapabilityAction::Update,
                 }],
             },
         )
@@ -637,7 +638,7 @@ async fn api_key_with_grant_sees_workspace_in_list() {
     let hash = atlas_server::auth::tokens::hash_token(plain);
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0)),
     );
     let key = db
         .api_key_repo()
@@ -647,9 +648,9 @@ async fn api_key_with_grant_sees_workspace_in_list() {
             NewApiKey {
                 name: "ak-list-single".to_string(),
                 token_hash: hash,
-                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
+                type_: atlas_custos::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
-                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
+                scopes: atlas_custos::capability::Capability::ALL.to_vec(),
             },
         )
         .await
@@ -705,7 +706,7 @@ async fn api_key_with_grants_in_two_workspaces_sees_both_distinct() {
     let hash = atlas_server::auth::tokens::hash_token(plain);
     let ctx_a = WorkspaceCtx::new(
         ws_a.id,
-        Actor::User(atlas_domain::UserAttributionId(owner_a_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(owner_a_user.id.0)),
     );
     let key = db
         .api_key_repo()
@@ -715,9 +716,9 @@ async fn api_key_with_grants_in_two_workspaces_sees_both_distinct() {
             NewApiKey {
                 name: "ak-list-two".to_string(),
                 token_hash: hash,
-                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
+                type_: atlas_custos::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
-                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
+                scopes: atlas_custos::capability::Capability::ALL.to_vec(),
             },
         )
         .await
@@ -751,7 +752,7 @@ async fn api_key_with_grants_in_two_workspaces_sees_both_distinct() {
             folder_id: None,
             document_id: None,
             board_id: None,
-            role: atlas_domain::permissions::ResourceRole::Viewer,
+            role: atlas_server::authz::ResourceRole::Viewer,
             created_by_user_id: Some(owner_b_user.id),
             created_by_api_key_id: None,
         })
@@ -769,7 +770,7 @@ async fn api_key_with_grants_in_two_workspaces_sees_both_distinct() {
             folder_id: None,
             document_id: None,
             board_id: None,
-            role: atlas_domain::permissions::ResourceRole::Viewer,
+            role: atlas_server::authz::ResourceRole::Viewer,
             created_by_user_id: Some(owner_a_user.id),
             created_by_api_key_id: None,
         })
@@ -817,7 +818,7 @@ async fn api_key_with_no_grant_sees_empty_workspace_list() {
     let hash = atlas_server::auth::tokens::hash_token(plain);
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0)),
     );
     db.api_key_repo()
         .create(
@@ -826,9 +827,9 @@ async fn api_key_with_no_grant_sees_empty_workspace_list() {
             NewApiKey {
                 name: "ak-list-empty".to_string(),
                 token_hash: hash,
-                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
+                type_: atlas_custos::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
-                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
+                scopes: atlas_custos::capability::Capability::ALL.to_vec(),
             },
         )
         .await
@@ -909,9 +910,9 @@ async fn global_api_key_created_by_root_lists_all_workspaces() {
             NewApiKey {
                 name: "glob-ls-key".to_string(),
                 token_hash: atlas_server::auth::tokens::hash_token(plain),
-                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
+                type_: atlas_custos::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
-                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
+                scopes: atlas_custos::capability::Capability::ALL.to_vec(),
             },
         )
         .await

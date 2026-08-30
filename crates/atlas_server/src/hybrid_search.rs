@@ -7,15 +7,16 @@
 //! value and a cosine distance are not comparable quantities, and any attempt to
 //! normalize one into the other encodes an arbitrary weighting.
 
-use atlas_domain::{
-    DomainError, WorkspaceCtx,
-    ids::WorkspaceId,
-    permissions::Principal,
-    search::{SearchHit, SearchQuery},
-    semantic_search::{
-        SemanticSearchHit, SemanticSearchQuery, SemanticSearchRepo, SemanticSearchTypeFilter,
-    },
-};
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::ids::WorkspaceId;
+use atlas_acta::search::SearchHit;
+use atlas_acta::search::SearchQuery;
+use atlas_acta::semantic_search::SemanticSearchHit;
+use atlas_acta::semantic_search::SemanticSearchQuery;
+use atlas_acta::semantic_search::SemanticSearchRepo;
+use atlas_acta::semantic_search::SemanticSearchTypeFilter;
+use atlas_core::error::DomainError;
+use atlas_core::principal::Principal;
 use chrono::{DateTime, Utc};
 use sea_orm::{DatabaseBackend, DatabaseConnection, FromQueryResult, Statement};
 use std::collections::HashMap;
@@ -128,7 +129,7 @@ pub fn fuse_ranks(lexical: &[SearchHit], semantic: &[SemanticSearchHit], k: f32)
 #[allow(clippy::too_many_arguments)]
 pub async fn semantic_candidates(
     db: &DatabaseConnection,
-    provider: std::sync::Arc<dyn atlas_domain::semantic_search::EmbeddingProvider>,
+    provider: std::sync::Arc<dyn atlas_acta::semantic_search::EmbeddingProvider>,
     workspace_id: WorkspaceId,
     principal: Principal,
     query: &SearchQuery,
@@ -236,25 +237,24 @@ fn reciprocal_rank(zero_based_rank: usize, k: f32) -> f32 {
 
 fn lexical_kind(hit: &SearchHit) -> HybridKind {
     match hit.kind {
-        atlas_domain::search::SearchKind::Document => HybridKind::Document,
-        atlas_domain::search::SearchKind::Task => HybridKind::Task,
+        atlas_acta::search::SearchKind::Document => HybridKind::Document,
+        atlas_acta::search::SearchKind::Task => HybridKind::Task,
     }
 }
 
 fn semantic_kind(hit: &SemanticSearchHit) -> HybridKind {
     match hit.kind {
-        atlas_domain::semantic_search::ResourceKind::Document => HybridKind::Document,
-        atlas_domain::semantic_search::ResourceKind::Task => HybridKind::Task,
+        atlas_acta::semantic_search::ResourceKind::Document => HybridKind::Document,
+        atlas_acta::semantic_search::ResourceKind::Task => HybridKind::Task,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use atlas_domain::{
-        search::SearchKind,
-        semantic_search::{ResourceKind, SemanticSearchSource},
-    };
+    use atlas_acta::search::SearchKind;
+    use atlas_acta::semantic_search::ResourceKind;
+    use atlas_acta::semantic_search::SemanticSearchSource;
     use chrono::Utc;
 
     fn lexical_hit(id: Uuid, title: &str) -> SearchHit {

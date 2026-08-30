@@ -1,9 +1,11 @@
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::identity::{MemberRole, NewUser, NewWorkspace},
-    entities::workspace_core::NewProject,
-    ids::{UserId, WorkspaceId},
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::entities::identity::NewWorkspace;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::ids::WorkspaceId;
+use atlas_core::principal::UserId;
+use atlas_custos::entities::identity::NewUser;
 use sea_orm::DatabaseConnection;
 
 use crate::auth::password;
@@ -72,7 +74,7 @@ pub async fn run_bootstrap(cfg: &BootstrapConfig, conn: &DatabaseConnection) -> 
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(root.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(root.id.0)),
     );
     membership_repo
         .add(&ctx, root.id, MemberRole::Owner)
@@ -109,7 +111,7 @@ pub async fn run_dev_seed(cfg: &BootstrapConfig, conn: &DatabaseConnection) -> R
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(root.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(root.id.0)),
     );
 
     let existing = project_repo
@@ -125,8 +127,8 @@ pub async fn run_dev_seed(cfg: &BootstrapConfig, conn: &DatabaseConnection) -> R
                     name: "Sandbox".to_string(),
                     slug: "sandbox".to_string(),
                     task_prefix: "SBX".to_string(),
-                    visibility: atlas_domain::permissions::Visibility::Workspace(
-                        atlas_domain::permissions::VisibilityRole::Editor,
+                    visibility: atlas_acta::permissions::Visibility::Workspace(
+                        atlas_acta::permissions::VisibilityRole::Editor,
                     ),
                 },
             )

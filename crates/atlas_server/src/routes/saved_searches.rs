@@ -5,14 +5,16 @@ use axum::{
     response::IntoResponse,
 };
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::saved_searches::NewSavedSearch;
+use atlas_acta::entities::saved_searches::SavedSearch;
 use atlas_api::dtos::saved_searches::{
     CreateSavedSearchRequest, RenameSavedSearchRequest, SavedSearchDto,
 };
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::saved_searches::{NewSavedSearch, SavedSearch},
-    permissions::{Capability, CapabilityAction, CapabilityFamily},
-};
+use atlas_custos::capability::Capability;
+use atlas_custos::capability::CapabilityAction;
+use atlas_custos::capability::CapabilityFamily;
 
 use crate::{
     authz::{WorkspaceMember, enforce_api_key_scope},
@@ -50,8 +52,10 @@ async fn enforce_saved_searches_scope(
 
 fn actor_from_member(member: &WorkspaceMember) -> Result<Actor, ApiError> {
     match (&member.user, &member.api_key_id) {
-        (Some(user), _) => Ok(Actor::User(atlas_domain::UserAttributionId(user.id.0))),
-        (None, Some(key_id)) => Ok(Actor::ApiKey(atlas_domain::ApiKeyAttributionId(key_id.0))),
+        (Some(user), _) => Ok(Actor::User(atlas_acta::actor::UserAttributionId(user.id.0))),
+        (None, Some(key_id)) => Ok(Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(
+            key_id.0,
+        ))),
         (None, None) => Err(ApiError::Unauthorized),
     }
 }

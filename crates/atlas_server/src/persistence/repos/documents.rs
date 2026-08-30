@@ -1,23 +1,40 @@
 use async_trait::async_trait;
-use atlas_domain::{
-    Actor, AttachmentStore, DomainError, RevisionConflict, WorkspaceCtx,
-    document_lines::{DocumentLineEdit, apply_document_line_edit},
-    entities::comments::{CommentOwner, NewCommentAttachmentDraftUpload},
-    entities::documents::{
-        Attachment, AttachmentOwner, AttachmentWriteIntent, Document, DocumentLink,
-        DocumentSummary, ExtractedLink, LinkSource, NewAttachment, NewDocument, RevisionMeta,
-        TaskDescriptionLinks,
-    },
-    entities::lifecycle::TrashKind,
-    ids::{
-        AttachmentId, CommentDraftId, DocumentId, FolderId, ProjectId, RevisionId, TaskId,
-        WorkspaceId,
-    },
-    permissions::Principal,
-    revision::{create_revision_patch, is_anchor_seq, reconstruct},
-    slug::slugify,
-    wikilink::WikilinkTarget,
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::document_lines::DocumentLineEdit;
+use atlas_acta::document_lines::apply_document_line_edit;
+use atlas_acta::entities::comments::CommentOwner;
+use atlas_acta::entities::comments::NewCommentAttachmentDraftUpload;
+use atlas_acta::entities::documents::Attachment;
+use atlas_acta::entities::documents::AttachmentOwner;
+use atlas_acta::entities::documents::AttachmentWriteIntent;
+use atlas_acta::entities::documents::Document;
+use atlas_acta::entities::documents::DocumentLink;
+use atlas_acta::entities::documents::DocumentSummary;
+use atlas_acta::entities::documents::ExtractedLink;
+use atlas_acta::entities::documents::LinkSource;
+use atlas_acta::entities::documents::NewAttachment;
+use atlas_acta::entities::documents::NewDocument;
+use atlas_acta::entities::documents::RevisionMeta;
+use atlas_acta::entities::documents::TaskDescriptionLinks;
+use atlas_acta::entities::lifecycle::TrashKind;
+use atlas_acta::ids::AttachmentId;
+use atlas_acta::ids::CommentDraftId;
+use atlas_acta::ids::DocumentId;
+use atlas_acta::ids::FolderId;
+use atlas_acta::ids::ProjectId;
+use atlas_acta::ids::RevisionId;
+use atlas_acta::ids::TaskId;
+use atlas_acta::ids::WorkspaceId;
+use atlas_acta::ports::attachment_store::AttachmentStore;
+use atlas_acta::revision::create_revision_patch;
+use atlas_acta::revision::is_anchor_seq;
+use atlas_acta::revision::reconstruct;
+use atlas_acta::wikilink::WikilinkTarget;
+use atlas_core::error::DomainError;
+use atlas_core::error::RevisionConflict;
+use atlas_core::principal::Principal;
+use atlas_core::slug::slugify;
 use chrono::{DateTime, Utc};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
@@ -47,9 +64,10 @@ use crate::persistence::repos::comment_attachment_drafts::{
 use crate::persistence::repos::{PgSearchIndexQueueRepo, PgSecurityAuditRepo};
 use atlas_postgres::db_err;
 
-pub use atlas_domain::ports::documents::{
-    AttachmentRepo, AttachmentWriteIntentRepo, DocumentLinkRepo, DocumentRepo,
-};
+pub use atlas_acta::ports::documents::AttachmentRepo;
+pub use atlas_acta::ports::documents::AttachmentWriteIntentRepo;
+pub use atlas_acta::ports::documents::DocumentLinkRepo;
+pub use atlas_acta::ports::documents::DocumentRepo;
 
 pub struct PgDocumentRepo {
     pub conn: DatabaseConnection,
@@ -199,7 +217,7 @@ impl DocumentRepo for PgDocumentRepo {
         ctx: &WorkspaceCtx,
         principal: &Principal,
         project_filter: Option<ProjectId>,
-        folder_presence: atlas_domain::ports::documents::FolderPresence,
+        folder_presence: atlas_acta::ports::documents::FolderPresence,
         after_id: Option<uuid::Uuid>,
         limit: u64,
     ) -> Result<Vec<DocumentSummary>, DomainError> {
@@ -274,11 +292,11 @@ impl DocumentRepo for PgDocumentRepo {
         };
 
         let folder_presence_cond = match folder_presence {
-            atlas_domain::ports::documents::FolderPresence::Any => String::new(),
-            atlas_domain::ports::documents::FolderPresence::Unfiled => {
+            atlas_acta::ports::documents::FolderPresence::Any => String::new(),
+            atlas_acta::ports::documents::FolderPresence::Unfiled => {
                 "AND d.folder_id IS NULL".to_string()
             }
-            atlas_domain::ports::documents::FolderPresence::Filed => {
+            atlas_acta::ports::documents::FolderPresence::Filed => {
                 "AND d.folder_id IS NOT NULL".to_string()
             }
         };
@@ -374,17 +392,19 @@ impl DocumentRepo for PgDocumentRepo {
                     .ok_or_else(|| "document missing current_revision_id".to_string())?;
 
                 Ok(DocumentSummary {
-                    id: atlas_domain::ids::DocumentId(r.id),
-                    workspace_id: atlas_domain::ids::WorkspaceId(r.workspace_id),
-                    project_id: r.project_id.map(atlas_domain::ids::ProjectId),
-                    folder_id: r.folder_id.map(atlas_domain::ids::FolderId),
+                    id: atlas_acta::ids::DocumentId(r.id),
+                    workspace_id: atlas_acta::ids::WorkspaceId(r.workspace_id),
+                    project_id: r.project_id.map(atlas_acta::ids::ProjectId),
+                    folder_id: r.folder_id.map(atlas_acta::ids::FolderId),
                     title: r.title,
                     slug: r.slug,
                     frontmatter: r.frontmatter,
-                    current_revision_id: atlas_domain::ids::RevisionId(current_revision_id),
+                    current_revision_id: atlas_acta::ids::RevisionId(current_revision_id),
                     current_revision_seq: r.current_revision_seq,
-                    created_by_user_id: r.created_by_user_id.map(atlas_domain::ids::UserId),
-                    created_by_api_key_id: r.created_by_api_key_id.map(atlas_domain::ids::ApiKeyId),
+                    created_by_user_id: r.created_by_user_id.map(atlas_core::principal::UserId),
+                    created_by_api_key_id: r
+                        .created_by_api_key_id
+                        .map(atlas_core::principal::ApiKeyId),
                     created_at: r.created_at,
                     updated_at: r.updated_at,
                 })
@@ -1155,11 +1175,11 @@ impl PgDocumentLinkRepo {
         source: LinkSource,
         content: &str,
     ) -> Result<Vec<ExtractedLink>, DomainError> {
-        let raw_links = atlas_domain::parse_wikilinks(content);
+        let raw_links = atlas_acta::wikilink::parse_wikilinks(content);
         let mut extracted = Vec::with_capacity(raw_links.len());
 
         for raw in raw_links {
-            let parsed = atlas_domain::classify_wikilink(&raw);
+            let parsed = atlas_acta::wikilink::classify_wikilink(&raw);
 
             let mut link = ExtractedLink {
                 target_title: parsed.display,
@@ -1855,7 +1875,7 @@ impl PgAttachmentLifecycle {
     pub async fn delete_comment_attachment(
         conn: &DatabaseConnection,
         ctx: &WorkspaceCtx,
-        comment_id: atlas_domain::ids::CommentId,
+        comment_id: atlas_acta::ids::CommentId,
         attachment_id: AttachmentId,
     ) -> Result<(), DomainError> {
         let txn = conn.begin().await.map_err(db_err)?;
@@ -2247,7 +2267,7 @@ impl PgAttachmentLifecycle {
         conn: &DatabaseConnection,
         ctx: &WorkspaceCtx,
         owner: CommentOwner,
-        draft_id: atlas_domain::ids::CommentDraftId,
+        draft_id: atlas_acta::ids::CommentDraftId,
         upload: NewCommentAttachmentDraftUpload,
         data: &[u8],
         store: &dyn AttachmentStore,
@@ -2703,8 +2723,8 @@ async fn update_backlink_titles(
 }
 
 fn derive_frontmatter(content: &str) -> serde_json::Value {
-    let (yaml, _body) = atlas_domain::frontmatter::strip_frontmatter(content);
-    atlas_domain::frontmatter::parse_frontmatter_yaml(yaml.unwrap_or(""))
+    let (yaml, _body) = atlas_acta::frontmatter::strip_frontmatter(content);
+    atlas_acta::frontmatter::parse_frontmatter_yaml(yaml.unwrap_or(""))
 }
 
 fn actor_fields(actor: &Actor) -> (Option<Uuid>, Option<Uuid>) {

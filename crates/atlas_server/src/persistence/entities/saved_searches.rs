@@ -1,5 +1,9 @@
-use atlas_domain::entities::saved_searches::{Owner, SavedSearch};
-use atlas_domain::ids::{ApiKeyId, SavedSearchId, UserId, WorkspaceId};
+use atlas_acta::entities::saved_searches::Owner;
+use atlas_acta::entities::saved_searches::SavedSearch;
+use atlas_acta::ids::SavedSearchId;
+use atlas_acta::ids::WorkspaceId;
+use atlas_core::principal::ApiKeyId;
+use atlas_core::principal::UserId;
 use chrono::{DateTime, Utc};
 use sea_orm::entity::prelude::*;
 

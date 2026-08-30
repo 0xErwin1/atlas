@@ -6,7 +6,7 @@
 )]
 
 //! Enforces that `atlas_acta` depends only on `atlas_core` (plus std/third-party
-//! deps) and never on `atlas_custos`, `atlas_domain`, or any application crate.
+//! deps) and never on `atlas_custos` or any application crate.
 //!
 //! `atlas_acta` is meant to compose with `atlas_custos` only through
 //! `atlas_server`, never directly. This test is the enforcement mechanism for
@@ -19,13 +19,7 @@ use std::process::Command;
 
 /// Product/application crates `atlas_acta` must never reach, directly or
 /// transitively.
-const FORBIDDEN: &[&str] = &[
-    "atlas_custos",
-    "atlas_domain",
-    "atlas_api",
-    "atlas_server",
-    "migration",
-];
+const FORBIDDEN: &[&str] = &["atlas_custos", "atlas_api", "atlas_server", "migration"];
 
 #[test]
 fn atlas_acta_dependency_closure_excludes_forbidden_crates() {

@@ -7,13 +7,14 @@
 
 mod support;
 
-use atlas_domain::{
-    WorkspaceCtx,
-    entities::boards_tasks::{NewBoard, NewTask, PositionBetween},
-    entities::workspace_core::NewProject,
-    ids::TaskId,
-    permissions::{Visibility, VisibilityRole},
-};
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::boards_tasks::NewTask;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::ids::TaskId;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
 use atlas_server::{
     persistence::{
         entities::{boards_tasks::task, comments::comment},

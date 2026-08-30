@@ -7,12 +7,13 @@
 
 mod support;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
 use atlas_api::dtos::{
     ChangePasswordRequest, CreateUserRequest, LoginRequest, MeResponse, ServerMetaDto,
     UpdateMeRequest, UserDto,
 };
 use atlas_client::AtlasClient;
-use atlas_domain::{Actor, WorkspaceCtx};
 use atlas_server::persistence::repos::{ApiKeyRepo, NewApiKey};
 use support::{TestDb, TestServer, login_root_user, login_user_with_workspace};
 
@@ -178,7 +179,7 @@ async fn change_password_rejects_api_key_principal() {
     let token_hash = atlas_server::auth::tokens::hash_token(raw_secret);
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0)),
     );
     db.api_key_repo()
         .create(
@@ -187,9 +188,9 @@ async fn change_password_rejects_api_key_principal() {
             NewApiKey {
                 name: "settings-bot".to_string(),
                 token_hash,
-                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
+                type_: atlas_custos::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
-                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
+                scopes: atlas_custos::capability::Capability::ALL.to_vec(),
             },
         )
         .await
@@ -353,7 +354,7 @@ async fn update_me_rejects_api_key_principal() {
     let token_hash = atlas_server::auth::tokens::hash_token(raw_secret);
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0)),
     );
     db.api_key_repo()
         .create(
@@ -362,9 +363,9 @@ async fn update_me_rejects_api_key_principal() {
             NewApiKey {
                 name: "profile-bot".to_string(),
                 token_hash,
-                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
+                type_: atlas_custos::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
-                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
+                scopes: atlas_custos::capability::Capability::ALL.to_vec(),
             },
         )
         .await

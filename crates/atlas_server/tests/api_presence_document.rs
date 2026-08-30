@@ -26,8 +26,10 @@ mod support;
 
 use std::time::{Duration, Instant};
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::identity::MemberRole;
 use atlas_api::dtos::{CreateProjectRequest, documents::CreateDocumentRequest};
-use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole};
 use atlas_server::persistence::repos::MembershipRepo;
 
 // ---------------------------------------------------------------------------
@@ -293,7 +295,7 @@ async fn document_second_principal_join_broadcasts_both() {
         support::login_user(&server, &db, "doc-presence-join-member").await;
     let member_ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(member.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(member.id.0)),
     );
     db.membership_repo()
         .add(&member_ctx, member.id, MemberRole::Member)
@@ -414,7 +416,7 @@ async fn document_leave_broadcasts_removal() {
         support::login_user(&server, &db, "doc-presence-leave-member").await;
     let member_ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(member.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(member.id.0)),
     );
     db.membership_repo()
         .add(&member_ctx, member.id, MemberRole::Member)
@@ -490,7 +492,7 @@ async fn document_heartbeat_rejected_for_non_viewer() {
         support::login_user(&server, &db, "doc-presence-authz-member").await;
     let member_ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(member.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(member.id.0)),
     );
     db.membership_repo()
         .add(&member_ctx, member.id, MemberRole::Member)
@@ -542,7 +544,7 @@ async fn document_presence_not_leaked_to_non_viewer_over_sse() {
         support::login_user(&server, &db, "doc-presence-leak-outsider").await;
     let outsider_ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(outsider.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(outsider.id.0)),
     );
     db.membership_repo()
         .add(&outsider_ctx, outsider.id, MemberRole::Member)

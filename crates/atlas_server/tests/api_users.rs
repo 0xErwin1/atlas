@@ -403,7 +403,10 @@ async fn disable_requires_admin() {
 
 #[tokio::test]
 async fn list_user_memberships_returns_workspaces_with_roles() {
-    use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole, ids::WorkspaceId};
+    use atlas_acta::actor::Actor;
+    use atlas_acta::actor::WorkspaceCtx;
+    use atlas_acta::entities::identity::MemberRole;
+    use atlas_acta::ids::WorkspaceId;
     use atlas_server::persistence::repos::{
         MembershipRepo, NewUser, NewWorkspace, UserRepo, WorkspaceRepo,
     };
@@ -450,7 +453,7 @@ async fn list_user_memberships_returns_workspaces_with_roles() {
         .add(
             &WorkspaceCtx::new(
                 ws_alpha.id,
-                Actor::User(atlas_domain::UserAttributionId(target.id.0)),
+                Actor::User(atlas_acta::actor::UserAttributionId(target.id.0)),
             ),
             target.id,
             MemberRole::Member,
@@ -462,7 +465,7 @@ async fn list_user_memberships_returns_workspaces_with_roles() {
         .add(
             &WorkspaceCtx::new(
                 ws_beta.id,
-                Actor::User(atlas_domain::UserAttributionId(target.id.0)),
+                Actor::User(atlas_acta::actor::UserAttributionId(target.id.0)),
             ),
             target.id,
             MemberRole::Admin,

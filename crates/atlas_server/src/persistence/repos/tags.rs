@@ -1,9 +1,10 @@
 use async_trait::async_trait;
-use atlas_domain::{
-    Actor, DomainError, WorkspaceCtx,
-    entities::tags::{NewTag, Tag},
-    ids::TagId,
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::tags::NewTag;
+use atlas_acta::entities::tags::Tag;
+use atlas_acta::ids::TagId;
+use atlas_core::error::DomainError;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ConnectionTrait, DatabaseConnection, EntityTrait,
@@ -13,7 +14,7 @@ use sea_orm::{
 use crate::persistence::entities::tags::{tag, tag_from};
 use atlas_postgres::db_err;
 
-pub use atlas_domain::ports::tags::TagRepo;
+pub use atlas_acta::ports::tags::TagRepo;
 
 pub struct PgTagRepo {
     pub conn: DatabaseConnection,
@@ -299,11 +300,12 @@ fn actor_columns(actor: &Actor) -> (Option<uuid::Uuid>, Option<uuid::Uuid>) {
 mod tests {
     use super::*;
     use crate::persistence::entities::boards_tasks::actor_from_columns;
-    use atlas_domain::ids::{ApiKeyId, UserId};
+    use atlas_core::principal::ApiKeyId;
+    use atlas_core::principal::UserId;
 
     #[test]
     fn user_actor_round_trips_through_xor_columns() {
-        let actor = Actor::User(atlas_domain::UserAttributionId(UserId::new().0));
+        let actor = Actor::User(atlas_acta::actor::UserAttributionId(UserId::new().0));
         let (user_col, key_col) = actor_columns(&actor);
 
         assert_eq!(
@@ -319,7 +321,7 @@ mod tests {
 
     #[test]
     fn api_key_actor_round_trips_through_xor_columns() {
-        let actor = Actor::ApiKey(atlas_domain::ApiKeyAttributionId(ApiKeyId::new().0));
+        let actor = Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(ApiKeyId::new().0));
         let (user_col, key_col) = actor_columns(&actor);
 
         assert_eq!(user_col, None);

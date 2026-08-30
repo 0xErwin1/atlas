@@ -1,9 +1,8 @@
+use atlas_acta::actor::Actor;
+use atlas_core::principal::UserId;
 use atlas_custos::WorkspaceScope;
-use atlas_domain::{
-    Actor,
-    entities::security_audit::SecurityAuditEvent,
-    ids::{SecurityAuditId, UserId},
-};
+use atlas_custos::entities::security_audit::SecurityAuditEvent;
+use atlas_custos::ids::SecurityAuditId;
 use chrono::{DateTime, Utc};
 use sea_orm::entity::prelude::*;
 
@@ -38,9 +37,9 @@ pub mod security_audit_log {
 /// rather than panicking.
 pub fn actor_from_columns(user_id: Option<Uuid>, api_key_id: Option<Uuid>) -> Actor {
     match (user_id, api_key_id) {
-        (Some(uid), None) => Actor::User(atlas_domain::UserAttributionId(uid)),
-        (None, Some(kid)) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid)),
-        _ => Actor::User(atlas_domain::UserAttributionId(UserId::new().0)),
+        (Some(uid), None) => Actor::User(atlas_acta::actor::UserAttributionId(uid)),
+        (None, Some(kid)) => Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(kid)),
+        _ => Actor::User(atlas_acta::actor::UserAttributionId(UserId::new().0)),
     }
 }
 
@@ -65,14 +64,18 @@ mod tests {
     fn actor_from_columns_user() {
         let uid = Uuid::now_v7();
         let actor = actor_from_columns(Some(uid), None);
-        assert!(matches!(actor, Actor::User(id) if id == atlas_domain::UserAttributionId(uid)));
+        assert!(
+            matches!(actor, Actor::User(id) if id == atlas_acta::actor::UserAttributionId(uid))
+        );
     }
 
     #[test]
     fn actor_from_columns_api_key() {
         let kid = Uuid::now_v7();
         let actor = actor_from_columns(None, Some(kid));
-        assert!(matches!(actor, Actor::ApiKey(id) if id == atlas_domain::ApiKeyAttributionId(kid)));
+        assert!(
+            matches!(actor, Actor::ApiKey(id) if id == atlas_acta::actor::ApiKeyAttributionId(kid))
+        );
     }
 
     /// Known latent bug, out of scope for this slice, defect candidate post-E2:

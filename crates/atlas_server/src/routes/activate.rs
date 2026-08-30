@@ -10,12 +10,13 @@ use sea_orm::{ConnectionTrait, FromQueryResult, Statement, TransactionTrait};
 use uuid::Uuid;
 
 use atlas_api::dtos::{ActivatePasswordRequest, ActivationInfoDto, LoginResponse};
-use atlas_domain::ids::{ActivationTokenId, SessionId, UserId};
+use atlas_core::principal::UserId;
+use atlas_custos::ids::ActivationTokenId;
+use atlas_custos::ids::SessionId;
 
-use atlas_domain::{
-    Actor,
-    entities::security_audit::{NewSecurityAuditEvent, SecurityAction},
-};
+use atlas_acta::actor::Actor;
+use atlas_custos::entities::security_audit::NewSecurityAuditEvent;
+use atlas_custos::entities::security_audit::SecurityAction;
 
 use crate::{
     auth::{
@@ -257,7 +258,7 @@ pub(crate) async fn post_activate(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: None,
-            actor: Actor::User(atlas_domain::UserAttributionId(user_id.0)),
+            actor: Actor::User(atlas_acta::actor::UserAttributionId(user_id.0)),
             action: SecurityAction::AccountActivated,
             target_type: "user".to_string(),
             target_id: Some(user_id.0),

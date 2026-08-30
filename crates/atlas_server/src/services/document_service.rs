@@ -1,15 +1,22 @@
-use atlas_domain::{
-    DomainError, WorkspaceCtx,
-    document_lines::DocumentLineEdit,
-    entities::comments::{Comment, CommentOwner},
-    entities::documents::{Document, NewDocument},
-    entities::events::{
-        DocumentCreatedPayload, DocumentDeletedPayload, DocumentMovedPayload,
-        DocumentUpdatedPayload, DomainEvent,
-    },
-    entities::lifecycle::TrashKind,
-    ids::{CommentDraftId, CommentId, DocumentId, FolderId, ProjectId, RevisionId},
-};
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::document_lines::DocumentLineEdit;
+use atlas_acta::entities::comments::Comment;
+use atlas_acta::entities::comments::CommentOwner;
+use atlas_acta::entities::documents::Document;
+use atlas_acta::entities::documents::NewDocument;
+use atlas_acta::entities::events::DocumentCreatedPayload;
+use atlas_acta::entities::events::DocumentDeletedPayload;
+use atlas_acta::entities::events::DocumentMovedPayload;
+use atlas_acta::entities::events::DocumentUpdatedPayload;
+use atlas_acta::entities::events::DomainEvent;
+use atlas_acta::entities::lifecycle::TrashKind;
+use atlas_acta::ids::CommentDraftId;
+use atlas_acta::ids::CommentId;
+use atlas_acta::ids::DocumentId;
+use atlas_acta::ids::FolderId;
+use atlas_acta::ids::ProjectId;
+use atlas_acta::ids::RevisionId;
+use atlas_core::error::DomainError;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait};
 
 use crate::persistence::entities::{comments::comment_attachment_draft, documents::document};

@@ -29,6 +29,7 @@
 
 mod support;
 
+use atlas_acta::actor::Actor;
 use atlas_api::{
     dtos::{
         CreateProjectRequest, UpdateProjectRequest, UpdateWorkspaceRequest,
@@ -53,7 +54,9 @@ use atlas_api::{
     problem::ProblemDetails,
 };
 use atlas_client::{AtlasClient, ClientError};
-use atlas_domain::{Actor, entities::identity::ApiKeyType, ids::UserId, permissions::Capability};
+use atlas_core::principal::UserId;
+use atlas_custos::capability::Capability;
+use atlas_custos::entities::identity::ApiKeyType;
 use atlas_server::{
     crypto::WebhookCrypto,
     persistence::repos::{ApiKeyRepo, NewApiKey, PgApiKeyRepo, PgWebhookSubscriptionRepo},
@@ -237,7 +240,7 @@ async fn seed_fixtures(
         enc,
         nonce,
         None,
-        &Actor::User(atlas_domain::UserAttributionId(user_id.0)),
+        &Actor::User(atlas_acta::actor::UserAttributionId(user_id.0)),
     )
     .await
     .expect("create sweep webhook");
@@ -264,7 +267,7 @@ async fn seed_fixtures(
 /// set, and returns the plaintext bearer token.
 async fn create_scoped_agent(
     db: &TestDb,
-    owner_user_id: atlas_domain::ids::UserId,
+    owner_user_id: atlas_core::principal::UserId,
     name: &str,
     scopes: Vec<Capability>,
 ) -> String {

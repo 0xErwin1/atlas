@@ -6,7 +6,7 @@
 )]
 
 //! Enforces that `atlas_postgres` never depends, directly or transitively,
-//! on `atlas_domain` or any other product crate.
+//! on any product crate.
 //!
 //! `atlas_postgres` is meant to stay neutral runtime plumbing (pool
 //! configuration, connection construction). Pulling in a product crate here
@@ -19,8 +19,14 @@ use std::collections::{HashSet, VecDeque};
 use std::process::Command;
 
 /// Product/application crates `atlas_postgres` must never reach, directly or
-/// transitively. `S2e` extends this list with `atlas_acta` / `atlas_custos`.
-const FORBIDDEN: &[&str] = &["atlas_domain", "atlas_api", "atlas_server", "migration"];
+/// transitively.
+const FORBIDDEN: &[&str] = &[
+    "atlas_acta",
+    "atlas_custos",
+    "atlas_api",
+    "atlas_server",
+    "migration",
+];
 
 #[test]
 fn atlas_postgres_dependency_closure_excludes_forbidden_crates() {

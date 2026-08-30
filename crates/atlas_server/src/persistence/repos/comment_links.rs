@@ -3,16 +3,25 @@ use crate::persistence::entities::comments::{
 };
 use crate::services::CommentMutationFault;
 use async_trait::async_trait;
-use atlas_domain::{
-    Actor, DomainError, WorkspaceCtx,
-    entities::comments::{
-        CommentBacklink, CommentFeedCursor, CommentFeedEntry, CommentFeedPage, CommentLink,
-        CommentLinkEvent, CommentLinkEventKind, CommentLinkTarget, CommentOwner,
-    },
-    ids::{CommentId, CommentLinkEventId, DocumentId, TaskId},
-    ports::comments::CommentLinkRepo,
-    wikilink::{CommentAttachmentUrlOwner, CommentLinkCandidate},
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::comments::CommentBacklink;
+use atlas_acta::entities::comments::CommentFeedCursor;
+use atlas_acta::entities::comments::CommentFeedEntry;
+use atlas_acta::entities::comments::CommentFeedPage;
+use atlas_acta::entities::comments::CommentLink;
+use atlas_acta::entities::comments::CommentLinkEvent;
+use atlas_acta::entities::comments::CommentLinkEventKind;
+use atlas_acta::entities::comments::CommentLinkTarget;
+use atlas_acta::entities::comments::CommentOwner;
+use atlas_acta::ids::CommentId;
+use atlas_acta::ids::CommentLinkEventId;
+use atlas_acta::ids::DocumentId;
+use atlas_acta::ids::TaskId;
+use atlas_acta::ports::comments::CommentLinkRepo;
+use atlas_acta::wikilink::CommentAttachmentUrlOwner;
+use atlas_acta::wikilink::CommentLinkCandidate;
+use atlas_core::error::DomainError;
 use atlas_postgres::db_err;
 use chrono::Utc;
 use sea_orm::{
@@ -300,7 +309,7 @@ impl CommentLinkRepo for PgCommentLinkRepo {
 }
 
 #[async_trait]
-impl atlas_domain::ports::comments::CommentLinkTargetRepo for PgCommentLinkRepo {
+impl atlas_acta::ports::comments::CommentLinkTargetRepo for PgCommentLinkRepo {
     async fn classify_candidates(
         &self,
         ctx: &WorkspaceCtx,
@@ -398,7 +407,7 @@ async fn classify_candidates(
             CommentLinkCandidate::AttachmentUrl(url) => {
                 if attachment_url_matches_owner(conn, ctx, &url).await? {
                     targets.push(CommentLinkTarget::Attachment(
-                        atlas_domain::ids::AttachmentId(url.attachment_id),
+                        atlas_acta::ids::AttachmentId(url.attachment_id),
                     ));
                 }
             }
@@ -412,7 +421,7 @@ async fn classify_candidates(
 async fn attachment_url_matches_owner(
     conn: &impl ConnectionTrait,
     ctx: &WorkspaceCtx,
-    url: &atlas_domain::wikilink::CommentAttachmentUrl,
+    url: &atlas_acta::wikilink::CommentAttachmentUrl,
 ) -> Result<bool, DomainError> {
     let (owner_join, owner_predicate) = match &url.owner {
         CommentAttachmentUrlOwner::Task { readable_id } => (
@@ -511,9 +520,7 @@ fn comment_backlink_from_row(row: sea_orm::QueryResult) -> Result<CommentBacklin
     ) {
         (Some(id), None, None) => CommentLinkTarget::Document(DocumentId(id)),
         (None, Some(id), None) => CommentLinkTarget::Task(TaskId(id)),
-        (None, None, Some(id)) => {
-            CommentLinkTarget::Attachment(atlas_domain::ids::AttachmentId(id))
-        }
+        (None, None, Some(id)) => CommentLinkTarget::Attachment(atlas_acta::ids::AttachmentId(id)),
         _ => {
             return Err(DomainError::Internal {
                 message: "comment backlink target invariant violated".into(),
@@ -535,8 +542,10 @@ fn comment_backlink_from_row(row: sea_orm::QueryResult) -> Result<CommentBacklin
         }
     };
     Ok(CommentBacklink {
-        id: atlas_domain::ids::CommentLinkId(row.try_get("", "id").map_err(row_err)?),
-        workspace_id: atlas_domain::WorkspaceId(row.try_get("", "workspace_id").map_err(row_err)?),
+        id: atlas_acta::ids::CommentLinkId(row.try_get("", "id").map_err(row_err)?),
+        workspace_id: atlas_acta::ids::WorkspaceId(
+            row.try_get("", "workspace_id").map_err(row_err)?,
+        ),
         comment_id: CommentId(row.try_get("", "comment_id").map_err(row_err)?),
         parent,
         parent_readable_id: row.try_get("", "parent_readable_id").map_err(row_err)?,
@@ -595,9 +604,9 @@ fn feed_entry_from_row(row: sea_orm::QueryResult) -> Result<CommentFeedEntry, Do
 
     if entry_type == "comment" {
         return Ok(CommentFeedEntry::Comment(
-            atlas_domain::entities::comments::Comment {
+            atlas_acta::entities::comments::Comment {
                 id: CommentId(id),
-                workspace_id: atlas_domain::WorkspaceId(workspace_id),
+                workspace_id: atlas_acta::ids::WorkspaceId(workspace_id),
                 task_id: row
                     .try_get::<Option<uuid::Uuid>>("", "parent_task_id")
                     .map_err(row_err)?
@@ -660,7 +669,7 @@ fn feed_entry_from_row(row: sea_orm::QueryResult) -> Result<CommentFeedEntry, Do
         (Some(id), None, None) => Some(CommentLinkTarget::Document(DocumentId(id))),
         (None, Some(id), None) => Some(CommentLinkTarget::Task(TaskId(id))),
         (None, None, Some(id)) => Some(CommentLinkTarget::Attachment(
-            atlas_domain::ids::AttachmentId(id),
+            atlas_acta::ids::AttachmentId(id),
         )),
         (None, None, None) => None,
         _ => {
@@ -672,8 +681,8 @@ fn feed_entry_from_row(row: sea_orm::QueryResult) -> Result<CommentFeedEntry, Do
     let actor_type = row.try_get::<String>("", "actor_type").map_err(row_err)?;
     let actor_id = row.try_get::<uuid::Uuid>("", "actor_id").map_err(row_err)?;
     let actor = match actor_type.as_str() {
-        "user" => Actor::User(atlas_domain::UserAttributionId(actor_id)),
-        "api_key" => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(actor_id)),
+        "user" => Actor::User(atlas_acta::actor::UserAttributionId(actor_id)),
+        "api_key" => Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(actor_id)),
         _ => {
             return Err(DomainError::Internal {
                 message: "unknown comment link event actor".into(),
@@ -682,7 +691,7 @@ fn feed_entry_from_row(row: sea_orm::QueryResult) -> Result<CommentFeedEntry, Do
     };
     Ok(CommentFeedEntry::Event(CommentLinkEvent {
         id: CommentLinkEventId(id),
-        workspace_id: atlas_domain::WorkspaceId(workspace_id),
+        workspace_id: atlas_acta::ids::WorkspaceId(workspace_id),
         parent,
         comment_id: CommentId(row.try_get("", "comment_id").map_err(row_err)?),
         kind,

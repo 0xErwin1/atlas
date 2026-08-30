@@ -1,6 +1,11 @@
-use atlas_domain::DomainError;
-use atlas_domain::entities::task_views::{Owner, TaskView, TaskViewFilters};
-use atlas_domain::ids::{ApiKeyId, TaskViewId, UserId, WorkspaceId};
+use atlas_acta::entities::task_views::Owner;
+use atlas_acta::entities::task_views::TaskView;
+use atlas_acta::entities::task_views::TaskViewFilters;
+use atlas_acta::ids::TaskViewId;
+use atlas_acta::ids::WorkspaceId;
+use atlas_core::error::DomainError;
+use atlas_core::principal::ApiKeyId;
+use atlas_core::principal::UserId;
 use chrono::{DateTime, Utc};
 use sea_orm::entity::prelude::*;
 

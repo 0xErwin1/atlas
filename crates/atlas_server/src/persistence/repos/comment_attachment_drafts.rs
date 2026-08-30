@@ -1,14 +1,17 @@
 use async_trait::async_trait;
-use atlas_domain::{
-    Actor, DomainError, WorkspaceCtx,
-    entities::comments::{
-        CommentAttachmentDraft, CommentAttachmentDraftState, CommentAttachmentDraftUpload,
-        CommentOwner, NewCommentAttachmentDraft, NewCommentAttachmentDraftUpload,
-        comment_draft_create_digest_input,
-    },
-    ids::{AttachmentId, CommentDraftId},
-    ports::comments::CommentAttachmentDraftRepo,
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::comments::CommentAttachmentDraft;
+use atlas_acta::entities::comments::CommentAttachmentDraftState;
+use atlas_acta::entities::comments::CommentAttachmentDraftUpload;
+use atlas_acta::entities::comments::CommentOwner;
+use atlas_acta::entities::comments::NewCommentAttachmentDraft;
+use atlas_acta::entities::comments::NewCommentAttachmentDraftUpload;
+use atlas_acta::entities::comments::comment_draft_create_digest_input;
+use atlas_acta::ids::AttachmentId;
+use atlas_acta::ids::CommentDraftId;
+use atlas_acta::ports::comments::CommentAttachmentDraftRepo;
+use atlas_core::error::DomainError;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait,

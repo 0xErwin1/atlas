@@ -5,19 +5,17 @@ use axum::{
 };
 use sea_orm::TransactionTrait;
 
+use atlas_acta::actor::Actor;
 use atlas_api::dtos::groups::{
     AddGroupMemberRequest, CreateGroupRequest, GroupDto, GroupMemberDto,
 };
-use atlas_domain::{
-    Actor,
-    entities::{
-        groups::NewGroup,
-        security_audit::{NewSecurityAuditEvent, SecurityAction},
-    },
-    ids::{GroupId, UserId},
-};
+use atlas_core::principal::GroupId;
+use atlas_core::principal::UserId;
+use atlas_custos::entities::groups::NewGroup;
+use atlas_custos::entities::security_audit::NewSecurityAuditEvent;
+use atlas_custos::entities::security_audit::SecurityAction;
 
-use atlas_domain::ports::group_repo::GroupRepo;
+use atlas_custos::ports::group_repo::GroupRepo;
 
 use crate::{
     authz::WorkspaceOwnerOrAdmin,
@@ -77,7 +75,9 @@ pub(crate) async fn create_group(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: Some(atlas_custos::WorkspaceScope(caller.workspace.id.0)),
-            actor: Actor::User(atlas_domain::UserAttributionId(caller.caller_user_id.0)),
+            actor: Actor::User(atlas_acta::actor::UserAttributionId(
+                caller.caller_user_id.0,
+            )),
             action: SecurityAction::GroupCreated,
             target_type: "group".to_string(),
             target_id: Some(group.id.0),
@@ -173,7 +173,9 @@ pub(crate) async fn delete_group(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: Some(atlas_custos::WorkspaceScope(caller.workspace.id.0)),
-            actor: Actor::User(atlas_domain::UserAttributionId(caller.caller_user_id.0)),
+            actor: Actor::User(atlas_acta::actor::UserAttributionId(
+                caller.caller_user_id.0,
+            )),
             action: SecurityAction::GroupDeleted,
             target_type: "group".to_string(),
             target_id: Some(group_id.0),
@@ -236,9 +238,11 @@ pub(crate) async fn add_group_member(
 
     // Verify the target user is a workspace member.
     let membership_repo = PgMembershipRepo { conn: conn.clone() };
-    let ctx = atlas_domain::WorkspaceCtx::new(
+    let ctx = atlas_acta::actor::WorkspaceCtx::new(
         caller.workspace.id,
-        Actor::User(atlas_domain::UserAttributionId(caller.caller_user_id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(
+            caller.caller_user_id.0,
+        )),
     );
 
     let is_member = membership_repo
@@ -269,7 +273,9 @@ pub(crate) async fn add_group_member(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: Some(atlas_custos::WorkspaceScope(caller.workspace.id.0)),
-            actor: Actor::User(atlas_domain::UserAttributionId(caller.caller_user_id.0)),
+            actor: Actor::User(atlas_acta::actor::UserAttributionId(
+                caller.caller_user_id.0,
+            )),
             action: SecurityAction::GroupMemberAdded,
             target_type: "group".to_string(),
             target_id: Some(group.id.0),
@@ -353,7 +359,9 @@ pub(crate) async fn remove_group_member(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: Some(atlas_custos::WorkspaceScope(caller.workspace.id.0)),
-            actor: Actor::User(atlas_domain::UserAttributionId(caller.caller_user_id.0)),
+            actor: Actor::User(atlas_acta::actor::UserAttributionId(
+                caller.caller_user_id.0,
+            )),
             action: SecurityAction::GroupMemberRemoved,
             target_type: "group".to_string(),
             target_id: Some(group.id.0),
@@ -428,7 +436,7 @@ pub(crate) async fn list_group_members(
     ))
 }
 
-fn group_to_dto(g: atlas_domain::entities::groups::Group) -> GroupDto {
+fn group_to_dto(g: atlas_custos::entities::groups::Group) -> GroupDto {
     GroupDto {
         id: g.id.0,
         workspace_id: g.workspace_id.0,

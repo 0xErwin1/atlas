@@ -26,16 +26,18 @@ mod support;
 
 use std::time::{Duration, Instant};
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::ids::BoardId;
+use atlas_acta::ids::ProjectId;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
 use atlas_api::dtos::{
     CreateGrantRequest, CreateProjectRequest, GrantPrincipal,
     boards_tasks::{CreateBoardRequest, CreateColumnRequest, CreateTaskRequest},
     documents::ActorDto,
-};
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::{boards_tasks::NewBoard, workspace_core::NewProject},
-    ids::{BoardId, ProjectId},
-    permissions::{Visibility, VisibilityRole},
 };
 use atlas_server::{
     persistence::repos::{
@@ -228,8 +230,8 @@ async fn create_granted_agent(
     db: &support::TestDb,
     owner_client: &atlas_client::AtlasClient,
     ws_slug: &str,
-    ws_id: atlas_domain::ids::WorkspaceId,
-    creator: atlas_domain::ids::UserId,
+    ws_id: atlas_acta::ids::WorkspaceId,
+    creator: atlas_core::principal::UserId,
     name: &str,
 ) -> (uuid::Uuid, String) {
     let plain = format!("atlas_{name}_secret");
@@ -237,7 +239,7 @@ async fn create_granted_agent(
 
     let ctx = WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(creator.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(creator.0)),
     );
     let key = db
         .api_key_repo()
@@ -247,9 +249,9 @@ async fn create_granted_agent(
             NewApiKey {
                 name: name.to_string(),
                 token_hash: hash,
-                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
+                type_: atlas_custos::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
-                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
+                scopes: atlas_custos::capability::Capability::ALL.to_vec(),
             },
         )
         .await
@@ -506,7 +508,7 @@ async fn sweep_then_broadcast_delivers_empty_actors() {
     let (client, ws, user) = support::login_user_with_workspace(&server, &db, "p2-sweeper").await;
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let token = client.token().expect("token").to_string();
 

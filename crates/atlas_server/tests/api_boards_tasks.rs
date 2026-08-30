@@ -7,6 +7,10 @@
 
 mod support;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::ids::BoardId;
 use atlas_api::dtos::{
     CreateProjectRequest, CreateUserApiKeyRequest, InitialGrantRequest,
     boards_tasks::{
@@ -19,10 +23,8 @@ use atlas_api::dtos::{
 };
 use atlas_api::problem::ProblemDetails;
 use atlas_client::ClientError;
-use atlas_domain::{
-    Actor, WorkspaceCtx, entities::identity::MemberRole, ids::BoardId, ids::UserId,
-    permissions::ResourceRole,
-};
+use atlas_core::principal::UserId;
+use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::persistence::repos::{
     MembershipRepo, NewUser, PermissionGrantRepo, PgPermissionGrantRepo, UserRepo,
@@ -74,12 +76,12 @@ async fn task_reference_count(db: &support::TestDb) -> i64 {
 async fn add_member(
     db: &support::TestDb,
     server: &support::TestServer,
-    ws_id: atlas_domain::ids::WorkspaceId,
+    ws_id: atlas_acta::ids::WorkspaceId,
     username: &str,
     role: MemberRole,
 ) -> (
     atlas_client::AtlasClient,
-    atlas_domain::entities::identity::User,
+    atlas_custos::entities::identity::User,
 ) {
     use atlas_api::dtos::LoginRequest;
     use atlas_server::auth::password;
@@ -105,7 +107,7 @@ async fn add_member(
 
     let ctx = WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     db.membership_repo()
         .add(&ctx, user.id, role)
@@ -4860,7 +4862,7 @@ async fn create_task_with_negative_estimate_returns_422() {
 /// Grants an editor board-scoped grant to `user` on `board_id`.
 async fn grant_board_editor(
     db: &support::TestDb,
-    ws_id: atlas_domain::ids::WorkspaceId,
+    ws_id: atlas_acta::ids::WorkspaceId,
     user_id: UserId,
     board_id: uuid::Uuid,
 ) {
@@ -4886,7 +4888,7 @@ async fn grant_board_editor(
 }
 
 struct IdorFixture {
-    ws: atlas_domain::entities::identity::Workspace,
+    ws: atlas_acta::entities::identity::Workspace,
     owner: atlas_client::AtlasClient,
     attacker: atlas_client::AtlasClient,
     board_a: uuid::Uuid,
@@ -8326,7 +8328,7 @@ async fn task_graph_omits_nodes_the_caller_cannot_read() {
         .add(
             &WorkspaceCtx::new(
                 ws.id,
-                Actor::User(atlas_domain::UserAttributionId(member_user.id.0)),
+                Actor::User(atlas_acta::actor::UserAttributionId(member_user.id.0)),
             ),
             member_user.id,
             MemberRole::Member,

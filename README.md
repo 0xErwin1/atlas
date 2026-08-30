@@ -20,10 +20,13 @@ Atlas is not run locally — it is deployed as containers with its runtime confi
 ```
 atlas/
 ├── crates/
-│   ├── atlas_domain/   # pure domain types + ports, no I/O deps
+│   ├── atlas_core/     # neutral platform contracts (ids, registry, capabilities, config)
+│   ├── atlas_custos/   # pure identity/auth types + ports, no I/O deps
+│   ├── atlas_acta/     # pure workspace/content types + ports, no I/O deps
+│   ├── atlas_postgres/ # neutral Postgres runtime (pool config + connect)
 │   ├── atlas_api/      # shared DTOs + OpenAPI schemas (the wire contract)
 │   ├── atlas_server/   # axum HTTP server + SeaORM adapters
-│   ├── atlas_client/   # typed HTTP client over atlas_api/atlas_domain
+│   ├── atlas_client/   # typed HTTP client over atlas_api
 │   ├── atlas_cli/      # clap CLI using atlas_client
 │   ├── atlas_mcp/      # Model Context Protocol server (rmcp)
 │   └── migration/      # sea-orm-migration tool (run: cargo run -p migration -- up)

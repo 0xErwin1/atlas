@@ -4,10 +4,11 @@ use axum::{
 };
 use std::collections::HashMap;
 
-use atlas_domain::{
-    entities::identity::{MemberRole, User, WorkspaceMembership},
-    ids::{ApiKeyId, UserId},
-};
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::entities::identity::WorkspaceMembership;
+use atlas_core::principal::ApiKeyId;
+use atlas_core::principal::UserId;
+use atlas_custos::entities::identity::User;
 
 use crate::{
     auth::middleware::Principal,
@@ -94,9 +95,9 @@ impl FromRequestParts<AppState> for WorkspaceMember {
                 let membership_repo = PgMembershipRepo {
                     conn: (*state.db).clone(),
                 };
-                let ctx = atlas_domain::WorkspaceCtx::new(
+                let ctx = atlas_acta::actor::WorkspaceCtx::new(
                     workspace.id,
-                    atlas_domain::Actor::User(atlas_domain::UserAttributionId(user_id.0)),
+                    atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(user_id.0)),
                 );
                 let membership =
                     membership_repo
@@ -150,9 +151,9 @@ impl FromRequestParts<AppState> for WorkspaceMember {
 /// enforced by the SQL permission filter (mirroring `resolve()`), so the gate
 /// only needs to confirm the principal belongs to the workspace at all.
 pub struct WorkspaceAccess {
-    pub principal: atlas_domain::permissions::Principal,
+    pub principal: atlas_core::principal::Principal,
     pub workspace: Workspace,
-    pub membership: Option<atlas_domain::entities::identity::MemberRole>,
+    pub membership: Option<atlas_acta::entities::identity::MemberRole>,
     /// True only when a `is_root || is_system_admin` user bypasses the normal
     /// membership/grant gate. Never true for an ApiKey principal.
     /// Consumed by the search route to short-circuit the SQL permission predicate.
@@ -219,9 +220,9 @@ impl FromRequestParts<AppState> for WorkspaceAccess {
                 // bypass = true signals the search SQL to short-circuit the permission predicate.
                 if user.is_root || user.is_system_admin {
                     return Ok(WorkspaceAccess {
-                        principal: atlas_domain::permissions::Principal::User(user_id),
+                        principal: atlas_core::principal::Principal::User(user_id),
                         workspace,
-                        membership: Some(atlas_domain::entities::identity::MemberRole::Admin),
+                        membership: Some(atlas_acta::entities::identity::MemberRole::Admin),
                         bypass: true,
                         read_scopes: None,
                     });
@@ -230,9 +231,9 @@ impl FromRequestParts<AppState> for WorkspaceAccess {
                 let membership_repo = PgMembershipRepo {
                     conn: (*state.db).clone(),
                 };
-                let ctx = atlas_domain::WorkspaceCtx::new(
+                let ctx = atlas_acta::actor::WorkspaceCtx::new(
                     workspace.id,
-                    atlas_domain::Actor::User(atlas_domain::UserAttributionId(user_id.0)),
+                    atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(user_id.0)),
                 );
                 let membership =
                     membership_repo
@@ -258,7 +259,7 @@ impl FromRequestParts<AppState> for WorkspaceAccess {
                 }
 
                 Ok(WorkspaceAccess {
-                    principal: atlas_domain::permissions::Principal::User(user_id),
+                    principal: atlas_core::principal::Principal::User(user_id),
                     workspace,
                     membership: role,
                     bypass: false,
@@ -289,7 +290,7 @@ impl FromRequestParts<AppState> for WorkspaceAccess {
                     .ok_or(ApiError::NotFound)?;
 
                 Ok(WorkspaceAccess {
-                    principal: atlas_domain::permissions::Principal::ApiKey(key_id),
+                    principal: atlas_core::principal::Principal::ApiKey(key_id),
                     workspace,
                     membership: None,
                     bypass: false,
@@ -510,9 +511,9 @@ impl FromRequestParts<AppState> for WorkspaceOwnerOrAdmin {
         let membership_repo = PgMembershipRepo {
             conn: (*state.db).clone(),
         };
-        let ctx = atlas_domain::WorkspaceCtx::new(
+        let ctx = atlas_acta::actor::WorkspaceCtx::new(
             workspace.id,
-            atlas_domain::Actor::User(atlas_domain::UserAttributionId(user_id.0)),
+            atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(user_id.0)),
         );
         let membership =
             membership_repo

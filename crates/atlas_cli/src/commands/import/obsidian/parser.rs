@@ -15,7 +15,8 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
-use atlas_domain::{parse_wikilinks, strip_frontmatter};
+use atlas_acta::frontmatter::strip_frontmatter;
+use atlas_acta::wikilink::parse_wikilinks;
 
 use crate::commands::import::obsidian::frontmatter::{ImportFrontmatter, parse_import_frontmatter};
 
@@ -105,7 +106,7 @@ fn build_doc(
     let frontmatter = parse_import_frontmatter(yaml_opt.unwrap_or(""));
 
     let title = resolve_title(&frontmatter, &rel_path);
-    let predicted_slug = atlas_domain::slugify(&title);
+    let predicted_slug = atlas_core::slug::slugify(&title);
 
     let (cleaned_body, attachment_candidates, unsupported_embeds) = pre_detect_embeds(raw_body);
 
@@ -145,7 +146,7 @@ fn resolve_title(fm: &ImportFrontmatter, rel_path: &Path) -> String {
 /// The `![[...]]` spans are consumed and removed from the returned body so that
 /// the subsequent `rewrite_wikilinks` pass does not re-capture them as `[[...]]`
 /// wikilinks. This ordering invariant is load-bearing: `parse_wikilinks` in
-/// `atlas_domain` would otherwise swallow embed spans.
+/// `atlas_acta` would otherwise swallow embed spans.
 pub(crate) fn pre_detect_embeds(
     body: &str,
 ) -> (String, Vec<(PathBuf, &'static str)>, Vec<PathBuf>) {
@@ -208,7 +209,7 @@ pub(crate) fn mime_for_ext(ext: &str) -> &'static str {
 /// (everything after the first `|`) and the heading (everything after the first
 /// `#`) so the server can resolve the link by `slugify(Title)`.
 ///
-/// We do NOT reuse `atlas_domain::parse_wikilink_target` here: that function
+/// We do NOT reuse `atlas_acta::wikilink::parse_wikilink_target` here: that function
 /// treats `|` as a UUID-binding separator (server-side semantics), which is the
 /// opposite of Obsidian's alias `|`. A dedicated rewrite avoids that collision.
 pub(crate) fn rewrite_wikilinks(body: &str) -> String {

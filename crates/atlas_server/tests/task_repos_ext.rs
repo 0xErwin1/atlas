@@ -7,15 +7,19 @@
 
 mod support;
 
-use atlas_domain::{
-    entities::boards_tasks::{
-        ActivityKind, ActivityPayload, AssigneeRef, NewBoard, NewTask, NewTaskActivity,
-        NewTaskAssignee, NewTaskChecklistItem, PositionBetween,
-    },
-    entities::workspace_core::NewProject,
-    ids::ColumnId,
-    permissions::{Visibility, VisibilityRole},
-};
+use atlas_acta::entities::boards_tasks::ActivityKind;
+use atlas_acta::entities::boards_tasks::ActivityPayload;
+use atlas_acta::entities::boards_tasks::AssigneeRef;
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::boards_tasks::NewTask;
+use atlas_acta::entities::boards_tasks::NewTaskActivity;
+use atlas_acta::entities::boards_tasks::NewTaskAssignee;
+use atlas_acta::entities::boards_tasks::NewTaskChecklistItem;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::ids::ColumnId;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
 use atlas_server::persistence::repos::{
     BoardRepo, PgBoardRepo, PgProjectRepo, PgTaskActivityRepo, PgTaskAssigneeRepo,
     PgTaskChecklistRepo, PgTaskRepo, ProjectRepo, TaskActivityRepo, TaskAssigneeRepo,
@@ -25,13 +29,13 @@ use sea_orm::TransactionTrait;
 
 async fn seed_project_board_column(
     db: &support::TestDb,
-    ctx: &atlas_domain::WorkspaceCtx,
+    ctx: &atlas_acta::actor::WorkspaceCtx,
     slug: &str,
     prefix: &str,
 ) -> (
-    atlas_domain::entities::workspace_core::Project,
-    atlas_domain::entities::boards_tasks::Board,
-    atlas_domain::entities::boards_tasks::BoardColumn,
+    atlas_acta::entities::workspace_core::Project,
+    atlas_acta::entities::boards_tasks::Board,
+    atlas_acta::entities::boards_tasks::BoardColumn,
 ) {
     let project = PgProjectRepo {
         conn: db.conn().clone(),
@@ -79,12 +83,12 @@ async fn seed_project_board_column(
 
 async fn seed_task(
     db: &support::TestDb,
-    ctx: &atlas_domain::WorkspaceCtx,
-    project_id: atlas_domain::ids::ProjectId,
-    board_id: atlas_domain::ids::BoardId,
+    ctx: &atlas_acta::actor::WorkspaceCtx,
+    project_id: atlas_acta::ids::ProjectId,
+    board_id: atlas_acta::ids::BoardId,
     col_id: ColumnId,
     title: &str,
-) -> atlas_domain::entities::boards_tasks::Task {
+) -> atlas_acta::entities::boards_tasks::Task {
     PgTaskRepo::new(db.conn().clone())
         .create(
             ctx,
@@ -213,7 +217,7 @@ async fn checklist_add_list_patch_delete() {
         .patch_item(
             &ctx,
             item.id,
-            atlas_domain::entities::boards_tasks::TaskChecklistItemPatch {
+            atlas_acta::entities::boards_tasks::TaskChecklistItemPatch {
                 title: Some("Step 1 updated".into()),
                 checked: Some(true),
                 position: None,
@@ -324,8 +328,8 @@ async fn task_activity_list_is_newest_first() {
         seed_project_board_column(&db, &ctx, "activity-order-proj", "AO").await;
     let task = seed_task(&db, &ctx, proj.id, board.id, col.id, "Task").await;
 
-    let col_a = atlas_domain::ids::ColumnId::new();
-    let col_b = atlas_domain::ids::ColumnId::new();
+    let col_a = atlas_acta::ids::ColumnId::new();
+    let col_b = atlas_acta::ids::ColumnId::new();
 
     let repo = PgTaskActivityRepo::new(db.conn().clone());
 

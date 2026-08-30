@@ -23,18 +23,22 @@ pub(crate) struct WorkspaceGrantPath {
     pub(crate) grant_id: uuid::Uuid,
 }
 
+use crate::authz::ResourceRole;
+use crate::authz::ShareDenied;
+use crate::authz::authorize_grant_target;
+use crate::authz::authorize_share;
+use atlas_acta::actor::Actor;
+use atlas_acta::permissions::ResourceRef;
 use atlas_api::{
     dtos::{CreateGrantRequest, GrantDto, GrantPrincipal},
     pagination::{Cursor, Page},
 };
-use atlas_domain::{
-    Actor,
-    entities::security_audit::{NewSecurityAuditEvent, SecurityAction},
-    ids::{ApiKeyId, GroupId, UserId},
-    permissions::{
-        Principal, ResourceRef, ResourceRole, ShareDenied, authorize_grant_target, authorize_share,
-    },
-};
+use atlas_core::principal::ApiKeyId;
+use atlas_core::principal::GroupId;
+use atlas_core::principal::Principal;
+use atlas_core::principal::UserId;
+use atlas_custos::entities::security_audit::NewSecurityAuditEvent;
+use atlas_custos::entities::security_audit::SecurityAction;
 
 use crate::{
     authz::{
@@ -101,8 +105,8 @@ pub(crate) async fn create_project_grant(
     };
 
     let actor = match &auth.principal {
-        Principal::User(uid) => Actor::User(atlas_domain::UserAttributionId(uid.0)),
-        Principal::ApiKey(kid) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0)),
+        Principal::User(uid) => Actor::User(atlas_acta::actor::UserAttributionId(uid.0)),
+        Principal::ApiKey(kid) => Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(kid.0)),
         Principal::Group(_) => {
             return Err(ApiError::Forbidden {
                 message: "groups cannot be grant actors".into(),
@@ -266,8 +270,8 @@ pub(crate) async fn delete_project_grant(
         .map_err(share_denied_to_api_error)?;
 
     let actor = match &auth.principal {
-        Principal::User(uid) => Actor::User(atlas_domain::UserAttributionId(uid.0)),
-        Principal::ApiKey(kid) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0)),
+        Principal::User(uid) => Actor::User(atlas_acta::actor::UserAttributionId(uid.0)),
+        Principal::ApiKey(kid) => Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(kid.0)),
         Principal::Group(_) => {
             return Err(ApiError::Forbidden {
                 message: "groups cannot be grant actors".into(),
@@ -362,8 +366,8 @@ pub(crate) async fn create_workspace_grant(
     };
 
     let actor = match &auth.principal {
-        Principal::User(uid) => Actor::User(atlas_domain::UserAttributionId(uid.0)),
-        Principal::ApiKey(kid) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0)),
+        Principal::User(uid) => Actor::User(atlas_acta::actor::UserAttributionId(uid.0)),
+        Principal::ApiKey(kid) => Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(kid.0)),
         Principal::Group(_) => {
             return Err(ApiError::Forbidden {
                 message: "groups cannot be grant actors".into(),
@@ -529,8 +533,8 @@ pub(crate) async fn delete_workspace_grant(
         .map_err(share_denied_to_api_error)?;
 
     let actor = match &auth.principal {
-        Principal::User(uid) => Actor::User(atlas_domain::UserAttributionId(uid.0)),
-        Principal::ApiKey(kid) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0)),
+        Principal::User(uid) => Actor::User(atlas_acta::actor::UserAttributionId(uid.0)),
+        Principal::ApiKey(kid) => Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(kid.0)),
         Principal::Group(_) => {
             return Err(ApiError::Forbidden {
                 message: "groups cannot be grant actors".into(),
@@ -618,7 +622,7 @@ fn parse_role(role: &str) -> Result<ResourceRole, ApiError> {
 /// not be soft-deleted.
 async fn parse_principal(
     principal: &GrantPrincipal,
-    workspace_id: &atlas_domain::ids::WorkspaceId,
+    workspace_id: &atlas_acta::ids::WorkspaceId,
     caller: &Principal,
     state: &AppState,
 ) -> Result<(Option<UserId>, Option<ApiKeyId>, Option<GroupId>), ApiError> {
@@ -628,9 +632,9 @@ async fn parse_principal(
             let membership_repo = crate::persistence::repos::PgMembershipRepo {
                 conn: (*state.db).clone(),
             };
-            let ctx = atlas_domain::WorkspaceCtx::new(
+            let ctx = atlas_acta::actor::WorkspaceCtx::new(
                 *workspace_id,
-                atlas_domain::Actor::User(atlas_domain::UserAttributionId(uid.0)),
+                atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(uid.0)),
             );
             let m = membership_repo
                 .find(&ctx, uid)
@@ -690,7 +694,7 @@ async fn parse_principal(
                 conn: (*state.db).clone(),
             };
 
-            use atlas_domain::ports::group_repo::GroupRepo as GroupRepoTrait;
+            use atlas_custos::ports::group_repo::GroupRepo as GroupRepoTrait;
             let group = group_repo
                 .get(gid, atlas_custos::WorkspaceScope(workspace_id.0))
                 .await

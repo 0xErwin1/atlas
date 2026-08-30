@@ -2,18 +2,19 @@
 
 mod support;
 
-use atlas_domain::{
-    Actor, AttachmentId, DomainError, WorkspaceCtx,
-    entities::{
-        comments::{
-            CommentAttachmentDraftState, CommentDraftMetadata, CommentOwner,
-            NewCommentAttachmentDraft, NewCommentAttachmentDraftUpload,
-        },
-        documents::NewDocument,
-        identity::{ApiKeyType, NewApiKey},
-    },
-    ports::CommentAttachmentDraftRepo,
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::comments::CommentAttachmentDraftState;
+use atlas_acta::entities::comments::CommentDraftMetadata;
+use atlas_acta::entities::comments::CommentOwner;
+use atlas_acta::entities::comments::NewCommentAttachmentDraft;
+use atlas_acta::entities::comments::NewCommentAttachmentDraftUpload;
+use atlas_acta::entities::documents::NewDocument;
+use atlas_acta::ids::AttachmentId;
+use atlas_acta::ports::CommentAttachmentDraftRepo;
+use atlas_core::error::DomainError;
+use atlas_custos::entities::identity::ApiKeyType;
+use atlas_custos::entities::identity::NewApiKey;
 use atlas_server::persistence::repos::{
     ApiKeyRepo, DocumentRepo, NewUser, PgCommentAttachmentDraftRepo, PgDocumentRepo, UserRepo,
 };
@@ -27,9 +28,9 @@ use support::TestDb;
 
 async fn seed_document(
     db: &TestDb,
-    ctx: &atlas_domain::WorkspaceCtx,
+    ctx: &atlas_acta::actor::WorkspaceCtx,
     title: &str,
-) -> atlas_domain::entities::documents::Document {
+) -> atlas_acta::entities::documents::Document {
     PgDocumentRepo::new(db.conn().clone(), 10)
         .create(
             ctx,
@@ -48,7 +49,7 @@ async fn seed_document(
 
 fn create_request(owner: CommentOwner, token: &str, digest: u8) -> NewCommentAttachmentDraft {
     NewCommentAttachmentDraft {
-        id: atlas_domain::CommentDraftId::new(),
+        id: atlas_acta::ids::CommentDraftId::new(),
         owner,
         create_token: token.into(),
         create_digest: vec![digest; 32],
@@ -58,12 +59,12 @@ fn create_request(owner: CommentOwner, token: &str, digest: u8) -> NewCommentAtt
 
 fn proposed_create_request(
     workspace_id: uuid::Uuid,
-    id: atlas_domain::CommentDraftId,
+    id: atlas_acta::ids::CommentDraftId,
     owner: CommentOwner,
     token: &str,
 ) -> NewCommentAttachmentDraft {
     let create_digest = Sha256::digest(
-        atlas_domain::entities::comments::comment_draft_create_digest_input(
+        atlas_acta::entities::comments::comment_draft_create_digest_input(
             workspace_id,
             id.0,
             token,
@@ -122,8 +123,8 @@ async fn create_replays_a_create_token_for_the_same_parent() {
     let document = seed_document(&db, &ctx, "Draft parent").await;
     let repo = PgCommentAttachmentDraftRepo::new(db.conn().clone());
 
-    let first_id = atlas_domain::CommentDraftId::new();
-    let replay_id = atlas_domain::CommentDraftId::new();
+    let first_id = atlas_acta::ids::CommentDraftId::new();
+    let replay_id = atlas_acta::ids::CommentDraftId::new();
     let first = repo
         .create_or_replay(
             &ctx,
@@ -165,8 +166,8 @@ async fn create_replays_the_persisted_winner_for_distinct_proposed_ids() {
     let document = seed_document(&db, &ctx, "Draft parent").await;
     let repo = PgCommentAttachmentDraftRepo::new(db.conn().clone());
     let owner = CommentOwner::Document(document.id);
-    let winner_id = atlas_domain::CommentDraftId::new();
-    let losing_id = atlas_domain::CommentDraftId::new();
+    let winner_id = atlas_acta::ids::CommentDraftId::new();
+    let losing_id = atlas_acta::ids::CommentDraftId::new();
 
     let winner = repo
         .create_or_replay(
@@ -203,7 +204,7 @@ async fn concurrent_distinct_proposed_ids_replay_the_insert_race_winner() {
         &ctx,
         proposed_create_request(
             workspace.id.0,
-            atlas_domain::CommentDraftId::new(),
+            atlas_acta::ids::CommentDraftId::new(),
             owner,
             "create-token",
         ),
@@ -212,7 +213,7 @@ async fn concurrent_distinct_proposed_ids_replay_the_insert_race_winner() {
         &ctx,
         proposed_create_request(
             workspace.id.0,
-            atlas_domain::CommentDraftId::new(),
+            atlas_acta::ids::CommentDraftId::new(),
             owner,
             "create-token",
         ),
@@ -246,7 +247,7 @@ async fn service_proposes_a_reserved_id_and_create_digest() {
         .await
         .expect("service creates draft");
     let expected_digest = Sha256::digest(
-        atlas_domain::entities::comments::comment_draft_create_digest_input(
+        atlas_acta::entities::comments::comment_draft_create_digest_input(
             workspace.id.0,
             draft.id.0,
             "create-token",
@@ -277,7 +278,7 @@ async fn exact_owner_lookup_hides_a_draft_from_a_different_parent() {
     let hidden = repo
         .get_for_owner_and_creator(
             &ctx,
-            CommentOwner::Task(atlas_domain::TaskId::new()),
+            CommentOwner::Task(atlas_acta::ids::TaskId::new()),
             draft.id,
         )
         .await
@@ -322,12 +323,12 @@ async fn draft_resolution_conceals_api_key_and_workspace_mismatches() {
         .expect("create api key");
     let api_key_ctx = WorkspaceCtx::new(
         workspace.id,
-        Actor::ApiKey(atlas_domain::ApiKeyAttributionId(api_key.id.0)),
+        Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(api_key.id.0)),
     );
     let (other_workspace, _) = support::seed_workspace(&db, "draft-other-workspace").await;
     let other_workspace_ctx = WorkspaceCtx::new(
         other_workspace.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
 
     let api_key_lookup = repo
@@ -757,7 +758,7 @@ async fn upload_tombstone_is_gone_and_other_principals_cannot_resolve_it() {
         .expect("create other user");
     let other_ctx = WorkspaceCtx::new(
         workspace.id,
-        Actor::User(atlas_domain::UserAttributionId(other_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(other_user.id.0)),
     );
     let hidden = repo
         .record_upload_or_replay(

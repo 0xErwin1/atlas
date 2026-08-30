@@ -8,11 +8,16 @@
     )
 )]
 
-use atlas_domain::{
-    Actor, DomainError, WorkspaceCtx,
-    entities::boards_tasks::{NewTask, PositionBetween},
-    ids::{BoardId, ColumnId, ProjectId, TaskId, WorkspaceId},
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::boards_tasks::NewTask;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::ids::BoardId;
+use atlas_acta::ids::ColumnId;
+use atlas_acta::ids::ProjectId;
+use atlas_acta::ids::TaskId;
+use atlas_acta::ids::WorkspaceId;
+use atlas_core::error::DomainError;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait};
 use uuid::Uuid;
 
@@ -178,13 +183,15 @@ impl AutomationService {
         let title = render_template(&params.title_template, data);
 
         let priority = params.priority.as_deref().and_then(|s| {
-            s.parse::<atlas_domain::entities::boards_tasks::Priority>()
+            s.parse::<atlas_acta::entities::boards_tasks::Priority>()
                 .ok()
         });
 
         let ctx = WorkspaceCtx::new(
             WorkspaceId(workspace_id),
-            Actor::ApiKey(atlas_domain::ApiKeyAttributionId(integration_api_key_id)),
+            Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(
+                integration_api_key_id,
+            )),
         );
 
         let new_task = NewTask {
@@ -266,7 +273,9 @@ impl AutomationService {
 
         let ctx = WorkspaceCtx::new(
             WorkspaceId(workspace_id),
-            Actor::ApiKey(atlas_domain::ApiKeyAttributionId(integration_api_key_id)),
+            Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(
+                integration_api_key_id,
+            )),
         );
 
         match task_svc.add_comment(&ctx, TaskId(task_row.id), body).await {

@@ -7,19 +7,25 @@ use axum::{
 use sea_orm::TransactionTrait;
 use serde::Deserialize;
 
+use crate::authz::ResourceRole;
+use crate::authz::ShareDenied;
+use crate::authz::authorize_share;
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::events::DomainEvent;
+use atlas_acta::entities::events::ProjectCreatedPayload;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::entities::workspace_core::UpdateProject;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
 use atlas_api::{
     dtos::{CreateProjectRequest, ProjectDto, UpdateProjectRequest},
     pagination::{Cursor, Page},
 };
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::events::{DomainEvent, ProjectCreatedPayload},
-    entities::workspace_core::{NewProject, UpdateProject},
-    permissions::{
-        Capability, CapabilityAction, CapabilityFamily, Principal, ResourceRole, ShareDenied,
-        Visibility, VisibilityRole, authorize_share,
-    },
-};
+use atlas_core::principal::Principal;
+use atlas_custos::capability::Capability;
+use atlas_custos::capability::CapabilityAction;
+use atlas_custos::capability::CapabilityFamily;
 
 use crate::{
     authz::{
@@ -327,7 +333,7 @@ pub(crate) async fn delete_project(
     Ok(StatusCode::NO_CONTENT)
 }
 
-fn project_to_dto(p: &atlas_domain::entities::workspace_core::Project) -> ProjectDto {
+fn project_to_dto(p: &atlas_acta::entities::workspace_core::Project) -> ProjectDto {
     let (vis_str, vis_role_str) = match &p.visibility {
         Visibility::Private => ("private".to_string(), None),
         Visibility::Workspace(r) => ("workspace".to_string(), Some(vis_role_str(r))),
@@ -380,9 +386,9 @@ fn parse_visibility(
 
 fn principal_to_actor(principal: &Principal) -> Actor {
     match principal {
-        Principal::User(uid) => Actor::User(atlas_domain::UserAttributionId(uid.0)),
-        Principal::ApiKey(kid) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0)),
-        Principal::Group(_) => Actor::User(atlas_domain::UserAttributionId(uuid::Uuid::nil())),
+        Principal::User(uid) => Actor::User(atlas_acta::actor::UserAttributionId(uid.0)),
+        Principal::ApiKey(kid) => Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(kid.0)),
+        Principal::Group(_) => Actor::User(atlas_acta::actor::UserAttributionId(uuid::Uuid::nil())),
     }
 }
 
@@ -392,18 +398,18 @@ fn workspace_member_to_principal(member: &WorkspaceMember) -> Principal {
     } else if let Some(kid) = member.api_key_id {
         Principal::ApiKey(kid)
     } else {
-        Principal::ApiKey(atlas_domain::ids::ApiKeyId::new())
+        Principal::ApiKey(atlas_core::principal::ApiKeyId::new())
     }
 }
 
-fn member_to_actor(member: &WorkspaceMember) -> atlas_domain::Actor {
+fn member_to_actor(member: &WorkspaceMember) -> atlas_acta::actor::Actor {
     if let Some(user) = &member.user {
-        atlas_domain::Actor::User(atlas_domain::UserAttributionId(user.id.0))
+        atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(user.id.0))
     } else if let Some(kid) = member.api_key_id {
-        atlas_domain::Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0))
+        atlas_acta::actor::Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(kid.0))
     } else {
-        atlas_domain::Actor::User(atlas_domain::UserAttributionId(
-            atlas_domain::ids::UserId::new().0,
+        atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(
+            atlas_core::principal::UserId::new().0,
         ))
     }
 }
