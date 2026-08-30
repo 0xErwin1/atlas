@@ -986,6 +986,66 @@ async fn folder_ancestry_truncates_at_the_chain_depth_ceiling() {
     db.teardown().await;
 }
 
+/// S3b3 addition (disclosed gap from the S3b2 verify pass): T3.1 above pins
+/// `repos/permissions.rs:376`'s single-resource soft-deleted-group predicate,
+/// used by `load_grants_for_resolution`. That is a distinct raw-SQL predicate
+/// from the one the batch path actually exercises — `batch_authorization.rs`'s
+/// `user_grants` CTE has its own `groups.deleted_at IS NULL` exclusion inside
+/// `QUERY_B_PRINCIPAL_FACTS`. This test pins that batch-path predicate
+/// end-to-end through `BatchAuthorizationService::authorize()`, independent
+/// of T3.1, so the S3b3 port cut cannot silently drop it.
+#[tokio::test]
+async fn batch_principal_facts_excludes_a_soft_deleted_group_grant() {
+    let db = BatchAuthorizationDb::create().await;
+    let workspace_id = Uuid::now_v7();
+    let user_id = Uuid::now_v7();
+    let group_id = Uuid::now_v7();
+    let document_id = Uuid::now_v7();
+
+    seed_workspace_user(&db.conn, workspace_id, user_id, true).await;
+    seed_minimal_document(&db.conn, workspace_id, user_id, document_id).await;
+    db.conn
+        .execute_unprepared(&format!(
+            "INSERT INTO groups (id, workspace_id, name, created_by, created_at, updated_at) \
+             VALUES ('{group_id}', '{workspace_id}', 'group', '{user_id}', now(), now()); \
+             INSERT INTO group_members (group_id, user_id, created_at) VALUES ('{group_id}', '{user_id}', now()); \
+             INSERT INTO permission_grants (id, workspace_id, group_id, role, created_at, updated_at) \
+             VALUES ('{}', '{workspace_id}', '{group_id}', 'editor', now(), now())",
+            Uuid::now_v7(),
+        ))
+        .await
+        .expect("seed live group grant");
+
+    let service = BatchAuthorizationService::new(PgBatchAuthorizationSource::new(db.conn.clone()));
+    let context = user_context(workspace_id, user_id);
+
+    let decisions = service
+        .authorize(&context, &[ProjectionSubject::Document(document_id)])
+        .await
+        .expect("authorize while the group is live");
+    assert_eq!(decisions, vec![true]);
+
+    db.conn
+        .execute_unprepared(&format!(
+            "UPDATE groups SET deleted_at = now() WHERE id = '{group_id}'"
+        ))
+        .await
+        .expect("soft-delete group");
+
+    let decisions = service
+        .authorize(&context, &[ProjectionSubject::Document(document_id)])
+        .await
+        .expect("authorize after the group is soft-deleted");
+    assert_eq!(
+        decisions,
+        vec![false],
+        "QUERY_B's user_grants CTE must exclude a grant held only through a \
+         soft-deleted group, independent of repos/permissions.rs's own predicate"
+    );
+
+    db.teardown().await;
+}
+
 #[derive(Clone, Copy)]
 struct ProjectionSubjects {
     workspace_id: Uuid,

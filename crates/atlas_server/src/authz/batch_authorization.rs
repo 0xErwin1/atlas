@@ -91,13 +91,65 @@ pub(crate) enum PrincipalFacts {
     ApiKey(ApiKeyFacts),
 }
 
-pub(crate) struct PgBatchAuthorizationSource {
+/// Acta-implemented half of the batch authorization seam: resolves the
+/// resource chain and visibility for a batch of subjects (`QUERY_A`).
+///
+/// Declared server-internal per design D2 — `atlas_core::ResourceProvider`
+/// cannot carry this workload (no batching, no visibility, not an ancestors
+/// query), and this seam is a V1-specific shape that does not belong on the
+/// E3/E4 platform contract.
+#[async_trait]
+pub(crate) trait ResourceChainSource: Send + Sync {
+    async fn load_subject_facts(
+        &self,
+        workspace: WorkspaceId,
+        subjects: &[ProjectionSubject],
+    ) -> Result<Vec<SubjectFact>, DomainError>;
+}
+
+/// Custos-implemented half of the batch authorization seam: resolves
+/// principal facts and grants for a resolved resource set (`QUERY_B`).
+///
+/// `resources` crosses this boundary in the canonical `atlas_core` encoding;
+/// the Acta-side codec (`atlas_acta::permissions::resource_ref_codec`)
+/// converts at the edge so this port never speaks the V1 `ResourceRef` enum.
+#[async_trait]
+pub(crate) trait PrincipalFactsSource: Send + Sync {
+    async fn load_principal_facts(
+        &self,
+        workspace: atlas_custos::WorkspaceScope,
+        principal: &Principal,
+        resources: &[atlas_core::ids::ResourceRef],
+    ) -> Result<PrincipalFacts, DomainError>;
+}
+
+/// Postgres implementation of [`ResourceChainSource`], composed into
+/// [`PgBatchAuthorizationSource`].
+pub(crate) struct PgResourceChainSource {
     conn: DatabaseConnection,
+}
+
+/// Postgres implementation of [`PrincipalFactsSource`], composed into
+/// [`PgBatchAuthorizationSource`].
+pub(crate) struct PgPrincipalFactsSource {
+    conn: DatabaseConnection,
+}
+
+/// Composition root for the batch authorization seam: holds one Acta-side
+/// [`ResourceChainSource`] and one Custos-side [`PrincipalFactsSource`], and
+/// exposes them together as a [`BatchAuthorizationSource`] so
+/// `BatchAuthorizationService` and its callers keep a single source handle.
+pub(crate) struct PgBatchAuthorizationSource {
+    chain: PgResourceChainSource,
+    facts: PgPrincipalFactsSource,
 }
 
 impl PgBatchAuthorizationSource {
     pub(crate) fn new(conn: DatabaseConnection) -> Self {
-        Self { conn }
+        Self {
+            chain: PgResourceChainSource { conn: conn.clone() },
+            facts: PgPrincipalFactsSource { conn },
+        }
     }
 }
 
@@ -203,19 +255,16 @@ enum StoredPrincipalFacts {
 }
 
 #[async_trait]
-impl BatchAuthorizationSource for PgBatchAuthorizationSource {
+impl ResourceChainSource for PgResourceChainSource {
     async fn load_subject_facts(
         &self,
-        context: &ProjectionAuthContext,
+        workspace: WorkspaceId,
         subjects: &[ProjectionSubject],
     ) -> Result<Vec<SubjectFact>, DomainError> {
         let rows = SubjectFactsRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             QUERY_A_SUBJECT_FACTS,
-            [
-                context.workspace_id.0.into(),
-                subjects_json(subjects).into(),
-            ],
+            [workspace.0.into(), subjects_json(subjects).into()],
         ))
         .all(&self.conn)
         .await
@@ -231,13 +280,19 @@ impl BatchAuthorizationSource for PgBatchAuthorizationSource {
             })
             .collect()
     }
+}
 
+#[async_trait]
+impl PrincipalFactsSource for PgPrincipalFactsSource {
     async fn load_principal_facts(
         &self,
-        context: &ProjectionAuthContext,
-        resources: &[ResourceRef],
+        workspace: atlas_custos::WorkspaceScope,
+        principal: &Principal,
+        resources: &[atlas_core::ids::ResourceRef],
     ) -> Result<PrincipalFacts, DomainError> {
-        let (principal_type, principal_id) = match context.principal {
+        let workspace = WorkspaceId(workspace.0);
+
+        let (principal_type, principal_id) = match principal {
             Principal::User(user_id) => ("user", user_id.0),
             Principal::ApiKey(key_id) => ("api_key", key_id.0),
             Principal::Group(_) => {
@@ -247,14 +302,21 @@ impl BatchAuthorizationSource for PgBatchAuthorizationSource {
             }
         };
 
+        let resources = resources
+            .iter()
+            .map(|resource| {
+                atlas_acta::permissions::resource_ref_codec::from_core(resource, workspace)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
         let rows = PrincipalFactsRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             QUERY_B_PRINCIPAL_FACTS,
             [
-                context.workspace_id.0.into(),
+                workspace.0.into(),
                 principal_type.into(),
                 principal_id.into(),
-                resources_json(resources).into(),
+                resources_json(&resources).into(),
             ],
         ))
         .all(&self.conn)
@@ -273,6 +335,43 @@ impl BatchAuthorizationSource for PgBatchAuthorizationSource {
             })?;
 
         decode_principal_facts(facts)
+    }
+}
+
+/// Composition-facing facade preserved for `BatchAuthorizationService` and
+/// its existing callers/tests: delegates to the two internal ports, doing the
+/// `atlas_core::ids::ResourceRef` conversion at this boundary (D2/S3b).
+#[async_trait]
+impl BatchAuthorizationSource for PgBatchAuthorizationSource {
+    async fn load_subject_facts(
+        &self,
+        context: &ProjectionAuthContext,
+        subjects: &[ProjectionSubject],
+    ) -> Result<Vec<SubjectFact>, DomainError> {
+        self.chain
+            .load_subject_facts(context.workspace_id, subjects)
+            .await
+    }
+
+    async fn load_principal_facts(
+        &self,
+        context: &ProjectionAuthContext,
+        resources: &[ResourceRef],
+    ) -> Result<PrincipalFacts, DomainError> {
+        let resources = resources
+            .iter()
+            .map(|resource| {
+                atlas_acta::permissions::resource_ref_codec::to_core(resource, context.workspace_id)
+            })
+            .collect::<Vec<_>>();
+
+        self.facts
+            .load_principal_facts(
+                atlas_custos::WorkspaceScope(context.workspace_id.0),
+                &context.principal,
+                &resources,
+            )
+            .await
     }
 }
 
@@ -1168,6 +1267,34 @@ mod distinct_resources_tests {
             ],
             "duplicate Workspace and Project segments across chains must collapse to one \
              entry each, and the result must follow ResourceRef's derived variant order"
+        );
+    }
+}
+
+#[cfg(test)]
+mod membership_join_debt_tests {
+    use super::QUERY_B_PRINCIPAL_FACTS;
+
+    /// D3: `PrincipalFactsSource` keeps `QUERY_B`'s `workspace_memberships`
+    /// join for S3, as named deferred debt for E4's `ResourceProvider::
+    /// members_of`. Moving the join to the Acta side is impossible in two
+    /// statements here — the creator user id is only known after Custos
+    /// answers, so a clean cut would cost a third round trip on the agent hot
+    /// path. This test pins that the join still lives in `QUERY_B`, once for
+    /// the principal's own membership and once for an api key's creator, so
+    /// a future removal of either join is a deliberate, reviewed change, not
+    /// an accidental regression.
+    #[test]
+    fn query_b_still_joins_workspace_memberships_as_named_e4_debt() {
+        let membership_joins = QUERY_B_PRINCIPAL_FACTS
+            .matches("workspace_memberships")
+            .count();
+
+        assert_eq!(
+            membership_joins, 2,
+            "QUERY_B_PRINCIPAL_FACTS must still join workspace_memberships exactly twice \
+             (principal membership, api-key creator membership) — this is deferred to E4's \
+             ResourceProvider::members_of (D3), not resolved by the S3b3 port cut"
         );
     }
 }
