@@ -7,13 +7,13 @@
 //! applied to every existing database.
 //!
 //! New Custos DDL is owned here instead. `atlas_server` composes
-//! `historical() ++ custos_new()` into one `MigratorTrait`. This slice makes
-//! no schema changes, so `custos_new()` is empty; it exists so the ownership
-//! boundary is real before the first Custos migration lands.
+//! `historical() ++ custos_new()` into one `MigratorTrait`.
+
+mod m20260830_000050_grant_resource_ref;
 
 use sea_orm_migration::prelude::MigrationTrait;
 
 /// Migrations owned by Custos, applied after the historical block.
 pub fn custos_new() -> Vec<Box<dyn MigrationTrait>> {
-    vec![]
+    vec![Box::new(m20260830_000050_grant_resource_ref::Migration)]
 }

@@ -288,16 +288,13 @@ impl ProjectRepo for PgProjectRepo {
                         SELECT 1 FROM permission_grants
                         WHERE workspace_id = $1
                           AND {principal_col} = $2
-                          AND project_id IS NULL
-                          AND folder_id IS NULL
-                          AND document_id IS NULL
-                          AND board_id IS NULL
+                          AND resource_ref = 'acta::workspace::' || $1::text
                     )
                     OR EXISTS (
                         SELECT 1 FROM permission_grants
                         WHERE workspace_id = $1
                           AND {principal_col} = $2
-                          AND project_id = p.id
+                          AND resource_ref = 'acta::project::' || p.id::text
                     )
               )
               {cursor_cond}

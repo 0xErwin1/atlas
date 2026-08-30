@@ -15,12 +15,12 @@ use atlas_acta::ports::CommentAttachmentDraftRepo;
 use atlas_core::error::DomainError;
 use atlas_custos::entities::identity::ApiKeyType;
 use atlas_custos::entities::identity::NewApiKey;
+use atlas_server::persistence::migrator::ComposedMigrator as Migrator;
 use atlas_server::persistence::repos::{
     ApiKeyRepo, DocumentRepo, NewUser, PgCommentAttachmentDraftRepo, PgDocumentRepo, UserRepo,
 };
 use atlas_server::services::CommentDraftService;
 use chrono::{Duration, Utc};
-use migration::Migrator;
 use sea_orm::ConnectionTrait;
 use sea_orm_migration::prelude::MigratorTrait;
 use sha2::{Digest, Sha256};

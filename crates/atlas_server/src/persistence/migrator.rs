@@ -5,10 +5,9 @@
 //! in one `seaql_migrations` table and re-partitioning history by owner would
 //! reorder what already applied to every existing database.
 //!
-//! `ComposedMigrator::migrations()` is `historical() ++ custos_new()`. Custos
-//! has shipped no new DDL yet in this slice, so `custos_new()` is empty and
-//! the composed list is identical to the historical one; the ownership
-//! boundary exists so the first real Custos migration has somewhere to land.
+//! `ComposedMigrator::migrations()` is `historical() ++ custos_new()`: the
+//! composed list always starts with every historical migration name, in
+//! order, followed by whatever Custos owns.
 
 use sea_orm_migration::prelude::{MigrationTrait, MigratorTrait};
 
@@ -27,8 +26,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn composed_migrations_equal_the_historical_list_while_custos_new_is_empty() {
+    fn composed_migrations_are_historical_then_custos_new_in_order() {
         let historical_names: Vec<_> = migration::Migrator::migrations()
+            .iter()
+            .map(|m| m.name().to_string())
+            .collect();
+        let custos_names: Vec<_> = atlas_custos_postgres::migrations::custos_new()
             .iter()
             .map(|m| m.name().to_string())
             .collect();
@@ -37,13 +40,15 @@ mod tests {
             .map(|m| m.name().to_string())
             .collect();
 
-        assert!(
-            atlas_custos_postgres::migrations::custos_new().is_empty(),
-            "this slice ships no Custos DDL yet"
-        );
+        let expected: Vec<_> = historical_names
+            .iter()
+            .cloned()
+            .chain(custos_names.iter().cloned())
+            .collect();
+
         assert_eq!(
-            composed_names, historical_names,
-            "the composed list must equal the historical list exactly while custos_new() is empty"
+            composed_names, expected,
+            "the composed list must be exactly historical() ++ custos_new(), in order"
         );
     }
 }

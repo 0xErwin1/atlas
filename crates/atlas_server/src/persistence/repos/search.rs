@@ -484,23 +484,19 @@ pub(crate) fn build_doc_permission(
             SELECT 1 FROM permission_grants
             WHERE workspace_id = $1
               AND {principal_col} = $2
-              AND project_id IS NULL
-              AND folder_id IS NULL
-              AND document_id IS NULL
-              AND board_id IS NULL
+              AND resource_ref = 'acta::workspace::' || $1::text
         )
         OR EXISTS (
             SELECT 1 FROM permission_grants
             WHERE workspace_id = $1
               AND {principal_col} = $2
-              AND document_id = d.id
+              AND resource_ref = 'acta::document::' || d.id::text
         )
         OR EXISTS (
             SELECT 1 FROM permission_grants
             WHERE workspace_id = $1
               AND {principal_col} = $2
-              AND project_id IS NOT NULL
-              AND project_id = d.project_id
+              AND resource_ref = 'acta::project::' || d.project_id::text
         )
         OR EXISTS (
             WITH RECURSIVE ancestors AS (
@@ -517,20 +513,16 @@ pub(crate) fn build_doc_permission(
                 WHERE pf.workspace_id = $1
                   AND NOT pf.id = ANY(a.path)
                   AND a.depth < 32
+            ), ancestor_refs AS (
+                SELECT 'acta::folder::' || id::text AS resource_ref FROM ancestors
+                UNION ALL
+                SELECT 'acta::project::' || project_id::text FROM ancestors
+                WHERE project_id IS NOT NULL
             )
             SELECT 1 FROM permission_grants pg
+            JOIN ancestor_refs ON ancestor_refs.resource_ref = pg.resource_ref
             WHERE pg.workspace_id = $1
               AND pg.{principal_col} = $2
-              AND (
-                    pg.folder_id IN (SELECT id FROM ancestors)
-                    OR (
-                        pg.project_id IS NOT NULL
-                        AND pg.project_id IN (
-                            SELECT project_id FROM ancestors
-                            WHERE project_id IS NOT NULL
-                        )
-                    )
-              )
         )
         "#
     )
@@ -668,24 +660,19 @@ pub(crate) fn build_task_permission(
             SELECT 1 FROM permission_grants
             WHERE workspace_id = $1
               AND {principal_col} = $2
-              AND project_id IS NULL
-              AND folder_id IS NULL
-              AND document_id IS NULL
-              AND board_id IS NULL
+              AND resource_ref = 'acta::workspace::' || $1::text
         )
         OR EXISTS (
             SELECT 1 FROM permission_grants
             WHERE workspace_id = $1
               AND {principal_col} = $2
-              AND project_id IS NOT NULL
-              AND project_id = t.project_id
+              AND resource_ref = 'acta::project::' || t.project_id::text
         )
         OR EXISTS (
             SELECT 1 FROM permission_grants
             WHERE workspace_id = $1
               AND {principal_col} = $2
-              AND board_id IS NOT NULL
-              AND board_id = t.board_id
+              AND resource_ref = 'acta::board::' || t.board_id::text
         )
         "#
     )

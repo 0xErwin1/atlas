@@ -58,7 +58,7 @@ async fn create_project_commits_creator_grant_and_project_created_event() {
 
     let grant = permission_grant::Entity::find()
         .filter(permission_grant::Column::WorkspaceId.eq(ws.id.0))
-        .filter(permission_grant::Column::ProjectId.eq(project.id))
+        .filter(permission_grant::Column::ResourceRef.eq(format!("acta::project::{}", project.id)))
         .filter(permission_grant::Column::UserId.eq(user.id.0))
         .one(db.conn())
         .await

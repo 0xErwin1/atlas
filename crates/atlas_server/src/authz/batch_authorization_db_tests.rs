@@ -351,10 +351,10 @@ async fn query_b_reloads_key_creator_and_live_group_grant_facts() {
             "INSERT INTO groups (id, workspace_id, name, created_by, created_at, updated_at) \
              VALUES ('{group_id}', '{workspace_id}', 'group', '{creator_id}', now(), now()); \
              INSERT INTO group_members (group_id, user_id, created_at) VALUES ('{group_id}', '{creator_id}', now()); \
-             INSERT INTO permission_grants (id, workspace_id, api_key_id, role, created_at, updated_at) \
-             VALUES ('{}', '{workspace_id}', '{key_id}', 'viewer', now(), now()); \
-             INSERT INTO permission_grants (id, workspace_id, group_id, role, created_at, updated_at) \
-             VALUES ('{}', '{workspace_id}', '{group_id}', 'editor', now(), now())",
+             INSERT INTO permission_grants (id, workspace_id, api_key_id, resource_ref, role, created_at, updated_at) \
+             VALUES ('{}', '{workspace_id}', '{key_id}', 'acta::workspace::{workspace_id}', 'viewer', now(), now()); \
+             INSERT INTO permission_grants (id, workspace_id, group_id, resource_ref, role, created_at, updated_at) \
+             VALUES ('{}', '{workspace_id}', '{group_id}', 'acta::workspace::{workspace_id}', 'editor', now(), now())",
             Uuid::now_v7(),
             Uuid::now_v7(),
         ))
@@ -479,8 +479,8 @@ async fn group_grant_resolution_excludes_a_soft_deleted_group() {
             "INSERT INTO groups (id, workspace_id, name, created_by, created_at, updated_at) \
              VALUES ('{group_id}', '{workspace_id}', 'group', '{user_id}', now(), now()); \
              INSERT INTO group_members (group_id, user_id, created_at) VALUES ('{group_id}', '{user_id}', now()); \
-             INSERT INTO permission_grants (id, workspace_id, group_id, role, created_at, updated_at) \
-             VALUES ('{}', '{workspace_id}', '{group_id}', 'editor', now(), now())",
+             INSERT INTO permission_grants (id, workspace_id, group_id, resource_ref, role, created_at, updated_at) \
+             VALUES ('{}', '{workspace_id}', '{group_id}', 'acta::workspace::{workspace_id}', 'editor', now(), now())",
             Uuid::now_v7(),
         ))
         .await
@@ -1009,8 +1009,8 @@ async fn batch_principal_facts_excludes_a_soft_deleted_group_grant() {
             "INSERT INTO groups (id, workspace_id, name, created_by, created_at, updated_at) \
              VALUES ('{group_id}', '{workspace_id}', 'group', '{user_id}', now(), now()); \
              INSERT INTO group_members (group_id, user_id, created_at) VALUES ('{group_id}', '{user_id}', now()); \
-             INSERT INTO permission_grants (id, workspace_id, group_id, role, created_at, updated_at) \
-             VALUES ('{}', '{workspace_id}', '{group_id}', 'editor', now(), now())",
+             INSERT INTO permission_grants (id, workspace_id, group_id, resource_ref, role, created_at, updated_at) \
+             VALUES ('{}', '{workspace_id}', '{group_id}', 'acta::workspace::{workspace_id}', 'editor', now(), now())",
             Uuid::now_v7(),
         ))
         .await
@@ -1229,8 +1229,8 @@ async fn seed_workspace_scope_grant(
         GrantPrincipal::ApiKey(id) => ("api_key_id", id),
     };
     conn.execute_unprepared(&format!(
-        "INSERT INTO permission_grants (id, workspace_id, {column}, role, created_at, updated_at) \
-         VALUES ('{}', '{workspace_id}', '{id}', '{role}', now(), now())",
+        "INSERT INTO permission_grants (id, workspace_id, {column}, resource_ref, role, created_at, updated_at) \
+         VALUES ('{}', '{workspace_id}', '{id}', 'acta::workspace::{workspace_id}', '{role}', now(), now())",
         Uuid::now_v7(),
     ))
     .await
@@ -1389,7 +1389,7 @@ impl BatchAuthorizationDb {
         let conn = Database::connect(replace_database_name(&database_url, &name))
             .await
             .expect("connect test database");
-        migration::Migrator::up(&conn, None)
+        crate::persistence::migrator::ComposedMigrator::up(&conn, None)
             .await
             .expect("migrate test database");
 
