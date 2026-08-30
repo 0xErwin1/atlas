@@ -801,8 +801,8 @@ async fn move_folder_cross_workspace_destination_returns_404() {
 #[tokio::test]
 async fn move_folder_underprivileged_destination_returns_404() {
     use atlas_api::dtos::LoginRequest;
-    use atlas_domain::entities::permissions::NewPermissionGrant;
     use atlas_server::auth::password;
+    use atlas_server::authz::policy::NewPermissionGrant;
     use atlas_server::persistence::repos::{
         MembershipRepo, NewUser, PermissionGrantRepo, PgPermissionGrantRepo, UserRepo,
     };

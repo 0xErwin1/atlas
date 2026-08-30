@@ -1183,7 +1183,12 @@ async fn comment_restore_uses_its_tombstone_timestamp_and_writes_one_audit_event
         reqwest::StatusCode::NO_CONTENT
     );
     let restored = PgSecurityAuditRepo::new(db.conn().clone())
-        .list_for_workspace(workspace.id, &AuditFilters::default(), None, 100)
+        .list_for_workspace(
+            atlas_custos::WorkspaceScope(workspace.id.0),
+            &AuditFilters::default(),
+            None,
+            100,
+        )
         .await
         .expect("list audit rows")
         .into_iter()
@@ -1483,7 +1488,12 @@ async fn confirmed_purge_removes_the_five_kinds_and_reuses_its_pending_operation
     }
 
     let audit_count = PgSecurityAuditRepo::new(db.conn().clone())
-        .list_for_workspace(workspace.id, &AuditFilters::default(), None, 100)
+        .list_for_workspace(
+            atlas_custos::WorkspaceScope(workspace.id.0),
+            &AuditFilters::default(),
+            None,
+            100,
+        )
         .await
         .expect("list audit")
         .into_iter()

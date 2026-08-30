@@ -9,6 +9,12 @@ mod batch_authorization_db_tests;
 #[cfg(test)]
 mod batch_authorization_tests;
 pub mod extractors;
+pub mod policy;
+
+pub use policy::{
+    ChainSegment, NewPermissionGrant, PermissionGrant, PermissionGrantId, PermissionGrantRepo,
+    ResolutionInput, ResolutionQuery, ResourceChain, resolve,
+};
 
 pub use authorized::{
     AdminMin, AdminMinAgentEditor, ArchivableBoardRes, Authorized, BoardRes, BoardsCreate,

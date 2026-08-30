@@ -149,7 +149,8 @@ async fn create_api_key(
         conn: db.conn().clone(),
     }
     .create(
-        &ctx,
+        atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+        &ctx.actor,
         NewApiKey {
             name: name.to_string(),
             token_hash,

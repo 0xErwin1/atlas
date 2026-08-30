@@ -281,7 +281,8 @@ async fn project_created_by_api_key_succeeds() {
     let key = db
         .api_key_repo()
         .create(
-            &user_ctx,
+            atlas_custos::WorkspaceScope(user_ctx.workspace_id.0),
+            &user_ctx.actor,
             NewApiKey {
                 name: "regression-key-project".to_string(),
                 token_hash: atlas_server::auth::tokens::hash_token(
@@ -331,7 +332,8 @@ async fn folder_created_by_api_key_succeeds() {
     let key = db
         .api_key_repo()
         .create(
-            &user_ctx,
+            atlas_custos::WorkspaceScope(user_ctx.workspace_id.0),
+            &user_ctx.actor,
             NewApiKey {
                 name: "regression-key-folder".to_string(),
                 token_hash: atlas_server::auth::tokens::hash_token(

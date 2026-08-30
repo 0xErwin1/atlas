@@ -29,7 +29,6 @@ use atlas_domain::{
     Actor,
     entities::{
         identity::ApiKeyType,
-        permissions::{NewPermissionGrant, PermissionGrant, PermissionGrantId},
         security_audit::{NewSecurityAuditEvent, SecurityAction},
     },
     ids::{ApiKeyId, ProjectId, UserId, WorkspaceId},
@@ -45,6 +44,7 @@ use crate::{
         middleware::Principal as AuthPrincipal,
         tokens::{generate_api_key, hash_token},
     },
+    authz::policy::{NewPermissionGrant, PermissionGrant, PermissionGrantId},
     error::ApiError,
     persistence::repos::{
         ApiKeyRepo, NewApiKey, PermissionGrantRepo, PgApiKeyRepo, PgPermissionGrantRepo,

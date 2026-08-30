@@ -10,10 +10,10 @@ mod support;
 use atlas_domain::{
     Actor, WorkspaceCtx,
     entities::identity::{ApiKeyType, MemberRole},
-    entities::permissions::NewPermissionGrant,
     ids::{UserId, WorkspaceId},
     permissions::{Capability, CapabilityAction, CapabilityFamily, ResourceRole},
 };
+use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::{
     auth::password,
     crypto::WebhookCrypto,

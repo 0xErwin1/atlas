@@ -65,7 +65,7 @@ pub(crate) async fn create_group(
     let group = PgGroupRepo::create_in(
         &txn,
         NewGroup {
-            workspace_id: caller.workspace.id,
+            workspace_id: atlas_custos::WorkspaceScope(caller.workspace.id.0),
             name,
             created_by: caller.caller_user_id,
         },
@@ -76,7 +76,7 @@ pub(crate) async fn create_group(
     PgSecurityAuditRepo::append_in(
         &txn,
         NewSecurityAuditEvent {
-            workspace_id: Some(caller.workspace.id),
+            workspace_id: Some(atlas_custos::WorkspaceScope(caller.workspace.id.0)),
             actor: Actor::User(atlas_domain::UserAttributionId(caller.caller_user_id.0)),
             action: SecurityAction::GroupCreated,
             target_type: "group".to_string(),
@@ -118,7 +118,7 @@ pub(crate) async fn list_groups(
     let repo = PgGroupRepo { conn };
 
     let groups = repo
-        .list(caller.workspace.id)
+        .list(atlas_custos::WorkspaceScope(caller.workspace.id.0))
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
@@ -155,11 +155,15 @@ pub(crate) async fn delete_group(
         message: e.to_string(),
     })?;
 
-    let found = PgGroupRepo::soft_delete_in(&txn, group_id, caller.workspace.id)
-        .await
-        .map_err(|e| ApiError::Internal {
-            message: e.to_string(),
-        })?;
+    let found = PgGroupRepo::soft_delete_in(
+        &txn,
+        group_id,
+        atlas_custos::WorkspaceScope(caller.workspace.id.0),
+    )
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
 
     if !found {
         return Err(ApiError::NotFound);
@@ -168,7 +172,7 @@ pub(crate) async fn delete_group(
     PgSecurityAuditRepo::append_in(
         &txn,
         NewSecurityAuditEvent {
-            workspace_id: Some(caller.workspace.id),
+            workspace_id: Some(atlas_custos::WorkspaceScope(caller.workspace.id.0)),
             actor: Actor::User(atlas_domain::UserAttributionId(caller.caller_user_id.0)),
             action: SecurityAction::GroupDeleted,
             target_type: "group".to_string(),
@@ -220,7 +224,10 @@ pub(crate) async fn add_group_member(
     // Verify the group exists and belongs to this workspace.
     let repo = PgGroupRepo { conn: conn.clone() };
     let group = repo
-        .get(group_id, caller.workspace.id)
+        .get(
+            group_id,
+            atlas_custos::WorkspaceScope(caller.workspace.id.0),
+        )
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
@@ -261,7 +268,7 @@ pub(crate) async fn add_group_member(
     PgSecurityAuditRepo::append_in(
         &txn,
         NewSecurityAuditEvent {
-            workspace_id: Some(caller.workspace.id),
+            workspace_id: Some(atlas_custos::WorkspaceScope(caller.workspace.id.0)),
             actor: Actor::User(atlas_domain::UserAttributionId(caller.caller_user_id.0)),
             action: SecurityAction::GroupMemberAdded,
             target_type: "group".to_string(),
@@ -318,7 +325,10 @@ pub(crate) async fn remove_group_member(
     // Verify the group exists.
     let repo = PgGroupRepo { conn: conn.clone() };
     let group = repo
-        .get(group_id, caller.workspace.id)
+        .get(
+            group_id,
+            atlas_custos::WorkspaceScope(caller.workspace.id.0),
+        )
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
@@ -342,7 +352,7 @@ pub(crate) async fn remove_group_member(
     PgSecurityAuditRepo::append_in(
         &txn,
         NewSecurityAuditEvent {
-            workspace_id: Some(caller.workspace.id),
+            workspace_id: Some(atlas_custos::WorkspaceScope(caller.workspace.id.0)),
             actor: Actor::User(atlas_domain::UserAttributionId(caller.caller_user_id.0)),
             action: SecurityAction::GroupMemberRemoved,
             target_type: "group".to_string(),
@@ -389,12 +399,15 @@ pub(crate) async fn list_group_members(
     let repo = PgGroupRepo { conn };
 
     // Verify the group exists and belongs to this workspace.
-    repo.get(group_id, caller.workspace.id)
-        .await
-        .map_err(|e| ApiError::Internal {
-            message: e.to_string(),
-        })?
-        .ok_or(ApiError::NotFound)?;
+    repo.get(
+        group_id,
+        atlas_custos::WorkspaceScope(caller.workspace.id.0),
+    )
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?
+    .ok_or(ApiError::NotFound)?;
 
     let members = repo
         .list_members(group_id)

@@ -14,10 +14,10 @@ use atlas_api::dtos::{
 use atlas_domain::{
     Actor, WorkspaceCtx,
     entities::identity::MemberRole,
-    entities::permissions::NewPermissionGrant,
     ids::{BoardId, ProjectId, WorkspaceId},
     permissions::ResourceRole,
 };
+use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::persistence::repos::{
     MembershipRepo, NewUser, PermissionGrantRepo, PgMembershipRepo, PgPermissionGrantRepo, UserRepo,
 };

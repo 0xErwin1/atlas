@@ -3275,7 +3275,7 @@ async fn member_client_with_document_grant(
     document_id: uuid::Uuid,
     role: atlas_domain::permissions::ResourceRole,
 ) -> atlas_client::AtlasClient {
-    use atlas_domain::entities::permissions::NewPermissionGrant;
+    use atlas_server::authz::policy::NewPermissionGrant;
 
     let hash = atlas_server::auth::password::hash("TestPassword1!".to_string())
         .await
@@ -3525,9 +3525,9 @@ async fn viewer_cannot_create_document() {
         .await
         .expect("add viewer membership");
 
-    use atlas_domain::entities::permissions::NewPermissionGrant;
     use atlas_domain::ids::ProjectId;
     use atlas_domain::permissions::ResourceRole;
+    use atlas_server::authz::policy::NewPermissionGrant;
     let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
         conn: db.conn().clone(),
     };
@@ -3609,9 +3609,9 @@ async fn api_key_actor_write_sets_actor_type_api_key() {
         .await
         .expect("create api key");
 
-    use atlas_domain::entities::permissions::NewPermissionGrant;
     use atlas_domain::ids::{ApiKeyId, ProjectId};
     use atlas_domain::permissions::ResourceRole;
+    use atlas_server::authz::policy::NewPermissionGrant;
     let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
         conn: db.conn().clone(),
     };
@@ -3674,7 +3674,7 @@ async fn member_client_with_optional_project_grant(
     project_id: Option<atlas_domain::ids::ProjectId>,
     role: Option<atlas_domain::permissions::ResourceRole>,
 ) -> atlas_client::AtlasClient {
-    use atlas_domain::entities::permissions::NewPermissionGrant;
+    use atlas_server::authz::policy::NewPermissionGrant;
 
     let hash = atlas_server::auth::password::hash("TestPassword1!".to_string())
         .await

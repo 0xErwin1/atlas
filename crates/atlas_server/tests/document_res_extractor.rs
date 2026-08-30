@@ -7,12 +7,11 @@ use std::collections::HashMap;
 use atlas_domain::{
     entities::documents::NewDocument,
     entities::identity::MemberRole,
-    entities::permissions::NewPermissionGrant,
     entities::workspace_core::NewFolder,
     ids::{DocumentId, FolderId},
-    permissions::{Principal, ResolutionInput, ResourceRef, ResourceRole},
-    ports::permission_grant_repo::ResolutionQuery,
+    permissions::{Principal, ResourceRef, ResourceRole},
 };
+use atlas_server::authz::policy::{NewPermissionGrant, ResolutionInput, ResolutionQuery, resolve};
 use atlas_server::{
     authz::authorized::{DocumentRes, DocumentSlugRes, FolderRes, ResolvedResource},
     error::ApiError,
@@ -420,7 +419,7 @@ async fn folder_scope_grant_yields_effective_access_on_document_in_that_folder()
         grants: &grants,
     };
 
-    let effective = atlas_domain::permissions::resolve(&input);
+    let effective = resolve(&input);
 
     assert!(
         effective.is_some(),
@@ -525,7 +524,7 @@ async fn folder_scope_grant_on_ancestor_yields_effective_access_on_nested_docume
         grants: &grants,
     };
 
-    let effective = atlas_domain::permissions::resolve(&input);
+    let effective = resolve(&input);
 
     assert!(
         effective.is_some(),

@@ -45,9 +45,7 @@ use atlas_domain::{
     Actor, WorkspaceCtx,
     entities::identity::{MemberRole, Workspace},
     ids::{BoardId, ProjectId, UserId},
-    permissions::{
-        CapabilityFamily, ChainSegment, Principal, ResourceChain, ResourceRef, ResourceRole,
-    },
+    permissions::{CapabilityFamily, Principal, ResourceRef, ResourceRole},
 };
 
 use crate::{
@@ -56,6 +54,7 @@ use crate::{
             ReadScopeSet, build_board_chain, build_document_chain, resolve_effective_role,
         },
         extractors::WorkspaceAccess,
+        policy::{ChainSegment, ResourceChain},
     },
     error::ApiError,
     live::LiveEvent,

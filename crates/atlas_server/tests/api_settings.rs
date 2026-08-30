@@ -182,7 +182,8 @@ async fn change_password_rejects_api_key_principal() {
     );
     db.api_key_repo()
         .create(
-            &ctx,
+            atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+            &ctx.actor,
             NewApiKey {
                 name: "settings-bot".to_string(),
                 token_hash,
@@ -356,7 +357,8 @@ async fn update_me_rejects_api_key_principal() {
     );
     db.api_key_repo()
         .create(
-            &ctx,
+            atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+            &ctx.actor,
             NewApiKey {
                 name: "profile-bot".to_string(),
                 token_hash,

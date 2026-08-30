@@ -1,13 +1,14 @@
 use std::collections::BTreeSet;
 
+use crate::authz::policy::{ChainSegment, ResolutionInput, ResourceChain, resolve};
 use async_trait::async_trait;
 use atlas_domain::{
     DomainError,
     entities::identity::MemberRole,
     ids::{ApiKeyId, UserId, WorkspaceId},
     permissions::{
-        Capability, CapabilityAction, CapabilityFamily, Principal, ResolutionInput, ResourceChain,
-        ResourceRef, ResourceRole, Visibility, VisibilityRole,
+        Capability, CapabilityAction, CapabilityFamily, Principal, ResourceRef, ResourceRole,
+        Visibility, VisibilityRole,
     },
 };
 use atlas_postgres::db_err as db_error;
@@ -621,16 +622,14 @@ fn decode_subject_fact(fact: StoredSubjectFact) -> Result<SubjectFact, DomainErr
     })
 }
 
-fn decode_chain_segment(
-    segment: StoredChainSegment,
-) -> Result<atlas_domain::permissions::ChainSegment, DomainError> {
+fn decode_chain_segment(segment: StoredChainSegment) -> Result<ChainSegment, DomainError> {
     let resource = decode_resource(StoredResource {
         kind: segment.kind,
         id: segment.id,
     })?;
     let visibility = segment.visibility.map(decode_visibility).transpose()?;
 
-    Ok(atlas_domain::permissions::ChainSegment {
+    Ok(ChainSegment {
         resource,
         visibility,
     })
@@ -725,12 +724,7 @@ fn validate_subject_chain(chain: &ResourceChain, family: SubjectFamily) -> Resul
     Ok(())
 }
 
-fn split_document_chain(
-    segments: &[atlas_domain::permissions::ChainSegment],
-) -> (
-    &[atlas_domain::permissions::ChainSegment],
-    Option<&atlas_domain::permissions::ChainSegment>,
-) {
+fn split_document_chain(segments: &[ChainSegment]) -> (&[ChainSegment], Option<&ChainSegment>) {
     let Some((last, prefixes)) = segments.split_last() else {
         return (segments, None);
     };
@@ -742,7 +736,7 @@ fn split_document_chain(
     }
 }
 
-fn is_project_segment(segment: &atlas_domain::permissions::ChainSegment) -> bool {
+fn is_project_segment(segment: &ChainSegment) -> bool {
     matches!(segment.resource, ResourceRef::Project(_)) && segment.visibility.is_some()
 }
 
@@ -1005,7 +999,7 @@ fn resolve_user_role(
         facts.effective_membership.clone()
     };
 
-    atlas_domain::permissions::resolve(&ResolutionInput {
+    resolve(&ResolutionInput {
         principal,
         membership,
         chain,
@@ -1028,7 +1022,7 @@ fn resolve_api_key_role(
     let role = if facts.is_global {
         creator_role
     } else {
-        let key_role = atlas_domain::permissions::resolve(&ResolutionInput {
+        let key_role = resolve(&ResolutionInput {
             principal: &context.principal,
             membership: None,
             chain,
@@ -1115,7 +1109,6 @@ fn validate_scopes(scopes: &[Capability]) -> Result<(), DomainError> {
 mod distinct_resources_tests {
     use super::*;
     use atlas_domain::ids::{BoardId, DocumentId, FolderId, ProjectId};
-    use atlas_domain::permissions::ChainSegment;
 
     fn segment(resource: ResourceRef) -> ChainSegment {
         ChainSegment {

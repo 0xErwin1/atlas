@@ -95,7 +95,7 @@ pub(crate) async fn list_workspace_members(
     // List api keys that have at least one grant in this workspace, rather than
     // keys bound by the deprecated workspace_id FK.
     let api_keys = api_key_repo
-        .list_granted_in_workspace(member.workspace.id)
+        .list_granted_in_workspace(atlas_custos::WorkspaceScope(member.workspace.id.0))
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
@@ -215,7 +215,7 @@ pub(crate) async fn add_member(
     PgSecurityAuditRepo::append_in(
         &txn,
         NewSecurityAuditEvent {
-            workspace_id: Some(caller.workspace.id),
+            workspace_id: Some(atlas_custos::WorkspaceScope(caller.workspace.id.0)),
             actor: Actor::User(atlas_domain::UserAttributionId(caller.caller_user_id.0)),
             action: SecurityAction::MembershipAdded,
             target_type: "user".to_string(),
@@ -414,7 +414,7 @@ pub(crate) async fn update_member_role(
     PgSecurityAuditRepo::append_in(
         &txn,
         NewSecurityAuditEvent {
-            workspace_id: Some(caller.workspace.id),
+            workspace_id: Some(atlas_custos::WorkspaceScope(caller.workspace.id.0)),
             actor: Actor::User(atlas_domain::UserAttributionId(caller.caller_user_id.0)),
             action: SecurityAction::MembershipRoleChanged,
             target_type: "user".to_string(),
@@ -515,7 +515,7 @@ pub(crate) async fn remove_member(
     PgSecurityAuditRepo::append_in(
         &txn,
         NewSecurityAuditEvent {
-            workspace_id: Some(caller.workspace.id),
+            workspace_id: Some(atlas_custos::WorkspaceScope(caller.workspace.id.0)),
             actor: Actor::User(atlas_domain::UserAttributionId(caller.caller_user_id.0)),
             action: SecurityAction::MembershipRemoved,
             target_type: "user".to_string(),

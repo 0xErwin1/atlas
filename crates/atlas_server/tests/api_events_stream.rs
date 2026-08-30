@@ -32,7 +32,6 @@ use atlas_domain::{
     entities::{
         boards_tasks::NewBoard,
         identity::{ApiKeyType, MemberRole},
-        permissions::NewPermissionGrant,
         workspace_core::NewProject,
     },
     ids::{BoardId, ProjectId, UserId, WorkspaceId},
@@ -40,6 +39,7 @@ use atlas_domain::{
         Capability, CapabilityAction, CapabilityFamily, ResourceRole, Visibility, VisibilityRole,
     },
 };
+use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::{
     auth::tokens::{generate_api_key, hash_token},
     live::LiveEvent,
@@ -476,7 +476,8 @@ async fn create_scoped_agent(
         conn: db.conn().clone(),
     }
     .create(
-        &ctx,
+        atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+        &ctx.actor,
         NewApiKey {
             name: name.to_string(),
             token_hash,

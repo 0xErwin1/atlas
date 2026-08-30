@@ -1,8 +1,8 @@
 use async_trait::async_trait;
+use atlas_custos::WorkspaceScope;
 use atlas_domain::{
     DomainError,
     entities::groups::{Group, GroupMember, NewGroup},
-    entities::permissions::{NewPermissionGrant, PermissionGrant, PermissionGrantId},
     ids::{ApiKeyId, BoardId, DocumentId, FolderId, GroupId, ProjectId, UserId, WorkspaceId},
     permissions::{ResourceRef, ResourceRole},
     ports::group_repo::GroupRepo as GroupRepoTrait,
@@ -14,10 +14,11 @@ use sea_orm::{
 };
 use uuid::Uuid;
 
+use crate::authz::policy::{NewPermissionGrant, PermissionGrant, PermissionGrantId};
 use crate::persistence::entities::permissions::{group, group_member, permission_grant};
 use atlas_postgres::db_err;
 
-pub use atlas_domain::ports::permission_grant_repo::{PermissionGrantRepo, ResolutionQuery};
+pub use crate::authz::policy::{PermissionGrantRepo, ResolutionQuery};
 
 fn role_from_str(s: &str) -> Result<ResourceRole, DomainError> {
     match s {
@@ -601,7 +602,7 @@ impl PgGroupRepo {
     pub async fn soft_delete_in<C: ConnectionTrait>(
         conn: &C,
         id: GroupId,
-        workspace_id: WorkspaceId,
+        workspace_id: WorkspaceScope,
     ) -> Result<bool, DomainError> {
         let now = Utc::now();
 
@@ -666,7 +667,7 @@ impl PgGroupRepo {
 fn group_model_to_domain(m: group::Model) -> Group {
     Group {
         id: GroupId(m.id),
-        workspace_id: WorkspaceId(m.workspace_id),
+        workspace_id: WorkspaceScope(m.workspace_id),
         name: m.name,
         created_by: UserId(m.created_by),
         created_at: m.created_at,
@@ -684,7 +685,7 @@ impl GroupRepoTrait for PgGroupRepo {
     async fn get(
         &self,
         id: GroupId,
-        workspace_id: WorkspaceId,
+        workspace_id: WorkspaceScope,
     ) -> Result<Option<Group>, DomainError> {
         let row = group::Entity::find()
             .filter(group::Column::Id.eq(id.0))
@@ -697,7 +698,7 @@ impl GroupRepoTrait for PgGroupRepo {
         Ok(row.map(group_model_to_domain))
     }
 
-    async fn list(&self, workspace_id: WorkspaceId) -> Result<Vec<Group>, DomainError> {
+    async fn list(&self, workspace_id: WorkspaceScope) -> Result<Vec<Group>, DomainError> {
         let rows = group::Entity::find()
             .filter(group::Column::WorkspaceId.eq(workspace_id.0))
             .filter(group::Column::DeletedAt.is_null())
@@ -712,7 +713,7 @@ impl GroupRepoTrait for PgGroupRepo {
     async fn soft_delete(
         &self,
         id: GroupId,
-        workspace_id: WorkspaceId,
+        workspace_id: WorkspaceScope,
     ) -> Result<bool, DomainError> {
         PgGroupRepo::soft_delete_in(&self.conn, id, workspace_id).await
     }

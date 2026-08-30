@@ -226,7 +226,7 @@ pub fn session_from(m: session::Model) -> Session {
 pub fn api_key_from(m: api_key::Model) -> ApiKey {
     ApiKey {
         id: ApiKeyId(m.id),
-        workspace_id: m.workspace_id.map(WorkspaceId),
+        workspace_id: m.workspace_id.map(atlas_custos::WorkspaceScope),
         created_by_user_id: UserId(m.created_by_user_id),
         name: m.name,
         token_hash: m.token_hash,

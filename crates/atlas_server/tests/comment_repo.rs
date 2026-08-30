@@ -2912,7 +2912,8 @@ async fn comment_link_event_api_key_actor_round_trips_through_string_discriminan
     let api_key = db
         .api_key_repo()
         .create(
-            &ctx,
+            atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+            &ctx.actor,
             NewApiKey {
                 name: "comment-link-actor-key".into(),
                 token_hash: format!("hash-{}", uuid::Uuid::now_v7()),

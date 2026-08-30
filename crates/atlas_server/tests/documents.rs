@@ -30,7 +30,8 @@ async fn seed_api_key(
 
     let key = api_key_repo
         .create(
-            &ctx,
+            atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+            &ctx.actor,
             NewApiKey {
                 name: "test-key".into(),
                 token_hash: format!("hash-{}", uuid::Uuid::now_v7()),

@@ -22,7 +22,8 @@ async fn create_key_with_scopes(db: &TestDb, scopes: Vec<Capability>) -> uuid::U
     let key = db
         .api_key_repo()
         .create(
-            &ctx,
+            atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+            &ctx.actor,
             NewApiKey {
                 name: "scope-gate-key".to_string(),
                 token_hash: format!("hash-{}", uuid::Uuid::now_v7()),

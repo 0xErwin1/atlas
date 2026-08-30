@@ -2,12 +2,11 @@
 
 mod support;
 
-use atlas_domain::ports::permission_grant_repo::ResolutionQuery;
 use atlas_domain::{
-    entities::permissions::NewPermissionGrant,
     entities::workspace_core::NewProject,
     permissions::{ResourceRef, ResourceRole, Visibility, VisibilityRole},
 };
+use atlas_server::authz::policy::{NewPermissionGrant, ResolutionQuery};
 use atlas_server::persistence::repos::{PermissionGrantRepo, PgPermissionGrantRepo, ProjectRepo};
 
 #[tokio::test]

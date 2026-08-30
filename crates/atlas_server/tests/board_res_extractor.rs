@@ -8,12 +8,11 @@ use atlas_domain::{
     Actor, WorkspaceCtx,
     entities::boards_tasks::NewBoard,
     entities::identity::MemberRole,
-    entities::permissions::NewPermissionGrant,
     entities::workspace_core::{NewFolder, NewProject},
     ids::{BoardId, FolderId, ProjectId},
-    permissions::{Principal, ResolutionInput, ResourceRef, ResourceRole, Visibility},
-    ports::permission_grant_repo::ResolutionQuery,
+    permissions::{Principal, ResourceRef, ResourceRole, Visibility},
 };
+use atlas_server::authz::policy::{NewPermissionGrant, ResolutionInput, ResolutionQuery, resolve};
 use atlas_server::{
     authz::authorized::{BoardRes, ResolvedResource},
     persistence::repos::{
@@ -222,7 +221,7 @@ async fn folder_scope_grant_yields_effective_access_on_board_in_that_folder() {
         grants: &grants,
     };
 
-    let effective = atlas_domain::permissions::resolve(&input);
+    let effective = resolve(&input);
 
     assert!(
         effective.is_some(),

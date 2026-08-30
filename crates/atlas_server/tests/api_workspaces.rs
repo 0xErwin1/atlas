@@ -11,7 +11,8 @@ use atlas_api::dtos::{
     AdminUpdateWorkspaceRequest, CreateGrantRequest, GrantPrincipal, UpdateWorkspaceRequest,
 };
 use atlas_client::ClientError;
-use atlas_domain::{Actor, WorkspaceCtx, entities::permissions::NewPermissionGrant};
+use atlas_domain::{Actor, WorkspaceCtx};
+use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::persistence::repos::{
     ApiKeyRepo, NewApiKey, PermissionGrantRepo, PgPermissionGrantRepo, UserRepo,
 };
@@ -232,7 +233,8 @@ async fn rename_workspace_agent_without_config_update_gets_403() {
     let key = db
         .api_key_repo()
         .create(
-            &ctx,
+            atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+            &ctx.actor,
             NewApiKey {
                 name: "ws-rename-deny".to_string(),
                 token_hash: hash,
@@ -310,7 +312,8 @@ async fn rename_workspace_agent_with_config_update_succeeds() {
     let key = db
         .api_key_repo()
         .create(
-            &ctx,
+            atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+            &ctx.actor,
             NewApiKey {
                 name: "ws-rename-allow".to_string(),
                 token_hash: hash,
@@ -639,7 +642,8 @@ async fn api_key_with_grant_sees_workspace_in_list() {
     let key = db
         .api_key_repo()
         .create(
-            &ctx,
+            atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+            &ctx.actor,
             NewApiKey {
                 name: "ak-list-single".to_string(),
                 token_hash: hash,
@@ -706,7 +710,8 @@ async fn api_key_with_grants_in_two_workspaces_sees_both_distinct() {
     let key = db
         .api_key_repo()
         .create(
-            &ctx_a,
+            atlas_custos::WorkspaceScope(ctx_a.workspace_id.0),
+            &ctx_a.actor,
             NewApiKey {
                 name: "ak-list-two".to_string(),
                 token_hash: hash,
@@ -816,7 +821,8 @@ async fn api_key_with_no_grant_sees_empty_workspace_list() {
     );
     db.api_key_repo()
         .create(
-            &ctx,
+            atlas_custos::WorkspaceScope(ctx.workspace_id.0),
+            &ctx.actor,
             NewApiKey {
                 name: "ak-list-empty".to_string(),
                 token_hash: hash,

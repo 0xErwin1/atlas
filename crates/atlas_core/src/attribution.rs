@@ -23,6 +23,17 @@ pub enum Attribution {
     ApiKey(ApiKeyAttributionId),
 }
 
+/// Discriminates an `Attribution` by actor type, without carrying the id.
+/// Used by audit/task-view filters (`AuditFilters`, `TaskViewFilters`) that
+/// need to filter "created by any user" vs. "created by any api key" without
+/// pinning a specific actor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ActorTypeFilter {
+    User,
+    ApiKey,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
