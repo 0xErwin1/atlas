@@ -146,7 +146,10 @@ async fn add_plain_member(
 
     support::activate_user_in_db(db, user.id.0).await;
 
-    let ctx = WorkspaceCtx::new(ws_id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws_id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     PgMembershipRepo {
         conn: db.conn().clone(),
     }
@@ -302,7 +305,10 @@ async fn workspace_activity_board_only_grant_surfaces_board_tasks() {
         .expect("create user");
     support::activate_user_in_db(&db, member_user.id.0).await;
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(owner_user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+    );
     PgMembershipRepo {
         conn: db.conn().clone(),
     }
@@ -376,7 +382,10 @@ async fn workspace_activity_project_grant_surfaces_project_tasks() {
         .expect("create user");
     support::activate_user_in_db(&db, member_user.id.0).await;
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(owner_user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+    );
     PgMembershipRepo {
         conn: db.conn().clone(),
     }
@@ -1031,7 +1040,10 @@ async fn workspace_activity_root_member_sees_all_via_admin_bypass() {
         .expect("create root user");
     support::activate_user_in_db(&db, root_user.id.0).await;
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(owner_user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+    );
     PgMembershipRepo {
         conn: db.conn().clone(),
     }

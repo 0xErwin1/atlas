@@ -372,7 +372,10 @@ async fn build_project_chain(
     project_id: ProjectId,
 ) -> Result<Option<ResourceChain>, ApiError> {
     let repo = PgProjectRepo { conn: db.clone() };
-    let ctx = WorkspaceCtx::new(workspace.id, Actor::User(UserId::new()));
+    let ctx = WorkspaceCtx::new(
+        workspace.id,
+        Actor::User(atlas_domain::UserAttributionId(UserId::new().0)),
+    );
 
     let Some(project) = repo
         .find(&ctx, project_id)

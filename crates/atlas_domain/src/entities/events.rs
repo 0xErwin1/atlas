@@ -421,7 +421,7 @@ impl EventEnvelope {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ids::{ApiKeyId, UserId};
+    use crate::actor::{ApiKeyAttributionId, UserAttributionId};
     use chrono::TimeZone;
 
     fn nil_uuid() -> Uuid {
@@ -472,6 +472,30 @@ mod tests {
     fn test_source_forward_compat_external() {
         let src: EventSource = serde_json::from_str(r#""external/github""#).unwrap();
         assert_eq!(src, EventSource::External("external/github".to_string()));
+    }
+
+    // ─── EventActor wire JSON (R3.3) ──────────────────────────────────────────
+
+    #[test]
+    fn user_actor_converts_to_the_current_wire_shape() {
+        let uid = nil_uuid();
+        let event_actor: EventActor = Actor::User(UserAttributionId(uid)).into();
+        let json = serde_json::to_value(&event_actor).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({"type": "user", "id": uid.to_string()})
+        );
+    }
+
+    #[test]
+    fn api_key_actor_converts_to_the_current_wire_shape() {
+        let kid = Uuid::now_v7();
+        let event_actor: EventActor = Actor::ApiKey(ApiKeyAttributionId(kid)).into();
+        let json = serde_json::to_value(&event_actor).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({"type": "api_key", "id": kid.to_string()})
+        );
     }
 
     // ─── DomainEvent serde round-trips (all 15 variants) ─────────────────────
@@ -1040,17 +1064,17 @@ mod tests {
 
     #[test]
     fn test_from_actor_user() {
-        let uid = UserId(nil_uuid());
-        let ea = EventActor::from(Actor::User(uid));
+        let uid = nil_uuid();
+        let ea = EventActor::from(Actor::User(UserAttributionId(uid)));
         assert_eq!(ea.actor_type, EventActorType::User);
-        assert_eq!(ea.id, uid.0);
+        assert_eq!(ea.id, uid);
     }
 
     #[test]
     fn test_from_actor_api_key() {
-        let kid = ApiKeyId(nil_uuid());
-        let ea = EventActor::from(Actor::ApiKey(kid));
+        let kid = nil_uuid();
+        let ea = EventActor::from(Actor::ApiKey(ApiKeyAttributionId(kid)));
         assert_eq!(ea.actor_type, EventActorType::ApiKey);
-        assert_eq!(ea.id, kid.0);
+        assert_eq!(ea.id, kid);
     }
 }

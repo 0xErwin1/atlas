@@ -209,7 +209,7 @@ pub(crate) async fn regenerate_activation_link(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: None,
-            actor: Actor::User(admin.user.id),
+            actor: Actor::User(atlas_domain::UserAttributionId(admin.user.id.0)),
             action: SecurityAction::UserActivationRegenerated,
             target_type: "user".to_string(),
             target_id: Some(user_id.0),
@@ -296,7 +296,7 @@ pub(crate) async fn disable_user(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: None,
-            actor: Actor::User(admin.user.id),
+            actor: Actor::User(atlas_domain::UserAttributionId(admin.user.id.0)),
             action: SecurityAction::UserDisabled,
             target_type: "user".to_string(),
             target_id: Some(user_id.0),
@@ -386,7 +386,7 @@ pub(crate) async fn enable_user(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: None,
-            actor: Actor::User(admin.user.id),
+            actor: Actor::User(atlas_domain::UserAttributionId(admin.user.id.0)),
             action: SecurityAction::UserEnabled,
             target_type: "user".to_string(),
             target_id: Some(user_id.0),
@@ -475,7 +475,7 @@ pub(crate) async fn reset_password(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: None,
-            actor: Actor::User(admin.user.id),
+            actor: Actor::User(atlas_domain::UserAttributionId(admin.user.id.0)),
             action: SecurityAction::UserPasswordReset,
             target_type: "user".to_string(),
             target_id: Some(user_id.0),
@@ -561,7 +561,7 @@ pub(crate) async fn set_system_admin(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: None,
-            actor: Actor::User(root.user.id),
+            actor: Actor::User(atlas_domain::UserAttributionId(root.user.id.0)),
             action: SecurityAction::UserSystemAdminSet,
             target_type: "user".to_string(),
             target_id: Some(target_id.0),
@@ -762,7 +762,7 @@ async fn create_pending_user_txn(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: None,
-            actor: Actor::User(actor_user_id),
+            actor: Actor::User(atlas_domain::UserAttributionId(actor_user_id.0)),
             action: SecurityAction::UserCreated,
             target_type: "user".to_string(),
             target_id: Some(user_id.0),

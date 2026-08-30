@@ -319,9 +319,15 @@ async fn draft_resolution_conceals_api_key_and_workspace_mismatches() {
         )
         .await
         .expect("create api key");
-    let api_key_ctx = WorkspaceCtx::new(workspace.id, Actor::ApiKey(api_key.id));
+    let api_key_ctx = WorkspaceCtx::new(
+        workspace.id,
+        Actor::ApiKey(atlas_domain::ApiKeyAttributionId(api_key.id.0)),
+    );
     let (other_workspace, _) = support::seed_workspace(&db, "draft-other-workspace").await;
-    let other_workspace_ctx = WorkspaceCtx::new(other_workspace.id, Actor::User(user.id));
+    let other_workspace_ctx = WorkspaceCtx::new(
+        other_workspace.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
 
     let api_key_lookup = repo
         .get_for_owner_and_creator(&api_key_ctx, CommentOwner::Document(document.id), draft.id)
@@ -748,7 +754,10 @@ async fn upload_tombstone_is_gone_and_other_principals_cannot_resolve_it() {
         })
         .await
         .expect("create other user");
-    let other_ctx = WorkspaceCtx::new(workspace.id, Actor::User(other_user.id));
+    let other_ctx = WorkspaceCtx::new(
+        workspace.id,
+        Actor::User(atlas_domain::UserAttributionId(other_user.id.0)),
+    );
     let hidden = repo
         .record_upload_or_replay(
             &other_ctx,

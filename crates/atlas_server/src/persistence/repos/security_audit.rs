@@ -363,12 +363,61 @@ fn actor_columns(actor: &Actor) -> (Option<uuid::Uuid>, Option<uuid::Uuid>) {
 }
 
 fn actor_from_row(user_id: Option<uuid::Uuid>, api_key_id: Option<uuid::Uuid>) -> Actor {
-    use atlas_domain::ids::{ApiKeyId, UserId};
+    use atlas_domain::ids::UserId;
     match (user_id, api_key_id) {
-        (Some(uid), None) => Actor::User(UserId(uid)),
-        (None, Some(kid)) => Actor::ApiKey(ApiKeyId(kid)),
-        _ => Actor::User(UserId::new()),
+        (Some(uid), None) => Actor::User(atlas_domain::UserAttributionId(uid)),
+        (None, Some(kid)) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid)),
+        _ => Actor::User(atlas_domain::UserAttributionId(UserId::new().0)),
     }
 }
 
 pub use atlas_domain::ports::security_audit::SecurityAuditRepo as SecurityAuditRepoTrait;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use atlas_domain::ids::{ApiKeyId, UserId};
+
+    #[test]
+    fn user_actor_round_trips_through_xor_columns() {
+        let actor = Actor::User(atlas_domain::UserAttributionId(UserId::new().0));
+        let (user_col, key_col) = actor_columns(&actor);
+
+        assert_eq!(
+            user_col,
+            Some(match actor {
+                Actor::User(uid) => uid.0,
+                _ => unreachable!(),
+            })
+        );
+        assert_eq!(key_col, None);
+        assert_eq!(actor_from_row(user_col, key_col), actor);
+    }
+
+    #[test]
+    fn api_key_actor_round_trips_through_xor_columns() {
+        let actor = Actor::ApiKey(atlas_domain::ApiKeyAttributionId(ApiKeyId::new().0));
+        let (user_col, key_col) = actor_columns(&actor);
+
+        assert_eq!(user_col, None);
+        assert_eq!(
+            key_col,
+            Some(match actor {
+                Actor::ApiKey(kid) => kid.0,
+                _ => unreachable!(),
+            })
+        );
+        assert_eq!(actor_from_row(user_col, key_col), actor);
+    }
+
+    /// Known latent bug, out of scope for this slice, defect candidate post-E2:
+    /// a `(None, None)` row silently becomes an attributed-to-a-random-user
+    /// record. Pin the control flow only (returns `Actor::User(_)` without
+    /// erroring); never assert the specific random uuid.
+    #[test]
+    fn none_none_row_falls_back_to_random_user_actor() {
+        let actor = actor_from_row(None, None);
+
+        assert!(matches!(actor, Actor::User(_)));
+    }
+}

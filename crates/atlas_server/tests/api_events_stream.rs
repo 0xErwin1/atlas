@@ -177,7 +177,10 @@ async fn stream_delivers_forwarded_event_to_connected_principal() {
     let server = support::TestServer::spawn_with_state(state).await;
 
     let (client, ws, user) = support::login_user_with_workspace(&server, &db, "sse-happy").await;
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     let token = client.token().expect("token").to_string();
 
     let (project_id, board_id) = seed_project_and_board(
@@ -320,13 +323,19 @@ async fn stream_filters_events_by_per_resource_access() {
     // P1 is the workspace owner (sees everything).
     let (owner_client, ws, owner) =
         support::login_user_with_workspace(&server, &db, "sse-filter-owner").await;
-    let owner_ctx = WorkspaceCtx::new(ws.id, Actor::User(owner.id));
+    let owner_ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(owner.id.0)),
+    );
     let owner_token = owner_client.token().expect("owner token").to_string();
 
     // P2 is a plain member: has workspace access (passes the connect gate) but no
     // view access to a Private project's board.
     let (member_client, member) = support::login_user(&server, &db, "sse-filter-member").await;
-    let member_ctx = WorkspaceCtx::new(ws.id, Actor::User(member.id));
+    let member_ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(member.id.0)),
+    );
     db.membership_repo()
         .add(&member_ctx, member.id, MemberRole::Member)
         .await
@@ -459,7 +468,10 @@ async fn create_scoped_agent(
     let raw_token = generate_api_key();
     let token_hash = hash_token(&raw_token);
 
-    let ctx = WorkspaceCtx::new(ws_id, Actor::User(owner_id));
+    let ctx = WorkspaceCtx::new(
+        ws_id,
+        Actor::User(atlas_domain::UserAttributionId(owner_id.0)),
+    );
     let key = PgApiKeyRepo {
         conn: db.conn().clone(),
     }
@@ -618,7 +630,10 @@ async fn presence_is_gated_by_routed_family() {
 
     let (owner_client, ws, owner) =
         support::login_user_with_workspace(&server, &db, "sse-scope-presence").await;
-    let owner_ctx = WorkspaceCtx::new(ws.id, Actor::User(owner.id));
+    let owner_ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(owner.id.0)),
+    );
 
     let (project_id, board_id) = seed_project_and_board(
         &db,
@@ -926,7 +941,10 @@ async fn task_move_reaches_authenticated_sse_through_outbox_listener() {
 
     let (client, ws, user) =
         support::login_user_with_workspace(&server, &db, "sse-task-move-chain").await;
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     let token = client.token().expect("token").to_string();
 
     let (_project_id, board_id) = seed_project_and_board(

@@ -294,3 +294,42 @@ fn actor_columns(actor: &Actor) -> (Option<uuid::Uuid>, Option<uuid::Uuid>) {
         Actor::ApiKey(kid) => (None, Some(kid.0)),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::persistence::entities::boards_tasks::actor_from_columns;
+    use atlas_domain::ids::{ApiKeyId, UserId};
+
+    #[test]
+    fn user_actor_round_trips_through_xor_columns() {
+        let actor = Actor::User(atlas_domain::UserAttributionId(UserId::new().0));
+        let (user_col, key_col) = actor_columns(&actor);
+
+        assert_eq!(
+            user_col,
+            Some(match actor {
+                Actor::User(uid) => uid.0,
+                _ => unreachable!(),
+            })
+        );
+        assert_eq!(key_col, None);
+        assert_eq!(actor_from_columns(user_col, key_col), actor);
+    }
+
+    #[test]
+    fn api_key_actor_round_trips_through_xor_columns() {
+        let actor = Actor::ApiKey(atlas_domain::ApiKeyAttributionId(ApiKeyId::new().0));
+        let (user_col, key_col) = actor_columns(&actor);
+
+        assert_eq!(user_col, None);
+        assert_eq!(
+            key_col,
+            Some(match actor {
+                Actor::ApiKey(kid) => kid.0,
+                _ => unreachable!(),
+            })
+        );
+        assert_eq!(actor_from_columns(user_col, key_col), actor);
+    }
+}

@@ -186,13 +186,19 @@ async fn member_of_both_workspaces_cannot_cross_scope_projects() {
 
     support::activate_user_in_db(&db, dual_user.id.0).await;
 
-    let ctx_a = WorkspaceCtx::new(ws_a.id, Actor::User(dual_user.id));
+    let ctx_a = WorkspaceCtx::new(
+        ws_a.id,
+        Actor::User(atlas_domain::UserAttributionId(dual_user.id.0)),
+    );
     db.membership_repo()
         .add(&ctx_a, dual_user.id, MemberRole::Member)
         .await
         .expect("add to ws_a");
 
-    let ctx_b = WorkspaceCtx::new(ws_b.id, Actor::User(dual_user.id));
+    let ctx_b = WorkspaceCtx::new(
+        ws_b.id,
+        Actor::User(atlas_domain::UserAttributionId(dual_user.id.0)),
+    );
     db.membership_repo()
         .add(&ctx_b, dual_user.id, MemberRole::Member)
         .await

@@ -40,7 +40,10 @@ async fn create_ungrant_key(
     let plain = format!("atlas_{name}_secret");
     let hash = atlas_server::auth::tokens::hash_token(&plain);
 
-    let ctx = WorkspaceCtx::new(ws_id, Actor::User(creator));
+    let ctx = WorkspaceCtx::new(
+        ws_id,
+        Actor::User(atlas_domain::UserAttributionId(creator.0)),
+    );
     let key = db
         .api_key_repo()
         .create(
@@ -383,7 +386,10 @@ async fn granted_api_key_cannot_manage_grants() {
         .await
         .expect("create second user");
 
-    let mctx = WorkspaceCtx::new(ws.id, Actor::User(owner_user.id));
+    let mctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+    );
     db.membership_repo()
         .add(
             &mctx,
@@ -498,7 +504,10 @@ async fn data_migration_backfills_grant_for_existing_workspace_key() {
 
     // Create a key via the old workspace-scoped create path (workspace_id = ws.id).
     // After migration 020, the key already has a back-filled workspace-scope grant.
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(owner_user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+    );
     let key = db
         .api_key_repo()
         .create(

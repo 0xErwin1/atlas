@@ -14,7 +14,10 @@ use support::{TestDb, seed_workspace};
 
 async fn create_key_with_scopes(db: &TestDb, scopes: Vec<Capability>) -> uuid::Uuid {
     let (ws, user) = seed_workspace(db, &format!("scope-gate-{}", uuid::Uuid::now_v7())).await;
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
 
     let key = db
         .api_key_repo()

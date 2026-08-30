@@ -100,7 +100,10 @@ pub(crate) async fn create_workspace(
             message: e.to_string(),
         })?;
 
-    let ctx = WorkspaceCtx::new(workspace.id, Actor::User(user_id));
+    let ctx = WorkspaceCtx::new(
+        workspace.id,
+        Actor::User(atlas_domain::UserAttributionId(user_id.0)),
+    );
     membership_repo
         .add(&ctx, user_id, MemberRole::Owner)
         .await
@@ -128,7 +131,10 @@ async fn seed_default_content(
     workspace_id: WorkspaceId,
     creator: UserId,
 ) -> Result<(), ApiError> {
-    let ctx = WorkspaceCtx::new(workspace_id, Actor::User(creator));
+    let ctx = WorkspaceCtx::new(
+        workspace_id,
+        Actor::User(atlas_domain::UserAttributionId(creator.0)),
+    );
 
     let project = PgProjectRepo {
         conn: (*state.db).clone(),

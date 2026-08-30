@@ -50,7 +50,10 @@ async fn api_key_actor_create_sets_created_by_api_key_id() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let (ws, user) = support::seed_workspace(&db, "doc-apikey-attr").await;
     let key_id = seed_api_key(&db, &ws, &user).await;
-    let ctx = atlas_domain::WorkspaceCtx::new(ws.id, Actor::ApiKey(key_id));
+    let ctx = atlas_domain::WorkspaceCtx::new(
+        ws.id,
+        Actor::ApiKey(atlas_domain::ApiKeyAttributionId(key_id.0)),
+    );
     let repo = make_doc_repo(&db, 50);
 
     let doc = repo
@@ -104,7 +107,10 @@ async fn api_key_actor_update_content_sets_revision_api_key_id() {
         .expect("create document");
 
     let key_id = seed_api_key(&db, &ws, &user).await;
-    let api_ctx = atlas_domain::WorkspaceCtx::new(ws.id, Actor::ApiKey(key_id));
+    let api_ctx = atlas_domain::WorkspaceCtx::new(
+        ws.id,
+        Actor::ApiKey(atlas_domain::ApiKeyAttributionId(key_id.0)),
+    );
 
     let updated = repo
         .update_content(&api_ctx, doc.id, doc.current_revision_id, "v2")
@@ -142,7 +148,10 @@ async fn api_key_actor_attachment_record_sets_created_by_api_key_id() {
         .expect("create document");
 
     let key_id = seed_api_key(&db, &ws, &user).await;
-    let api_ctx = atlas_domain::WorkspaceCtx::new(ws.id, Actor::ApiKey(key_id));
+    let api_ctx = atlas_domain::WorkspaceCtx::new(
+        ws.id,
+        Actor::ApiKey(atlas_domain::ApiKeyAttributionId(key_id.0)),
+    );
 
     let att = att_repo
         .record(

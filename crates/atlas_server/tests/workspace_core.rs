@@ -295,7 +295,10 @@ async fn project_created_by_api_key_succeeds() {
         .await
         .expect("create api key");
 
-    let api_key_ctx = WorkspaceCtx::new(ws.id, Actor::ApiKey(key.id));
+    let api_key_ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::ApiKey(atlas_domain::ApiKeyAttributionId(key.id.0)),
+    );
     let result = db
         .project_repo()
         .create(
@@ -342,7 +345,10 @@ async fn folder_created_by_api_key_succeeds() {
         .await
         .expect("create api key");
 
-    let api_key_ctx = WorkspaceCtx::new(ws.id, Actor::ApiKey(key.id));
+    let api_key_ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::ApiKey(atlas_domain::ApiKeyAttributionId(key.id.0)),
+    );
     let result = db
         .folder_repo()
         .create(

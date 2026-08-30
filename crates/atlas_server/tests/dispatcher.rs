@@ -148,7 +148,10 @@ async fn spawn_mock_receiver(response_code: u16) -> (String, MockState, tokio::t
 async fn dispatcher_delivers_event_and_marks_delivered() {
     let db = support::TestDb::create().await.expect("TestDb");
     let (ws, user) = support::seed_workspace(&db, "disp-happy").await;
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     let crypto = test_crypto();
 
     // Spawn mock receiver (always 200)
@@ -166,7 +169,7 @@ async fn dispatcher_delivers_event_and_marks_delivered() {
         encrypted_secret,
         secret_nonce,
         None,
-        &Actor::User(user.id),
+        &Actor::User(atlas_domain::UserAttributionId(user.id.0)),
     )
     .await
     .expect("create subscription");
@@ -239,7 +242,10 @@ async fn dispatcher_delivers_event_and_marks_delivered() {
 async fn dispatcher_marks_dead_on_exhausted_attempts() {
     let db = support::TestDb::create().await.expect("TestDb");
     let (ws, user) = support::seed_workspace(&db, "disp-dead").await;
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     let crypto = test_crypto();
 
     // Mock always returns 500
@@ -256,7 +262,7 @@ async fn dispatcher_marks_dead_on_exhausted_attempts() {
         encrypted_secret,
         secret_nonce,
         None,
-        &Actor::User(user.id),
+        &Actor::User(atlas_domain::UserAttributionId(user.id.0)),
     )
     .await
     .expect("create subscription");
@@ -313,7 +319,10 @@ async fn delivery_log_records_each_attempt() {
 
     let db = support::TestDb::create().await.expect("TestDb");
     let (ws, user) = support::seed_workspace(&db, "disp-log").await;
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     let crypto = test_crypto();
 
     let (url, _mock_state, _abort) = spawn_mock_receiver(500).await;
@@ -329,7 +338,7 @@ async fn delivery_log_records_each_attempt() {
         encrypted_secret,
         secret_nonce,
         None,
-        &Actor::User(user.id),
+        &Actor::User(atlas_domain::UserAttributionId(user.id.0)),
     )
     .await
     .expect("create subscription");
@@ -411,7 +420,10 @@ async fn delivery_log_records_each_attempt() {
 async fn no_matching_subscriptions_marks_delivered() {
     let db = support::TestDb::create().await.expect("TestDb");
     let (ws, user) = support::seed_workspace(&db, "disp-nosubs").await;
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     let crypto = test_crypto();
 
     // No subscriptions created
@@ -492,7 +504,10 @@ async fn graceful_shutdown_exits_cleanly() {
 async fn out_of_scope_subscription_is_not_delivered() {
     let db = support::TestDb::create().await.expect("TestDb");
     let (ws, user) = support::seed_workspace(&db, "disp-scope").await;
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     let crypto = test_crypto();
 
     let (url, mock_state, _abort) = spawn_mock_receiver(200).await;
@@ -510,7 +525,7 @@ async fn out_of_scope_subscription_is_not_delivered() {
         encrypted_secret,
         secret_nonce,
         None,
-        &Actor::User(user.id),
+        &Actor::User(atlas_domain::UserAttributionId(user.id.0)),
     )
     .await
     .expect("create subscription");

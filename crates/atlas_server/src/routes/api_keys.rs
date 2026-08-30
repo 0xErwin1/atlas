@@ -289,7 +289,7 @@ pub(crate) async fn create_user_api_key(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: None,
-            actor: Actor::User(user_id),
+            actor: Actor::User(atlas_domain::UserAttributionId(user_id.0)),
             action: SecurityAction::ApiKeyCreated,
             target_type: "api_key".to_string(),
             target_id: Some(key.id.0),
@@ -375,7 +375,10 @@ async fn resolve_resource_labels(
         let proj_repo = PgProjectRepo {
             conn: (*state.db).clone(),
         };
-        let ctx = atlas_domain::WorkspaceCtx::new(workspace_id, atlas_domain::Actor::User(caller));
+        let ctx = atlas_domain::WorkspaceCtx::new(
+            workspace_id,
+            atlas_domain::Actor::User(atlas_domain::UserAttributionId(caller.0)),
+        );
         if let Ok(Some(proj)) = proj_repo.find(&ctx, project_id).await {
             project_map.insert(project_id, (proj.slug, proj.name));
         }
@@ -861,7 +864,7 @@ pub(crate) async fn revoke_user_api_key(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: None,
-            actor: Actor::User(user_id),
+            actor: Actor::User(atlas_domain::UserAttributionId(user_id.0)),
             action: SecurityAction::ApiKeyRevoked,
             target_type: "api_key".to_string(),
             target_id: Some(key_id.0),
@@ -966,7 +969,7 @@ pub(crate) async fn update_user_api_key(
             &txn,
             NewSecurityAuditEvent {
                 workspace_id: None,
-                actor: Actor::User(user_id),
+                actor: Actor::User(atlas_domain::UserAttributionId(user_id.0)),
                 action: SecurityAction::ApiKeyGlobalChanged,
                 target_type: "api_key".to_string(),
                 target_id: Some(key_id.0),
@@ -999,7 +1002,7 @@ pub(crate) async fn update_user_api_key(
             &txn,
             NewSecurityAuditEvent {
                 workspace_id: None,
-                actor: Actor::User(user_id),
+                actor: Actor::User(atlas_domain::UserAttributionId(user_id.0)),
                 action: SecurityAction::ApiKeyScopesChanged,
                 target_type: "api_key".to_string(),
                 target_id: Some(key_id.0),

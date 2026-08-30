@@ -638,7 +638,10 @@ async fn owner_chain_download_visibility() {
     let server = support::TestServer::spawn(&db).await;
     let (client, ws, user) =
         support::login_user_with_workspace(&server, &db, "owner-chain-download").await;
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     let (project, _parent, _child, document, _board, task) =
         seed_project_tree(&db, &ctx, "project").await;
 

@@ -129,8 +129,8 @@ pub(crate) async fn enrich_comment_entries(
 
     for c in &comments {
         match &c.created_by {
-            Actor::User(uid) => user_ids.push(*uid),
-            Actor::ApiKey(kid) => key_ids.push(*kid),
+            Actor::User(uid) => user_ids.push(UserId(uid.0)),
+            Actor::ApiKey(kid) => key_ids.push(ApiKeyId(kid.0)),
         }
     }
 
@@ -371,8 +371,8 @@ async fn load_event_actors(
     for entry in entries {
         if let CommentFeedEntry::Event(event) = entry {
             match event.actor {
-                Actor::User(id) => user_ids.push(id),
-                Actor::ApiKey(id) => key_ids.push(id),
+                Actor::User(id) => user_ids.push(UserId(id.0)),
+                Actor::ApiKey(id) => key_ids.push(ApiKeyId(id.0)),
             }
         }
     }
@@ -398,7 +398,7 @@ async fn load_event_actors(
     for user in users {
         if user.disabled_at.is_none() {
             actors.insert(
-                actor_key(Actor::User(user.id)),
+                actor_key(Actor::User(atlas_domain::UserAttributionId(user.id.0))),
                 ActorDto {
                     r#type: "user".into(),
                     id: user.id.0,
@@ -412,7 +412,7 @@ async fn load_event_actors(
     for key in keys {
         if key.revoked_at.is_none() {
             actors.insert(
-                actor_key(Actor::ApiKey(key.id)),
+                actor_key(Actor::ApiKey(atlas_domain::ApiKeyAttributionId(key.id.0))),
                 ActorDto {
                     r#type: "api_key".into(),
                     id: key.id.0,

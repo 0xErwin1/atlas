@@ -200,9 +200,9 @@ pub mod task_activity {
 /// rather than panicking; threading `Result` through every infallible read mapper is out of scope.
 pub fn actor_from_columns(user_id: Option<Uuid>, api_key_id: Option<Uuid>) -> Actor {
     match (user_id, api_key_id) {
-        (Some(uid), None) => Actor::User(UserId(uid)),
-        (None, Some(kid)) => Actor::ApiKey(ApiKeyId(kid)),
-        _ => Actor::User(UserId::new()),
+        (Some(uid), None) => Actor::User(atlas_domain::UserAttributionId(uid)),
+        (None, Some(kid)) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid)),
+        _ => Actor::User(atlas_domain::UserAttributionId(UserId::new().0)),
     }
 }
 
@@ -370,14 +370,24 @@ mod tests {
     fn actor_from_columns_user() {
         let uid = Uuid::now_v7();
         let actor = actor_from_columns(Some(uid), None);
-        assert!(matches!(actor, Actor::User(id) if id.0 == uid));
+        assert!(matches!(actor, Actor::User(id) if id == atlas_domain::UserAttributionId(uid)));
     }
 
     #[test]
     fn actor_from_columns_api_key() {
         let kid = Uuid::now_v7();
         let actor = actor_from_columns(None, Some(kid));
-        assert!(matches!(actor, Actor::ApiKey(id) if id.0 == kid));
+        assert!(matches!(actor, Actor::ApiKey(id) if id == atlas_domain::ApiKeyAttributionId(kid)));
+    }
+
+    /// Known latent bug, out of scope for this slice, defect candidate post-E2:
+    /// a `(None, None)` row silently becomes an attributed-to-a-random-user
+    /// record. Pin the control flow only (returns `Actor::User(_)` without
+    /// erroring); never assert the specific random uuid.
+    #[test]
+    fn actor_from_columns_none_none_falls_back_to_random_user_actor() {
+        let actor = actor_from_columns(None, None);
+        assert!(matches!(actor, Actor::User(_)));
     }
 
     #[test]

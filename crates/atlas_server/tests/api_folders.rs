@@ -732,7 +732,10 @@ async fn move_folder_cross_workspace_destination_returns_404() {
         .await
         .expect("proj a");
 
-    let ctx_b = WorkspaceCtx::new(ws_b.id, Actor::User(user_b.id));
+    let ctx_b = WorkspaceCtx::new(
+        ws_b.id,
+        Actor::User(atlas_domain::UserAttributionId(user_b.id.0)),
+    );
     let folder_b = db
         .folder_repo()
         .create(
@@ -873,7 +876,10 @@ async fn move_folder_underprivileged_destination_returns_404() {
 
     support::activate_user_in_db(&db, caller_domain_user.id.0).await;
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(caller_domain_user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(caller_domain_user.id.0)),
+    );
     db.membership_repo()
         .add(&ctx, caller_domain_user.id, MemberRole::Member)
         .await

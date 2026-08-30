@@ -188,3 +188,39 @@ fn actor_fields(actor: &Actor) -> (Option<Uuid>, Option<Uuid>) {
         Actor::ApiKey(kid) => (None, Some(kid.0)),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use atlas_domain::ids::{ApiKeyId, UserId};
+
+    #[test]
+    fn user_actor_populates_created_by_user_column_only() {
+        let actor = Actor::User(atlas_domain::UserAttributionId(UserId::new().0));
+        let (user_col, key_col) = actor_fields(&actor);
+
+        assert_eq!(
+            user_col,
+            Some(match actor {
+                Actor::User(uid) => uid.0,
+                _ => unreachable!(),
+            })
+        );
+        assert_eq!(key_col, None);
+    }
+
+    #[test]
+    fn api_key_actor_populates_created_by_key_column_only() {
+        let actor = Actor::ApiKey(atlas_domain::ApiKeyAttributionId(ApiKeyId::new().0));
+        let (user_col, key_col) = actor_fields(&actor);
+
+        assert_eq!(user_col, None);
+        assert_eq!(
+            key_col,
+            Some(match actor {
+                Actor::ApiKey(kid) => kid.0,
+                _ => unreachable!(),
+            })
+        );
+    }
+}

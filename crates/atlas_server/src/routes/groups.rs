@@ -77,7 +77,7 @@ pub(crate) async fn create_group(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: Some(caller.workspace.id),
-            actor: Actor::User(caller.caller_user_id),
+            actor: Actor::User(atlas_domain::UserAttributionId(caller.caller_user_id.0)),
             action: SecurityAction::GroupCreated,
             target_type: "group".to_string(),
             target_id: Some(group.id.0),
@@ -169,7 +169,7 @@ pub(crate) async fn delete_group(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: Some(caller.workspace.id),
-            actor: Actor::User(caller.caller_user_id),
+            actor: Actor::User(atlas_domain::UserAttributionId(caller.caller_user_id.0)),
             action: SecurityAction::GroupDeleted,
             target_type: "group".to_string(),
             target_id: Some(group_id.0),
@@ -229,8 +229,10 @@ pub(crate) async fn add_group_member(
 
     // Verify the target user is a workspace member.
     let membership_repo = PgMembershipRepo { conn: conn.clone() };
-    let ctx =
-        atlas_domain::WorkspaceCtx::new(caller.workspace.id, Actor::User(caller.caller_user_id));
+    let ctx = atlas_domain::WorkspaceCtx::new(
+        caller.workspace.id,
+        Actor::User(atlas_domain::UserAttributionId(caller.caller_user_id.0)),
+    );
 
     let is_member = membership_repo
         .find(&ctx, target_user_id)
@@ -260,7 +262,7 @@ pub(crate) async fn add_group_member(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: Some(caller.workspace.id),
-            actor: Actor::User(caller.caller_user_id),
+            actor: Actor::User(atlas_domain::UserAttributionId(caller.caller_user_id.0)),
             action: SecurityAction::GroupMemberAdded,
             target_type: "group".to_string(),
             target_id: Some(group.id.0),
@@ -341,7 +343,7 @@ pub(crate) async fn remove_group_member(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: Some(caller.workspace.id),
-            actor: Actor::User(caller.caller_user_id),
+            actor: Actor::User(atlas_domain::UserAttributionId(caller.caller_user_id.0)),
             action: SecurityAction::GroupMemberRemoved,
             target_type: "group".to_string(),
             target_id: Some(group.id.0),

@@ -25,7 +25,7 @@ fn user_event(
 ) -> NewSecurityAuditEvent {
     NewSecurityAuditEvent {
         workspace_id: ws_id,
-        actor: Actor::User(actor_id),
+        actor: Actor::User(atlas_domain::UserAttributionId(actor_id.0)),
         action: SecurityAction::UserDisabled,
         target_type: "user".into(),
         target_id: Some(uuid::Uuid::now_v7()),
@@ -36,7 +36,7 @@ fn user_event(
 fn platform_event(actor_id: UserId) -> NewSecurityAuditEvent {
     NewSecurityAuditEvent {
         workspace_id: None,
-        actor: Actor::User(actor_id),
+        actor: Actor::User(atlas_domain::UserAttributionId(actor_id.0)),
         action: SecurityAction::UserCreated,
         target_type: "user".into(),
         target_id: Some(uuid::Uuid::now_v7()),
@@ -63,7 +63,10 @@ async fn append_in_inserts_user_actor_row() {
         .expect("list_for_workspace");
 
     assert_eq!(rows.len(), 1, "one row must exist after append");
-    assert_eq!(rows[0].actor, Actor::User(user.id));
+    assert_eq!(
+        rows[0].actor,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0))
+    );
     assert_eq!(rows[0].workspace_id, Some(ws.id));
 
     db.teardown().await;
@@ -76,7 +79,10 @@ async fn append_in_inserts_api_key_actor_row() {
 
     let raw_secret = "test-api-key-secret-sal-001";
     let token_hash = atlas_server::auth::tokens::hash_token(raw_secret);
-    let ctx = atlas_domain::WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = atlas_domain::WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     let key = db
         .api_key_repo()
         .create(
@@ -94,7 +100,7 @@ async fn append_in_inserts_api_key_actor_row() {
 
     let event = NewSecurityAuditEvent {
         workspace_id: None,
-        actor: Actor::ApiKey(key.id),
+        actor: Actor::ApiKey(atlas_domain::ApiKeyAttributionId(key.id.0)),
         action: SecurityAction::ApiKeyCreated,
         target_type: "api_key".into(),
         target_id: Some(key.id.0),
@@ -112,7 +118,10 @@ async fn append_in_inserts_api_key_actor_row() {
         .expect("list_platform");
 
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].actor, Actor::ApiKey(key.id));
+    assert_eq!(
+        rows[0].actor,
+        Actor::ApiKey(atlas_domain::ApiKeyAttributionId(key.id.0))
+    );
     assert!(rows[0].workspace_id.is_none());
 
     db.teardown().await;
@@ -166,7 +175,7 @@ async fn append_in_metadata_json_round_trips() {
 
     let event = NewSecurityAuditEvent {
         workspace_id: Some(ws.id),
-        actor: Actor::User(user.id),
+        actor: Actor::User(atlas_domain::UserAttributionId(user.id.0)),
         action: SecurityAction::MembershipRoleChanged,
         target_type: "user".into(),
         target_id: Some(user.id.0),
@@ -322,7 +331,7 @@ async fn list_for_workspace_returns_newest_first() {
             db.conn(),
             NewSecurityAuditEvent {
                 workspace_id: Some(ws.id),
-                actor: Actor::User(user.id),
+                actor: Actor::User(atlas_domain::UserAttributionId(user.id.0)),
                 action,
                 target_type: "user".into(),
                 target_id: Some(user.id.0),
@@ -412,7 +421,7 @@ async fn list_for_workspace_filter_by_action() {
             db.conn(),
             NewSecurityAuditEvent {
                 workspace_id: Some(ws.id),
-                actor: Actor::User(user.id),
+                actor: Actor::User(atlas_domain::UserAttributionId(user.id.0)),
                 action,
                 target_type: "user".into(),
                 target_id: Some(user.id.0),
@@ -478,7 +487,10 @@ async fn list_for_workspace_filter_by_actor_user_id() {
         .expect("filtered by actor");
 
     assert_eq!(rows.len(), 1, "only user_a's events must be returned");
-    assert_eq!(rows[0].actor, Actor::User(user_a.id));
+    assert_eq!(
+        rows[0].actor,
+        Actor::User(atlas_domain::UserAttributionId(user_a.id.0))
+    );
 
     db.teardown().await;
 }
@@ -567,7 +579,7 @@ async fn audit_row_survives_target_deleted_no_fk_on_target_id() {
 
     let event = NewSecurityAuditEvent {
         workspace_id: Some(ws.id),
-        actor: Actor::User(user.id),
+        actor: Actor::User(atlas_domain::UserAttributionId(user.id.0)),
         action: SecurityAction::UserDisabled,
         target_type: "user".into(),
         target_id: Some(target_id),
@@ -621,7 +633,7 @@ async fn actor_fk_on_delete_set_null_nulls_actor_but_keeps_row() {
 
     let event = NewSecurityAuditEvent {
         workspace_id: Some(ws.id),
-        actor: Actor::User(victim.id),
+        actor: Actor::User(atlas_domain::UserAttributionId(victim.id.0)),
         action: SecurityAction::MembershipRemoved,
         target_type: "user".into(),
         target_id: Some(owner.id.0),

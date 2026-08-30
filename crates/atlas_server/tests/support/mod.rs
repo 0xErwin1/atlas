@@ -162,7 +162,10 @@ pub(crate) async fn seed_workspace(db: &TestDb, username: &str) -> (Workspace, U
         .await
         .expect("seed workspace");
 
-    let ctx = WorkspaceCtx::new(ws_id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws_id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     membership_repo
         .add(&ctx, user.id, MemberRole::Owner)
         .await
@@ -172,7 +175,10 @@ pub(crate) async fn seed_workspace(db: &TestDb, username: &str) -> (Workspace, U
 }
 
 pub(crate) fn ctx(ws: &Workspace, user: &User) -> WorkspaceCtx {
-    WorkspaceCtx::new(ws.id, Actor::User(user.id))
+    WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    )
 }
 
 /// A live test server bound to a random port on 127.0.0.1.
@@ -333,7 +339,10 @@ pub(crate) async fn login_user_with_workspace(
         .await
         .expect("create workspace");
 
-    let ctx = WorkspaceCtx::new(ws_id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws_id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     membership_repo
         .add(
             &ctx,

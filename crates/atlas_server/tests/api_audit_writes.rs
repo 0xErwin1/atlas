@@ -70,7 +70,10 @@ async fn add_member_to_ws(
         .await
         .expect("create user");
 
-    let ctx = WorkspaceCtx::new(ws_id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws_id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     db.membership_repo()
         .add(&ctx, user.id, role)
         .await
@@ -117,7 +120,10 @@ async fn create_agent_key(
     creator: UserId,
     name: &str,
 ) -> atlas_domain::entities::identity::ApiKey {
-    let ctx = WorkspaceCtx::new(ws_id, Actor::User(creator));
+    let ctx = WorkspaceCtx::new(
+        ws_id,
+        Actor::User(atlas_domain::UserAttributionId(creator.0)),
+    );
     db.api_key_repo()
         .create(
             &ctx,
@@ -156,7 +162,10 @@ async fn audit_membership_role_changed_happy_path_writes_one_row() {
     let row = &rows[0];
     assert_eq!(row.action, "membership.role_changed");
     assert_eq!(row.workspace_id, Some(ws.id));
-    assert_eq!(row.actor, Actor::User(owner_user.id));
+    assert_eq!(
+        row.actor,
+        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0))
+    );
     assert_eq!(row.target_type, "user");
     assert_eq!(row.target_id, Some(target.id.0));
     assert_eq!(
@@ -247,7 +256,10 @@ async fn audit_membership_role_changed_admin_on_owner_writes_zero_rows() {
             .await
             .expect("create admin user");
         support::activate_user_in_db(&db, user.id.0).await;
-        let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+        let ctx = WorkspaceCtx::new(
+            ws.id,
+            Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        );
         db.membership_repo()
             .add(&ctx, user.id, MemberRole::Admin)
             .await
@@ -302,7 +314,10 @@ async fn audit_membership_removed_happy_path_writes_one_row() {
     let row = &rows[0];
     assert_eq!(row.action, "membership.removed");
     assert_eq!(row.workspace_id, Some(ws.id));
-    assert_eq!(row.actor, Actor::User(owner_user.id));
+    assert_eq!(
+        row.actor,
+        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0))
+    );
     assert_eq!(row.target_type, "user");
     assert_eq!(row.target_id, Some(target.id.0));
     assert_eq!(
@@ -412,7 +427,10 @@ async fn audit_project_grant_created_happy_path_writes_one_row() {
 
     let row = grant_rows[0];
     assert_eq!(row.workspace_id, Some(ws.id));
-    assert_eq!(row.actor, Actor::User(owner_user.id));
+    assert_eq!(
+        row.actor,
+        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0))
+    );
     assert_eq!(row.target_type, "grant");
     assert!(row.target_id.is_some(), "target_id must be the grant UUID");
     assert_eq!(
@@ -555,7 +573,10 @@ async fn audit_project_grant_revoked_happy_path_writes_one_row() {
 
     let row = revoke_rows[0];
     assert_eq!(row.workspace_id, Some(ws.id));
-    assert_eq!(row.actor, Actor::User(owner_user.id));
+    assert_eq!(
+        row.actor,
+        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0))
+    );
     assert_eq!(row.target_type, "grant");
     assert_eq!(row.target_id, Some(new_grant.id));
     assert_eq!(
@@ -639,7 +660,10 @@ async fn audit_workspace_grant_created_happy_path_writes_one_row() {
 
     let row = grant_rows[0];
     assert_eq!(row.workspace_id, Some(ws.id));
-    assert_eq!(row.actor, Actor::User(owner_user.id));
+    assert_eq!(
+        row.actor,
+        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0))
+    );
     assert_eq!(row.target_type, "grant");
     assert!(row.target_id.is_some(), "target_id must be the grant UUID");
     assert_eq!(
@@ -747,7 +771,10 @@ async fn audit_workspace_grant_revoked_happy_path_writes_one_row() {
 
     let row = revoke_rows[0];
     assert_eq!(row.workspace_id, Some(ws.id));
-    assert_eq!(row.actor, Actor::User(owner_user.id));
+    assert_eq!(
+        row.actor,
+        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0))
+    );
     assert_eq!(row.target_type, "grant");
     assert_eq!(row.target_id, Some(new_grant.id));
     assert_eq!(
@@ -963,7 +990,10 @@ async fn audit_user_created_happy_path_writes_one_row() {
         .await
         .expect("create ws");
 
-    let ws_ctx = WorkspaceCtx::new(ws_id, Actor::User(admin_user.id));
+    let ws_ctx = WorkspaceCtx::new(
+        ws_id,
+        Actor::User(atlas_domain::UserAttributionId(admin_user.id.0)),
+    );
     db.membership_repo()
         .add(&ws_ctx, admin_user.id, MemberRole::Owner)
         .await
@@ -991,7 +1021,7 @@ async fn audit_user_created_happy_path_writes_one_row() {
     );
     assert_eq!(
         row.actor,
-        Actor::User(admin_user.id),
+        Actor::User(atlas_domain::UserAttributionId(admin_user.id.0)),
         "actor is the calling admin"
     );
     assert_eq!(row.target_type, "user");
@@ -1034,7 +1064,10 @@ async fn audit_user_created_duplicate_username_writes_zero_rows() {
         .await
         .expect("create ws");
 
-    let ws_ctx = WorkspaceCtx::new(ws_id, Actor::User(admin_user.id));
+    let ws_ctx = WorkspaceCtx::new(
+        ws_id,
+        Actor::User(atlas_domain::UserAttributionId(admin_user.id.0)),
+    );
     db.membership_repo()
         .add(&ws_ctx, admin_user.id, MemberRole::Owner)
         .await
@@ -1108,7 +1141,7 @@ async fn audit_user_disabled_happy_path_writes_one_row() {
     assert_eq!(row.workspace_id, None);
     assert_eq!(
         row.actor,
-        Actor::User(admin_user.id),
+        Actor::User(atlas_domain::UserAttributionId(admin_user.id.0)),
         "actor is the calling admin"
     );
     assert_eq!(row.target_type, "user");
@@ -1176,7 +1209,7 @@ async fn audit_user_enabled_happy_path_writes_one_row_with_real_actor() {
     // The extractor fix (rename _admin -> admin) ensures the real actor is captured, not a placeholder.
     assert_eq!(
         row.actor,
-        Actor::User(admin_user.id),
+        Actor::User(atlas_domain::UserAttributionId(admin_user.id.0)),
         "actor must be the real calling admin (extractor-fix regression guard)"
     );
     assert_eq!(row.target_type, "user");
@@ -1235,7 +1268,10 @@ async fn audit_user_system_admin_set_happy_path_writes_one_row() {
 
     let row = &rows[0];
     assert_eq!(row.workspace_id, None);
-    assert_eq!(row.actor, Actor::User(root_user.id));
+    assert_eq!(
+        row.actor,
+        Actor::User(atlas_domain::UserAttributionId(root_user.id.0))
+    );
     assert_eq!(row.target_type, "user");
     assert_eq!(row.target_id, Some(target.id.0));
     assert_eq!(
@@ -1312,7 +1348,10 @@ async fn audit_user_password_reset_happy_path_writes_one_row() {
 
     let row = &rows[0];
     assert_eq!(row.workspace_id, None);
-    assert_eq!(row.actor, Actor::User(admin_user.id));
+    assert_eq!(
+        row.actor,
+        Actor::User(atlas_domain::UserAttributionId(admin_user.id.0))
+    );
     assert_eq!(row.target_type, "user");
     assert_eq!(row.target_id, Some(target.id.0));
 
@@ -1391,7 +1430,7 @@ async fn audit_user_activation_regenerated_happy_path_writes_one_row_with_real_a
     // The extractor fix (rename _admin -> admin) ensures the real actor is captured.
     assert_eq!(
         row.actor,
-        Actor::User(admin_user.id),
+        Actor::User(atlas_domain::UserAttributionId(admin_user.id.0)),
         "actor must be the real calling admin (extractor-fix regression guard)"
     );
     assert_eq!(row.target_type, "user");
@@ -1463,7 +1502,10 @@ async fn audit_api_key_created_happy_path_writes_one_row() {
 
     let row = &rows[0];
     assert_eq!(row.workspace_id, None, "api_key events are platform-scoped");
-    assert_eq!(row.actor, Actor::User(user.id));
+    assert_eq!(
+        row.actor,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0))
+    );
     assert_eq!(row.target_type, "api_key");
     assert_eq!(row.target_id, Some(created.id), "target is the new key id");
     assert_eq!(
@@ -1524,7 +1566,10 @@ async fn audit_api_key_created_by_api_key_principal_writes_zero_rows() {
         1,
         "only the first successful creation is audited"
     );
-    assert_eq!(rows[0].actor, Actor::User(user.id));
+    assert_eq!(
+        rows[0].actor,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0))
+    );
 
     db.teardown().await;
 }
@@ -1560,7 +1605,10 @@ async fn audit_api_key_revoked_happy_path_writes_one_row() {
 
     let row = &rows[0];
     assert_eq!(row.workspace_id, None);
-    assert_eq!(row.actor, Actor::User(user.id));
+    assert_eq!(
+        row.actor,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0))
+    );
     assert_eq!(row.target_type, "api_key");
     assert_eq!(row.target_id, Some(key.id));
 
@@ -1605,7 +1653,10 @@ async fn audit_account_activated_happy_path_writes_one_row_actor_is_self() {
         .await
         .expect("create ws");
 
-    let ws_ctx = WorkspaceCtx::new(ws_id, Actor::User(admin_user.id));
+    let ws_ctx = WorkspaceCtx::new(
+        ws_id,
+        Actor::User(atlas_domain::UserAttributionId(admin_user.id.0)),
+    );
     db.membership_repo()
         .add(&ws_ctx, admin_user.id, MemberRole::Owner)
         .await
@@ -1646,7 +1697,7 @@ async fn audit_account_activated_happy_path_writes_one_row_actor_is_self() {
     );
     assert_eq!(
         row.actor,
-        Actor::User(UserId(created.user.id)),
+        Actor::User(atlas_domain::UserAttributionId(created.user.id)),
         "actor == target: self-activation"
     );
     assert_eq!(row.target_type, "user");

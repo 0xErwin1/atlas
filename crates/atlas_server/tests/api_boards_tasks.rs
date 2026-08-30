@@ -102,7 +102,10 @@ async fn add_member(
 
     support::activate_user_in_db(db, user.id.0).await;
 
-    let ctx = WorkspaceCtx::new(ws_id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws_id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     db.membership_repo()
         .add(&ctx, user.id, role)
         .await
@@ -1682,7 +1685,7 @@ async fn get_task_returns_board_name_and_column_name() {
 async fn create_and_get_task_returns_201_and_task_data() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
-    let (client, ws, _) = support::login_user_with_workspace(&server, &db, "task-crud-1").await;
+    let (client, ws, user) = support::login_user_with_workspace(&server, &db, "task-crud-1").await;
 
     client
         .create_project(&ws.slug, project_req("task-proj-1", "TK"))
@@ -1737,6 +1740,8 @@ async fn create_and_get_task_returns_201_and_task_data() {
         task.readable_id.starts_with("TK-"),
         "readable_id must use prefix"
     );
+    assert_eq!(task.created_by.r#type, "user");
+    assert_eq!(task.created_by.id, user.id.0);
 
     let fetched = client
         .get_task(&ws.slug, &task.readable_id)
@@ -1745,6 +1750,8 @@ async fn create_and_get_task_returns_201_and_task_data() {
 
     assert_eq!(fetched.id, task.id);
     assert_eq!(fetched.title, "First Task");
+    assert_eq!(fetched.created_by.r#type, "user");
+    assert_eq!(fetched.created_by.id, user.id.0);
 
     db.teardown().await;
 }
@@ -8316,7 +8323,10 @@ async fn task_graph_omits_nodes_the_caller_cannot_read() {
     let (member, member_user) = support::login_user(&server, &db, "graph-plain-member").await;
     db.membership_repo()
         .add(
-            &WorkspaceCtx::new(ws.id, Actor::User(member_user.id)),
+            &WorkspaceCtx::new(
+                ws.id,
+                Actor::User(atlas_domain::UserAttributionId(member_user.id.0)),
+            ),
             member_user.id,
             MemberRole::Member,
         )

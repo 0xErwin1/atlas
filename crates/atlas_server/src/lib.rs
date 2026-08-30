@@ -95,7 +95,10 @@ pub mod desktop_gate_support {
                 slug: workspace_slug.clone(),
             })
             .await?;
-        let ctx = WorkspaceCtx::new(workspace.id, Actor::User(user.id));
+        let ctx = WorkspaceCtx::new(
+            workspace.id,
+            Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        );
 
         PgMembershipRepo { conn: db.clone() }
             .add(&ctx, user.id, MemberRole::Owner)

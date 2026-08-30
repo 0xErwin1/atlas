@@ -96,7 +96,7 @@ impl FromRequestParts<AppState> for WorkspaceMember {
                 };
                 let ctx = atlas_domain::WorkspaceCtx::new(
                     workspace.id,
-                    atlas_domain::Actor::User(user_id),
+                    atlas_domain::Actor::User(atlas_domain::UserAttributionId(user_id.0)),
                 );
                 let membership =
                     membership_repo
@@ -232,7 +232,7 @@ impl FromRequestParts<AppState> for WorkspaceAccess {
                 };
                 let ctx = atlas_domain::WorkspaceCtx::new(
                     workspace.id,
-                    atlas_domain::Actor::User(user_id),
+                    atlas_domain::Actor::User(atlas_domain::UserAttributionId(user_id.0)),
                 );
                 let membership =
                     membership_repo
@@ -510,7 +510,10 @@ impl FromRequestParts<AppState> for WorkspaceOwnerOrAdmin {
         let membership_repo = PgMembershipRepo {
             conn: (*state.db).clone(),
         };
-        let ctx = atlas_domain::WorkspaceCtx::new(workspace.id, atlas_domain::Actor::User(user_id));
+        let ctx = atlas_domain::WorkspaceCtx::new(
+            workspace.id,
+            atlas_domain::Actor::User(atlas_domain::UserAttributionId(user_id.0)),
+        );
         let membership =
             membership_repo
                 .find(&ctx, user_id)

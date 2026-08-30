@@ -46,7 +46,10 @@ async fn add_workspace_member(
 
     support::activate_user_in_db(db, user.id.0).await;
 
-    let ctx = WorkspaceCtx::new(ws_id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws_id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     db.membership_repo()
         .add(&ctx, user.id, MemberRole::Member)
         .await
@@ -115,7 +118,10 @@ async fn create_group_emits_audit_row() {
         .expect("group.created audit row");
 
     assert_eq!(entry.target_id, Some(group.id));
-    assert_eq!(entry.actor, Actor::User(caller.id));
+    assert_eq!(
+        entry.actor,
+        Actor::User(atlas_domain::UserAttributionId(caller.id.0))
+    );
 }
 
 #[tokio::test]
@@ -241,7 +247,7 @@ async fn delete_group_emits_audit_row() {
     assert!(
         rows.iter().any(|r| r.action.as_str() == "group.deleted"
             && r.target_id == Some(group.id)
-            && r.actor == Actor::User(caller.id)),
+            && r.actor == Actor::User(atlas_domain::UserAttributionId(caller.id.0))),
         "group.deleted audit row not found"
     );
 }
@@ -342,7 +348,7 @@ async fn add_member_emits_audit_row() {
         rows.iter()
             .any(|r| r.action.as_str() == "group.member_added"
                 && r.target_id == Some(group.id)
-                && r.actor == Actor::User(caller.id)),
+                && r.actor == Actor::User(atlas_domain::UserAttributionId(caller.id.0))),
         "group.member_added audit row not found"
     );
 }
@@ -479,7 +485,7 @@ async fn remove_member_emits_audit_row() {
         rows.iter()
             .any(|r| r.action.as_str() == "group.member_removed"
                 && r.target_id == Some(group.id)
-                && r.actor == Actor::User(caller.id)),
+                && r.actor == Actor::User(atlas_domain::UserAttributionId(caller.id.0))),
         "group.member_removed audit row not found"
     );
 }

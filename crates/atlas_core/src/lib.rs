@@ -8,6 +8,7 @@
     )
 )]
 
+pub mod attribution;
 pub mod capabilities;
 pub mod config;
 pub mod error;
@@ -16,6 +17,7 @@ pub mod position;
 pub mod registry;
 pub mod slug;
 
+pub use attribution::Attribution;
 pub use ids::{
     ActionId, ActionIdParseError, PathSegment, PrincipalId, PrincipalIdParseError, PrincipalSetId,
     PrincipalSetIdParseError, ResourcePath, ResourcePathParseError, ResourceRef,

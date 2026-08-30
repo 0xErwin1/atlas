@@ -285,7 +285,10 @@ async fn happy_path_returns_matching_document() {
     let token = client.token().expect("logged in");
     let http = reqwest::Client::new();
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     let doc_repo = PgDocumentRepo::new(db.conn().clone(), 50);
 
     let unique_word = "xyzzy9uniqueterm";
@@ -340,7 +343,10 @@ async fn updated_sort_cursor_paginates_without_duplicates() {
     let token = client.token().expect("logged in");
     let http = reqwest::Client::new();
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     let doc_repo = PgDocumentRepo::new(db.conn().clone(), 50);
 
     let unique = "zzzpaginationtestdoc";
@@ -453,7 +459,10 @@ async fn title_hit_outranks_body_hit_under_relevance_sort() {
     let token = client.token().expect("logged in");
     let http = reqwest::Client::new();
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     let doc_repo = PgDocumentRepo::new(db.conn().clone(), 50);
 
     // A term that appears in no other doc in this workspace.
@@ -541,7 +550,10 @@ async fn body_match_snippet_contains_mark_highlight() {
     let token = client.token().expect("logged in");
     let http = reqwest::Client::new();
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     let doc_repo = PgDocumentRepo::new(db.conn().clone(), 50);
 
     let unique = "xmarkhlterm9mzq";
@@ -694,7 +706,10 @@ async fn type_note_task_returns_both_kinds() {
     let token = client.token().expect("logged in");
     let http = reqwest::Client::new();
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     let unique = "xmt2bothkinds9z";
     let (doc_id, task_id) = seed_doc_and_task(&db, &ctx, unique).await;
 
@@ -737,7 +752,10 @@ async fn type_note_task_today_same_as_absent_type() {
     let token = client.token().expect("logged in");
     let http = reqwest::Client::new();
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     let unique = "xmt2equivterm8q";
     seed_doc_and_task(&db, &ctx, unique).await;
 
@@ -785,7 +803,10 @@ async fn type_note_returns_only_documents() {
     let token = client.token().expect("logged in");
     let http = reqwest::Client::new();
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     let unique = "xmt1noteonlyterm";
     let (doc_id, _task_id) = seed_doc_and_task(&db, &ctx, unique).await;
 
@@ -825,7 +846,10 @@ async fn type_task_returns_only_tasks() {
     let token = client.token().expect("logged in");
     let http = reqwest::Client::new();
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     let unique = "xmt1taskonlyterm";
     let (_doc_id, task_id) = seed_doc_and_task(&db, &ctx, unique).await;
 
@@ -868,7 +892,10 @@ async fn type_note_task_with_status_filter_does_not_short_circuit() {
     let token = client.token().expect("logged in");
     let http = reqwest::Client::new();
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     let unique = "xmt7nowarningterm";
     let (_doc_id, task_id) = seed_doc_and_task(&db, &ctx, unique).await;
 
@@ -904,7 +931,10 @@ async fn type_note_with_status_filter_returns_empty() {
     let token = client.token().expect("logged in");
     let http = reqwest::Client::new();
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     let unique = "xmt7warnterm9p";
     seed_doc_and_task(&db, &ctx, unique).await;
 
@@ -945,7 +975,10 @@ async fn type_note_task_owner_sees_both_kinds_with_readable_id() {
     let token = client.token().expect("logged in");
     let http = reqwest::Client::new();
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     let unique = "xmt8permterm7r";
     let (doc_id, task_id) = seed_doc_and_task(&db, &ctx, unique).await;
 
@@ -999,7 +1032,10 @@ async fn type_unknown_token_collapses_to_all() {
     let token = client.token().expect("logged in");
     let http = reqwest::Client::new();
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     let unique = "xd1unknownterm5s";
     let (doc_id, task_id) = seed_doc_and_task(&db, &ctx, unique).await;
 
@@ -1127,7 +1163,10 @@ async fn hybrid_mode_returns_what_neither_arm_finds_alone() {
         support::login_user_with_workspace(&server, &db, "search-hybrid").await;
     let token = client.token().expect("must be logged in");
     let http = reqwest::Client::new();
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
 
     let query = "quarterly retention policy";
     let (lexical_only, semantic_only) = seed_split_corpus(&db, &ctx, ws.id, query).await;
@@ -1222,7 +1261,10 @@ async fn hybrid_mode_falls_back_to_lexical_when_embeddings_are_unavailable() {
         support::login_user_with_workspace(&server, &db, "search-hybrid-off").await;
     let token = client.token().expect("must be logged in");
     let http = reqwest::Client::new();
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
 
     let query = "quarterly retention policy";
     let (lexical_only, _) = seed_split_corpus(&db, &ctx, ws.id, query).await;

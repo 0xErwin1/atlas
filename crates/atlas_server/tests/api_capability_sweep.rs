@@ -237,7 +237,7 @@ async fn seed_fixtures(
         enc,
         nonce,
         None,
-        &Actor::User(user_id),
+        &Actor::User(atlas_domain::UserAttributionId(user_id.0)),
     )
     .await
     .expect("create sweep webhook");

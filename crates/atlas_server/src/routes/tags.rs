@@ -24,9 +24,9 @@ use crate::{
 
 fn principal_to_actor(principal: &Principal) -> Actor {
     match principal {
-        Principal::User(uid) => Actor::User(*uid),
-        Principal::ApiKey(kid) => Actor::ApiKey(*kid),
-        Principal::Group(_) => Actor::User(atlas_domain::ids::UserId(uuid::Uuid::nil())),
+        Principal::User(uid) => Actor::User(atlas_domain::UserAttributionId(uid.0)),
+        Principal::ApiKey(kid) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0)),
+        Principal::Group(_) => Actor::User(atlas_domain::UserAttributionId(uuid::Uuid::nil())),
     }
 }
 

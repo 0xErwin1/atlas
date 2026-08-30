@@ -112,7 +112,10 @@ async fn e2e_webhook_dispatched_on_task_creation() {
     let created: Value = create_resp.json().await.unwrap();
     let plaintext_secret = created["secret"].as_str().unwrap().to_string();
 
-    let ctx = WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
 
     let project_repo = PgProjectRepo {
         conn: db.conn().clone(),

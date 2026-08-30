@@ -181,7 +181,10 @@ impl ResolvedResource for ProjectRes {
     ) -> Result<(Self, ResourceChain), ApiError> {
         let slug = params.get("project_slug").ok_or(ApiError::NotFound)?;
 
-        let ctx = atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(UserId::new()));
+        let ctx = atlas_domain::WorkspaceCtx::new(
+            ws.id,
+            atlas_domain::Actor::User(atlas_domain::UserAttributionId(UserId::new().0)),
+        );
         let repo = PgProjectRepo { conn: db.clone() };
         let project = repo
             .find_by_slug(&ctx, slug)
@@ -289,7 +292,10 @@ pub async fn build_folder_chain(
     let effective_project_id = ancestry.last().and_then(|f| f.project_id);
     if let Some(project_id) = effective_project_id {
         let repo = PgProjectRepo { conn: db.clone() };
-        let ctx = atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(UserId::new()));
+        let ctx = atlas_domain::WorkspaceCtx::new(
+            ws.id,
+            atlas_domain::Actor::User(atlas_domain::UserAttributionId(UserId::new().0)),
+        );
         let project = repo
             .find(&ctx, project_id)
             .await
@@ -507,7 +513,10 @@ pub async fn build_board_chain(
     }
 
     let repo = PgProjectRepo { conn: db.clone() };
-    let ctx = atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(UserId::new()));
+    let ctx = atlas_domain::WorkspaceCtx::new(
+        ws.id,
+        atlas_domain::Actor::User(atlas_domain::UserAttributionId(UserId::new().0)),
+    );
     let project = repo
         .find(&ctx, project_id)
         .await
@@ -764,7 +773,10 @@ async fn build_document_chain_from_parts(
     let effective_project_id = project_id.or(inherited_project_id);
     if let Some(project_id) = effective_project_id {
         let repo = PgProjectRepo { conn: db.clone() };
-        let ctx = atlas_domain::WorkspaceCtx::new(ws.id, atlas_domain::Actor::User(UserId::new()));
+        let ctx = atlas_domain::WorkspaceCtx::new(
+            ws.id,
+            atlas_domain::Actor::User(atlas_domain::UserAttributionId(UserId::new().0)),
+        );
         let project = repo
             .find(&ctx, project_id)
             .await
@@ -862,8 +874,10 @@ pub async fn authorize_folder_destination(
     let effective_project_id = ancestry.last().and_then(|f| f.project_id);
     if let Some(project_id) = effective_project_id {
         let repo = PgProjectRepo { conn: db.clone() };
-        let ctx =
-            atlas_domain::WorkspaceCtx::new(workspace.id, atlas_domain::Actor::User(UserId::new()));
+        let ctx = atlas_domain::WorkspaceCtx::new(
+            workspace.id,
+            atlas_domain::Actor::User(atlas_domain::UserAttributionId(UserId::new().0)),
+        );
         let project = repo
             .find(&ctx, project_id)
             .await
@@ -1053,7 +1067,7 @@ where
                         };
                         let ctx = atlas_domain::WorkspaceCtx::new(
                             workspace.id,
-                            atlas_domain::Actor::User(*uid),
+                            atlas_domain::Actor::User(atlas_domain::UserAttributionId(uid.0)),
                         );
                         let membership = membership_repo.find(&ctx, *uid).await.map_err(|e| {
                             ApiError::Internal {
@@ -1419,7 +1433,10 @@ async fn effective_membership_for_user(
     }
 
     let membership_repo = PgMembershipRepo { conn: db.clone() };
-    let ctx = WorkspaceCtx::new(workspace.id, Actor::User(user_id));
+    let ctx = WorkspaceCtx::new(
+        workspace.id,
+        Actor::User(atlas_domain::UserAttributionId(user_id.0)),
+    );
     let membership = membership_repo
         .find(&ctx, user_id)
         .await

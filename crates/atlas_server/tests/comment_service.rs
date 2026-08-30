@@ -135,7 +135,10 @@ async fn seed_member(
 
     support::activate_user_in_db(db, user.id.0).await;
 
-    let ctx = atlas_domain::WorkspaceCtx::new(ws.id, Actor::User(user.id));
+    let ctx = atlas_domain::WorkspaceCtx::new(
+        ws.id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     membership_repo
         .add(&ctx, user.id, role)
         .await
@@ -166,7 +169,10 @@ async fn add_comment_then_list_returns_it_oldest_first() {
 
     assert_eq!(first.body, "first");
     assert_eq!(first.task_id, Some(task.id));
-    assert_eq!(first.created_by, Actor::User(user.id));
+    assert_eq!(
+        first.created_by,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0))
+    );
 
     let page = service
         .list_comments(&ctx, task.id, None, 50)

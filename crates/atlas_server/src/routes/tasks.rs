@@ -285,9 +285,9 @@ pub(crate) async fn cancel_comment_draft(
 
 pub(crate) fn principal_to_actor(principal: &Principal) -> Actor {
     match principal {
-        Principal::User(uid) => Actor::User(*uid),
-        Principal::ApiKey(kid) => Actor::ApiKey(*kid),
-        Principal::Group(_) => Actor::User(atlas_domain::ids::UserId(uuid::Uuid::nil())),
+        Principal::User(uid) => Actor::User(atlas_domain::UserAttributionId(uid.0)),
+        Principal::ApiKey(kid) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0)),
+        Principal::Group(_) => Actor::User(atlas_domain::UserAttributionId(uuid::Uuid::nil())),
     }
 }
 
@@ -438,11 +438,13 @@ fn wikilink_to_unified_dto(
 
 fn attachment_to_dto(a: atlas_domain::entities::documents::Attachment) -> TaskAttachmentDto {
     let created_by = if let Some(uid) = a.created_by_user_id {
-        actor_to_dto(&Actor::User(uid))
+        actor_to_dto(&Actor::User(atlas_domain::UserAttributionId(uid.0)))
     } else if let Some(kid) = a.created_by_api_key_id {
-        actor_to_dto(&Actor::ApiKey(kid))
+        actor_to_dto(&Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0)))
     } else {
-        actor_to_dto(&Actor::User(UserId(uuid::Uuid::nil())))
+        actor_to_dto(&Actor::User(atlas_domain::UserAttributionId(
+            uuid::Uuid::nil(),
+        )))
     };
 
     TaskAttachmentDto {
@@ -457,8 +459,8 @@ fn attachment_to_dto(a: atlas_domain::entities::documents::Attachment) -> TaskAt
 
 fn assignee_ref_to_actor(r: AssigneeRef) -> Actor {
     match r {
-        AssigneeRef::User(uid) => Actor::User(uid),
-        AssigneeRef::ApiKey(kid) => Actor::ApiKey(kid),
+        AssigneeRef::User(uid) => Actor::User(atlas_domain::UserAttributionId(uid.0)),
+        AssigneeRef::ApiKey(kid) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0)),
     }
 }
 
@@ -480,7 +482,7 @@ pub(crate) async fn resolve_actor_dto(
                 conn: (*state.db).clone(),
             };
             let display_name = repo
-                .find_by_id(*uid)
+                .find_by_id(UserId(uid.0))
                 .await
                 .ok()
                 .flatten()
@@ -497,7 +499,7 @@ pub(crate) async fn resolve_actor_dto(
             let repo = PgApiKeyRepo {
                 conn: (*state.db).clone(),
             };
-            let key = repo.get_by_id(*kid).await.ok().flatten();
+            let key = repo.get_by_id(ApiKeyId(kid.0)).await.ok().flatten();
             ActorDto {
                 r#type: "api_key".into(),
                 id: kid.0,
@@ -520,7 +522,7 @@ async fn resolve_assignee_actor_dto(state: &AppState, actor: &Actor) -> ActorDto
             let repo = PgUserRepo {
                 conn: (*state.db).clone(),
             };
-            let user = repo.find_by_id(*uid).await.ok().flatten();
+            let user = repo.find_by_id(UserId(uid.0)).await.ok().flatten();
             ActorDto {
                 r#type: "user".into(),
                 id: uid.0,
@@ -535,7 +537,7 @@ async fn resolve_assignee_actor_dto(state: &AppState, actor: &Actor) -> ActorDto
             let repo = PgApiKeyRepo {
                 conn: (*state.db).clone(),
             };
-            let key = repo.get_by_id(*kid).await.ok().flatten();
+            let key = repo.get_by_id(ApiKeyId(kid.0)).await.ok().flatten();
             ActorDto {
                 r#type: "api_key".into(),
                 id: kid.0,
@@ -756,7 +758,7 @@ async fn enrich_activity_entries(
 
     for e in &entries {
         match &e.actor {
-            Actor::User(uid) => user_ids.push(*uid),
+            Actor::User(uid) => user_ids.push(UserId(uid.0)),
             Actor::ApiKey(_) => needs_keys = true,
         }
     }
@@ -3091,11 +3093,11 @@ fn comment_attachment_to_dto_with_comment_id(
         sha256: attachment.sha256,
         actor: attachment
             .created_by_user_id
-            .map(|id| actor_to_dto(&Actor::User(id)))
+            .map(|id| actor_to_dto(&Actor::User(atlas_domain::UserAttributionId(id.0))))
             .or_else(|| {
                 attachment
                     .created_by_api_key_id
-                    .map(|id| actor_to_dto(&Actor::ApiKey(id)))
+                    .map(|id| actor_to_dto(&Actor::ApiKey(atlas_domain::ApiKeyAttributionId(id.0))))
             }),
         created_at: attachment.created_at,
         url: None,
@@ -4405,8 +4407,8 @@ pub(crate) async fn list_workspace_activity(
     let limit = q.limit.unwrap_or(50).clamp(1, 200) as u64;
 
     let actor = match (&member.user, &member.api_key_id) {
-        (Some(user), _) => Actor::User(user.id),
-        (None, Some(kid)) => Actor::ApiKey(*kid),
+        (Some(user), _) => Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        (None, Some(kid)) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0)),
         _ => return Err(ApiError::Unauthorized),
     };
 
@@ -4626,7 +4628,7 @@ async fn enrich_workspace_activity_entries(
 
     for a in &activities {
         match &a.actor {
-            Actor::User(uid) => user_ids.push(*uid),
+            Actor::User(uid) => user_ids.push(UserId(uid.0)),
             Actor::ApiKey(_) => needs_keys = true,
         }
     }
@@ -4736,8 +4738,8 @@ pub(crate) async fn list_workspace_tasks(
     let q = parse_workspace_task_query(raw_query.as_deref().unwrap_or(""))?;
 
     let actor = match (&member.user, &member.api_key_id) {
-        (Some(user), _) => Actor::User(user.id),
-        (None, Some(key_id)) => Actor::ApiKey(*key_id),
+        (Some(user), _) => Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        (None, Some(key_id)) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(key_id.0)),
         (None, None) => return Err(ApiError::Unauthorized),
     };
 

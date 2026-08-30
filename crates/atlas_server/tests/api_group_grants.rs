@@ -57,7 +57,10 @@ async fn create_member(
 
     support::activate_user_in_db(db, user.id.0).await;
 
-    let ctx = WorkspaceCtx::new(ws_id, Actor::User(user.id));
+    let ctx = WorkspaceCtx::new(
+        ws_id,
+        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+    );
     db.membership_repo()
         .add(&ctx, user.id, MemberRole::Member)
         .await
