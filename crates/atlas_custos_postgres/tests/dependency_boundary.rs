@@ -9,15 +9,18 @@
 //! `atlas_custos`, and `atlas_postgres` (plus std/third-party deps) and never
 //! on `atlas_acta` or any application crate.
 //!
-//! This test enforces only the cargo dependency edge, matching
-//! `crates/atlas_custos/tests/dependency_boundary.rs`. It cannot observe raw
-//! SQL against another component's tables; the raw-SQL half of the boundary
-//! (no Acta-owned table touched from this crate) is documented in `lib.rs`
-//! together with its known temporary exception, and is closed by the revoke
-//! split in the next change of this series.
+//! Also enforces the raw-SQL half of the boundary (design D4): no source file
+//! in this crate names an Acta-owned table in executable code. A full
+//! inventory of every Acta table is out of scope here — that is PR7's CI grep
+//! gate over the eight *Custos* tables, run in the other direction. This test
+//! is scoped to `task_assignees`, the one Acta table this crate ever touched
+//! (via the api-key revoke transaction, before the D4 split moved that write
+//! to `atlas_server`).
 
 use serde_json::Value;
 use std::collections::{HashSet, VecDeque};
+use std::fs;
+use std::path::Path;
 use std::process::Command;
 
 /// Product/application crates `atlas_custos_postgres` must never reach,
@@ -59,6 +62,64 @@ fn atlas_custos_postgres_dependency_closure_excludes_forbidden_crates() {
              atlas_postgres"
         );
     }
+}
+
+/// Acta-owned table names this crate must never reference outside a comment.
+const FORBIDDEN_ACTA_TABLE_NAMES: &[&str] = &["task_assignees"];
+
+#[test]
+fn no_acta_table_names_in_sql() {
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let src_dir = Path::new(manifest_dir).join("src");
+
+    let mut violations = Vec::new();
+    for path in rust_source_files(&src_dir) {
+        let content = fs::read_to_string(&path).expect("read source file");
+
+        for (line_no, line) in content.lines().enumerate() {
+            let trimmed = line.trim_start();
+            let is_comment = trimmed.starts_with("//");
+            if is_comment {
+                continue;
+            }
+
+            for table in FORBIDDEN_ACTA_TABLE_NAMES {
+                if line.contains(table) {
+                    violations.push(format!(
+                        "{}:{}: references Acta-owned table `{table}` outside a comment",
+                        path.display(),
+                        line_no + 1
+                    ));
+                }
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "atlas_custos_postgres must not name an Acta-owned table in executable code:\n{}",
+        violations.join("\n")
+    );
+}
+
+fn rust_source_files(dir: &Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    let mut queue = VecDeque::from([dir.to_path_buf()]);
+
+    while let Some(current) = queue.pop_front() {
+        let entries = fs::read_dir(&current).expect("read_dir on crate source tree");
+        for entry in entries {
+            let entry = entry.expect("dir entry");
+            let path = entry.path();
+            if path.is_dir() {
+                queue.push_back(path);
+            } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+                files.push(path);
+            }
+        }
+    }
+
+    files
 }
 
 /// Returns the set of package names reachable from `root_package`, following

@@ -51,8 +51,8 @@ use crate::{
     error::ApiError,
     persistence::repos::{
         ApiKeyRepo, NewApiKey, PermissionGrantRepo, PgApiKeyRepo, PgPermissionGrantRepo,
-        PgProjectRepo, PgSecurityAuditRepo, PgUserRepo, PgWorkspaceRepo, ProjectRepo, UserRepo,
-        WorkspaceRepo,
+        PgProjectRepo, PgSecurityAuditRepo, PgTaskAssigneeRepo, PgUserRepo, PgWorkspaceRepo,
+        ProjectRepo, UserRepo, WorkspaceRepo,
     },
     state::AppState,
 };
@@ -863,6 +863,15 @@ pub(crate) async fn revoke_user_api_key(
             other => ApiError::Internal {
                 message: other.to_string(),
             },
+        })?;
+
+    // Acta-side half of the revoke split (design D4): the Custos row update
+    // above and this task-assignee cleanup share `txn`, so they commit or
+    // roll back together exactly as they did before the split.
+    PgTaskAssigneeRepo::unassign_api_key_in(&txn, key_id)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
         })?;
 
     PgSecurityAuditRepo::append_in(
