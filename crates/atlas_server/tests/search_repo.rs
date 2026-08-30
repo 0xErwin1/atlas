@@ -232,14 +232,14 @@ async fn grant_ws_scope(
         conn: db.conn().clone(),
     };
     repo.upsert(NewPermissionGrant {
-        workspace_id: ws_id,
+        workspace_id: atlas_custos::WorkspaceScope((ws_id).0),
         user_id: Some(user_id),
         api_key_id: None,
         group_id: None,
-        project_id: None,
-        folder_id: None,
-        document_id: None,
-        board_id: None,
+        resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+            &atlas_acta::permissions::ResourceRef::Workspace,
+            ws_id,
+        ),
         role: ResourceRole::Viewer,
         created_by_user_id: Some(grantor_id),
         created_by_api_key_id: None,
@@ -259,14 +259,14 @@ async fn grant_doc(
         conn: db.conn().clone(),
     };
     repo.upsert(NewPermissionGrant {
-        workspace_id: ws_id,
+        workspace_id: atlas_custos::WorkspaceScope((ws_id).0),
         user_id: Some(user_id),
         api_key_id: None,
         group_id: None,
-        project_id: None,
-        folder_id: None,
-        document_id: Some(doc_id),
-        board_id: None,
+        resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+            &atlas_acta::permissions::ResourceRef::Document(doc_id),
+            ws_id,
+        ),
         role: ResourceRole::Viewer,
         created_by_user_id: Some(grantor_id),
         created_by_api_key_id: None,
@@ -286,14 +286,14 @@ async fn grant_board(
         conn: db.conn().clone(),
     };
     repo.upsert(NewPermissionGrant {
-        workspace_id: ws_id,
+        workspace_id: atlas_custos::WorkspaceScope((ws_id).0),
         user_id: Some(user_id),
         api_key_id: None,
         group_id: None,
-        project_id: None,
-        folder_id: None,
-        document_id: None,
-        board_id: Some(board_id),
+        resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+            &atlas_acta::permissions::ResourceRef::Board(board_id),
+            ws_id,
+        ),
         role: ResourceRole::Viewer,
         created_by_user_id: Some(grantor_id),
         created_by_api_key_id: None,
@@ -313,14 +313,14 @@ async fn grant_project(
         conn: db.conn().clone(),
     };
     repo.upsert(NewPermissionGrant {
-        workspace_id: ws_id,
+        workspace_id: atlas_custos::WorkspaceScope((ws_id).0),
         user_id: Some(user_id),
         api_key_id: None,
         group_id: None,
-        project_id: Some(project_id),
-        folder_id: None,
-        document_id: None,
-        board_id: None,
+        resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+            &atlas_acta::permissions::ResourceRef::Project(project_id),
+            ws_id,
+        ),
         role: ResourceRole::Viewer,
         created_by_user_id: Some(grantor_id),
         created_by_api_key_id: None,

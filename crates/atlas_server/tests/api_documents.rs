@@ -3310,14 +3310,14 @@ async fn member_client_with_document_grant(
     };
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
             user_id: Some(user.id),
             api_key_id: None,
             group_id: None,
-            project_id: None,
-            folder_id: None,
-            document_id: None,
-            board_id: None,
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Workspace,
+                ws.id,
+            ),
             role: atlas_server::authz::ResourceRole::Viewer,
             created_by_user_id: None,
             created_by_api_key_id: None,
@@ -3326,14 +3326,16 @@ async fn member_client_with_document_grant(
         .expect("upsert workspace viewer grant");
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
             user_id: Some(user.id),
             api_key_id: None,
             group_id: None,
-            project_id: None,
-            folder_id: None,
-            document_id: Some(atlas_acta::ids::DocumentId(document_id)),
-            board_id: None,
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Document(atlas_acta::ids::DocumentId(
+                    document_id,
+                )),
+                ws.id,
+            ),
             role,
             created_by_user_id: None,
             created_by_api_key_id: None,
@@ -3536,14 +3538,14 @@ async fn viewer_cannot_create_document() {
     };
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
             user_id: Some(viewer_user.id),
             api_key_id: None,
             group_id: None,
-            project_id: Some(ProjectId(project.id)),
-            folder_id: None,
-            document_id: None,
-            board_id: None,
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Project(ProjectId(project.id)),
+                ws.id,
+            ),
             role: ResourceRole::Viewer,
             created_by_user_id: None,
             created_by_api_key_id: None,
@@ -3621,14 +3623,14 @@ async fn api_key_actor_write_sets_actor_type_api_key() {
     };
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
             user_id: None,
             api_key_id: Some(ApiKeyId(key_created.id)),
             group_id: None,
-            project_id: Some(ProjectId(project.id)),
-            folder_id: None,
-            document_id: None,
-            board_id: None,
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Project(ProjectId(project.id)),
+                ws.id,
+            ),
             role: ResourceRole::Editor,
             created_by_user_id: Some(owner_user.id),
             created_by_api_key_id: None,
@@ -3714,14 +3716,14 @@ async fn member_client_with_optional_project_grant(
         };
         grant_repo
             .upsert(NewPermissionGrant {
-                workspace_id: ws.id,
+                workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
                 user_id: Some(user.id),
                 api_key_id: None,
                 group_id: None,
-                project_id: Some(pid),
-                folder_id: None,
-                document_id: None,
-                board_id: None,
+                resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                    &atlas_acta::permissions::ResourceRef::Project(pid),
+                    ws.id,
+                ),
                 role,
                 created_by_user_id: None,
                 created_by_api_key_id: None,

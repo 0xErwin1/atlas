@@ -497,14 +497,14 @@ async fn create_scoped_agent(
         conn: db.conn().clone(),
     }
     .upsert(NewPermissionGrant {
-        workspace_id: ws_id,
+        workspace_id: atlas_custos::WorkspaceScope(ws_id.0),
         user_id: None,
         api_key_id: Some(key.id),
         group_id: None,
-        project_id: None,
-        folder_id: None,
-        document_id: None,
-        board_id: None,
+        resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+            &atlas_acta::permissions::ResourceRef::Workspace,
+            ws_id,
+        ),
         role: ResourceRole::Viewer,
         created_by_user_id: Some(owner_id),
         created_by_api_key_id: None,

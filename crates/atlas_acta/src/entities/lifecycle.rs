@@ -152,9 +152,12 @@ pub struct RestoreTarget {
 /// record; Acta holds only its identity, never dereferencing it or naming
 /// `SecurityAuditId` (a Custos type) directly, mirroring the `WorkspaceScope`
 /// pattern (D2). `atlas_server` converts to/from the real `SecurityAuditId`
-/// at the composition layer via its `.0` uuid — no behavior change. Whether a
-/// database FK backs this reference is a decision for S3/S4 under the
-/// cross-schema FK rule.
+/// at the composition layer via its `.0` uuid — no behavior change. S3c (T6.7,
+/// D6) decided this reference is never backed by a database FK:
+/// `purge_operations.commit_audit_id`'s FK to `security_audit_log` was
+/// dropped by the O1 migration, since it would otherwise become an
+/// Acta-table-to-Custos-table FK once `security_audit_log` moves to
+/// `custos.*`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct SecurityAuditRef(pub Uuid);

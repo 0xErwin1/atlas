@@ -552,14 +552,14 @@ async fn data_migration_backfills_grant_for_existing_workspace_key() {
 
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
             user_id: None,
             api_key_id: Some(key.id),
             group_id: None,
-            project_id: None,
-            folder_id: None,
-            document_id: None,
-            board_id: None,
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Workspace,
+                ws.id,
+            ),
             role: atlas_server::authz::ResourceRole::Editor,
             created_by_user_id: Some(owner_user.id),
             created_by_api_key_id: None,
@@ -591,7 +591,11 @@ async fn data_migration_backfills_grant_for_existing_workspace_key() {
 
     // Verify the grant exists (post back-fill)
     let has_grant = grant_repo
-        .principal_has_any_grant_in_workspace(ws.id, None, Some(key.id))
+        .principal_has_any_grant_in_workspace(
+            atlas_custos::WorkspaceScope(ws.id.0),
+            None,
+            Some(key.id),
+        )
         .await
         .expect("check grant existence");
     assert!(

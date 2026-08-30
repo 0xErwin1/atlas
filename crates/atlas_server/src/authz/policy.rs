@@ -1,147 +1,30 @@
-//! The permission-grant cluster: `PermissionGrant` and its repository port, and
-//! the `resolve()` role-resolution algorithm over a resource chain.
+//! The `resolve()` role-resolution algorithm over a resource chain, and the
+//! grant-authorization guards built on top of it.
 //!
-//! Relocated from `atlas_domain` (S2d D1). `PermissionGrant` carries five Acta
-//! resource ids as typed fields (`project_id`, `folder_id`, `document_id`,
-//! `board_id`, plus `workspace_id`) — the exact type-level mirror of the FK
-//! columns S3c collapses into `resource_ref` — so moving it into `atlas_custos`
-//! as-is would reintroduce the forbidden `custos -> acta` edge. Grant
-//! resolution over Acta chains **is** composition today; it belongs at the
-//! `atlas_server` composition layer until S3b lifts it into Custos behind a
-//! `ResourceProvider` port. No resolution logic changed in this move.
+//! The permission-grant cluster itself (`PermissionGrant`, `NewPermissionGrant`,
+//! `ResolutionQuery`, `PermissionGrantRepo`, `ResourceRole`) was relocated from
+//! `atlas_domain` (S2d D1) and parked here through S3a/S3b: it carried five
+//! Acta resource ids as typed fields (`project_id`, `folder_id`, `document_id`,
+//! `board_id`, plus `workspace_id`), so moving it into `atlas_custos` as-is
+//! would have reintroduced the forbidden `custos -> acta` edge. S3c's
+//! `resource_ref`/`WorkspaceScope` collapse removed the last Acta type from
+//! the cluster, and T6.9 moved it into `atlas_custos` (+ the repo impl into
+//! `atlas_custos_postgres`). The re-exports below keep every existing
+//! `crate::authz::policy::{...}` import path resolving unchanged.
+//!
+//! `resolve()` itself stays here: it walks an Acta `ResourceChain` and reads
+//! Acta's `MemberRole`, so it cannot move into Custos without reintroducing
+//! that same edge. No resolution logic changed in this move.
 
-use async_trait::async_trait;
 use atlas_acta::entities::identity::MemberRole;
-use atlas_acta::ids::BoardId;
-use atlas_acta::ids::DocumentId;
-use atlas_acta::ids::FolderId;
-use atlas_acta::ids::ProjectId;
-use atlas_acta::ids::WorkspaceId;
 use atlas_acta::permissions::ResourceRef;
 use atlas_acta::permissions::Visibility;
-use atlas_core::error::DomainError;
-use atlas_core::principal::ApiKeyId;
-use atlas_core::principal::GroupId;
-use atlas_core::principal::{Principal, UserId};
-use chrono::{DateTime, Utc};
-use uuid::Uuid;
+use atlas_core::principal::Principal;
 
-#[derive(Debug, Clone)]
-pub struct PermissionGrantId(pub Uuid);
-
-impl PermissionGrantId {
-    pub fn new() -> Self {
-        Self(Uuid::now_v7())
-    }
-}
-
-impl Default for PermissionGrantId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct PermissionGrant {
-    pub id: PermissionGrantId,
-    pub workspace_id: WorkspaceId,
-    pub user_id: Option<UserId>,
-    pub api_key_id: Option<ApiKeyId>,
-    pub group_id: Option<GroupId>,
-    pub project_id: Option<ProjectId>,
-    pub folder_id: Option<FolderId>,
-    pub document_id: Option<DocumentId>,
-    pub board_id: Option<BoardId>,
-    pub role: ResourceRole,
-    pub created_by_user_id: Option<UserId>,
-    pub created_by_api_key_id: Option<ApiKeyId>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone)]
-pub struct NewPermissionGrant {
-    pub workspace_id: WorkspaceId,
-    pub user_id: Option<UserId>,
-    pub api_key_id: Option<ApiKeyId>,
-    pub group_id: Option<GroupId>,
-    pub project_id: Option<ProjectId>,
-    pub folder_id: Option<FolderId>,
-    pub document_id: Option<DocumentId>,
-    pub board_id: Option<BoardId>,
-    pub role: ResourceRole,
-    pub created_by_user_id: Option<UserId>,
-    pub created_by_api_key_id: Option<ApiKeyId>,
-}
-
-/// Parameters for the hot-path grant resolution query.
-pub struct ResolutionQuery {
-    pub workspace_id: WorkspaceId,
-    /// Set for User principals.
-    pub user_id: Option<Uuid>,
-    /// Set for ApiKey principals.
-    pub api_key_id: Option<Uuid>,
-    /// Group IDs the user belongs to in this workspace.
-    /// Populated by B2 (build_resolution_query); defaults empty — no group grants gathered.
-    pub group_ids: Vec<Uuid>,
-    pub chain_projects: Vec<Uuid>,
-    pub chain_folders: Vec<Uuid>,
-    pub doc_id: Option<Uuid>,
-    pub board_id: Option<Uuid>,
-}
-
-#[async_trait]
-pub trait PermissionGrantRepo: Send + Sync {
-    /// Insert or update a grant (upsert on the unique principal+resource key).
-    async fn upsert(&self, grant: NewPermissionGrant) -> Result<PermissionGrant, DomainError>;
-
-    /// Load all grants applicable to a principal for a given chain of resource IDs.
-    async fn load_grants_for_resolution(
-        &self,
-        query: ResolutionQuery,
-    ) -> Result<Vec<(ResourceRef, ResourceRole)>, DomainError>;
-
-    /// Delete a specific grant by ID (scoped to the workspace for tenancy).
-    async fn delete(
-        &self,
-        grant_id: PermissionGrantId,
-        workspace_id: WorkspaceId,
-    ) -> Result<(), DomainError>;
-
-    /// List grants for a specific resource (cursor-paginated).
-    async fn list_for_resource(
-        &self,
-        workspace_id: WorkspaceId,
-        resource: &ResourceRef,
-        after_id: Option<Uuid>,
-        limit: u64,
-    ) -> Result<Vec<PermissionGrant>, DomainError>;
-
-    /// Find a grant by id, scoped to the workspace and the resource it was
-    /// issued for. Returns `None` when the grant does not exist, belongs to a
-    /// different workspace, or targets a different resource.
-    async fn find_by_id(
-        &self,
-        workspace_id: WorkspaceId,
-        resource: &ResourceRef,
-        grant_id: PermissionGrantId,
-    ) -> Result<Option<PermissionGrant>, DomainError>;
-
-    /// List all grants that belong to a specific API key, across all workspaces.
-    async fn list_for_api_key(
-        &self,
-        api_key_id: ApiKeyId,
-    ) -> Result<Vec<PermissionGrant>, DomainError>;
-
-    /// Delete a grant by its id, ownership-checked — the grant must belong to the
-    /// given api_key_id. Returns Ok(false) when the grant was not found or does not
-    /// belong to the key (caller should treat that as 404).
-    async fn delete_for_api_key(
-        &self,
-        grant_id: PermissionGrantId,
-        api_key_id: ApiKeyId,
-    ) -> Result<bool, DomainError>;
-}
+pub use atlas_custos::entities::permissions::{
+    NewPermissionGrant, PermissionGrant, PermissionGrantId, ResourceRole,
+};
+pub use atlas_custos::ports::grant_repo::{PermissionGrantRepo, ResolutionQuery};
 
 #[derive(Debug, Clone)]
 pub struct ChainSegment {
@@ -232,16 +115,10 @@ fn apply_agent_cap(principal: &Principal, role: Option<ResourceRole>) -> Option<
     }
 }
 
-/// `ResourceRole`, `ShareDenied`, and the grant-authorization guards, relocated
-/// from `atlas_domain` (S2e). They stay in `atlas_server::authz` alongside
-/// `resolve()`, the only other consumer of these types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum ResourceRole {
-    Viewer,
-    Editor,
-    Admin,
-}
-
+/// `ShareDenied` and the grant-authorization guards, relocated from
+/// `atlas_domain` (S2e). They stay in `atlas_server::authz` alongside
+/// `resolve()`, the only other consumer of `ResourceRole` outside the moved
+/// grant cluster (T6.9).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ShareDenied {
     AgentsNeverManageGrants,

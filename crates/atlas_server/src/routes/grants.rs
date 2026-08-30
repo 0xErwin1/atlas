@@ -115,14 +115,14 @@ pub(crate) async fn create_project_grant(
     };
 
     let new_grant = NewPermissionGrant {
-        workspace_id: auth.workspace.id,
+        workspace_id: atlas_custos::WorkspaceScope(auth.workspace.id.0),
         user_id,
         api_key_id,
         group_id,
-        project_id: Some(auth.resource.0.id),
-        folder_id: None,
-        document_id: None,
-        board_id: None,
+        resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+            &ResourceRef::Project(auth.resource.0.id),
+            auth.workspace.id,
+        ),
         role: role_in_play,
         created_by_user_id,
         created_by_api_key_id,
@@ -202,9 +202,17 @@ pub(crate) async fn list_project_grants(
     let grant_repo = PgPermissionGrantRepo {
         conn: (*state.db).clone(),
     };
-    let resource = ResourceRef::Project(auth.resource.0.id);
+    let resource = atlas_acta::permissions::resource_ref_codec::to_core(
+        &ResourceRef::Project(auth.resource.0.id),
+        auth.workspace.id,
+    );
     let mut grants = grant_repo
-        .list_for_resource(auth.workspace.id, &resource, after_id, limit + 1)
+        .list_for_resource(
+            atlas_custos::WorkspaceScope(auth.workspace.id.0),
+            &resource,
+            after_id,
+            limit + 1,
+        )
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
@@ -256,8 +264,11 @@ pub(crate) async fn delete_project_grant(
 
     let target_grant = grant_repo
         .find_by_id(
-            auth.workspace.id,
-            &ResourceRef::Project(auth.resource.0.id),
+            atlas_custos::WorkspaceScope(auth.workspace.id.0),
+            &atlas_acta::permissions::resource_ref_codec::to_core(
+                &ResourceRef::Project(auth.resource.0.id),
+                auth.workspace.id,
+            ),
             PermissionGrantId(grant_uuid),
         )
         .await
@@ -289,11 +300,15 @@ pub(crate) async fn delete_project_grant(
         message: e.to_string(),
     })?;
 
-    PgPermissionGrantRepo::delete_in(&txn, grant_id, auth.workspace.id)
-        .await
-        .map_err(|e| ApiError::Internal {
-            message: e.to_string(),
-        })?;
+    PgPermissionGrantRepo::delete_in(
+        &txn,
+        grant_id,
+        atlas_custos::WorkspaceScope(auth.workspace.id.0),
+    )
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
 
     // The audit row and the delete commit or roll back together.
     PgSecurityAuditRepo::append_in(
@@ -376,14 +391,14 @@ pub(crate) async fn create_workspace_grant(
     };
 
     let new_grant = NewPermissionGrant {
-        workspace_id: auth.workspace.id,
+        workspace_id: atlas_custos::WorkspaceScope(auth.workspace.id.0),
         user_id,
         api_key_id,
         group_id,
-        project_id: None,
-        folder_id: None,
-        document_id: None,
-        board_id: None,
+        resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+            &ResourceRef::Workspace,
+            auth.workspace.id,
+        ),
         role: role_in_play,
         created_by_user_id,
         created_by_api_key_id,
@@ -464,8 +479,11 @@ pub(crate) async fn list_workspace_grants(
     };
     let mut grants = grant_repo
         .list_for_resource(
-            auth.workspace.id,
-            &ResourceRef::Workspace,
+            atlas_custos::WorkspaceScope(auth.workspace.id.0),
+            &atlas_acta::permissions::resource_ref_codec::to_core(
+                &ResourceRef::Workspace,
+                auth.workspace.id,
+            ),
             after_id,
             limit + 1,
         )
@@ -519,8 +537,11 @@ pub(crate) async fn delete_workspace_grant(
 
     let target_grant = grant_repo
         .find_by_id(
-            auth.workspace.id,
-            &ResourceRef::Workspace,
+            atlas_custos::WorkspaceScope(auth.workspace.id.0),
+            &atlas_acta::permissions::resource_ref_codec::to_core(
+                &ResourceRef::Workspace,
+                auth.workspace.id,
+            ),
             PermissionGrantId(grant_uuid),
         )
         .await
@@ -552,11 +573,15 @@ pub(crate) async fn delete_workspace_grant(
         message: e.to_string(),
     })?;
 
-    PgPermissionGrantRepo::delete_in(&txn, grant_id, auth.workspace.id)
-        .await
-        .map_err(|e| ApiError::Internal {
-            message: e.to_string(),
-        })?;
+    PgPermissionGrantRepo::delete_in(
+        &txn,
+        grant_id,
+        atlas_custos::WorkspaceScope(auth.workspace.id.0),
+    )
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
 
     // The audit row and the delete commit or roll back together.
     PgSecurityAuditRepo::append_in(

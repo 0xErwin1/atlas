@@ -7,7 +7,13 @@ use atlas_acta::entities::lifecycle::RestoreTarget;
 use atlas_acta::entities::lifecycle::SecurityAuditRef;
 use atlas_acta::entities::lifecycle::TrashItem;
 use atlas_acta::entities::lifecycle::TrashKind;
+use atlas_acta::ids::BoardId;
+use atlas_acta::ids::DocumentId;
+use atlas_acta::ids::FolderId;
+use atlas_acta::ids::ProjectId;
 use atlas_acta::ids::WorkspaceId;
+use atlas_acta::permissions::ResourceRef;
+use atlas_acta::permissions::resource_ref_codec;
 use atlas_acta::ports::attachment_store::AttachmentStore;
 use atlas_core::error::DomainError;
 use atlas_core::principal::UserId;
@@ -18,7 +24,7 @@ use sea_orm::{
 use uuid::Uuid;
 
 use crate::persistence::repos::{
-    NewPurgeOperation, PgAttachmentLifecycle, PgPurgeOperationRepo,
+    NewPurgeOperation, PgAttachmentLifecycle, PgGrantHygiene, PgPurgeOperationRepo,
     append_resource_purge_committed_in, append_resource_restored_in,
 };
 use atlas_postgres::db_err;
@@ -235,7 +241,8 @@ impl TrashService {
                 .await?;
         }
 
-        self.delete_purge_closure(&txn, kind, target_id).await?;
+        self.delete_purge_closure(&txn, &ctx, kind, target_id)
+            .await?;
         let pending = operations
             .record_attempt_in(
                 &txn,
@@ -400,40 +407,83 @@ impl TrashService {
         .map(|rows| rows.into_iter().map(|row| row.sha256).collect())
     }
 
+    /// Runs the transitive hard-delete closure for `kind`/`id`, then revokes
+    /// every grant targeting a row the closure deleted.
+    ///
+    /// Every `DELETE` on a grant-target table (documents, boards, folders,
+    /// projects) returns the ids it removed (`RETURNING id`); the collected
+    /// ids are encoded as resource refs and handed to `GrantHygiene` once,
+    /// inside this same transaction (T6.4/T6.5). The O1 migration dropped the
+    /// target FKs' `ON DELETE CASCADE`, so this call is what keeps a grant
+    /// from outliving the resource it targets.
     async fn delete_purge_closure(
         &self,
         conn: &impl ConnectionTrait,
+        ctx: &WorkspaceCtx,
         kind: TrashKind,
         id: Uuid,
     ) -> Result<(), DomainError> {
+        let mut revoked: Vec<atlas_core::ids::ResourceRef> = Vec::new();
+
         match kind {
             TrashKind::Project => {
-                purge_documents_in(conn, "project_id = $1 OR folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE project_id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)", id).await?;
+                let document_ids = purge_documents_in(conn, "project_id = $1 OR folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE project_id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)", id).await?;
+                extend_resource_refs(&mut revoked, ctx, document_ids, |i| {
+                    ResourceRef::Document(DocumentId(i))
+                });
+
                 purge_tasks_in(conn, "project_id = $1", id).await?;
-                purge_grants_in(
-                    conn,
-                    "board",
-                    "SELECT id FROM boards WHERE project_id = $1",
-                    id,
-                )
-                .await?;
-                execute(conn, "DELETE FROM boards WHERE project_id = $1", id).await?;
-                delete_folders_leaf_first(conn, "project_id = $1", id).await?;
-                purge_grants_in(conn, "project", "SELECT id FROM projects WHERE id = $1", id)
-                    .await?;
-                execute(conn, "DELETE FROM projects WHERE id = $1", id).await?;
+
+                let board_ids =
+                    execute_returning_ids(conn, "DELETE FROM boards WHERE project_id = $1", id)
+                        .await?;
+                extend_resource_refs(&mut revoked, ctx, board_ids, |i| {
+                    ResourceRef::Board(BoardId(i))
+                });
+
+                let folder_ids = delete_folders_leaf_first(conn, "project_id = $1", id).await?;
+                extend_resource_refs(&mut revoked, ctx, folder_ids, |i| {
+                    ResourceRef::Folder(FolderId(i))
+                });
+
+                let project_ids =
+                    execute_returning_ids(conn, "DELETE FROM projects WHERE id = $1", id).await?;
+                extend_resource_refs(&mut revoked, ctx, project_ids, |i| {
+                    ResourceRef::Project(ProjectId(i))
+                });
             }
             TrashKind::Folder => {
-                purge_documents_in(conn, "folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)", id).await?;
+                let document_ids = purge_documents_in(conn, "folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)", id).await?;
+                extend_resource_refs(&mut revoked, ctx, document_ids, |i| {
+                    ResourceRef::Document(DocumentId(i))
+                });
+
                 purge_tasks_in(conn, "board_id IN (SELECT id FROM boards WHERE folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure))", id).await?;
-                purge_grants_in(conn, "board", "SELECT id FROM boards WHERE folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)", id).await?;
-                execute(conn, "DELETE FROM boards WHERE folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)", id).await?;
-                delete_folders_leaf_first(conn, "id = $1", id).await?;
+
+                let board_ids = execute_returning_ids(conn, "DELETE FROM boards WHERE folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)", id).await?;
+                extend_resource_refs(&mut revoked, ctx, board_ids, |i| {
+                    ResourceRef::Board(BoardId(i))
+                });
+
+                let folder_ids = delete_folders_leaf_first(conn, "id = $1", id).await?;
+                extend_resource_refs(&mut revoked, ctx, folder_ids, |i| {
+                    ResourceRef::Folder(FolderId(i))
+                });
             }
-            TrashKind::Document => purge_documents_in(conn, "id = $1", id).await?,
+            TrashKind::Document => {
+                let document_ids = purge_documents_in(conn, "id = $1", id).await?;
+                extend_resource_refs(&mut revoked, ctx, document_ids, |i| {
+                    ResourceRef::Document(DocumentId(i))
+                });
+            }
             TrashKind::Comment => purge_comments_in(conn, "id = $1", id).await?,
             TrashKind::Attachment => purge_attachments_in(conn, "id = $1", id).await?,
         }
+
+        if !revoked.is_empty() {
+            PgGrantHygiene::revoke_grants_for_in(conn, &revoked).await?;
+        }
+
         Ok(())
     }
 
@@ -515,24 +565,44 @@ async fn execute(conn: &impl ConnectionTrait, sql: &str, id: Uuid) -> Result<u64
     .map_err(db_err)
 }
 
-/// Deletes `permission_grants` rows targeting a `kind` resource returned by
-/// `target_ids_sql`. Must run before the matching parent-row DELETE: the O1
-/// migration dropped the target FKs' `ON DELETE CASCADE`.
-async fn purge_grants_in(
+/// Runs a `DELETE` and returns the ids of the rows it removed.
+///
+/// `sql` must not already contain a `RETURNING` clause. Used for every
+/// grant-target table (documents, boards, folders, projects) so the caller
+/// can revoke exactly the grants that targeted a now-deleted row (T6.4/T6.5).
+async fn execute_returning_ids(
     conn: &impl ConnectionTrait,
-    kind: &str,
-    target_ids_sql: &str,
+    sql: &str,
     id: Uuid,
-) -> Result<(), DomainError> {
-    execute(
-        conn,
-        &format!(
-            "DELETE FROM permission_grants WHERE resource_ref IN (SELECT 'acta::{kind}::' || id::text FROM ({target_ids_sql}) targets)"
-        ),
-        id,
-    )
-    .await?;
-    Ok(())
+) -> Result<Vec<Uuid>, DomainError> {
+    #[derive(FromQueryResult)]
+    struct IdRow {
+        id: Uuid,
+    }
+
+    IdRow::find_by_statement(Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        format!("{sql} RETURNING id"),
+        [id.into()],
+    ))
+    .all(conn)
+    .await
+    .map(|rows| rows.into_iter().map(|row| row.id).collect())
+    .map_err(db_err)
+}
+
+/// Encodes each deleted row id as a resource ref via `encode` and appends it
+/// to `revoked`, scoped to the closure's own workspace.
+fn extend_resource_refs(
+    revoked: &mut Vec<atlas_core::ids::ResourceRef>,
+    ctx: &WorkspaceCtx,
+    ids: Vec<Uuid>,
+    encode: impl Fn(Uuid) -> ResourceRef,
+) {
+    revoked.extend(
+        ids.into_iter()
+            .map(|id| resource_ref_codec::to_core(&encode(id), ctx.workspace_id)),
+    );
 }
 
 async fn purge_attachments_in(
@@ -577,7 +647,7 @@ async fn purge_documents_in(
     conn: &impl ConnectionTrait,
     scope: &str,
     id: Uuid,
-) -> Result<(), DomainError> {
+) -> Result<Vec<Uuid>, DomainError> {
     purge_comments_in(
         conn,
         &format!("document_id IN (SELECT id FROM documents WHERE {scope})"),
@@ -596,15 +666,7 @@ async fn purge_documents_in(
         id,
     )
     .await?;
-    purge_grants_in(
-        conn,
-        "document",
-        &format!("SELECT id FROM documents WHERE {scope}"),
-        id,
-    )
-    .await?;
-    execute(conn, &format!("DELETE FROM documents WHERE {scope}"), id).await?;
-    Ok(())
+    execute_returning_ids(conn, &format!("DELETE FROM documents WHERE {scope}"), id).await
 }
 
 async fn purge_tasks_in(
@@ -671,18 +733,10 @@ async fn delete_folders_leaf_first(
     conn: &impl ConnectionTrait,
     roots: &str,
     id: Uuid,
-) -> Result<(), DomainError> {
-    purge_grants_in(
-        conn,
-        "folder",
-        &format!(
-            "WITH RECURSIVE closure AS (SELECT id FROM folders WHERE {roots} UNION ALL SELECT child.id FROM folders child JOIN closure parent ON child.parent_folder_id = parent.id) SELECT id FROM closure"
-        ),
-        id,
-    )
-    .await?;
+) -> Result<Vec<Uuid>, DomainError> {
+    let mut deleted_ids = Vec::new();
     loop {
-        let deleted = execute(
+        let batch = execute_returning_ids(
             conn,
             &format!(
                 "WITH RECURSIVE closure AS (SELECT id FROM folders WHERE {roots} UNION ALL SELECT child.id FROM folders child JOIN closure parent ON child.parent_folder_id = parent.id) DELETE FROM folders f WHERE f.id IN (SELECT id FROM closure) AND NOT EXISTS (SELECT 1 FROM folders child WHERE child.parent_folder_id = f.id AND child.id IN (SELECT id FROM closure))"
@@ -690,11 +744,12 @@ async fn delete_folders_leaf_first(
             id,
         )
         .await?;
-        if deleted == 0 {
+        if batch.is_empty() {
             break;
         }
+        deleted_ids.extend(batch);
     }
-    Ok(())
+    Ok(deleted_ids)
 }
 
 async fn restore_exists(

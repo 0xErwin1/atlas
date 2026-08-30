@@ -1086,14 +1086,14 @@ async fn reference_batch_conceals_inaccessible_and_cross_tenant_targets() {
         conn: db.conn().clone(),
     }
     .upsert(NewPermissionGrant {
-        workspace_id: ws.id,
+        workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
         user_id: Some(viewer_user.id),
         api_key_id: None,
         group_id: None,
-        project_id: None,
-        folder_id: None,
-        document_id: None,
-        board_id: Some(BoardId(source_board.id)),
+        resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+            &atlas_acta::permissions::ResourceRef::Board(BoardId(source_board.id)),
+            ws.id,
+        ),
         role: ResourceRole::Viewer,
         created_by_user_id: None,
         created_by_api_key_id: None,
@@ -3474,14 +3474,14 @@ async fn reference_read_and_delete_enforce_viewer_and_editor_boundaries() {
     ] {
         grant_repo
             .upsert(NewPermissionGrant {
-                workspace_id: ws.id,
+                workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
                 user_id: Some(user_id),
                 api_key_id: None,
                 group_id: None,
-                project_id: None,
-                folder_id: None,
-                document_id: None,
-                board_id: Some(BoardId(board.id)),
+                resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                    &atlas_acta::permissions::ResourceRef::Board(BoardId(board.id)),
+                    ws.id,
+                ),
                 role,
                 created_by_user_id: None,
                 created_by_api_key_id: None,
@@ -4871,14 +4871,14 @@ async fn grant_board_editor(
     };
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws_id,
+            workspace_id: atlas_custos::WorkspaceScope((ws_id).0),
             user_id: Some(user_id),
             api_key_id: None,
             group_id: None,
-            project_id: None,
-            folder_id: None,
-            document_id: None,
-            board_id: Some(BoardId(board_id)),
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Board(BoardId(board_id)),
+                ws_id,
+            ),
             role: ResourceRole::Editor,
             created_by_user_id: None,
             created_by_api_key_id: None,
@@ -5396,14 +5396,14 @@ async fn board_scoped_grant_is_honored_by_resolution() {
     };
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
             user_id: Some(grantee_user.id),
             api_key_id: None,
             group_id: None,
-            project_id: None,
-            folder_id: None,
-            document_id: None,
-            board_id: Some(BoardId(board.id)),
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Board(BoardId(board.id)),
+                ws.id,
+            ),
             role: ResourceRole::Viewer,
             created_by_user_id: None,
             created_by_api_key_id: None,
@@ -5509,14 +5509,14 @@ async fn board_scoped_grant_grants_task_access() {
     };
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
             user_id: Some(grantee_user.id),
             api_key_id: None,
             group_id: None,
-            project_id: None,
-            folder_id: None,
-            document_id: None,
-            board_id: Some(BoardId(board.id)),
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Board(BoardId(board.id)),
+                ws.id,
+            ),
             role: ResourceRole::Viewer,
             created_by_user_id: None,
             created_by_api_key_id: None,

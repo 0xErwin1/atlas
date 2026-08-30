@@ -150,14 +150,14 @@ async fn agent_cannot_share_project() {
     };
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
             user_id: None,
             api_key_id: Some(ApiKeyId(key_created_id)),
             group_id: None,
-            project_id: Some(ProjectId(project.id)),
-            folder_id: None,
-            document_id: None,
-            board_id: None,
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Project(ProjectId(project.id)),
+                ws.id,
+            ),
             role: atlas_server::authz::ResourceRole::Editor,
             created_by_user_id: Some(owner_user.id),
             created_by_api_key_id: None,
@@ -287,21 +287,21 @@ async fn editor_cannot_grant_admin() {
     use atlas_server::authz::policy::NewPermissionGrant;
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
             user_id: Some(editor_user.id),
             api_key_id: None,
             group_id: None,
-            project_id: Some(
-                owner
-                    .get_project(&ws.slug, "editor-guard-proj")
-                    .await
-                    .expect("get project")
-                    .id
-                    .into(),
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Project(
+                    owner
+                        .get_project(&ws.slug, "editor-guard-proj")
+                        .await
+                        .expect("get project")
+                        .id
+                        .into(),
+                ),
+                ws.id,
             ),
-            folder_id: None,
-            document_id: None,
-            board_id: None,
             role: atlas_server::authz::ResourceRole::Editor,
             created_by_user_id: Some(owner_user.id),
             created_by_api_key_id: None,
@@ -356,14 +356,14 @@ async fn viewer_cannot_update_project() {
     use atlas_server::authz::policy::NewPermissionGrant;
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
             user_id: Some(viewer_user.id),
             api_key_id: None,
             group_id: None,
-            project_id: Some(project.id.into()),
-            folder_id: None,
-            document_id: None,
-            board_id: None,
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Project(project.id.into()),
+                ws.id,
+            ),
             role: atlas_server::authz::ResourceRole::Viewer,
             created_by_user_id: Some(owner_user.id),
             created_by_api_key_id: None,
@@ -460,14 +460,14 @@ async fn agent_with_grant_sees_private_project_in_list() {
     };
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
             user_id: None,
             api_key_id: Some(ApiKeyId(key_created_id)),
             group_id: None,
-            project_id: Some(ProjectId(project.id)),
-            folder_id: None,
-            document_id: None,
-            board_id: None,
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Project(ProjectId(project.id)),
+                ws.id,
+            ),
             role: atlas_server::authz::ResourceRole::Viewer,
             created_by_user_id: Some(owner_user.id),
             created_by_api_key_id: None,
@@ -614,14 +614,14 @@ async fn user_with_workspace_scoped_grant_sees_private_projects_in_list() {
     };
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
             user_id: Some(grantee_user.id),
             api_key_id: None,
             group_id: None,
-            project_id: None,
-            folder_id: None,
-            document_id: None,
-            board_id: None,
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Workspace,
+                ws.id,
+            ),
             role: atlas_server::authz::ResourceRole::Viewer,
             created_by_user_id: Some(owner_user.id),
             created_by_api_key_id: None,
@@ -677,14 +677,14 @@ async fn share_denied_403_does_not_leak_variant_name() {
     };
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
             user_id: None,
             api_key_id: Some(ApiKeyId(key_created.id)),
             group_id: None,
-            project_id: Some(ProjectId(project.id)),
-            folder_id: None,
-            document_id: None,
-            board_id: None,
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Project(ProjectId(project.id)),
+                ws.id,
+            ),
             role: atlas_server::authz::ResourceRole::Editor,
             created_by_user_id: Some(owner_user.id),
             created_by_api_key_id: None,

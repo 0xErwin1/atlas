@@ -182,14 +182,14 @@ async fn grant_board(
     };
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws_id,
+            workspace_id: atlas_custos::WorkspaceScope((ws_id).0),
             user_id: Some(user_id),
             api_key_id: None,
             group_id: None,
-            project_id: None,
-            folder_id: None,
-            document_id: None,
-            board_id: Some(board_id),
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Board(board_id),
+                ws_id,
+            ),
             role,
             created_by_user_id: None,
             created_by_api_key_id: None,
@@ -210,14 +210,14 @@ async fn grant_project(
     };
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws_id,
+            workspace_id: atlas_custos::WorkspaceScope((ws_id).0),
             user_id: Some(user_id),
             api_key_id: None,
             group_id: None,
-            project_id: Some(project_id),
-            folder_id: None,
-            document_id: None,
-            board_id: None,
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Project(project_id),
+                ws_id,
+            ),
             role,
             created_by_user_id: None,
             created_by_api_key_id: None,
@@ -970,14 +970,14 @@ async fn workspace_activity_ungranted_api_key_cannot_see_workspace_visible_proje
     };
     grant_repo
         .upsert(NewPermissionGrant {
-            workspace_id: ws.id,
+            workspace_id: atlas_custos::WorkspaceScope((ws.id).0),
             user_id: None,
             api_key_id: Some(atlas_core::principal::ApiKeyId(key_created.id)),
             group_id: None,
-            project_id: None,
-            folder_id: None,
-            document_id: None,
-            board_id: Some(BoardId(priv_board.id)),
+            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Board(BoardId(priv_board.id)),
+                ws.id,
+            ),
             role: ResourceRole::Viewer,
             created_by_user_id: None,
             created_by_api_key_id: None,
