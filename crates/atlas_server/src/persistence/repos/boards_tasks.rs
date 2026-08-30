@@ -46,6 +46,7 @@ use atlas_acta::ports::boards_tasks::WorkspaceActivityRow;
 use atlas_acta::ports::boards_tasks::WorkspaceActivityScope;
 use atlas_core::error::DomainError;
 use atlas_core::position;
+use atlas_core::principal::ApiKeyId;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
@@ -1710,6 +1711,33 @@ impl PgTaskAssigneeRepo {
                 id: principal_id,
             });
         }
+
+        Ok(())
+    }
+
+    /// Removes every task assignment for the given api key, using the
+    /// provided connection or transaction.
+    ///
+    /// Acta-side half of the api-key revoke split (design D4): the Custos
+    /// side revokes the key via `PgApiKeyRepo::revoke_for_user_in`, and this
+    /// call unassigns it from every task it holds. The caller composes both
+    /// in one transaction so the revoke and the unassignment commit or roll
+    /// back together, exactly as they did before the split.
+    ///
+    /// Unlike `remove_in`, this is not scoped to a single task or workspace —
+    /// revoking a key clears its assignments everywhere — and a key with no
+    /// assignments is not an error.
+    pub async fn unassign_api_key_in(
+        conn: &impl ConnectionTrait,
+        api_key_id: ApiKeyId,
+    ) -> Result<(), DomainError> {
+        conn.execute_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "DELETE FROM task_assignees WHERE assignee_api_key_id = $1",
+            [api_key_id.0.into()],
+        ))
+        .await
+        .map_err(db_err)?;
 
         Ok(())
     }

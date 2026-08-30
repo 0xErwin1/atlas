@@ -10,7 +10,7 @@ use atlas_custos::ids::SessionId;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    EntityTrait, FromQueryResult, QueryFilter, Statement, TransactionTrait,
+    EntityTrait, FromQueryResult, QueryFilter, Statement,
 };
 
 use crate::entities::identity::{
@@ -592,78 +592,6 @@ impl ApiKeyRepo for PgApiKeyRepo {
         }))
     }
 
-    async fn revoke(
-        &self,
-        scope: atlas_custos::WorkspaceScope,
-        id: ApiKeyId,
-    ) -> Result<(), DomainError> {
-        use sea_orm::IntoActiveModel;
-
-        let txn = self.conn.begin().await.map_err(db_err)?;
-
-        let row = api_key::Entity::find_by_id(id.0)
-            .filter(api_key::Column::WorkspaceId.eq(scope.0))
-            .one(&txn)
-            .await
-            .map_err(db_err)?
-            .ok_or(DomainError::NotFound {
-                entity: "api_key",
-                id: id.0,
-            })?;
-
-        let mut active = row.into_active_model();
-        active.revoked_at = Set(Some(Utc::now()));
-        active.update(&txn).await.map_err(db_err)?;
-
-        txn.execute_raw(Statement::from_sql_and_values(
-            sea_orm::DatabaseBackend::Postgres,
-            "DELETE FROM task_assignees WHERE assignee_api_key_id = $1",
-            [id.0.into()],
-        ))
-        .await
-        .map_err(db_err)?;
-
-        txn.commit().await.map_err(db_err)?;
-        Ok(())
-    }
-
-    async fn revoke_for_user(&self, user_id: UserId, id: ApiKeyId) -> Result<(), DomainError> {
-        use sea_orm::IntoActiveModel;
-
-        let txn = self.conn.begin().await.map_err(db_err)?;
-
-        let row = api_key::Entity::find_by_id(id.0)
-            .filter(api_key::Column::RevokedAt.is_null())
-            .one(&txn)
-            .await
-            .map_err(db_err)?
-            .ok_or(DomainError::NotFound {
-                entity: "api_key",
-                id: id.0,
-            })?;
-
-        if row.created_by_user_id != user_id.0 {
-            return Err(DomainError::Forbidden {
-                message: "api key is not owned by this user".into(),
-            });
-        }
-
-        let mut active = row.into_active_model();
-        active.revoked_at = Set(Some(Utc::now()));
-        active.update(&txn).await.map_err(db_err)?;
-
-        txn.execute_raw(Statement::from_sql_and_values(
-            sea_orm::DatabaseBackend::Postgres,
-            "DELETE FROM task_assignees WHERE assignee_api_key_id = $1",
-            [id.0.into()],
-        ))
-        .await
-        .map_err(db_err)?;
-
-        txn.commit().await.map_err(db_err)?;
-        Ok(())
-    }
-
     async fn list(&self, scope: atlas_custos::WorkspaceScope) -> Result<Vec<ApiKey>, DomainError> {
         api_key::Entity::find()
             .filter(api_key::Column::WorkspaceId.eq(scope.0))
@@ -849,12 +777,16 @@ impl PgApiKeyRepo {
         active.update(conn).await.map(api_key_from).map_err(db_err)
     }
 
-    /// Revokes a user-owned API key using the provided connection or transaction.
+    /// Marks a user-owned API key revoked using the provided connection or
+    /// transaction. Returns the key record as it existed before the revoke,
+    /// for use in audit event metadata.
     ///
-    /// Mirrors `revoke_for_user` but accepts any `ConnectionTrait` so the revoke
-    /// (including the task-assignee cleanup) can participate in an existing txn
-    /// alongside an audit-log append. Returns the key record as it existed before
-    /// the revoke for use in the audit event metadata.
+    /// This performs only the Custos-owned row update. It intentionally does
+    /// not touch `task_assignees` — that table is Acta-owned, and Acta code no
+    /// longer lives in this crate (D4). The caller composes the task-assignee
+    /// cleanup in the same transaction: see
+    /// `routes::api_keys::revoke_user_api_key` in `atlas_server`, which pairs
+    /// this call with `PgTaskAssigneeRepo::unassign_api_key_in` before commit.
     pub async fn revoke_for_user_in<C: ConnectionTrait>(
         conn: &C,
         user_id: UserId,
@@ -883,14 +815,6 @@ impl PgApiKeyRepo {
         let mut active = row.into_active_model();
         active.revoked_at = Set(Some(Utc::now()));
         active.update(conn).await.map_err(db_err)?;
-
-        conn.execute_raw(Statement::from_sql_and_values(
-            sea_orm::DatabaseBackend::Postgres,
-            "DELETE FROM task_assignees WHERE assignee_api_key_id = $1",
-            [id.0.into()],
-        ))
-        .await
-        .map_err(db_err)?;
 
         Ok(key_snapshot)
     }

@@ -110,11 +110,6 @@ pub trait ApiKeyRepo: Send + Sync {
         &self,
         token_hash: &str,
     ) -> Result<Option<ApiKey>, DomainError>;
-    async fn revoke(&self, scope: WorkspaceScope, id: ApiKeyId) -> Result<(), DomainError>;
-    /// Revokes a key by id after verifying the caller owns it (or is root/system-admin).
-    /// Returns `DomainError::NotFound` when the key does not exist or is already revoked.
-    /// Returns `DomainError::Forbidden` when `user_id` does not own the key.
-    async fn revoke_for_user(&self, user_id: UserId, id: ApiKeyId) -> Result<(), DomainError>;
     /// Lists non-revoked keys scoped to the workspace via the deprecated workspace_id FK.
     /// Kept for callers that have not yet migrated to grant-based listing (C2b).
     async fn list(&self, scope: WorkspaceScope) -> Result<Vec<ApiKey>, DomainError>;
