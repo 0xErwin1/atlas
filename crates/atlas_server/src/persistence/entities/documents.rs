@@ -1,11 +1,19 @@
-use atlas_domain::entities::documents::{
-    Attachment, AttachmentWriteIntent, Document, DocumentLink, DocumentRevision, DocumentSummary,
-    RevisionMeta,
-};
-use atlas_domain::ids::{
-    ApiKeyId, AttachmentId, DocumentId, FolderId, ProjectId, RevisionId, TaskId, UserId,
-    WorkspaceId,
-};
+use atlas_acta::entities::documents::Attachment;
+use atlas_acta::entities::documents::AttachmentWriteIntent;
+use atlas_acta::entities::documents::Document;
+use atlas_acta::entities::documents::DocumentLink;
+use atlas_acta::entities::documents::DocumentRevision;
+use atlas_acta::entities::documents::DocumentSummary;
+use atlas_acta::entities::documents::RevisionMeta;
+use atlas_acta::ids::AttachmentId;
+use atlas_acta::ids::DocumentId;
+use atlas_acta::ids::FolderId;
+use atlas_acta::ids::ProjectId;
+use atlas_acta::ids::RevisionId;
+use atlas_acta::ids::TaskId;
+use atlas_acta::ids::WorkspaceId;
+use atlas_core::principal::ApiKeyId;
+use atlas_core::principal::UserId;
 use chrono::{DateTime, Utc};
 use sea_orm::entity::prelude::*;
 
@@ -225,8 +233,8 @@ pub fn attachment_from(m: attachment::Model) -> Attachment {
         workspace_id: WorkspaceId(m.workspace_id),
         document_id: m.document_id.map(DocumentId),
         task_id: m.task_id.map(TaskId),
-        comment_id: m.comment_id.map(atlas_domain::ids::CommentId),
-        draft_id: m.draft_id.map(atlas_domain::ids::CommentDraftId),
+        comment_id: m.comment_id.map(atlas_acta::ids::CommentId),
+        draft_id: m.draft_id.map(atlas_acta::ids::CommentDraftId),
         file_name: m.file_name,
         content_type: m.content_type,
         size_bytes: m.size_bytes,

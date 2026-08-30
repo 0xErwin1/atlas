@@ -2,19 +2,18 @@
 
 mod support;
 
-use atlas_domain::{
-    entities::{
-        documents::{NewAttachment, NewDocument},
-        security_audit::AuditFilters,
-        workspace_core::{NewFolder, NewProject},
-    },
-    permissions::{Visibility, VisibilityRole},
-    ports::{
-        documents::{AttachmentRepo, DocumentRepo},
-        security_audit::SecurityAuditRepo,
-        workspace_core::{FolderRepo, ProjectRepo},
-    },
-};
+use atlas_acta::entities::documents::NewAttachment;
+use atlas_acta::entities::documents::NewDocument;
+use atlas_acta::entities::workspace_core::NewFolder;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
+use atlas_acta::ports::documents::AttachmentRepo;
+use atlas_acta::ports::documents::DocumentRepo;
+use atlas_acta::ports::workspace_core::FolderRepo;
+use atlas_acta::ports::workspace_core::ProjectRepo;
+use atlas_custos::entities::security_audit::AuditFilters;
+use atlas_custos::ports::security_audit::SecurityAuditRepo;
 use atlas_server::{
     persistence::repos::{PgAttachmentRepo, PgSecurityAuditRepo},
     services::DocumentService,

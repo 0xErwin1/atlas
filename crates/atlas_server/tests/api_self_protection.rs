@@ -19,10 +19,12 @@
 
 mod support;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::identity::MemberRole;
 use atlas_api::dtos::LoginRequest;
 use atlas_client::{AtlasClient, ClientError};
-use atlas_domain::entities::security_audit::AuditFilters;
-use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole};
+use atlas_custos::entities::security_audit::AuditFilters;
 use atlas_server::persistence::repos::{
     MembershipRepo, NewUser, PgSecurityAuditRepo, SecurityAuditRepo, UserRepo,
 };
@@ -38,7 +40,7 @@ async fn create_and_login_system_admin(
     server: &TestServer,
     db: &TestDb,
     username: &str,
-) -> (AtlasClient, atlas_domain::entities::identity::User) {
+) -> (AtlasClient, atlas_custos::entities::identity::User) {
     use atlas_server::auth::password;
 
     let hash = password::hash("TestPassword1!".to_string())
@@ -75,10 +77,10 @@ async fn create_and_login_system_admin(
 /// Adds a user as a workspace member without login capability.
 async fn add_member(
     db: &TestDb,
-    ws_id: atlas_domain::ids::WorkspaceId,
+    ws_id: atlas_acta::ids::WorkspaceId,
     username: &str,
     role: MemberRole,
-) -> atlas_domain::entities::identity::User {
+) -> atlas_custos::entities::identity::User {
     let user = db
         .user_repo()
         .create(NewUser {
@@ -94,7 +96,7 @@ async fn add_member(
 
     let ctx = WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     db.membership_repo()
         .add(&ctx, user.id, role)
@@ -308,7 +310,7 @@ async fn self_role_change_admin_returns_403() {
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(admin_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(admin_user.id.0)),
     );
     db.membership_repo()
         .add(&ctx, admin_user.id, MemberRole::Admin)
@@ -410,7 +412,7 @@ async fn system_admin_self_role_change_returns_403() {
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(sysadmin_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(sysadmin_user.id.0)),
     );
     db.membership_repo()
         .add(&ctx, sysadmin_user.id, MemberRole::Admin)

@@ -7,7 +7,6 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-atlas_domain.workspace = true
 atlas_api.workspace = true
 reqwest.workspace = true
 serde.workspace = true

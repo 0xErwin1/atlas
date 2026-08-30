@@ -7,18 +7,27 @@ use axum::{
 };
 use serde::de::DeserializeOwned;
 
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::boards_tasks::{Board, Task},
-    entities::documents::Document,
-    entities::identity::{ApiKey, MemberRole, Workspace},
-    entities::workspace_core::Project,
-    ids::{ApiKeyId, DocumentId, FolderId, ProjectId, UserId},
-    permissions::{
-        Capability, CapabilityAction, CapabilityFamily, Principal, ResourceRef, ResourceRole,
-        Visibility,
-    },
-};
+use crate::authz::ResourceRole;
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::boards_tasks::Board;
+use atlas_acta::entities::boards_tasks::Task;
+use atlas_acta::entities::documents::Document;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::entities::identity::Workspace;
+use atlas_acta::entities::workspace_core::Project;
+use atlas_acta::ids::DocumentId;
+use atlas_acta::ids::FolderId;
+use atlas_acta::ids::ProjectId;
+use atlas_acta::permissions::ResourceRef;
+use atlas_acta::permissions::Visibility;
+use atlas_core::principal::ApiKeyId;
+use atlas_core::principal::Principal;
+use atlas_core::principal::UserId;
+use atlas_custos::capability::Capability;
+use atlas_custos::capability::CapabilityAction;
+use atlas_custos::capability::CapabilityFamily;
+use atlas_custos::entities::identity::ApiKey;
 
 use super::batch_authorization::ProjectionAuthContext;
 use super::policy::{ChainSegment, ResolutionInput, ResolutionQuery, ResourceChain, resolve};
@@ -181,9 +190,9 @@ impl ResolvedResource for ProjectRes {
     ) -> Result<(Self, ResourceChain), ApiError> {
         let slug = params.get("project_slug").ok_or(ApiError::NotFound)?;
 
-        let ctx = atlas_domain::WorkspaceCtx::new(
+        let ctx = atlas_acta::actor::WorkspaceCtx::new(
             ws.id,
-            atlas_domain::Actor::User(atlas_domain::UserAttributionId(UserId::new().0)),
+            atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(UserId::new().0)),
         );
         let repo = PgProjectRepo { conn: db.clone() };
         let project = repo
@@ -234,7 +243,7 @@ impl ResolvedResource for WorkspaceRes {
 ///
 /// Builds the `folder → project → workspace` permission chain. Cross-tenant or
 /// deleted folders surface as `ApiError::NotFound` (no existence disclosure).
-pub struct FolderRes(pub atlas_domain::entities::workspace_core::Folder);
+pub struct FolderRes(pub atlas_acta::entities::workspace_core::Folder);
 
 impl ResolvedResource for FolderRes {
     type PathParams = HashMap<String, String>;
@@ -276,7 +285,7 @@ impl ResolvedResource for FolderRes {
 pub async fn build_folder_chain(
     db: &sea_orm::DatabaseConnection,
     ws: &Workspace,
-    folder: &atlas_domain::entities::workspace_core::Folder,
+    folder: &atlas_acta::entities::workspace_core::Folder,
 ) -> Result<ResourceChain, ApiError> {
     let ancestry = resolve_folder_ancestry(db, ws.id, folder.id).await?;
 
@@ -292,9 +301,9 @@ pub async fn build_folder_chain(
     let effective_project_id = ancestry.last().and_then(|f| f.project_id);
     if let Some(project_id) = effective_project_id {
         let repo = PgProjectRepo { conn: db.clone() };
-        let ctx = atlas_domain::WorkspaceCtx::new(
+        let ctx = atlas_acta::actor::WorkspaceCtx::new(
             ws.id,
-            atlas_domain::Actor::User(atlas_domain::UserAttributionId(UserId::new().0)),
+            atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(UserId::new().0)),
         );
         let project = repo
             .find(&ctx, project_id)
@@ -479,8 +488,8 @@ async fn reject_archived_board(
 pub async fn build_board_chain(
     db: &sea_orm::DatabaseConnection,
     ws: &Workspace,
-    board_id: atlas_domain::ids::BoardId,
-    project_id: atlas_domain::ids::ProjectId,
+    board_id: atlas_acta::ids::BoardId,
+    project_id: atlas_acta::ids::ProjectId,
 ) -> Result<ResourceChain, ApiError> {
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
@@ -513,9 +522,9 @@ pub async fn build_board_chain(
     }
 
     let repo = PgProjectRepo { conn: db.clone() };
-    let ctx = atlas_domain::WorkspaceCtx::new(
+    let ctx = atlas_acta::actor::WorkspaceCtx::new(
         ws.id,
-        atlas_domain::Actor::User(atlas_domain::UserAttributionId(UserId::new().0)),
+        atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(UserId::new().0)),
     );
     let project = repo
         .find(&ctx, project_id)
@@ -773,9 +782,9 @@ async fn build_document_chain_from_parts(
     let effective_project_id = project_id.or(inherited_project_id);
     if let Some(project_id) = effective_project_id {
         let repo = PgProjectRepo { conn: db.clone() };
-        let ctx = atlas_domain::WorkspaceCtx::new(
+        let ctx = atlas_acta::actor::WorkspaceCtx::new(
             ws.id,
-            atlas_domain::Actor::User(atlas_domain::UserAttributionId(UserId::new().0)),
+            atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(UserId::new().0)),
         );
         let project = repo
             .find(&ctx, project_id)
@@ -805,15 +814,15 @@ async fn build_document_chain_from_parts(
 /// against cycles or pathologically deep trees.
 pub async fn resolve_folder_ancestry(
     db: &sea_orm::DatabaseConnection,
-    workspace_id: atlas_domain::ids::WorkspaceId,
+    workspace_id: atlas_acta::ids::WorkspaceId,
     leaf_id: FolderId,
-) -> Result<Vec<atlas_domain::entities::workspace_core::Folder>, ApiError> {
+) -> Result<Vec<atlas_acta::entities::workspace_core::Folder>, ApiError> {
     use crate::persistence::entities::workspace_core::folder_from;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
     const MAX_DEPTH: usize = 32;
 
-    let mut ancestry: Vec<atlas_domain::entities::workspace_core::Folder> = Vec::new();
+    let mut ancestry: Vec<atlas_acta::entities::workspace_core::Folder> = Vec::new();
     let mut current_id = Some(leaf_id);
 
     while let Some(fid) = current_id {
@@ -851,7 +860,7 @@ pub async fn resolve_folder_ancestry(
 pub async fn authorize_folder_destination(
     db: &sea_orm::DatabaseConnection,
     principal: &Principal,
-    membership: Option<atlas_domain::entities::identity::MemberRole>,
+    membership: Option<atlas_acta::entities::identity::MemberRole>,
     workspace: &Workspace,
     folder_id: FolderId,
     min: ResourceRole,
@@ -874,9 +883,9 @@ pub async fn authorize_folder_destination(
     let effective_project_id = ancestry.last().and_then(|f| f.project_id);
     if let Some(project_id) = effective_project_id {
         let repo = PgProjectRepo { conn: db.clone() };
-        let ctx = atlas_domain::WorkspaceCtx::new(
+        let ctx = atlas_acta::actor::WorkspaceCtx::new(
             workspace.id,
-            atlas_domain::Actor::User(atlas_domain::UserAttributionId(UserId::new().0)),
+            atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(UserId::new().0)),
         );
         let project = repo
             .find(&ctx, project_id)
@@ -921,9 +930,9 @@ pub async fn authorize_folder_destination(
 pub async fn authorize_board_destination(
     db: &sea_orm::DatabaseConnection,
     principal: &Principal,
-    membership: Option<atlas_domain::entities::identity::MemberRole>,
+    membership: Option<atlas_acta::entities::identity::MemberRole>,
     workspace: &Workspace,
-    column_id: atlas_domain::ids::ColumnId,
+    column_id: atlas_acta::ids::ColumnId,
     min: ResourceRole,
 ) -> Result<(), ApiError> {
     use crate::persistence::entities::boards_tasks::board_column;
@@ -963,7 +972,7 @@ pub async fn authorize_board_destination(
     Ok(())
 }
 
-fn project_visibility(vis: &atlas_domain::permissions::Visibility) -> Visibility {
+fn project_visibility(vis: &atlas_acta::permissions::Visibility) -> Visibility {
     vis.clone()
 }
 
@@ -975,7 +984,7 @@ pub struct Authorized<R: ResolvedResource, M: MinRole, S: RequiredScope = NoScop
     pub workspace: Workspace,
     pub resource: R,
     pub effective: ResourceRole,
-    pub membership: Option<atlas_domain::entities::identity::MemberRole>,
+    pub membership: Option<atlas_acta::entities::identity::MemberRole>,
     #[allow(
         dead_code,
         reason = "WU2-C1a retains request authorization state before route wiring"
@@ -1036,74 +1045,75 @@ where
         // instead of issuing two independent `get_by_id` lookups.
         let mut api_key: Option<ApiKey> = None;
 
-        let (domain_principal, membership_role) =
-            match &middleware_principal {
-                MiddlewarePrincipal::User(uid) => {
-                    let user_repo = PgUserRepo {
+        let (domain_principal, membership_role) = match &middleware_principal {
+            MiddlewarePrincipal::User(uid) => {
+                let user_repo = PgUserRepo {
+                    conn: (*state.db).clone(),
+                };
+                let user = user_repo
+                    .find_by_id(*uid)
+                    .await
+                    .map_err(|e| ApiError::Internal {
+                        message: e.to_string(),
+                    })?
+                    .ok_or(ApiError::Unauthorized)?;
+
+                if user.disabled_at.is_some() {
+                    return Err(ApiError::Unauthorized);
+                }
+
+                // is_root and is_system_admin synthesize Admin membership to gain
+                // global admin access to every workspace's content without being a member.
+                // This is a security-load-bearing short-circuit: weakening this check
+                // would silently remove global-admin content visibility.
+                if user.is_root || user.is_system_admin {
+                    let role = Some(atlas_acta::entities::identity::MemberRole::Admin);
+                    (Principal::User(*uid), role)
+                } else {
+                    let membership_repo = PgMembershipRepo {
                         conn: (*state.db).clone(),
                     };
-                    let user = user_repo
-                        .find_by_id(*uid)
-                        .await
-                        .map_err(|e| ApiError::Internal {
-                            message: e.to_string(),
-                        })?
-                        .ok_or(ApiError::Unauthorized)?;
-
-                    if user.disabled_at.is_some() {
-                        return Err(ApiError::Unauthorized);
-                    }
-
-                    // is_root and is_system_admin synthesize Admin membership to gain
-                    // global admin access to every workspace's content without being a member.
-                    // This is a security-load-bearing short-circuit: weakening this check
-                    // would silently remove global-admin content visibility.
-                    if user.is_root || user.is_system_admin {
-                        let role = Some(atlas_domain::entities::identity::MemberRole::Admin);
-                        (Principal::User(*uid), role)
-                    } else {
-                        let membership_repo = PgMembershipRepo {
-                            conn: (*state.db).clone(),
-                        };
-                        let ctx = atlas_domain::WorkspaceCtx::new(
-                            workspace.id,
-                            atlas_domain::Actor::User(atlas_domain::UserAttributionId(uid.0)),
-                        );
-                        let membership = membership_repo.find(&ctx, *uid).await.map_err(|e| {
-                            ApiError::Internal {
+                    let ctx = atlas_acta::actor::WorkspaceCtx::new(
+                        workspace.id,
+                        atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(uid.0)),
+                    );
+                    let membership =
+                        membership_repo
+                            .find(&ctx, *uid)
+                            .await
+                            .map_err(|e| ApiError::Internal {
                                 message: e.to_string(),
-                            }
-                        })?;
+                            })?;
 
-                        if membership.is_none() {
-                            return Err(ApiError::NotFound);
-                        }
-
-                        let role = membership.map(|m| m.role);
-                        (Principal::User(*uid), role)
-                    }
-                }
-                MiddlewarePrincipal::ApiKey(kid) => {
-                    // Workspace access for an api key: it must hold a grant in this workspace, or
-                    // be global with a creator that can reach it. resolve_effective_role is the
-                    // downstream authority and returns None (→ 404) when the creator has no reach.
-                    if !api_key_can_access_workspace(&state.db, *kid, &workspace).await? {
+                    if membership.is_none() {
                         return Err(ApiError::NotFound);
                     }
 
-                    let key_repo = PgApiKeyRepo {
-                        conn: (*state.db).clone(),
-                    };
-                    api_key = key_repo
-                        .get_by_id(*kid)
-                        .await
-                        .map_err(|e| ApiError::Internal {
-                            message: e.to_string(),
-                        })?;
-
-                    (Principal::ApiKey(*kid), None)
+                    let role = membership.map(|m| m.role);
+                    (Principal::User(*uid), role)
                 }
-            };
+            }
+            MiddlewarePrincipal::ApiKey(kid) => {
+                // Workspace access for an api key: it must hold a grant in this workspace, or
+                // be global with a creator that can reach it. resolve_effective_role is the
+                // downstream authority and returns None (→ 404) when the creator has no reach.
+                if !api_key_can_access_workspace(&state.db, *kid, &workspace).await? {
+                    return Err(ApiError::NotFound);
+                }
+
+                let key_repo = PgApiKeyRepo {
+                    conn: (*state.db).clone(),
+                };
+                api_key = key_repo
+                    .get_by_id(*kid)
+                    .await
+                    .map_err(|e| ApiError::Internal {
+                        message: e.to_string(),
+                    })?;
+
+                (Principal::ApiKey(*kid), None)
+            }
+        };
 
         let path_map_value =
             serde_json::to_value(&path_params.0).map_err(|e| ApiError::Internal {
@@ -1435,7 +1445,7 @@ async fn effective_membership_for_user(
     let membership_repo = PgMembershipRepo { conn: db.clone() };
     let ctx = WorkspaceCtx::new(
         workspace.id,
-        Actor::User(atlas_domain::UserAttributionId(user_id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user_id.0)),
     );
     let membership = membership_repo
         .find(&ctx, user_id)

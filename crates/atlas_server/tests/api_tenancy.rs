@@ -7,8 +7,10 @@
 
 mod support;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::identity::MemberRole;
 use atlas_api::dtos::{CreateGrantRequest, CreateProjectRequest, GrantPrincipal};
-use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole};
 use atlas_server::persistence::repos::{MembershipRepo, NewUser, UserRepo};
 
 fn project_req(name: &str, slug: &str) -> CreateProjectRequest {
@@ -188,7 +190,7 @@ async fn member_of_both_workspaces_cannot_cross_scope_projects() {
 
     let ctx_a = WorkspaceCtx::new(
         ws_a.id,
-        Actor::User(atlas_domain::UserAttributionId(dual_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(dual_user.id.0)),
     );
     db.membership_repo()
         .add(&ctx_a, dual_user.id, MemberRole::Member)
@@ -197,7 +199,7 @@ async fn member_of_both_workspaces_cannot_cross_scope_projects() {
 
     let ctx_b = WorkspaceCtx::new(
         ws_b.id,
-        Actor::User(atlas_domain::UserAttributionId(dual_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(dual_user.id.0)),
     );
     db.membership_repo()
         .add(&ctx_b, dual_user.id, MemberRole::Member)

@@ -2,6 +2,16 @@
 
 mod support;
 
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::boards_tasks::NewTask;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::documents::NewDocument;
+use atlas_acta::semantic_search::EmbeddingInput;
+use atlas_acta::semantic_search::EmbeddingProvider;
+use atlas_acta::semantic_search::ResourceKind;
+use atlas_acta::semantic_search::SemanticIndexChunk;
+use atlas_acta::semantic_search::SemanticSearchSource;
 use atlas_api::{
     dtos::{
         ApiKeyScope, CreateProjectRequest, CreateUserApiKeyRequest,
@@ -9,16 +19,7 @@ use atlas_api::{
     },
     pagination::Page,
 };
-use atlas_domain::{
-    DomainError, WorkspaceCtx,
-    entities::{
-        boards_tasks::{NewBoard, NewTask, PositionBetween},
-        documents::NewDocument,
-    },
-    semantic_search::{
-        EmbeddingInput, EmbeddingProvider, ResourceKind, SemanticIndexChunk, SemanticSearchSource,
-    },
-};
+use atlas_core::error::DomainError;
 use atlas_server::{
     embeddings::DeterministicEmbeddingProvider,
     persistence::repos::{
@@ -170,7 +171,7 @@ async fn semantic_search_returns_compact_page_without_lexical_route_change() {
     let http = reqwest::Client::new();
     let ctx = WorkspaceCtx::new(
         ws.id,
-        atlas_domain::Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
 
     let doc = PgDocumentRepo::new(db.conn().clone(), 50)
@@ -277,12 +278,12 @@ fn reindex_url(base: &str, ws: &str) -> String {
 async fn seed_corpus_with_empty_queue(
     db: &support::TestDb,
     client: &atlas_client::AtlasClient,
-    ws: &atlas_domain::entities::identity::Workspace,
-    user: &atlas_domain::entities::identity::User,
+    ws: &atlas_acta::entities::identity::Workspace,
+    user: &atlas_custos::entities::identity::User,
 ) {
     let ctx = WorkspaceCtx::new(
         ws.id,
-        atlas_domain::Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
 
     PgDocumentRepo::new(db.conn().clone(), 50)
@@ -313,7 +314,7 @@ async fn seed_corpus_with_empty_queue(
         )
         .await
         .expect("seed project");
-    let project_id = atlas_domain::ids::ProjectId(project.id);
+    let project_id = atlas_acta::ids::ProjectId(project.id);
     let board = PgBoardRepo::new(db.conn().clone())
         .create_board(
             &ctx,
@@ -513,7 +514,7 @@ async fn semantic_search_api_key_scope_filters_hit_families() {
     let http = reqwest::Client::new();
     let ctx = WorkspaceCtx::new(
         ws.id,
-        atlas_domain::Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
 
     let doc = PgDocumentRepo::new(db.conn().clone(), 50)
@@ -543,7 +544,7 @@ async fn semantic_search_api_key_scope_filters_hit_families() {
         )
         .await
         .expect("seed project");
-    let project_id = atlas_domain::ids::ProjectId(project.id);
+    let project_id = atlas_acta::ids::ProjectId(project.id);
     let board = PgBoardRepo::new(db.conn().clone())
         .create_board(
             &ctx,
@@ -630,7 +631,7 @@ async fn semantic_search_api_key_scope_filters_hit_families() {
         })
         .await
         .expect("create api key");
-    let key_id = atlas_domain::ids::ApiKeyId(key.id);
+    let key_id = atlas_core::principal::ApiKeyId(key.id);
     PgApiKeyRepo::set_global_for_user_in(db.conn(), user.id, key_id, true)
         .await
         .expect("make key global");
@@ -646,7 +647,7 @@ async fn semantic_search_api_key_scope_filters_hit_families() {
         folder_id: None,
         document_id: None,
         board_id: None,
-        role: atlas_domain::permissions::ResourceRole::Viewer,
+        role: atlas_server::authz::ResourceRole::Viewer,
         created_by_user_id: Some(user.id),
         created_by_api_key_id: None,
     })

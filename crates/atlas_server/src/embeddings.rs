@@ -1,8 +1,7 @@
 use async_trait::async_trait;
-use atlas_domain::{
-    DomainError,
-    semantic_search::{EmbeddingInput, EmbeddingProvider},
-};
+use atlas_acta::semantic_search::EmbeddingInput;
+use atlas_acta::semantic_search::EmbeddingProvider;
+use atlas_core::error::DomainError;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::time::Duration;

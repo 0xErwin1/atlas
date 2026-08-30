@@ -1,7 +1,8 @@
-use atlas_domain::{
-    ids::WorkspaceId,
-    semantic_search::{EmbeddingInput, EmbeddingProvider, ResourceKind, SemanticSearchSource},
-};
+use atlas_acta::ids::WorkspaceId;
+use atlas_acta::semantic_search::EmbeddingInput;
+use atlas_acta::semantic_search::EmbeddingProvider;
+use atlas_acta::semantic_search::ResourceKind;
+use atlas_acta::semantic_search::SemanticSearchSource;
 use atlas_server::{
     config::{EmbeddingConfig, EmbeddingProviderKind, SCHEMA_EMBEDDING_DIMENSIONS},
     embeddings::{DeterministicEmbeddingProvider, OpenAiCompatibleEmbeddingProvider},

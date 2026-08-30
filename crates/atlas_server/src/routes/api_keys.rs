@@ -18,6 +18,12 @@ pub(crate) struct ApiKeyGrantPath {
     pub(crate) grant_id: uuid::Uuid,
 }
 
+use crate::authz::ResourceRole;
+use crate::authz::ShareDenied;
+use crate::authz::authorize_grant_target;
+use atlas_acta::actor::Actor;
+use atlas_acta::ids::ProjectId;
+use atlas_acta::ids::WorkspaceId;
 use atlas_api::{
     dtos::{
         ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, ApiKeyScope, CreateUserApiKeyRequest,
@@ -25,18 +31,15 @@ use atlas_api::{
     },
     pagination::{Cursor, Page},
 };
-use atlas_domain::{
-    Actor,
-    entities::{
-        identity::ApiKeyType,
-        security_audit::{NewSecurityAuditEvent, SecurityAction},
-    },
-    ids::{ApiKeyId, ProjectId, UserId, WorkspaceId},
-    permissions::{
-        Capability, CapabilityAction, CapabilityFamily, Principal, ResourceRole, ShareDenied,
-        authorize_grant_target,
-    },
-};
+use atlas_core::principal::ApiKeyId;
+use atlas_core::principal::Principal;
+use atlas_core::principal::UserId;
+use atlas_custos::capability::Capability;
+use atlas_custos::capability::CapabilityAction;
+use atlas_custos::capability::CapabilityFamily;
+use atlas_custos::entities::identity::ApiKeyType;
+use atlas_custos::entities::security_audit::NewSecurityAuditEvent;
+use atlas_custos::entities::security_audit::SecurityAction;
 use sea_orm::TransactionTrait;
 
 use crate::{
@@ -210,7 +213,7 @@ pub(crate) fn canonical_scopes(capabilities: &[Capability]) -> Vec<ApiKeyScope> 
         .collect()
 }
 
-fn key_to_dto(k: &atlas_domain::entities::identity::ApiKey) -> ApiKeyDto {
+fn key_to_dto(k: &atlas_custos::entities::identity::ApiKey) -> ApiKeyDto {
     ApiKeyDto {
         id: k.id.0,
         name: k.name.clone(),
@@ -289,7 +292,7 @@ pub(crate) async fn create_user_api_key(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: None,
-            actor: Actor::User(atlas_domain::UserAttributionId(user_id.0)),
+            actor: Actor::User(atlas_acta::actor::UserAttributionId(user_id.0)),
             action: SecurityAction::ApiKeyCreated,
             target_type: "api_key".to_string(),
             target_id: Some(key.id.0),
@@ -375,9 +378,9 @@ async fn resolve_resource_labels(
         let proj_repo = PgProjectRepo {
             conn: (*state.db).clone(),
         };
-        let ctx = atlas_domain::WorkspaceCtx::new(
+        let ctx = atlas_acta::actor::WorkspaceCtx::new(
             workspace_id,
-            atlas_domain::Actor::User(atlas_domain::UserAttributionId(caller.0)),
+            atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(caller.0)),
         );
         if let Ok(Some(proj)) = proj_repo.find(&ctx, project_id).await {
             project_map.insert(project_id, (proj.slug, proj.name));
@@ -853,8 +856,10 @@ pub(crate) async fn revoke_user_api_key(
     let key = PgApiKeyRepo::revoke_for_user_in(&txn, user_id, key_id)
         .await
         .map_err(|e| match e {
-            atlas_domain::DomainError::NotFound { .. } => ApiError::NotFound,
-            atlas_domain::DomainError::Forbidden { message } => ApiError::Forbidden { message },
+            atlas_core::error::DomainError::NotFound { .. } => ApiError::NotFound,
+            atlas_core::error::DomainError::Forbidden { message } => {
+                ApiError::Forbidden { message }
+            }
             other => ApiError::Internal {
                 message: other.to_string(),
             },
@@ -864,7 +869,7 @@ pub(crate) async fn revoke_user_api_key(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: None,
-            actor: Actor::User(atlas_domain::UserAttributionId(user_id.0)),
+            actor: Actor::User(atlas_acta::actor::UserAttributionId(user_id.0)),
             action: SecurityAction::ApiKeyRevoked,
             target_type: "api_key".to_string(),
             target_id: Some(key_id.0),
@@ -959,7 +964,7 @@ pub(crate) async fn update_user_api_key(
         let updated = PgApiKeyRepo::set_global_for_user_in(&txn, user_id, key_id, is_global)
             .await
             .map_err(|e| match e {
-                atlas_domain::DomainError::NotFound { .. } => ApiError::NotFound,
+                atlas_core::error::DomainError::NotFound { .. } => ApiError::NotFound,
                 other => ApiError::Internal {
                     message: other.to_string(),
                 },
@@ -969,7 +974,7 @@ pub(crate) async fn update_user_api_key(
             &txn,
             NewSecurityAuditEvent {
                 workspace_id: None,
-                actor: Actor::User(atlas_domain::UserAttributionId(user_id.0)),
+                actor: Actor::User(atlas_acta::actor::UserAttributionId(user_id.0)),
                 action: SecurityAction::ApiKeyGlobalChanged,
                 target_type: "api_key".to_string(),
                 target_id: Some(key_id.0),
@@ -992,7 +997,7 @@ pub(crate) async fn update_user_api_key(
         let updated = PgApiKeyRepo::set_scopes_for_user_in(&txn, user_id, key_id, scopes)
             .await
             .map_err(|e| match e {
-                atlas_domain::DomainError::NotFound { .. } => ApiError::NotFound,
+                atlas_core::error::DomainError::NotFound { .. } => ApiError::NotFound,
                 other => ApiError::Internal {
                     message: other.to_string(),
                 },
@@ -1002,7 +1007,7 @@ pub(crate) async fn update_user_api_key(
             &txn,
             NewSecurityAuditEvent {
                 workspace_id: None,
-                actor: Actor::User(atlas_domain::UserAttributionId(user_id.0)),
+                actor: Actor::User(atlas_acta::actor::UserAttributionId(user_id.0)),
                 action: SecurityAction::ApiKeyScopesChanged,
                 target_type: "api_key".to_string(),
                 target_id: Some(key_id.0),

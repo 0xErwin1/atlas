@@ -2,8 +2,10 @@
 
 pub(crate) mod route_matrix;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::ids::WorkspaceId;
 use atlas_client::AtlasClient;
-use atlas_domain::{Actor, WorkspaceCtx, ids::WorkspaceId};
 use atlas_server::{
     persistence::repos::{
         MembershipRepo, NewUser, NewWorkspace, PgActivationTokenRepo, PgApiKeyRepo, PgBoardRepo,
@@ -131,7 +133,7 @@ pub(crate) async fn activate_user_in_db(db: &TestDb, user_id: uuid::Uuid) {
 }
 
 pub(crate) async fn seed_workspace(db: &TestDb, username: &str) -> (Workspace, User) {
-    use atlas_domain::entities::identity::MemberRole;
+    use atlas_acta::entities::identity::MemberRole;
 
     let user_repo = db.user_repo();
     let ws_repo = db.workspace_repo();
@@ -164,7 +166,7 @@ pub(crate) async fn seed_workspace(db: &TestDb, username: &str) -> (Workspace, U
 
     let ctx = WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     membership_repo
         .add(&ctx, user.id, MemberRole::Owner)
@@ -177,7 +179,7 @@ pub(crate) async fn seed_workspace(db: &TestDb, username: &str) -> (Workspace, U
 pub(crate) fn ctx(ws: &Workspace, user: &User) -> WorkspaceCtx {
     WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     )
 }
 
@@ -341,13 +343,13 @@ pub(crate) async fn login_user_with_workspace(
 
     let ctx = WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     membership_repo
         .add(
             &ctx,
             user.id,
-            atlas_domain::entities::identity::MemberRole::Owner,
+            atlas_acta::entities::identity::MemberRole::Owner,
         )
         .await
         .expect("seed membership");

@@ -1,14 +1,13 @@
 use std::sync::Arc;
 
-use atlas_domain::{
-    DomainError, WorkspaceCtx,
-    entities::comments::{
-        CommentAttachmentDraft, CommentOwner, NewCommentAttachmentDraft,
-        comment_draft_create_digest_input,
-    },
-    ids::CommentDraftId,
-    ports::comments::CommentAttachmentDraftRepo,
-};
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::comments::CommentAttachmentDraft;
+use atlas_acta::entities::comments::CommentOwner;
+use atlas_acta::entities::comments::NewCommentAttachmentDraft;
+use atlas_acta::entities::comments::comment_draft_create_digest_input;
+use atlas_acta::ids::CommentDraftId;
+use atlas_acta::ports::comments::CommentAttachmentDraftRepo;
+use atlas_core::error::DomainError;
 use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
 

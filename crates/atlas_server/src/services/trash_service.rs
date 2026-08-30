@@ -1,11 +1,16 @@
-use atlas_domain::{
-    Actor, AttachmentStore, DomainError, WorkspaceCtx,
-    entities::lifecycle::{
-        PurgeExecutor, PurgeOperation, PurgeStatus, RestoreTarget, SecurityAuditRef, TrashItem,
-        TrashKind,
-    },
-    ids::{UserId, WorkspaceId},
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::lifecycle::PurgeExecutor;
+use atlas_acta::entities::lifecycle::PurgeOperation;
+use atlas_acta::entities::lifecycle::PurgeStatus;
+use atlas_acta::entities::lifecycle::RestoreTarget;
+use atlas_acta::entities::lifecycle::SecurityAuditRef;
+use atlas_acta::entities::lifecycle::TrashItem;
+use atlas_acta::entities::lifecycle::TrashKind;
+use atlas_acta::ids::WorkspaceId;
+use atlas_acta::ports::attachment_store::AttachmentStore;
+use atlas_core::error::DomainError;
+use atlas_core::principal::UserId;
 use chrono::{DateTime, Utc};
 use sea_orm::{
     ConnectionTrait, DatabaseConnection, FromQueryResult, SqlErr, Statement, TransactionTrait,
@@ -106,7 +111,7 @@ impl TrashService {
 
     pub async fn restore(
         &self,
-        actor: atlas_domain::ids::UserId,
+        actor: atlas_core::principal::UserId,
         kind: TrashKind,
         target_id: Uuid,
     ) -> Result<bool, DomainError> {
@@ -135,7 +140,7 @@ impl TrashService {
         };
         let ctx = WorkspaceCtx::new(
             WorkspaceId(row.workspace_id),
-            Actor::User(atlas_domain::UserAttributionId(actor.0)),
+            Actor::User(atlas_acta::actor::UserAttributionId(actor.0)),
         );
         self.ensure_restore_safe(&txn, &ctx, kind, target_id)
             .await?;
@@ -199,7 +204,7 @@ impl TrashService {
 
         let ctx = WorkspaceCtx::new(
             WorkspaceId(row.workspace_id),
-            Actor::User(atlas_domain::UserAttributionId(actor.0)),
+            Actor::User(atlas_acta::actor::UserAttributionId(actor.0)),
         );
         if let Some(operation) = operations
             .find_by_target_in(&txn, ctx.workspace_id, &target)
@@ -252,7 +257,7 @@ impl TrashService {
     /// than falsely declaring the operation complete.
     pub async fn cleanup(
         &self,
-        operation_id: atlas_domain::ids::PurgeOperationId,
+        operation_id: atlas_acta::ids::PurgeOperationId,
         store: &dyn AttachmentStore,
     ) -> Result<PurgeOperation, DomainError> {
         let operations = PgPurgeOperationRepo;
@@ -348,7 +353,7 @@ impl TrashService {
 
     async fn record_operation_attempt(
         &self,
-        operation_id: atlas_domain::ids::PurgeOperationId,
+        operation_id: atlas_acta::ids::PurgeOperationId,
         status: PurgeStatus,
         error: Option<String>,
     ) -> Result<PurgeOperation, DomainError> {
@@ -362,7 +367,7 @@ impl TrashService {
 
     async fn record_digest_attempt(
         &self,
-        operation_id: atlas_domain::ids::PurgeOperationId,
+        operation_id: atlas_acta::ids::PurgeOperationId,
         digest: &str,
         status: PurgeStatus,
         error: Option<String>,

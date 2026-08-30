@@ -17,7 +17,7 @@ use atlas_api::{
     },
     pagination::{Cursor, Page},
 };
-use atlas_domain::permissions::Principal;
+use atlas_core::principal::Principal;
 
 use crate::{
     authz::{
@@ -56,14 +56,16 @@ const KNOWN_EVENT_TYPES: &[&str] = &[
     "folder.deleted",
 ];
 
-fn principal_to_actor(p: &Principal) -> atlas_domain::Actor {
+fn principal_to_actor(p: &Principal) -> atlas_acta::actor::Actor {
     match p {
-        Principal::User(uid) => atlas_domain::Actor::User(atlas_domain::UserAttributionId(uid.0)),
+        Principal::User(uid) => {
+            atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(uid.0))
+        }
         Principal::ApiKey(kid) => {
-            atlas_domain::Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0))
+            atlas_acta::actor::Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(kid.0))
         }
         Principal::Group(_) => {
-            atlas_domain::Actor::User(atlas_domain::UserAttributionId(Uuid::nil()))
+            atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(Uuid::nil()))
         }
     }
 }

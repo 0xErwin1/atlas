@@ -2,12 +2,11 @@
 
 mod support;
 
-use atlas_domain::{
-    Actor,
-    entities::documents::{NewAttachment, NewDocument},
-    ids::ApiKeyId,
-    permissions::Principal,
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::entities::documents::NewAttachment;
+use atlas_acta::entities::documents::NewDocument;
+use atlas_core::principal::ApiKeyId;
+use atlas_core::principal::Principal;
 use atlas_server::persistence::repos::{
     ApiKeyRepo, AttachmentRepo, DocumentRepo, NewApiKey, PgApiKeyRepo, PgAttachmentRepo,
     PgDocumentRepo,
@@ -35,9 +34,9 @@ async fn seed_api_key(
             NewApiKey {
                 name: "test-key".into(),
                 token_hash: format!("hash-{}", uuid::Uuid::now_v7()),
-                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
+                type_: atlas_custos::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
-                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
+                scopes: atlas_custos::capability::Capability::ALL.to_vec(),
             },
         )
         .await
@@ -51,9 +50,9 @@ async fn api_key_actor_create_sets_created_by_api_key_id() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let (ws, user) = support::seed_workspace(&db, "doc-apikey-attr").await;
     let key_id = seed_api_key(&db, &ws, &user).await;
-    let ctx = atlas_domain::WorkspaceCtx::new(
+    let ctx = atlas_acta::actor::WorkspaceCtx::new(
         ws.id,
-        Actor::ApiKey(atlas_domain::ApiKeyAttributionId(key_id.0)),
+        Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(key_id.0)),
     );
     let repo = make_doc_repo(&db, 50);
 
@@ -108,9 +107,9 @@ async fn api_key_actor_update_content_sets_revision_api_key_id() {
         .expect("create document");
 
     let key_id = seed_api_key(&db, &ws, &user).await;
-    let api_ctx = atlas_domain::WorkspaceCtx::new(
+    let api_ctx = atlas_acta::actor::WorkspaceCtx::new(
         ws.id,
-        Actor::ApiKey(atlas_domain::ApiKeyAttributionId(key_id.0)),
+        Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(key_id.0)),
     );
 
     let updated = repo
@@ -149,9 +148,9 @@ async fn api_key_actor_attachment_record_sets_created_by_api_key_id() {
         .expect("create document");
 
     let key_id = seed_api_key(&db, &ws, &user).await;
-    let api_ctx = atlas_domain::WorkspaceCtx::new(
+    let api_ctx = atlas_acta::actor::WorkspaceCtx::new(
         ws.id,
-        Actor::ApiKey(atlas_domain::ApiKeyAttributionId(key_id.0)),
+        Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(key_id.0)),
     );
 
     let att = att_repo
@@ -305,7 +304,7 @@ async fn cas_stale_revision_returns_conflict() {
 
     assert!(result.is_err(), "stale revision must return conflict");
     match result.unwrap_err() {
-        atlas_domain::DomainError::Conflict(conflict) => {
+        atlas_core::error::DomainError::Conflict(conflict) => {
             assert_eq!(conflict.resource_id, doc.id.0);
             assert_ne!(
                 conflict.current_revision_id, rev1.0,

@@ -4,7 +4,7 @@ Atlas is a hexagonal (ports-and-adapters) Rust monorepo: a pure domain core, a s
 
 ## Layered crate map
 
-The dependency direction is strict and **compiler-enforced**: `atlas_domain` declares only `serde`/`thiserror`/`uuid`/`chrono`, so an accidental `use sea_orm` or `use axum` in the domain fails to compile.
+The dependency direction is strict and **compiler-enforced**: `atlas_custos` and `atlas_acta` each declare only `serde`/`thiserror`/`uuid`/`chrono` (plus `atlas_core` for `atlas_acta`), so an accidental `use sea_orm` or `use axum` in either fails to compile. `atlas_custos` and `atlas_acta` never depend on each other — they compose only through `atlas_server`.
 
 ```mermaid
 flowchart TD
@@ -12,8 +12,8 @@ flowchart TD
     mcp[atlas_mcp<br/>rmcp] --> client
     client --> api[atlas_api<br/>DTOs + OpenAPI schemas]
     server[atlas_server<br/>axum + SeaORM adapters] --> api
-    server --> domain[atlas_domain<br/>pure: types, ports, logic]
-    api --> domain
+    server --> custos[atlas_custos<br/>pure: identity/auth types, ports]
+    server --> acta[atlas_acta<br/>pure: workspace/content types, ports]
     migration[migration<br/>sea-orm-migration tool] -.schema.-> server
     server --> pg[(PostgreSQL 17)]
 ```
@@ -22,9 +22,10 @@ flowchart TD
 |-------|----------------|------------------|
 | `atlas_core` | Neutral V2 platform contracts: identifiers, compiled-registry types and `registry::build()` validation, capability traits, and the component config contract | `ids/`, `registry/`, `capabilities/`, `config/` |
 | `atlas_postgres` | Neutral Postgres runtime — pool configuration and connection construction, with no product repositories or entities | `config.rs`, `connect.rs` |
-| `atlas_domain` | Pure types, value objects, errors, **repository ports** (traits taking `WorkspaceCtx`), and pure logic (permission resolution, revision diff/anchor, fractional positions) | `entities/`, `ports/`, `permissions.rs`, `ids.rs` |
+| `atlas_custos` | Pure identity/auth types, value objects, and **repository ports**: users, sessions, api keys, groups, security audit, capability scopes | `entities/`, `ports/`, `capability.rs`, `ids.rs` |
+| `atlas_acta` | Pure workspace/content types, value objects, and **repository ports**: workspaces, projects, folders, documents, boards/tasks, comments, plus pure logic (permission resolution, revision diff/anchor, fractional positions, wikilinks) | `entities/`, `ports/`, `permissions.rs`, `ids.rs`, `wikilink.rs` |
 | `atlas_api` | The wire contract: shared DTOs + their OpenAPI (`utoipa`) schemas + the pagination codec | `dtos/`, `pagination.rs`, `problem.rs` |
-| `atlas_client` | Typed HTTP client over `atlas_api`/`atlas_domain` types; the single client used by CLI, MCP, and e2e tests | `lib.rs` |
+| `atlas_client` | Typed HTTP client over `atlas_api` types; the single client used by CLI, MCP, and e2e tests | `lib.rs` |
 | `atlas_server` | The axum binary: auth, permission enforcement, routing, and SeaORM **adapters** implementing the domain ports | see module tree below |
 | `atlas_cli` | `atlas` command-line over `atlas_client` | `lib.rs` |
 | `atlas_mcp` | MCP server (`rmcp` 3.1.4) over `atlas_client`; serves both the `2026-07-28` revision and the legacy `2025-11-25`-and-earlier era, and advertises verb-shaped tools whose resources resolve through `catalog.rs` | `lib.rs`, `catalog.rs` |
@@ -61,11 +62,11 @@ flowchart LR
 | `authz/` | `Authorized<R,M>` extractor; the `ResolvedResource` types it resolves (`WorkspaceRes`, `ProjectRes`, `FolderRes`, `BoardRes`, `TaskRes`, `DocumentRes`, `DocumentSlugRes`) + the non-resource extractors `WorkspaceMember` / `RequireUserAdmin`. `DocumentSlugRes` accepts **either** a stable document UUID or its slug |
 | `routes/` | One module per resource (`auth`, `users`, `api_keys`, `workspaces`, `members`, `projects`, `folders`, `documents`, `boards`, `tasks`, `grants`, `search`, `health`); `registry` (route source of truth); `openapi` (utoipa doc + Scalar); `validation` (shared input checks) |
 | `middleware/` | `problem_stamp` (request-id into error bodies) |
-| `persistence/entities/` | SeaORM entity structs (DB shape) — never leak into `atlas_domain` |
+| `persistence/entities/` | SeaORM entity structs (DB shape) — never leak into `atlas_custos`/`atlas_acta` |
 | `persistence/repos/` | Adapters implementing the domain ports; map entity ↔ domain |
 | `persistence/bootstrap` | Root-user seed (`ATLAS_ROOT_PASSWORD`, fail-fast) + dev seed |
 
-`atlas_domain` mirrors the data subsystems in `entities/` and exposes them through `ports/` (one trait module per aggregate: identity, workspace_core, documents, boards_tasks, permission_grant_repo).
+`atlas_custos` and `atlas_acta` mirror the data subsystems in `entities/` and expose them through `ports/` (one trait module per aggregate: identity, workspace_core, documents, boards_tasks, permission_grant_repo — the last of which lives in `atlas_server::authz` since it composes across both crates).
 
 ### HTTP surface
 

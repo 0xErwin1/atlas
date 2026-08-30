@@ -21,8 +21,10 @@ use tokio::sync::watch;
 use tracing::{debug, info};
 use uuid::Uuid;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::ids::WorkspaceId;
 use atlas_api::dtos::documents::ActorDto;
-use atlas_domain::{Actor, WorkspaceCtx, ids::WorkspaceId};
 
 use crate::live::LiveEvent;
 use crate::routes::tasks::resolve_actor_dto;
@@ -210,7 +212,7 @@ async fn resolve_agent_actor(
         return Some(dto.clone());
     }
 
-    let actor = Actor::ApiKey(atlas_domain::ApiKeyAttributionId(api_key_id));
+    let actor = Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(api_key_id));
     let ctx = WorkspaceCtx::new(WorkspaceId(workspace_id), actor);
     let dto = resolve_actor_dto(state, &ctx, &actor).await;
 

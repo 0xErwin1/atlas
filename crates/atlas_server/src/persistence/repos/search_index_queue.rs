@@ -1,9 +1,9 @@
-use atlas_domain::{
-    DomainError,
-    entities::comments::CommentOwner,
-    ids::{DocumentId, TaskId, WorkspaceId},
-    semantic_search::ResourceKind,
-};
+use atlas_acta::entities::comments::CommentOwner;
+use atlas_acta::ids::DocumentId;
+use atlas_acta::ids::TaskId;
+use atlas_acta::ids::WorkspaceId;
+use atlas_acta::semantic_search::ResourceKind;
+use atlas_core::error::DomainError;
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
 
 use super::semantic_search::ResourceKindSql;

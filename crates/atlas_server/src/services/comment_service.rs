@@ -1,9 +1,13 @@
-use atlas_domain::{
-    AttachmentStore, DomainError, WorkspaceCtx,
-    entities::comments::{Comment, CommentOwner, NewComment, comment_draft_finalize_digest_input},
-    ids::{CommentDraftId, CommentId},
-    wikilink::parse_comment_link_candidates,
-};
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::comments::Comment;
+use atlas_acta::entities::comments::CommentOwner;
+use atlas_acta::entities::comments::NewComment;
+use atlas_acta::entities::comments::comment_draft_finalize_digest_input;
+use atlas_acta::ids::CommentDraftId;
+use atlas_acta::ids::CommentId;
+use atlas_acta::ports::attachment_store::AttachmentStore;
+use atlas_acta::wikilink::parse_comment_link_candidates;
+use atlas_core::error::DomainError;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
     EntityTrait, IntoActiveModel, QueryFilter, QuerySelect, TransactionTrait,
@@ -255,7 +259,7 @@ impl CommentService {
         PgSecurityAuditRepo::append_resource_deleted_in(
             &txn,
             ctx,
-            atlas_domain::entities::lifecycle::TrashKind::Comment,
+            atlas_acta::entities::lifecycle::TrashKind::Comment,
             comment_id.0,
         )
         .await?;
@@ -264,7 +268,7 @@ impl CommentService {
             PgSecurityAuditRepo::append_resource_deleted_in(
                 &txn,
                 ctx,
-                atlas_domain::entities::lifecycle::TrashKind::Attachment,
+                atlas_acta::entities::lifecycle::TrashKind::Attachment,
                 attachment_id,
             )
             .await?;
@@ -310,8 +314,8 @@ async fn find_draft_for_finalize(
         CommentOwner::Document(id) => (None, Some(id.0)),
     };
     let (user_id, api_key_id) = match &ctx.actor {
-        atlas_domain::Actor::User(id) => (Some(id.0), None),
-        atlas_domain::Actor::ApiKey(id) => (None, Some(id.0)),
+        atlas_acta::actor::Actor::User(id) => (Some(id.0), None),
+        atlas_acta::actor::Actor::ApiKey(id) => (None, Some(id.0)),
     };
 
     comment_attachment_draft::Entity::find_by_id(draft_id.0)

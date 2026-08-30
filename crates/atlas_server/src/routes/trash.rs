@@ -1,3 +1,5 @@
+use atlas_acta::entities::lifecycle::TrashKind;
+use atlas_acta::ids::WorkspaceId;
 use atlas_api::{
     dtos::lifecycle::{
         PurgeStatusDto, PurgeStatusDtoResponse, PurgeTrashItemRequest, RestoreTrashItemRequest,
@@ -5,7 +7,6 @@ use atlas_api::{
     },
     pagination::{Page, SearchCursor, SortKey},
 };
-use atlas_domain::{entities::lifecycle::TrashKind, ids::WorkspaceId};
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -92,7 +93,7 @@ pub(crate) async fn purge_trash(
         .await
         .map_err(ApiError::Domain)?;
 
-    if operation.status == atlas_domain::entities::lifecycle::PurgeStatus::Complete {
+    if operation.status == atlas_acta::entities::lifecycle::PurgeStatus::Complete {
         return Ok(StatusCode::NO_CONTENT.into_response());
     }
 
@@ -108,11 +109,11 @@ pub(crate) async fn get_purge_status(
     let operation = PgPurgeOperationRepo
         .find_by_id_in(
             state.db.as_ref(),
-            atlas_domain::ids::PurgeOperationId(operation_id),
+            atlas_acta::ids::PurgeOperationId(operation_id),
         )
         .await
         .map_err(ApiError::Domain)?
-        .ok_or(ApiError::Domain(atlas_domain::DomainError::NotFound {
+        .ok_or(ApiError::Domain(atlas_core::error::DomainError::NotFound {
             entity: "purge_operation",
             id: operation_id,
         }))?;
@@ -143,7 +144,7 @@ fn from_dto(kind: TrashKindDto) -> TrashKind {
         TrashKindDto::Attachment => TrashKind::Attachment,
     }
 }
-fn to_dto(item: atlas_domain::entities::lifecycle::TrashItem) -> TrashItemDto {
+fn to_dto(item: atlas_acta::entities::lifecycle::TrashItem) -> TrashItemDto {
     TrashItemDto {
         workspace_id: item.workspace_id.0,
         kind: match item.kind {
@@ -159,7 +160,7 @@ fn to_dto(item: atlas_domain::entities::lifecycle::TrashItem) -> TrashItemDto {
 }
 
 fn to_purge_dto(
-    operation: atlas_domain::entities::lifecycle::PurgeOperation,
+    operation: atlas_acta::entities::lifecycle::PurgeOperation,
 ) -> PurgeStatusDtoResponse {
     PurgeStatusDtoResponse {
         operation_id: operation.id.0,
@@ -172,16 +173,16 @@ fn to_purge_dto(
         },
         target_id: operation.target.target_id,
         status: match operation.status {
-            atlas_domain::entities::lifecycle::PurgeStatus::DbCommitted => {
+            atlas_acta::entities::lifecycle::PurgeStatus::DbCommitted => {
                 PurgeStatusDto::DbCommitted
             }
-            atlas_domain::entities::lifecycle::PurgeStatus::CleanupPending => {
+            atlas_acta::entities::lifecycle::PurgeStatus::CleanupPending => {
                 PurgeStatusDto::CleanupPending
             }
-            atlas_domain::entities::lifecycle::PurgeStatus::CleanupFailed => {
+            atlas_acta::entities::lifecycle::PurgeStatus::CleanupFailed => {
                 PurgeStatusDto::CleanupFailed
             }
-            atlas_domain::entities::lifecycle::PurgeStatus::Complete => PurgeStatusDto::Complete,
+            atlas_acta::entities::lifecycle::PurgeStatus::Complete => PurgeStatusDto::Complete,
         },
         attempts: operation.attempts,
     }

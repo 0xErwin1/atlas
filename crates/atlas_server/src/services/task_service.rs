@@ -1,28 +1,47 @@
-use atlas_domain::{
-    DomainError, WorkspaceCtx,
-    entities::boards_tasks::{
-        ActivityKind, ActivityPayload, AssigneeRef, InitialTaskReference, NewTask, NewTaskActivity,
-        NewTaskAssignee, NewTaskChecklistItem, NewTaskReference, PositionBetween, ReferenceKind,
-        Task, TaskActivity, TaskAssignee, TaskChecklistItem, TaskChecklistItemPatch, TaskPatch,
-        TaskReference,
-    },
-    entities::comments::{Comment, CommentOwner},
-    entities::events::{
-        DomainEvent, TaskCreatedPayload, TaskDeletedPayload, TaskMovedPayload, TaskUpdatedPayload,
-    },
-    ids::{
-        BoardId, ChecklistItemId, ColumnId, CommentDraftId, CommentId, ProjectId, TaskActivityId,
-        TaskId, TaskReferenceId,
-    },
-};
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::boards_tasks::ActivityKind;
+use atlas_acta::entities::boards_tasks::ActivityPayload;
+use atlas_acta::entities::boards_tasks::AssigneeRef;
+use atlas_acta::entities::boards_tasks::InitialTaskReference;
+use atlas_acta::entities::boards_tasks::NewTask;
+use atlas_acta::entities::boards_tasks::NewTaskActivity;
+use atlas_acta::entities::boards_tasks::NewTaskAssignee;
+use atlas_acta::entities::boards_tasks::NewTaskChecklistItem;
+use atlas_acta::entities::boards_tasks::NewTaskReference;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::boards_tasks::ReferenceKind;
+use atlas_acta::entities::boards_tasks::Task;
+use atlas_acta::entities::boards_tasks::TaskActivity;
+use atlas_acta::entities::boards_tasks::TaskAssignee;
+use atlas_acta::entities::boards_tasks::TaskChecklistItem;
+use atlas_acta::entities::boards_tasks::TaskChecklistItemPatch;
+use atlas_acta::entities::boards_tasks::TaskPatch;
+use atlas_acta::entities::boards_tasks::TaskReference;
+use atlas_acta::entities::comments::Comment;
+use atlas_acta::entities::comments::CommentOwner;
+use atlas_acta::entities::events::DomainEvent;
+use atlas_acta::entities::events::TaskCreatedPayload;
+use atlas_acta::entities::events::TaskDeletedPayload;
+use atlas_acta::entities::events::TaskMovedPayload;
+use atlas_acta::entities::events::TaskUpdatedPayload;
+use atlas_acta::ids::BoardId;
+use atlas_acta::ids::ChecklistItemId;
+use atlas_acta::ids::ColumnId;
+use atlas_acta::ids::CommentDraftId;
+use atlas_acta::ids::CommentId;
+use atlas_acta::ids::ProjectId;
+use atlas_acta::ids::TaskActivityId;
+use atlas_acta::ids::TaskId;
+use atlas_acta::ids::TaskReferenceId;
+use atlas_core::error::DomainError;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
     QuerySelect, TransactionTrait,
 };
 
-use atlas_domain::entities::documents::ExtractedLink;
-use atlas_domain::entities::documents::LinkSource;
+use atlas_acta::entities::documents::ExtractedLink;
+use atlas_acta::entities::documents::LinkSource;
 use sea_orm::ConnectionTrait;
 
 use crate::persistence::entities::boards_tasks::{
@@ -1230,7 +1249,7 @@ async fn sync_task_description_links(
 }
 
 fn collect_field_changes(
-    before: &atlas_domain::entities::boards_tasks::Task,
+    before: &atlas_acta::entities::boards_tasks::Task,
     patch: &TaskPatch,
 ) -> Vec<(String, serde_json::Value, serde_json::Value)> {
     let mut changes = Vec::new();

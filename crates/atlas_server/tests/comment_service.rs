@@ -7,13 +7,15 @@
 
 mod support;
 
-use atlas_domain::{
-    Actor, DomainError,
-    entities::boards_tasks::{NewBoard, NewTask, PositionBetween},
-    entities::identity::MemberRole,
-    entities::workspace_core::NewProject,
-    permissions::{Visibility, VisibilityRole},
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::boards_tasks::NewTask;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
+use atlas_core::error::DomainError;
 use atlas_server::{
     persistence::repos::{
         BoardRepo, MembershipRepo, NewUser, PgBoardRepo, PgMembershipRepo, PgProjectRepo,
@@ -24,13 +26,13 @@ use atlas_server::{
 
 async fn seed_project_board_column(
     db: &support::TestDb,
-    ctx: &atlas_domain::WorkspaceCtx,
+    ctx: &atlas_acta::actor::WorkspaceCtx,
     slug: &str,
     prefix: &str,
 ) -> (
-    atlas_domain::entities::workspace_core::Project,
-    atlas_domain::entities::boards_tasks::Board,
-    atlas_domain::entities::boards_tasks::BoardColumn,
+    atlas_acta::entities::workspace_core::Project,
+    atlas_acta::entities::boards_tasks::Board,
+    atlas_acta::entities::boards_tasks::BoardColumn,
 ) {
     let project = PgProjectRepo {
         conn: db.conn().clone(),
@@ -78,12 +80,12 @@ async fn seed_project_board_column(
 
 async fn seed_task(
     db: &support::TestDb,
-    ctx: &atlas_domain::WorkspaceCtx,
-    project_id: atlas_domain::ids::ProjectId,
-    board_id: atlas_domain::ids::BoardId,
-    col_id: atlas_domain::ids::ColumnId,
+    ctx: &atlas_acta::actor::WorkspaceCtx,
+    project_id: atlas_acta::ids::ProjectId,
+    board_id: atlas_acta::ids::BoardId,
+    col_id: atlas_acta::ids::ColumnId,
     title: &str,
-) -> atlas_domain::entities::boards_tasks::Task {
+) -> atlas_acta::entities::boards_tasks::Task {
     PgTaskRepo::new(db.conn().clone())
         .create(
             ctx,
@@ -115,7 +117,7 @@ async fn seed_member(
     ws: &atlas_server::persistence::repos::Workspace,
     username: &str,
     role: MemberRole,
-) -> atlas_domain::WorkspaceCtx {
+) -> atlas_acta::actor::WorkspaceCtx {
     let user_repo = db.user_repo();
     let membership_repo = PgMembershipRepo {
         conn: db.conn().clone(),
@@ -135,9 +137,9 @@ async fn seed_member(
 
     support::activate_user_in_db(db, user.id.0).await;
 
-    let ctx = atlas_domain::WorkspaceCtx::new(
+    let ctx = atlas_acta::actor::WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     membership_repo
         .add(&ctx, user.id, role)
@@ -171,7 +173,7 @@ async fn add_comment_then_list_returns_it_oldest_first() {
     assert_eq!(first.task_id, Some(task.id));
     assert_eq!(
         first.created_by,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0))
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0))
     );
 
     let page = service
@@ -319,7 +321,7 @@ async fn remove_missing_comment_returns_not_found() {
     let task = seed_task(&db, &ctx, proj.id, board.id, col.id, "Task").await;
 
     let service = TaskService::new(db.conn().clone());
-    let bogus_id = atlas_domain::ids::CommentId::new();
+    let bogus_id = atlas_acta::ids::CommentId::new();
 
     let err = service
         .remove_comment(&ctx, task.id, bogus_id, true)

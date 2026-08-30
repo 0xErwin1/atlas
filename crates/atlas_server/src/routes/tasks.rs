@@ -11,6 +11,58 @@ use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::Deserialize;
 use sha2::Digest;
 
+use crate::authz::ResourceRole;
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::boards_tasks::AssigneeRef;
+use atlas_acta::entities::boards_tasks::Board;
+use atlas_acta::entities::boards_tasks::BoardColumn;
+use atlas_acta::entities::boards_tasks::InitialTaskReference;
+use atlas_acta::entities::boards_tasks::NewTask;
+use atlas_acta::entities::boards_tasks::NewTaskChecklistItem;
+use atlas_acta::entities::boards_tasks::NewTaskReference;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::boards_tasks::Priority;
+use atlas_acta::entities::boards_tasks::Task;
+use atlas_acta::entities::boards_tasks::TaskActivity;
+use atlas_acta::entities::boards_tasks::TaskAssignee;
+use atlas_acta::entities::boards_tasks::TaskChecklistItem;
+use atlas_acta::entities::boards_tasks::TaskPatch;
+use atlas_acta::entities::boards_tasks::TaskReference;
+use atlas_acta::entities::comments::CommentDraftMetadata;
+use atlas_acta::entities::comments::CommentLinkTarget;
+use atlas_acta::entities::comments::CommentOwner;
+use atlas_acta::entities::comments::NewCommentAttachmentDraftUpload;
+use atlas_acta::entities::comments::comment_draft_upload_digest_input;
+use atlas_acta::entities::documents::AttachmentOwner;
+use atlas_acta::entities::documents::NewAttachment;
+use atlas_acta::entities::documents::RankedTaskDescriptionLink;
+use atlas_acta::entities::documents::rank_task_description_links;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::entities::identity::Workspace;
+use atlas_acta::entities::task_views::ActorTypeFilter;
+use atlas_acta::entities::task_views::AssigneeFilter;
+use atlas_acta::entities::task_views::TaskSort;
+use atlas_acta::entities::task_views::TaskViewFilters;
+use atlas_acta::entities::workspace_core::AppliesTo;
+use atlas_acta::entities::workspace_core::PropertyDefinition;
+use atlas_acta::ids::AttachmentId;
+use atlas_acta::ids::BoardId;
+use atlas_acta::ids::ChecklistItemId;
+use atlas_acta::ids::ColumnId;
+use atlas_acta::ids::CommentDraftId;
+use atlas_acta::ids::CommentId;
+use atlas_acta::ids::DocumentId;
+use atlas_acta::ids::TaskActivityId;
+use atlas_acta::ids::TaskId;
+use atlas_acta::ids::TaskReferenceId;
+use atlas_acta::permissions::ResourceRef;
+use atlas_acta::ports::boards_tasks::WorkspaceActivityFilters;
+use atlas_acta::ports::boards_tasks::WorkspaceActivityScope;
+use atlas_acta::ports::comments::CommentAttachmentDraftRepo;
+use atlas_acta::ports::comments::CommentLinkRepo;
+use atlas_acta::ports::comments::CommentRepo;
+use atlas_acta::ports::documents::DocumentLinkRepo;
 use atlas_api::{
     dtos::boards_tasks::{
         ActivityEntryDto, AddAssigneeRequest, AssigneeDto, ChecklistItemDto, CommentDto,
@@ -29,36 +81,13 @@ use atlas_api::{
     },
     pagination::{Cursor, Page, SearchCursor, SortKey},
 };
-use atlas_domain::{
-    Actor, DomainError, WorkspaceCtx,
-    entities::boards_tasks::{
-        AssigneeRef, Board, BoardColumn, InitialTaskReference, NewTask, NewTaskChecklistItem,
-        NewTaskReference, PositionBetween, Priority, Task, TaskActivity, TaskAssignee,
-        TaskChecklistItem, TaskPatch, TaskReference,
-    },
-    entities::comments::{
-        CommentDraftMetadata, CommentLinkTarget, CommentOwner, NewCommentAttachmentDraftUpload,
-        comment_draft_upload_digest_input,
-    },
-    entities::documents::{
-        AttachmentOwner, NewAttachment, RankedTaskDescriptionLink, rank_task_description_links,
-    },
-    entities::identity::{MemberRole, Workspace},
-    entities::task_views::{ActorTypeFilter, AssigneeFilter, TaskSort, TaskViewFilters},
-    entities::workspace_core::{AppliesTo, PropertyDefinition},
-    ids::{
-        ApiKeyId, AttachmentId, BoardId, ChecklistItemId, ColumnId, CommentDraftId, CommentId,
-        DocumentId, TaskActivityId, TaskId, TaskReferenceId, UserId,
-    },
-    permissions::{
-        Capability, CapabilityAction, CapabilityFamily, Principal, ResourceRef, ResourceRole,
-    },
-    ports::{
-        boards_tasks::{WorkspaceActivityFilters, WorkspaceActivityScope},
-        comments::{CommentAttachmentDraftRepo, CommentLinkRepo, CommentRepo},
-        documents::DocumentLinkRepo,
-    },
-};
+use atlas_core::error::DomainError;
+use atlas_core::principal::ApiKeyId;
+use atlas_core::principal::Principal;
+use atlas_core::principal::UserId;
+use atlas_custos::capability::Capability;
+use atlas_custos::capability::CapabilityAction;
+use atlas_custos::capability::CapabilityFamily;
 
 use crate::{
     authz::{
@@ -167,7 +196,7 @@ pub(crate) struct CommentAttachmentPath {
 }
 
 fn comment_draft_to_dto(
-    draft: atlas_domain::entities::comments::CommentAttachmentDraft,
+    draft: atlas_acta::entities::comments::CommentAttachmentDraft,
 ) -> CommentDraftDto {
     CommentDraftDto {
         id: draft.id.0,
@@ -253,17 +282,17 @@ pub(crate) async fn cancel_comment_draft(
         .map_err(ApiError::Domain)?
         .ok_or(ApiError::NotFound)?;
 
-    if draft.state == atlas_domain::entities::comments::CommentAttachmentDraftState::Finalized {
+    if draft.state == atlas_acta::entities::comments::CommentAttachmentDraftState::Finalized {
         return Err(ApiError::Domain(
-            atlas_domain::DomainError::CommentDraftConflict {
+            atlas_core::error::DomainError::CommentDraftConflict {
                 reason: "draft is already finalized".into(),
             },
         ));
     }
 
-    if draft.state != atlas_domain::entities::comments::CommentAttachmentDraftState::Active {
+    if draft.state != atlas_acta::entities::comments::CommentAttachmentDraftState::Active {
         return Err(ApiError::Domain(
-            atlas_domain::DomainError::CommentDraftGone {
+            atlas_core::error::DomainError::CommentDraftGone {
                 reason: "draft is no longer active".into(),
             },
         ));
@@ -286,9 +315,9 @@ pub(crate) async fn cancel_comment_draft(
 
 pub(crate) fn principal_to_actor(principal: &Principal) -> Actor {
     match principal {
-        Principal::User(uid) => Actor::User(atlas_domain::UserAttributionId(uid.0)),
-        Principal::ApiKey(kid) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0)),
-        Principal::Group(_) => Actor::User(atlas_domain::UserAttributionId(uuid::Uuid::nil())),
+        Principal::User(uid) => Actor::User(atlas_acta::actor::UserAttributionId(uid.0)),
+        Principal::ApiKey(kid) => Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(kid.0)),
+        Principal::Group(_) => Actor::User(atlas_acta::actor::UserAttributionId(uuid::Uuid::nil())),
     }
 }
 
@@ -401,7 +430,7 @@ async fn can_view_reference_target(
     state: &AppState,
     principal: &Principal,
     membership: Option<MemberRole>,
-    workspace: &atlas_domain::entities::identity::Workspace,
+    workspace: &atlas_acta::entities::identity::Workspace,
     chain: &ResourceChain,
 ) -> Result<bool, ApiError> {
     Ok(matches!(
@@ -437,13 +466,15 @@ fn wikilink_to_unified_dto(
     }
 }
 
-fn attachment_to_dto(a: atlas_domain::entities::documents::Attachment) -> TaskAttachmentDto {
+fn attachment_to_dto(a: atlas_acta::entities::documents::Attachment) -> TaskAttachmentDto {
     let created_by = if let Some(uid) = a.created_by_user_id {
-        actor_to_dto(&Actor::User(atlas_domain::UserAttributionId(uid.0)))
+        actor_to_dto(&Actor::User(atlas_acta::actor::UserAttributionId(uid.0)))
     } else if let Some(kid) = a.created_by_api_key_id {
-        actor_to_dto(&Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0)))
+        actor_to_dto(&Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(
+            kid.0,
+        )))
     } else {
-        actor_to_dto(&Actor::User(atlas_domain::UserAttributionId(
+        actor_to_dto(&Actor::User(atlas_acta::actor::UserAttributionId(
             uuid::Uuid::nil(),
         )))
     };
@@ -460,8 +491,8 @@ fn attachment_to_dto(a: atlas_domain::entities::documents::Attachment) -> TaskAt
 
 fn assignee_ref_to_actor(r: AssigneeRef) -> Actor {
     match r {
-        AssigneeRef::User(uid) => Actor::User(atlas_domain::UserAttributionId(uid.0)),
-        AssigneeRef::ApiKey(kid) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0)),
+        AssigneeRef::User(uid) => Actor::User(atlas_acta::actor::UserAttributionId(uid.0)),
+        AssigneeRef::ApiKey(kid) => Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(kid.0)),
     }
 }
 
@@ -589,7 +620,7 @@ async fn board_assignees_by_task(
 
     // list_by_ids returns the full User — carry it in the map so we can derive
     // account_status without an extra query.
-    let user_map: HashMap<uuid::Uuid, atlas_domain::entities::identity::User> = PgUserRepo {
+    let user_map: HashMap<uuid::Uuid, atlas_custos::entities::identity::User> = PgUserRepo {
         conn: (*state.db).clone(),
     }
     .list_by_ids(&user_ids)
@@ -767,7 +798,7 @@ async fn enrich_activity_entries(
     user_ids.sort_by_key(|u| u.0);
     user_ids.dedup_by_key(|u| u.0);
 
-    let user_map: HashMap<uuid::Uuid, atlas_domain::entities::identity::User> = PgUserRepo {
+    let user_map: HashMap<uuid::Uuid, atlas_custos::entities::identity::User> = PgUserRepo {
         conn: (*state.db).clone(),
     }
     .list_by_ids(&user_ids)
@@ -1573,7 +1604,9 @@ pub(crate) async fn add_assignee(
         .assign(&ctx, task_id, assignee)
         .await
         .map_err(|e| match e {
-            atlas_domain::DomainError::Forbidden { message } if message.contains("already") => {
+            atlas_core::error::DomainError::Forbidden { message }
+                if message.contains("already") =>
+            {
                 ApiError::Conflict
             }
             other => ApiError::Domain(other),
@@ -1793,7 +1826,7 @@ pub(crate) async fn list_references(
 // ---------------------------------------------------------------------------
 
 struct ResolvedReferenceTarget {
-    kind: atlas_domain::entities::boards_tasks::ReferenceKind,
+    kind: atlas_acta::entities::boards_tasks::ReferenceKind,
     target_task_id: Option<TaskId>,
     target_document_id: Option<DocumentId>,
     target_readable_id: Option<String>,
@@ -1807,7 +1840,7 @@ async fn resolve_reference_target(
     workspace: &Workspace,
     body: &CreateReferenceRequest,
 ) -> Result<ResolvedReferenceTarget, ApiError> {
-    use atlas_domain::entities::boards_tasks::ReferenceKind;
+    use atlas_acta::entities::boards_tasks::ReferenceKind;
 
     let kind = match body.kind.as_str() {
         "relates" => ReferenceKind::Relates,
@@ -1906,7 +1939,7 @@ pub(crate) async fn create_reference(
     State(state): State<AppState>,
     Json(body): Json<CreateReferenceRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    use atlas_domain::entities::boards_tasks::ReferenceKind;
+    use atlas_acta::entities::boards_tasks::ReferenceKind;
 
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
@@ -2022,7 +2055,7 @@ pub(crate) async fn create_reference(
         )
         .await
         .map_err(|e| match e {
-            atlas_domain::DomainError::Forbidden { .. } => ApiError::Conflict,
+            atlas_core::error::DomainError::Forbidden { .. } => ApiError::Conflict,
             other => ApiError::Domain(other),
         })?;
 
@@ -2403,7 +2436,7 @@ pub(crate) async fn download_attachment(
         .get(&attachment.sha256)
         .await
         .map_err(|e| match e {
-            atlas_domain::DomainError::NotFound { .. } => ApiError::NotFound,
+            atlas_core::error::DomainError::NotFound { .. } => ApiError::NotFound,
             other => ApiError::Internal {
                 message: other.to_string(),
             },
@@ -2471,7 +2504,7 @@ pub(crate) async fn rename_attachment(
     )
     .await
     .map_err(|error| match error {
-        atlas_domain::DomainError::NotFound { .. } => ApiError::NotFound,
+        atlas_core::error::DomainError::NotFound { .. } => ApiError::NotFound,
         other => ApiError::Domain(other),
     })?;
 
@@ -2603,10 +2636,13 @@ async fn upload_comment_attachment_for_path(
         && comment.created_by != ctx.actor
         && !can_moderate
     {
-        return Err(ApiError::Domain(atlas_domain::DomainError::Forbidden {
-            message: "only the comment's author or a workspace admin/owner may manage attachments"
-                .into(),
-        }));
+        return Err(ApiError::Domain(
+            atlas_core::error::DomainError::Forbidden {
+                message:
+                    "only the comment's author or a workspace admin/owner may manage attachments"
+                        .into(),
+            },
+        ));
     }
 
     let max = state.max_attachment_bytes;
@@ -2654,17 +2690,17 @@ async fn upload_comment_attachment_for_path(
         state.upload_allowed_extensions.as_deref(),
     )?;
     if let Some(draft) = draft {
-        if draft.state == atlas_domain::entities::comments::CommentAttachmentDraftState::Finalized {
+        if draft.state == atlas_acta::entities::comments::CommentAttachmentDraftState::Finalized {
             return Err(ApiError::Domain(
-                atlas_domain::DomainError::CommentDraftConflict {
+                atlas_core::error::DomainError::CommentDraftConflict {
                     reason: "draft is already finalized".into(),
                 },
             ));
         }
 
-        if draft.state != atlas_domain::entities::comments::CommentAttachmentDraftState::Active {
+        if draft.state != atlas_acta::entities::comments::CommentAttachmentDraftState::Active {
             return Err(ApiError::Domain(
-                atlas_domain::DomainError::CommentDraftGone {
+                atlas_core::error::DomainError::CommentDraftGone {
                     reason: "draft is no longer active".into(),
                 },
             ));
@@ -2819,18 +2855,17 @@ pub(crate) async fn list_comment_attachments(
         .await
         .map_err(ApiError::Domain)?
     {
-        if draft.state != atlas_domain::entities::comments::CommentAttachmentDraftState::Active
-            && draft.state
-                != atlas_domain::entities::comments::CommentAttachmentDraftState::Finalized
+        if draft.state != atlas_acta::entities::comments::CommentAttachmentDraftState::Active
+            && draft.state != atlas_acta::entities::comments::CommentAttachmentDraftState::Finalized
         {
             return Err(ApiError::Domain(
-                atlas_domain::DomainError::CommentDraftGone {
+                atlas_core::error::DomainError::CommentDraftGone {
                     reason: "draft is no longer active".into(),
                 },
             ));
         }
 
-        if draft.state == atlas_domain::entities::comments::CommentAttachmentDraftState::Finalized {
+        if draft.state == atlas_acta::entities::comments::CommentAttachmentDraftState::Finalized {
             // Fall through to the published comment owner below.
         } else {
             let items = PgAttachmentLifecycle::list_active_draft_attachments(
@@ -2916,18 +2951,17 @@ pub(crate) async fn download_comment_attachment(
         .await
         .map_err(ApiError::Domain)?
     {
-        if draft.state != atlas_domain::entities::comments::CommentAttachmentDraftState::Active
-            && draft.state
-                != atlas_domain::entities::comments::CommentAttachmentDraftState::Finalized
+        if draft.state != atlas_acta::entities::comments::CommentAttachmentDraftState::Active
+            && draft.state != atlas_acta::entities::comments::CommentAttachmentDraftState::Finalized
         {
             return Err(ApiError::Domain(
-                atlas_domain::DomainError::CommentDraftGone {
+                atlas_core::error::DomainError::CommentDraftGone {
                     reason: "draft is no longer active".into(),
                 },
             ));
         }
 
-        if draft.state == atlas_domain::entities::comments::CommentAttachmentDraftState::Finalized {
+        if draft.state == atlas_acta::entities::comments::CommentAttachmentDraftState::Finalized {
             // Fall through to the published comment owner below.
         } else {
             let attachment = PgAttachmentLifecycle::find_active_draft_attachment(
@@ -2957,7 +2991,7 @@ pub(crate) async fn download_comment_attachment(
     .map_err(ApiError::Domain)?
     {
         return Err(ApiError::Domain(
-            atlas_domain::DomainError::CommentDraftGone {
+            atlas_core::error::DomainError::CommentDraftGone {
                 reason: "draft attachment was deleted".into(),
             },
         ));
@@ -3001,18 +3035,17 @@ pub(crate) async fn delete_comment_attachment(
         .await
         .map_err(ApiError::Domain)?
     {
-        if draft.state != atlas_domain::entities::comments::CommentAttachmentDraftState::Active
-            && draft.state
-                != atlas_domain::entities::comments::CommentAttachmentDraftState::Finalized
+        if draft.state != atlas_acta::entities::comments::CommentAttachmentDraftState::Active
+            && draft.state != atlas_acta::entities::comments::CommentAttachmentDraftState::Finalized
         {
             return Err(ApiError::Domain(
-                atlas_domain::DomainError::CommentDraftGone {
+                atlas_core::error::DomainError::CommentDraftGone {
                     reason: "draft is no longer active".into(),
                 },
             ));
         }
 
-        if draft.state == atlas_domain::entities::comments::CommentAttachmentDraftState::Finalized {
+        if draft.state == atlas_acta::entities::comments::CommentAttachmentDraftState::Finalized {
             // Fall through to the published comment owner below.
         } else {
             PgAttachmentLifecycle::delete_draft_attachment(
@@ -3039,10 +3072,13 @@ pub(crate) async fn delete_comment_attachment(
         Some(MemberRole::Owner) | Some(MemberRole::Admin)
     );
     if comment.created_by != ctx.actor && !can_moderate {
-        return Err(ApiError::Domain(atlas_domain::DomainError::Forbidden {
-            message: "only the comment's author or a workspace admin/owner may manage attachments"
-                .into(),
-        }));
+        return Err(ApiError::Domain(
+            atlas_core::error::DomainError::Forbidden {
+                message:
+                    "only the comment's author or a workspace admin/owner may manage attachments"
+                        .into(),
+            },
+        ));
     }
     let attachment_id = AttachmentId(path.attachment_id);
     if PgAttachmentLifecycle::is_tombstoned_draft_attachment(
@@ -3054,7 +3090,7 @@ pub(crate) async fn delete_comment_attachment(
     .map_err(ApiError::Domain)?
     {
         return Err(ApiError::Domain(
-            atlas_domain::DomainError::CommentDraftGone {
+            atlas_core::error::DomainError::CommentDraftGone {
                 reason: "draft attachment was deleted".into(),
             },
         ));
@@ -3071,7 +3107,7 @@ pub(crate) async fn delete_comment_attachment(
 }
 
 fn comment_attachment_to_dto(
-    attachment: atlas_domain::entities::documents::Attachment,
+    attachment: atlas_acta::entities::documents::Attachment,
 ) -> CommentAttachmentDto {
     let comment_id = attachment
         .comment_id
@@ -3082,7 +3118,7 @@ fn comment_attachment_to_dto(
 }
 
 fn comment_attachment_to_dto_with_comment_id(
-    attachment: atlas_domain::entities::documents::Attachment,
+    attachment: atlas_acta::entities::documents::Attachment,
     comment_id: uuid::Uuid,
 ) -> CommentAttachmentDto {
     CommentAttachmentDto {
@@ -3094,11 +3130,11 @@ fn comment_attachment_to_dto_with_comment_id(
         sha256: attachment.sha256,
         actor: attachment
             .created_by_user_id
-            .map(|id| actor_to_dto(&Actor::User(atlas_domain::UserAttributionId(id.0))))
+            .map(|id| actor_to_dto(&Actor::User(atlas_acta::actor::UserAttributionId(id.0))))
             .or_else(|| {
-                attachment
-                    .created_by_api_key_id
-                    .map(|id| actor_to_dto(&Actor::ApiKey(atlas_domain::ApiKeyAttributionId(id.0))))
+                attachment.created_by_api_key_id.map(|id| {
+                    actor_to_dto(&Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(id.0)))
+                })
             }),
         created_at: attachment.created_at,
         url: None,
@@ -3107,7 +3143,7 @@ fn comment_attachment_to_dto_with_comment_id(
 }
 
 fn comment_attachment_to_dto_with_url(
-    attachment: atlas_domain::entities::documents::Attachment,
+    attachment: atlas_acta::entities::documents::Attachment,
     comment_id: uuid::Uuid,
     url: String,
 ) -> CommentAttachmentDto {
@@ -3123,14 +3159,14 @@ fn comment_attachment_to_dto_with_url(
 
 async fn comment_attachment_response(
     state: &AppState,
-    attachment: atlas_domain::entities::documents::Attachment,
+    attachment: atlas_acta::entities::documents::Attachment,
 ) -> Result<Response, ApiError> {
     let bytes = state
         .attachments
         .get(&attachment.sha256)
         .await
         .map_err(|error| match error {
-            atlas_domain::DomainError::NotFound { .. } => ApiError::NotFound,
+            atlas_core::error::DomainError::NotFound { .. } => ApiError::NotFound,
             other => ApiError::Internal {
                 message: other.to_string(),
             },
@@ -3520,7 +3556,7 @@ async fn wikilink_backlinks(
 async fn load_task_sources(
     state: &AppState,
     ctx: &WorkspaceCtx,
-    links: &[atlas_domain::entities::documents::DocumentLink],
+    links: &[atlas_acta::entities::documents::DocumentLink],
 ) -> Result<std::collections::HashMap<uuid::Uuid, task::Model>, ApiError> {
     let ids = links
         .iter()
@@ -3548,7 +3584,7 @@ async fn load_task_sources(
 async fn load_document_sources(
     state: &AppState,
     ctx: &WorkspaceCtx,
-    links: &[atlas_domain::entities::documents::DocumentLink],
+    links: &[atlas_acta::entities::documents::DocumentLink],
 ) -> Result<std::collections::HashMap<uuid::Uuid, document::Model>, ApiError> {
     let ids = links
         .iter()
@@ -3688,7 +3724,7 @@ pub(crate) async fn update_checklist_item(
     State(state): State<AppState>,
     Json(body): Json<UpdateChecklistItemRequest>,
 ) -> Result<Json<ChecklistItemDto>, ApiError> {
-    use atlas_domain::entities::boards_tasks::TaskChecklistItemPatch;
+    use atlas_acta::entities::boards_tasks::TaskChecklistItemPatch;
 
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
@@ -3814,7 +3850,7 @@ pub(crate) async fn promote_checklist_item(
         )
         .await
         .map_err(|e| match e {
-            atlas_domain::DomainError::Forbidden { message }
+            atlas_core::error::DomainError::Forbidden { message }
                 if message.contains("already been promoted") =>
             {
                 ApiError::Conflict
@@ -4408,8 +4444,8 @@ pub(crate) async fn list_workspace_activity(
     let limit = q.limit.unwrap_or(50).clamp(1, 200) as u64;
 
     let actor = match (&member.user, &member.api_key_id) {
-        (Some(user), _) => Actor::User(atlas_domain::UserAttributionId(user.id.0)),
-        (None, Some(kid)) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0)),
+        (Some(user), _) => Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
+        (None, Some(kid)) => Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(kid.0)),
         _ => return Err(ApiError::Unauthorized),
     };
 
@@ -4637,7 +4673,7 @@ async fn enrich_workspace_activity_entries(
     user_ids.sort_by_key(|u| u.0);
     user_ids.dedup_by_key(|u| u.0);
 
-    let user_map: HashMap<uuid::Uuid, atlas_domain::entities::identity::User> = PgUserRepo {
+    let user_map: HashMap<uuid::Uuid, atlas_custos::entities::identity::User> = PgUserRepo {
         conn: (*state.db).clone(),
     }
     .list_by_ids(&user_ids)
@@ -4739,8 +4775,8 @@ pub(crate) async fn list_workspace_tasks(
     let q = parse_workspace_task_query(raw_query.as_deref().unwrap_or(""))?;
 
     let actor = match (&member.user, &member.api_key_id) {
-        (Some(user), _) => Actor::User(atlas_domain::UserAttributionId(user.id.0)),
-        (None, Some(key_id)) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(key_id.0)),
+        (Some(user), _) => Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
+        (None, Some(key_id)) => Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(key_id.0)),
         (None, None) => return Err(ApiError::Unauthorized),
     };
 
@@ -4783,7 +4819,7 @@ pub(crate) async fn list_workspace_tasks(
         .iter()
         .map(|s| {
             s.parse::<uuid::Uuid>()
-                .map(atlas_domain::ids::ColumnId)
+                .map(atlas_acta::ids::ColumnId)
                 .map_err(|_| ApiError::InvalidInput {
                     message: format!("invalid column_id '{s}'"),
                 })
@@ -4795,7 +4831,7 @@ pub(crate) async fn list_workspace_tasks(
         .as_deref()
         .map(|s| {
             s.parse::<uuid::Uuid>()
-                .map(atlas_domain::ids::BoardId)
+                .map(atlas_acta::ids::BoardId)
                 .map_err(|_| ApiError::InvalidInput {
                     message: format!("invalid board_id '{s}'"),
                 })
@@ -4838,9 +4874,9 @@ pub(crate) async fn list_workspace_tasks(
                     });
                 }
             };
-            Ok(atlas_domain::ports::boards_tasks::TaskListCursor {
+            Ok(atlas_acta::ports::boards_tasks::TaskListCursor {
                 sort_value: serde_json::Value::Number(micros.into()),
-                id: atlas_domain::ids::TaskId(sc.id),
+                id: atlas_acta::ids::TaskId(sc.id),
             })
         })
         .transpose()?;

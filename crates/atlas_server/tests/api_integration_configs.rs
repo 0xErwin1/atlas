@@ -13,12 +13,12 @@ use serde_json::Value;
 use sha2::Sha256;
 use uuid::Uuid;
 
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::identity::{ApiKeyType, MemberRole},
-    ids::WorkspaceId,
-    permissions::Capability,
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::ids::WorkspaceId;
+use atlas_custos::capability::Capability;
+use atlas_custos::entities::identity::ApiKeyType;
 use atlas_server::{
     auth::password,
     persistence::repos::{
@@ -78,7 +78,7 @@ async fn add_member_and_login(
     let ws_id_typed = WorkspaceId::from(ws_id);
     let ctx = WorkspaceCtx::new(
         ws_id_typed,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     membership_repo
         .add(&ctx, user.id, MemberRole::Member)
@@ -769,11 +769,11 @@ async fn ingest_duplicate_delivery_is_noop() {
 
 #[tokio::test]
 async fn ingest_filter_match_creates_task() {
-    use atlas_domain::{
-        entities::boards_tasks::{NewBoard, PositionBetween},
-        entities::workspace_core::NewProject,
-        permissions::{Visibility, VisibilityRole},
-    };
+    use atlas_acta::entities::boards_tasks::NewBoard;
+    use atlas_acta::entities::boards_tasks::PositionBetween;
+    use atlas_acta::entities::workspace_core::NewProject;
+    use atlas_acta::permissions::Visibility;
+    use atlas_acta::permissions::VisibilityRole;
     use atlas_server::persistence::entities::boards_tasks::task;
     use atlas_server::persistence::repos::{
         BoardRepo, PgAutomationRuleRepo, PgProjectRepo, ProjectRepo,
@@ -917,11 +917,11 @@ async fn ingest_filter_match_creates_task() {
 
 #[tokio::test]
 async fn ingest_filter_no_match_no_task() {
-    use atlas_domain::{
-        entities::boards_tasks::{NewBoard, PositionBetween},
-        entities::workspace_core::NewProject,
-        permissions::{Visibility, VisibilityRole},
-    };
+    use atlas_acta::entities::boards_tasks::NewBoard;
+    use atlas_acta::entities::boards_tasks::PositionBetween;
+    use atlas_acta::entities::workspace_core::NewProject;
+    use atlas_acta::permissions::Visibility;
+    use atlas_acta::permissions::VisibilityRole;
     use atlas_server::persistence::entities::boards_tasks::task;
     use atlas_server::persistence::repos::{
         BoardRepo, PgAutomationRuleRepo, PgProjectRepo, ProjectRepo,

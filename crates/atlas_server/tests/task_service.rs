@@ -7,14 +7,20 @@
 
 mod support;
 
-use atlas_domain::{
-    entities::boards_tasks::{
-        ActivityKind, ActivityPayload, AssigneeRef, NewBoard, NewTask, NewTaskChecklistItem,
-        NewTaskReference, PositionBetween, Priority, ReferenceKind, TaskPatch,
-    },
-    entities::workspace_core::NewProject,
-    permissions::{Visibility, VisibilityRole},
-};
+use atlas_acta::entities::boards_tasks::ActivityKind;
+use atlas_acta::entities::boards_tasks::ActivityPayload;
+use atlas_acta::entities::boards_tasks::AssigneeRef;
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::boards_tasks::NewTask;
+use atlas_acta::entities::boards_tasks::NewTaskChecklistItem;
+use atlas_acta::entities::boards_tasks::NewTaskReference;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::boards_tasks::Priority;
+use atlas_acta::entities::boards_tasks::ReferenceKind;
+use atlas_acta::entities::boards_tasks::TaskPatch;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
 use atlas_server::{
     persistence::repos::{
         BoardRepo, PgBoardRepo, PgProjectRepo, PgTaskActivityRepo, PgTaskChecklistRepo,
@@ -26,13 +32,13 @@ use atlas_server::{
 
 async fn seed_project_board_col(
     db: &support::TestDb,
-    ctx: &atlas_domain::WorkspaceCtx,
+    ctx: &atlas_acta::actor::WorkspaceCtx,
     slug: &str,
     prefix: &str,
 ) -> (
-    atlas_domain::entities::workspace_core::Project,
-    atlas_domain::entities::boards_tasks::Board,
-    atlas_domain::entities::boards_tasks::BoardColumn,
+    atlas_acta::entities::workspace_core::Project,
+    atlas_acta::entities::boards_tasks::Board,
+    atlas_acta::entities::boards_tasks::BoardColumn,
 ) {
     let project = PgProjectRepo {
         conn: db.conn().clone(),
@@ -787,8 +793,8 @@ async fn task_service_move_task_inverted_anchors_returns_exhausted() {
     assert!(
         matches!(
             result,
-            Err(atlas_domain::DomainError::ComponentConflict {
-                code: atlas_domain::error::acta_conflict::POSITION_EXHAUSTED,
+            Err(atlas_core::error::DomainError::ComponentConflict {
+                code: atlas_server::error::acta_conflict::POSITION_EXHAUSTED,
                 ..
             })
         ),
@@ -1073,7 +1079,7 @@ async fn checklist_patch_position_recovers_after_resequence() {
         &ctx,
         task.id,
         item_c.id,
-        atlas_domain::entities::boards_tasks::TaskChecklistItemPatch {
+        atlas_acta::entities::boards_tasks::TaskChecklistItemPatch {
             title: None,
             checked: None,
             position: Some(PositionBetween {
@@ -1266,7 +1272,10 @@ async fn promote_checklist_item_concurrent_double_promote_is_rejected() {
     let result = promote_handle.await.expect("promote task joined");
 
     assert!(
-        matches!(result, Err(atlas_domain::DomainError::Forbidden { .. })),
+        matches!(
+            result,
+            Err(atlas_core::error::DomainError::Forbidden { .. })
+        ),
         "promote_checklist_item must return Forbidden when promoted_task_id is set by a concurrent transaction"
     );
 
@@ -1288,7 +1297,7 @@ async fn promote_checklist_item_concurrent_double_promote_is_rejected() {
     db.teardown().await;
 }
 
-fn mentioned_titles(entries: &[atlas_domain::entities::boards_tasks::TaskActivity]) -> Vec<String> {
+fn mentioned_titles(entries: &[atlas_acta::entities::boards_tasks::TaskActivity]) -> Vec<String> {
     entries
         .iter()
         .filter_map(|e| match &e.payload {

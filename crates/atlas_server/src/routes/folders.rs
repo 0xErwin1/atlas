@@ -6,18 +6,18 @@ use axum::{
 };
 use serde::Deserialize;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::workspace_core::Folder;
+use atlas_acta::entities::workspace_core::NewFolder;
+use atlas_acta::ids::FolderId;
 use atlas_api::{
     dtos::folders::{
         CopyFolderRequest, CreateFolderRequest, FolderDto, MoveFolderRequest, RenameFolderRequest,
     },
     pagination::{Cursor, Page},
 };
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::workspace_core::{Folder, NewFolder},
-    ids::FolderId,
-    permissions::Principal,
-};
+use atlas_core::principal::Principal;
 
 use crate::{
     authz::{
@@ -53,9 +53,9 @@ fn folder_to_dto(f: Folder) -> FolderDto {
 
 fn principal_to_actor(principal: &Principal) -> Actor {
     match principal {
-        Principal::User(uid) => Actor::User(atlas_domain::UserAttributionId(uid.0)),
-        Principal::ApiKey(kid) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid.0)),
-        Principal::Group(_) => Actor::User(atlas_domain::UserAttributionId(uuid::Uuid::nil())),
+        Principal::User(uid) => Actor::User(atlas_acta::actor::UserAttributionId(uid.0)),
+        Principal::ApiKey(kid) => Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(kid.0)),
+        Principal::Group(_) => Actor::User(atlas_acta::actor::UserAttributionId(uuid::Uuid::nil())),
     }
 }
 

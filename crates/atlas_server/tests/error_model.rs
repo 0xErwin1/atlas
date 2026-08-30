@@ -5,8 +5,10 @@
     clippy::indexing_slicing
 )]
 
-use atlas_domain::error::{DomainError, RevisionConflict, acta_conflict};
+use atlas_core::error::DomainError;
+use atlas_core::error::RevisionConflict;
 use atlas_server::error::ApiError;
+use atlas_server::error::acta_conflict;
 use axum::{
     Router,
     body::Body,

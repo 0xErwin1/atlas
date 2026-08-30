@@ -1,9 +1,19 @@
 use atlas_api::{dtos::documents::ConflictProblemDto, problem::ProblemDetails};
-use atlas_domain::error::{DomainError, RevisionConflict, acta_conflict};
+use atlas_core::error::DomainError;
+use atlas_core::error::RevisionConflict;
 use axum::{
     http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
+
+/// Component-conflict codes for Acta resources, relocated from `atlas_domain`
+/// (S2e). Kept beside `ApiError` since it is the sole consumer of these codes.
+pub mod acta_conflict {
+    /// Fractional position space in a column is exhausted: no midpoint can be
+    /// computed between the two anchors. The adapter must rebalance the
+    /// column's keys and retry, or surface a 409 to the caller.
+    pub const POSITION_EXHAUSTED: &str = "position-exhausted";
+}
 
 /// Server-side error taxonomy.
 ///

@@ -7,15 +7,15 @@
 
 mod support;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::identity::MemberRole;
 use atlas_api::dtos::{
     CreateGrantRequest, CreateProjectRequest, CreateUserApiKeyRequest, GrantPrincipal,
     UpdateProjectRequest,
 };
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::identity::{ApiKeyType, MemberRole},
-    permissions::Capability,
-};
+use atlas_custos::capability::Capability;
+use atlas_custos::entities::identity::ApiKeyType;
 use atlas_server::persistence::repos::{
     ApiKeyRepo, MembershipRepo, NewApiKey, NewUser, PermissionGrantRepo, PgApiKeyRepo, UserRepo,
 };
@@ -55,12 +55,12 @@ fn grant_req(user_id: uuid::Uuid, role: &str) -> CreateGrantRequest {
 async fn add_member(
     db: &support::TestDb,
     server: &support::TestServer,
-    ws_id: atlas_domain::ids::WorkspaceId,
+    ws_id: atlas_acta::ids::WorkspaceId,
     username: &str,
     role: MemberRole,
 ) -> (
     atlas_client::AtlasClient,
-    atlas_domain::entities::identity::User,
+    atlas_custos::entities::identity::User,
 ) {
     use atlas_api::dtos::LoginRequest;
     use atlas_server::auth::password;
@@ -86,7 +86,7 @@ async fn add_member(
 
     let ctx = WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     db.membership_repo()
         .add(&ctx, user.id, role)
@@ -142,7 +142,8 @@ async fn agent_cannot_share_project() {
     )
     .await;
 
-    use atlas_domain::ids::{ApiKeyId, ProjectId};
+    use atlas_acta::ids::ProjectId;
+    use atlas_core::principal::ApiKeyId;
     use atlas_server::authz::policy::NewPermissionGrant;
     let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
         conn: db.conn().clone(),
@@ -157,7 +158,7 @@ async fn agent_cannot_share_project() {
             folder_id: None,
             document_id: None,
             board_id: None,
-            role: atlas_domain::permissions::ResourceRole::Editor,
+            role: atlas_server::authz::ResourceRole::Editor,
             created_by_user_id: Some(owner_user.id),
             created_by_api_key_id: None,
         })
@@ -301,7 +302,7 @@ async fn editor_cannot_grant_admin() {
             folder_id: None,
             document_id: None,
             board_id: None,
-            role: atlas_domain::permissions::ResourceRole::Editor,
+            role: atlas_server::authz::ResourceRole::Editor,
             created_by_user_id: Some(owner_user.id),
             created_by_api_key_id: None,
         })
@@ -363,7 +364,7 @@ async fn viewer_cannot_update_project() {
             folder_id: None,
             document_id: None,
             board_id: None,
-            role: atlas_domain::permissions::ResourceRole::Viewer,
+            role: atlas_server::authz::ResourceRole::Viewer,
             created_by_user_id: Some(owner_user.id),
             created_by_api_key_id: None,
         })
@@ -451,7 +452,8 @@ async fn agent_with_grant_sees_private_project_in_list() {
     let agent_client =
         atlas_client::AtlasClient::new(server.base_url()).with_token(key_created.secret.clone());
 
-    use atlas_domain::ids::{ApiKeyId, ProjectId};
+    use atlas_acta::ids::ProjectId;
+    use atlas_core::principal::ApiKeyId;
     use atlas_server::authz::policy::NewPermissionGrant;
     let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
         conn: db.conn().clone(),
@@ -466,7 +468,7 @@ async fn agent_with_grant_sees_private_project_in_list() {
             folder_id: None,
             document_id: None,
             board_id: None,
-            role: atlas_domain::permissions::ResourceRole::Viewer,
+            role: atlas_server::authz::ResourceRole::Viewer,
             created_by_user_id: Some(owner_user.id),
             created_by_api_key_id: None,
         })
@@ -620,7 +622,7 @@ async fn user_with_workspace_scoped_grant_sees_private_projects_in_list() {
             folder_id: None,
             document_id: None,
             board_id: None,
-            role: atlas_domain::permissions::ResourceRole::Viewer,
+            role: atlas_server::authz::ResourceRole::Viewer,
             created_by_user_id: Some(owner_user.id),
             created_by_api_key_id: None,
         })
@@ -667,7 +669,8 @@ async fn share_denied_403_does_not_leak_variant_name() {
         .await
         .expect("create api key");
 
-    use atlas_domain::ids::{ApiKeyId, ProjectId};
+    use atlas_acta::ids::ProjectId;
+    use atlas_core::principal::ApiKeyId;
     use atlas_server::authz::policy::NewPermissionGrant;
     let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
         conn: db.conn().clone(),
@@ -682,7 +685,7 @@ async fn share_denied_403_does_not_leak_variant_name() {
             folder_id: None,
             document_id: None,
             board_id: None,
-            role: atlas_domain::permissions::ResourceRole::Editor,
+            role: atlas_server::authz::ResourceRole::Editor,
             created_by_user_id: Some(owner_user.id),
             created_by_api_key_id: None,
         })

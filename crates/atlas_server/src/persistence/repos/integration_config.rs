@@ -1,8 +1,7 @@
-use atlas_domain::{
-    DomainError,
-    entities::identity::{ApiKeyType, NewApiKey},
-    ids::UserId,
-};
+use atlas_core::error::DomainError;
+use atlas_core::principal::UserId;
+use atlas_custos::entities::identity::ApiKeyType;
+use atlas_custos::entities::identity::NewApiKey;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait,

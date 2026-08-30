@@ -12,24 +12,30 @@ use axum::{
 };
 use serde::Deserialize;
 
+use crate::authz::ResourceRole;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::documents::Attachment;
+use atlas_acta::entities::documents::AttachmentOwner;
+use atlas_acta::entities::documents::AttachmentOwnerKind;
+use atlas_acta::entities::documents::AttachmentOwnerRef;
+use atlas_acta::entities::documents::WorkspaceAttachment;
+use atlas_acta::entities::documents::WorkspaceAttachmentQuery;
+use atlas_acta::ids::AttachmentId;
+use atlas_acta::ids::CommentId;
+use atlas_acta::ids::DocumentId;
+use atlas_acta::ids::TaskId;
+use atlas_acta::ports::boards_tasks::TaskRepo;
+use atlas_acta::ports::comments::CommentRepo as CommentRepoPort;
+use atlas_acta::ports::documents::AttachmentRepo;
+use atlas_acta::ports::documents::DocumentRepo;
+use atlas_acta::ports::documents::WorkspaceAttachmentRepo;
 use atlas_api::{
     dtos::documents::{AttachmentOwnerDto, RenameAttachmentRequest, WorkspaceAttachmentDto},
     pagination::{Cursor, Page},
 };
-use atlas_domain::{
-    WorkspaceCtx,
-    entities::documents::{
-        Attachment, AttachmentOwner, AttachmentOwnerKind, AttachmentOwnerRef, WorkspaceAttachment,
-        WorkspaceAttachmentQuery,
-    },
-    ids::{AttachmentId, CommentId, DocumentId, TaskId},
-    permissions::{Capability, CapabilityAction, CapabilityFamily, ResourceRole},
-    ports::{
-        boards_tasks::TaskRepo,
-        comments::CommentRepo as CommentRepoPort,
-        documents::{AttachmentRepo, DocumentRepo, WorkspaceAttachmentRepo},
-    },
-};
+use atlas_custos::capability::Capability;
+use atlas_custos::capability::CapabilityAction;
+use atlas_custos::capability::CapabilityFamily;
 
 use crate::{
     authz::{
@@ -169,18 +175,18 @@ async fn hydrate_uploaders(
 ) -> Result<(), ApiError> {
     use std::collections::HashMap;
 
-    let user_ids: Vec<atlas_domain::ids::UserId> = dtos
+    let user_ids: Vec<atlas_core::principal::UserId> = dtos
         .iter()
         .filter_map(|dto| dto.actor.as_ref())
         .filter(|actor| actor.r#type == "user")
-        .map(|actor| atlas_domain::ids::UserId(actor.id))
+        .map(|actor| atlas_core::principal::UserId(actor.id))
         .collect();
 
-    let key_ids: Vec<atlas_domain::ids::ApiKeyId> = dtos
+    let key_ids: Vec<atlas_core::principal::ApiKeyId> = dtos
         .iter()
         .filter_map(|dto| dto.actor.as_ref())
         .filter(|actor| actor.r#type == "api_key")
-        .map(|actor| atlas_domain::ids::ApiKeyId(actor.id))
+        .map(|actor| atlas_core::principal::ApiKeyId(actor.id))
         .collect();
 
     let users: HashMap<uuid::Uuid, String> = PgUserRepo {
@@ -292,7 +298,7 @@ pub(crate) async fn rename_attachment(
         )
         .await
         .map_err(|error| match error {
-            atlas_domain::DomainError::NotFound { .. } => ApiError::NotFound,
+            atlas_core::error::DomainError::NotFound { .. } => ApiError::NotFound,
             other => ApiError::Domain(other),
         })?;
 
@@ -408,7 +414,8 @@ async fn rewrite_document_references(
         .map_err(ApiError::Domain)?
         .ok_or(ApiError::NotFound)?;
 
-    let rewritten = atlas_domain::rename_file_links(&document.content, previous_name, file_name);
+    let rewritten =
+        atlas_acta::wikilink::rename_file_links(&document.content, previous_name, file_name);
     if rewritten == document.content {
         return Ok(());
     }
@@ -450,7 +457,7 @@ async fn rewrite_task_references(
         .ok_or(ApiError::NotFound)?;
 
     let description = task.description;
-    let rewritten = atlas_domain::rename_file_links(&description, previous_name, file_name);
+    let rewritten = atlas_acta::wikilink::rename_file_links(&description, previous_name, file_name);
     if rewritten == description {
         return Ok(());
     }
@@ -460,7 +467,7 @@ async fn rewrite_task_references(
         .patch(
             ctx,
             task_id,
-            atlas_domain::entities::boards_tasks::TaskPatch {
+            atlas_acta::entities::boards_tasks::TaskPatch {
                 description: Some(rewritten),
                 ..Default::default()
             },
@@ -583,7 +590,8 @@ async fn require_comment_authorship(
     owner: &AttachmentOwnerRef,
     comment_id: CommentId,
 ) -> Result<(), ApiError> {
-    use atlas_domain::entities::{comments::CommentOwner, identity::MemberRole};
+    use atlas_acta::entities::comments::CommentOwner;
+    use atlas_acta::entities::identity::MemberRole;
 
     let comment_owner = match owner.kind {
         AttachmentOwnerKind::Document => {
@@ -603,10 +611,13 @@ async fn require_comment_authorship(
     );
 
     if comment.created_by != ctx.actor && !can_moderate {
-        return Err(ApiError::Domain(atlas_domain::DomainError::Forbidden {
-            message: "only the comment's author or a workspace admin/owner may manage attachments"
-                .into(),
-        }));
+        return Err(ApiError::Domain(
+            atlas_core::error::DomainError::Forbidden {
+                message:
+                    "only the comment's author or a workspace admin/owner may manage attachments"
+                        .into(),
+            },
+        ));
     }
 
     Ok(())

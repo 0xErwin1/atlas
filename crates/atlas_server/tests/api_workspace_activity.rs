@@ -7,16 +7,17 @@
 
 mod support;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::ids::BoardId;
+use atlas_acta::ids::ProjectId;
+use atlas_acta::ids::WorkspaceId;
 use atlas_api::dtos::{
     CreateProjectRequest,
     boards_tasks::{CreateBoardRequest, CreateColumnRequest, CreateTaskRequest},
 };
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::identity::MemberRole,
-    ids::{BoardId, ProjectId, WorkspaceId},
-    permissions::ResourceRole,
-};
+use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::persistence::repos::{
     MembershipRepo, NewUser, PermissionGrantRepo, PgMembershipRepo, PgPermissionGrantRepo, UserRepo,
@@ -148,7 +149,7 @@ async fn add_plain_member(
 
     let ctx = WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     PgMembershipRepo {
         conn: db.conn().clone(),
@@ -173,7 +174,7 @@ async fn grant_board(
     db: &support::TestDb,
     ws_id: WorkspaceId,
     board_id: BoardId,
-    user_id: atlas_domain::ids::UserId,
+    user_id: atlas_core::principal::UserId,
     role: ResourceRole,
 ) {
     let grant_repo = PgPermissionGrantRepo {
@@ -201,7 +202,7 @@ async fn grant_project(
     db: &support::TestDb,
     ws_id: WorkspaceId,
     project_id: ProjectId,
-    user_id: atlas_domain::ids::UserId,
+    user_id: atlas_core::principal::UserId,
     role: ResourceRole,
 ) {
     let grant_repo = PgPermissionGrantRepo {
@@ -307,7 +308,7 @@ async fn workspace_activity_board_only_grant_surfaces_board_tasks() {
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0)),
     );
     PgMembershipRepo {
         conn: db.conn().clone(),
@@ -384,7 +385,7 @@ async fn workspace_activity_project_grant_surfaces_project_tasks() {
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0)),
     );
     PgMembershipRepo {
         conn: db.conn().clone(),
@@ -971,7 +972,7 @@ async fn workspace_activity_ungranted_api_key_cannot_see_workspace_visible_proje
         .upsert(NewPermissionGrant {
             workspace_id: ws.id,
             user_id: None,
-            api_key_id: Some(atlas_domain::ids::ApiKeyId(key_created.id)),
+            api_key_id: Some(atlas_core::principal::ApiKeyId(key_created.id)),
             group_id: None,
             project_id: None,
             folder_id: None,
@@ -1042,7 +1043,7 @@ async fn workspace_activity_root_member_sees_all_via_admin_bypass() {
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0)),
     );
     PgMembershipRepo {
         conn: db.conn().clone(),

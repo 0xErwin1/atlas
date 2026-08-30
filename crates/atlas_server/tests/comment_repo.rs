@@ -8,17 +8,25 @@
 mod support;
 
 use async_trait::async_trait;
-use atlas_domain::ids::CommentDraftId;
-use atlas_domain::ports::comments::CommentLinkRepo;
-use atlas_domain::{
-    Actor, AttachmentStore, DomainError, WorkspaceCtx,
-    entities::boards_tasks::{NewBoard, NewTask, PositionBetween},
-    entities::comments::{CommentFeedEntry, CommentLinkTarget, CommentOwner, NewComment},
-    entities::documents::NewAttachment,
-    entities::identity::{ApiKeyType, NewApiKey},
-    entities::workspace_core::NewProject,
-    permissions::{Visibility, VisibilityRole},
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::boards_tasks::NewTask;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::comments::CommentFeedEntry;
+use atlas_acta::entities::comments::CommentLinkTarget;
+use atlas_acta::entities::comments::CommentOwner;
+use atlas_acta::entities::comments::NewComment;
+use atlas_acta::entities::documents::NewAttachment;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::ids::CommentDraftId;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
+use atlas_acta::ports::attachment_store::AttachmentStore;
+use atlas_acta::ports::comments::CommentLinkRepo;
+use atlas_core::error::DomainError;
+use atlas_custos::entities::identity::ApiKeyType;
+use atlas_custos::entities::identity::NewApiKey;
 use atlas_server::persistence::entities::comments::comment_attachment_draft;
 use atlas_server::persistence::repos::{
     ApiKeyRepo, AttachmentWriteIntentRepo, BoardRepo, CommentRepo, DiskAttachmentStore,
@@ -36,13 +44,13 @@ use tokio::time::timeout;
 
 async fn seed_project_board_column(
     db: &support::TestDb,
-    ctx: &atlas_domain::WorkspaceCtx,
+    ctx: &atlas_acta::actor::WorkspaceCtx,
     slug: &str,
     prefix: &str,
 ) -> (
-    atlas_domain::entities::workspace_core::Project,
-    atlas_domain::entities::boards_tasks::Board,
-    atlas_domain::entities::boards_tasks::BoardColumn,
+    atlas_acta::entities::workspace_core::Project,
+    atlas_acta::entities::boards_tasks::Board,
+    atlas_acta::entities::boards_tasks::BoardColumn,
 ) {
     let project = PgProjectRepo {
         conn: db.conn().clone(),
@@ -90,12 +98,12 @@ async fn seed_project_board_column(
 
 async fn seed_task(
     db: &support::TestDb,
-    ctx: &atlas_domain::WorkspaceCtx,
-    project_id: atlas_domain::ids::ProjectId,
-    board_id: atlas_domain::ids::BoardId,
-    col_id: atlas_domain::ids::ColumnId,
+    ctx: &atlas_acta::actor::WorkspaceCtx,
+    project_id: atlas_acta::ids::ProjectId,
+    board_id: atlas_acta::ids::BoardId,
+    col_id: atlas_acta::ids::ColumnId,
     title: &str,
-) -> atlas_domain::entities::boards_tasks::Task {
+) -> atlas_acta::entities::boards_tasks::Task {
     PgTaskRepo::new(db.conn().clone())
         .create(
             ctx,
@@ -174,7 +182,7 @@ async fn comment_create_and_get_roundtrips_body_and_author() {
     assert!(created.document_id.is_none());
     assert_eq!(
         created.created_by,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0))
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0))
     );
     assert!(created.deleted_at.is_none());
 
@@ -365,7 +373,7 @@ async fn comment_delete_missing_comment_returns_not_found() {
     let task = seed_task(&db, &ctx, proj.id, board.id, col.id, "Task").await;
 
     let repo = PgCommentRepo::new(db.conn().clone());
-    let bogus_id = atlas_domain::ids::CommentId::new();
+    let bogus_id = atlas_acta::ids::CommentId::new();
 
     let err = repo
         .soft_delete(&ctx, CommentOwner::Task(task.id), bogus_id)
@@ -747,9 +755,9 @@ async fn comment_link_repo_replaces_live_edges_and_retains_diff_events() {
             })
             .collect::<Vec<_>>(),
         vec![
-            atlas_domain::entities::comments::CommentLinkEventKind::LinkAdded,
-            atlas_domain::entities::comments::CommentLinkEventKind::LinkRemoved,
-            atlas_domain::entities::comments::CommentLinkEventKind::LinkAdded,
+            atlas_acta::entities::comments::CommentLinkEventKind::LinkAdded,
+            atlas_acta::entities::comments::CommentLinkEventKind::LinkRemoved,
+            atlas_acta::entities::comments::CommentLinkEventKind::LinkAdded,
         ]
     );
 
@@ -822,7 +830,7 @@ async fn comment_feed_paginates_merged_comments_and_retained_events_without_dupl
     assert!(matches!(
         second_page.entries.last(),
         Some(CommentFeedEntry::Event(event))
-            if event.kind == atlas_domain::entities::comments::CommentLinkEventKind::CommentDeleted
+            if event.kind == atlas_acta::entities::comments::CommentLinkEventKind::CommentDeleted
     ));
     assert_eq!(
         second.id,
@@ -1571,7 +1579,7 @@ async fn finalized_origin_individual_delete_rolls_back_its_tombstone_on_database
         &db.conn().clone(),
         &ctx,
         comment.id,
-        atlas_domain::AttachmentId(attachment_id),
+        atlas_acta::ids::AttachmentId(attachment_id),
     )
     .await;
     assert!(matches!(result, Err(DomainError::Internal { .. })));
@@ -1617,8 +1625,8 @@ async fn direct_attachment_restore_only_clears_the_matching_tombstone() {
         "Attachment owner",
     )
     .await;
-    let attachment_id = atlas_domain::AttachmentId(uuid::Uuid::now_v7());
-    let independent_attachment_id = atlas_domain::AttachmentId(uuid::Uuid::now_v7());
+    let attachment_id = atlas_acta::ids::AttachmentId(uuid::Uuid::now_v7());
+    let independent_attachment_id = atlas_acta::ids::AttachmentId(uuid::Uuid::now_v7());
     let deleted_at = Utc::now();
     let independently_deleted_at = deleted_at + Duration::microseconds(1);
 
@@ -2896,7 +2904,7 @@ async fn comment_link_event_user_actor_round_trips_through_string_discriminant()
                 CommentFeedEntry::Comment(_) => None,
             })
             .collect::<Vec<_>>(),
-        vec![Actor::User(atlas_domain::UserAttributionId(user.id.0))]
+        vec![Actor::User(atlas_acta::actor::UserAttributionId(user.id.0))]
     );
 
     db.teardown().await;
@@ -2926,7 +2934,7 @@ async fn comment_link_event_api_key_actor_round_trips_through_string_discriminan
         .expect("create api key");
     let api_key_ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::ApiKey(atlas_domain::ApiKeyAttributionId(api_key.id.0)),
+        Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(api_key.id.0)),
     );
     let (project, board, column) =
         seed_project_board_column(&db, &ctx, "comment-link-actor-key-proj", "AK").await;
@@ -2989,7 +2997,7 @@ async fn comment_link_event_api_key_actor_round_trips_through_string_discriminan
                 CommentFeedEntry::Comment(_) => None,
             })
             .collect::<Vec<_>>(),
-        vec![Actor::ApiKey(atlas_domain::ApiKeyAttributionId(
+        vec![Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(
             api_key.id.0
         ))]
     );

@@ -1,11 +1,17 @@
 use crate::persistence::entities::boards_tasks::actor_from_columns;
-use atlas_domain::entities::comments::{
-    Comment, CommentAttachmentDraft, CommentAttachmentDraftState, CommentLink, CommentLinkTarget,
-    CommentOwner,
-};
-use atlas_domain::ids::{
-    AttachmentId, CommentDraftId, CommentId, CommentLinkId, DocumentId, TaskId, WorkspaceId,
-};
+use atlas_acta::entities::comments::Comment;
+use atlas_acta::entities::comments::CommentAttachmentDraft;
+use atlas_acta::entities::comments::CommentAttachmentDraftState;
+use atlas_acta::entities::comments::CommentLink;
+use atlas_acta::entities::comments::CommentLinkTarget;
+use atlas_acta::entities::comments::CommentOwner;
+use atlas_acta::ids::AttachmentId;
+use atlas_acta::ids::CommentDraftId;
+use atlas_acta::ids::CommentId;
+use atlas_acta::ids::CommentLinkId;
+use atlas_acta::ids::DocumentId;
+use atlas_acta::ids::TaskId;
+use atlas_acta::ids::WorkspaceId;
 use chrono::{DateTime, Utc};
 use sea_orm::entity::prelude::*;
 
@@ -189,15 +195,15 @@ pub fn comment_attachment_draft_from(
 
 pub fn comment_attachment_draft_upload_from(
     m: comment_attachment_draft_upload::Model,
-) -> Result<atlas_domain::entities::comments::CommentAttachmentDraftUpload, String> {
-    let metadata = atlas_domain::entities::comments::CommentDraftMetadata::normalize(
+) -> Result<atlas_acta::entities::comments::CommentAttachmentDraftUpload, String> {
+    let metadata = atlas_acta::entities::comments::CommentDraftMetadata::normalize(
         &m.file_name,
         &m.content_type,
     )
     .map_err(|error| error.to_string())?;
 
     Ok(
-        atlas_domain::entities::comments::CommentAttachmentDraftUpload {
+        atlas_acta::entities::comments::CommentAttachmentDraftUpload {
             draft_id: CommentDraftId(m.draft_id),
             upload_token: m.upload_token,
             original_attachment_id: AttachmentId(m.original_attachment_id),
@@ -276,7 +282,7 @@ mod tests {
 
         assert_eq!(
             comment.created_by,
-            atlas_domain::Actor::ApiKey(atlas_domain::ApiKeyAttributionId(key_id))
+            atlas_acta::actor::Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(key_id))
         );
     }
 }

@@ -1,14 +1,26 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 #[allow(dead_code)]
-use atlas_domain::entities::boards_tasks::ReferenceKind;
-use atlas_domain::entities::identity::MemberRole;
-use atlas_domain::error::DomainError;
-use atlas_domain::ids::{ApiKeyId, BoardId, DocumentId, ProjectId, TaskId, UserId};
-use atlas_domain::permissions::{
-    Capability, CapabilityAction, CapabilityFamily, Principal, ResourceRef, ResourceRole,
-    ShareDenied, Visibility, VisibilityRole, authorize_share, validate_reference,
-};
+use atlas_acta::entities::boards_tasks::ReferenceKind;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::ids::BoardId;
+use atlas_acta::ids::DocumentId;
+use atlas_acta::ids::ProjectId;
+use atlas_acta::ids::TaskId;
+use atlas_acta::permissions::ResourceRef;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
+use atlas_acta::permissions::validate_reference;
+use atlas_core::error::DomainError;
+use atlas_core::principal::ApiKeyId;
+use atlas_core::principal::Principal;
+use atlas_core::principal::UserId;
+use atlas_custos::capability::Capability;
+use atlas_custos::capability::CapabilityAction;
+use atlas_custos::capability::CapabilityFamily;
+use atlas_server::authz::ResourceRole;
+use atlas_server::authz::ShareDenied;
+use atlas_server::authz::authorize_share;
 use atlas_server::authz::policy::{ChainSegment, ResolutionInput, ResourceChain, resolve};
 
 fn user_principal() -> Principal {

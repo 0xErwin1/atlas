@@ -10,7 +10,10 @@ mod support;
 use serde_json::Value;
 use uuid::Uuid;
 
-use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole, ids::WorkspaceId};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::ids::WorkspaceId;
 use atlas_server::{
     auth::password,
     persistence::repos::{MembershipRepo, NewUser, PgMembershipRepo, PgUserRepo, UserRepo},
@@ -55,7 +58,7 @@ async fn add_member_and_login(
     let ws_id_typed = WorkspaceId::from(ws_id);
     let ctx = WorkspaceCtx::new(
         ws_id_typed,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     membership_repo
         .add(&ctx, user.id, MemberRole::Member)
@@ -82,11 +85,11 @@ async fn add_member_and_login(
 
 #[tokio::test]
 async fn admin_creates_automation_rule_returns_201() {
-    use atlas_domain::{
-        entities::boards_tasks::{NewBoard, PositionBetween},
-        entities::workspace_core::NewProject,
-        permissions::{Visibility, VisibilityRole},
-    };
+    use atlas_acta::entities::boards_tasks::NewBoard;
+    use atlas_acta::entities::boards_tasks::PositionBetween;
+    use atlas_acta::entities::workspace_core::NewProject;
+    use atlas_acta::permissions::Visibility;
+    use atlas_acta::permissions::VisibilityRole;
     use atlas_server::persistence::repos::{BoardRepo, PgProjectRepo, ProjectRepo};
 
     let db = support::TestDb::create().await.expect("TestDb");
@@ -395,11 +398,11 @@ async fn automation_rule_invalid_action_params_rejected() {
 
 #[tokio::test]
 async fn non_admin_rejected_on_automation_rule_endpoints() {
-    use atlas_domain::{
-        entities::boards_tasks::{NewBoard, PositionBetween},
-        entities::workspace_core::NewProject,
-        permissions::{Visibility, VisibilityRole},
-    };
+    use atlas_acta::entities::boards_tasks::NewBoard;
+    use atlas_acta::entities::boards_tasks::PositionBetween;
+    use atlas_acta::entities::workspace_core::NewProject;
+    use atlas_acta::permissions::Visibility;
+    use atlas_acta::permissions::VisibilityRole;
     use atlas_server::persistence::repos::{BoardRepo, PgProjectRepo, ProjectRepo};
 
     let db = support::TestDb::create().await.expect("TestDb");
@@ -526,11 +529,11 @@ async fn non_admin_rejected_on_automation_rule_endpoints() {
 
 #[tokio::test]
 async fn automation_rule_crud() {
-    use atlas_domain::{
-        entities::boards_tasks::{NewBoard, PositionBetween},
-        entities::workspace_core::NewProject,
-        permissions::{Visibility, VisibilityRole},
-    };
+    use atlas_acta::entities::boards_tasks::NewBoard;
+    use atlas_acta::entities::boards_tasks::PositionBetween;
+    use atlas_acta::entities::workspace_core::NewProject;
+    use atlas_acta::permissions::Visibility;
+    use atlas_acta::permissions::VisibilityRole;
     use atlas_server::persistence::repos::{BoardRepo, PgProjectRepo, ProjectRepo};
 
     let db = support::TestDb::create().await.expect("TestDb");

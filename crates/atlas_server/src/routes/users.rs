@@ -7,18 +7,16 @@ use axum::{
 use chrono::{Duration, Utc};
 use sea_orm::TransactionTrait;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::entities::identity::MemberRole;
 use atlas_api::dtos::{
     ActivationLinkResponse, CreateUserRequest, CreateUserResponse, ResetPasswordRequest,
     SetSystemAdminRequest, UserDto, UserMembershipDto,
 };
-use atlas_domain::{
-    Actor,
-    entities::{
-        identity::{MemberRole, NewUser},
-        security_audit::{NewSecurityAuditEvent, SecurityAction},
-    },
-    ids::UserId,
-};
+use atlas_core::principal::UserId;
+use atlas_custos::entities::identity::NewUser;
+use atlas_custos::entities::security_audit::NewSecurityAuditEvent;
+use atlas_custos::entities::security_audit::SecurityAction;
 
 use crate::{
     auth::tokens::{generate_session_token, hash_token},
@@ -192,7 +190,7 @@ pub(crate) async fn regenerate_activation_link(
                 (id, user_id, token_hash, expires_at, consumed_at, created_at) \
              VALUES ($1, $2, $3, $4, NULL, $5)",
             [
-                atlas_domain::ids::ActivationTokenId::new().0.into(),
+                atlas_custos::ids::ActivationTokenId::new().0.into(),
                 user_id.0.into(),
                 token_hash.into(),
                 expires_at.into(),
@@ -209,7 +207,7 @@ pub(crate) async fn regenerate_activation_link(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: None,
-            actor: Actor::User(atlas_domain::UserAttributionId(admin.user.id.0)),
+            actor: Actor::User(atlas_acta::actor::UserAttributionId(admin.user.id.0)),
             action: SecurityAction::UserActivationRegenerated,
             target_type: "user".to_string(),
             target_id: Some(user_id.0),
@@ -296,7 +294,7 @@ pub(crate) async fn disable_user(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: None,
-            actor: Actor::User(atlas_domain::UserAttributionId(admin.user.id.0)),
+            actor: Actor::User(atlas_acta::actor::UserAttributionId(admin.user.id.0)),
             action: SecurityAction::UserDisabled,
             target_type: "user".to_string(),
             target_id: Some(user_id.0),
@@ -386,7 +384,7 @@ pub(crate) async fn enable_user(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: None,
-            actor: Actor::User(atlas_domain::UserAttributionId(admin.user.id.0)),
+            actor: Actor::User(atlas_acta::actor::UserAttributionId(admin.user.id.0)),
             action: SecurityAction::UserEnabled,
             target_type: "user".to_string(),
             target_id: Some(user_id.0),
@@ -475,7 +473,7 @@ pub(crate) async fn reset_password(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: None,
-            actor: Actor::User(atlas_domain::UserAttributionId(admin.user.id.0)),
+            actor: Actor::User(atlas_acta::actor::UserAttributionId(admin.user.id.0)),
             action: SecurityAction::UserPasswordReset,
             target_type: "user".to_string(),
             target_id: Some(user_id.0),
@@ -561,7 +559,7 @@ pub(crate) async fn set_system_admin(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: None,
-            actor: Actor::User(atlas_domain::UserAttributionId(root.user.id.0)),
+            actor: Actor::User(atlas_acta::actor::UserAttributionId(root.user.id.0)),
             action: SecurityAction::UserSystemAdminSet,
             target_type: "user".to_string(),
             target_id: Some(target_id.0),
@@ -665,13 +663,14 @@ fn parse_member_role(role: &str) -> Result<MemberRole, ApiError> {
 async fn create_pending_user_txn(
     state: &AppState,
     new: NewUser,
-    workspace_id: atlas_domain::ids::WorkspaceId,
+    workspace_id: atlas_acta::ids::WorkspaceId,
     actor_user_id: UserId,
     role: MemberRole,
     token_hash: &str,
     token_expires_at: chrono::DateTime<Utc>,
-) -> Result<atlas_domain::entities::identity::User, ApiError> {
-    use atlas_domain::ids::{ActivationTokenId, MembershipId};
+) -> Result<atlas_custos::entities::identity::User, ApiError> {
+    use atlas_acta::ids::MembershipId;
+    use atlas_custos::ids::ActivationTokenId;
     use sea_orm::{ConnectionTrait, Statement, TransactionTrait};
 
     let user_id = UserId::new();
@@ -708,7 +707,7 @@ async fn create_pending_user_txn(
 
         if is_unique_violation(&err) {
             return Err(ApiError::Domain(
-                atlas_domain::error::DomainError::AlreadyExists {
+                atlas_core::error::DomainError::AlreadyExists {
                     message: "a user with this username already exists".into(),
                 },
             ));
@@ -762,7 +761,7 @@ async fn create_pending_user_txn(
         &txn,
         NewSecurityAuditEvent {
             workspace_id: None,
-            actor: Actor::User(atlas_domain::UserAttributionId(actor_user_id.0)),
+            actor: Actor::User(atlas_acta::actor::UserAttributionId(actor_user_id.0)),
             action: SecurityAction::UserCreated,
             target_type: "user".to_string(),
             target_id: Some(user_id.0),
@@ -824,7 +823,7 @@ fn build_activation_link(plaintext: &str) -> String {
     format!("{base}/activate/{plaintext}")
 }
 
-pub(crate) fn user_to_dto(user: &atlas_domain::entities::identity::User) -> UserDto {
+pub(crate) fn user_to_dto(user: &atlas_custos::entities::identity::User) -> UserDto {
     UserDto {
         id: user.id.0,
         username: user.username.clone(),

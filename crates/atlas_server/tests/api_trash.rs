@@ -2,24 +2,26 @@
 
 mod support;
 
-use atlas_domain::{
-    AttachmentStore,
-    entities::{
-        boards_tasks::{NewBoard, NewTask, PositionBetween},
-        comments::CommentOwner,
-        documents::{NewAttachment, NewDocument},
-        identity::MemberRole,
-        security_audit::AuditFilters,
-        workspace_core::{NewFolder, NewProject},
-    },
-    permissions::{Visibility, VisibilityRole},
-    ports::{
-        boards_tasks::{BoardRepo, TaskRepo},
-        documents::{AttachmentRepo, DocumentRepo},
-        security_audit::SecurityAuditRepo,
-        workspace_core::{FolderRepo, ProjectRepo},
-    },
-};
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::boards_tasks::NewTask;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::comments::CommentOwner;
+use atlas_acta::entities::documents::NewAttachment;
+use atlas_acta::entities::documents::NewDocument;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::entities::workspace_core::NewFolder;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
+use atlas_acta::ports::attachment_store::AttachmentStore;
+use atlas_acta::ports::boards_tasks::BoardRepo;
+use atlas_acta::ports::boards_tasks::TaskRepo;
+use atlas_acta::ports::documents::AttachmentRepo;
+use atlas_acta::ports::documents::DocumentRepo;
+use atlas_acta::ports::workspace_core::FolderRepo;
+use atlas_acta::ports::workspace_core::ProjectRepo;
+use atlas_custos::entities::security_audit::AuditFilters;
+use atlas_custos::ports::security_audit::SecurityAuditRepo;
 use atlas_server::routes::registry::ROUTE_REGISTRY;
 use atlas_server::{
     persistence::repos::{
@@ -43,21 +45,21 @@ struct FailOnceDeleteStore {
 
 #[async_trait::async_trait]
 impl AttachmentStore for FailOnceDeleteStore {
-    async fn put(&self, data: &[u8]) -> Result<String, atlas_domain::DomainError> {
+    async fn put(&self, data: &[u8]) -> Result<String, atlas_core::error::DomainError> {
         self.inner.put(data).await
     }
 
-    async fn get(&self, digest: &str) -> Result<Bytes, atlas_domain::DomainError> {
+    async fn get(&self, digest: &str) -> Result<Bytes, atlas_core::error::DomainError> {
         self.inner.get(digest).await
     }
 
-    async fn exists(&self, digest: &str) -> Result<bool, atlas_domain::DomainError> {
+    async fn exists(&self, digest: &str) -> Result<bool, atlas_core::error::DomainError> {
         self.inner.exists(digest).await
     }
 
-    async fn delete(&self, digest: &str) -> Result<(), atlas_domain::DomainError> {
+    async fn delete(&self, digest: &str) -> Result<(), atlas_core::error::DomainError> {
         if self.fail_next_delete.swap(false, Ordering::SeqCst) {
-            return Err(atlas_domain::DomainError::Internal {
+            return Err(atlas_core::error::DomainError::Internal {
                 message: "simulated object-store deletion failure".into(),
             });
         }
@@ -2030,7 +2032,7 @@ async fn purge_cleanup_keeps_a_shared_live_digest_and_deletes_it_after_its_last_
     let first_operation = service
         .purge(
             owner.id,
-            atlas_domain::entities::lifecycle::TrashKind::Attachment,
+            atlas_acta::entities::lifecycle::TrashKind::Attachment,
             first.id.0,
         )
         .await
@@ -2041,7 +2043,7 @@ async fn purge_cleanup_keeps_a_shared_live_digest_and_deletes_it_after_its_last_
         .expect("complete protected cleanup");
     assert_eq!(
         first_complete.status,
-        atlas_domain::entities::lifecycle::PurgeStatus::Complete
+        atlas_acta::entities::lifecycle::PurgeStatus::Complete
     );
     assert!(store.exists(&digest).await.expect("shared blob remains"));
 
@@ -2052,7 +2054,7 @@ async fn purge_cleanup_keeps_a_shared_live_digest_and_deletes_it_after_its_last_
     let second_operation = service
         .purge(
             owner.id,
-            atlas_domain::entities::lifecycle::TrashKind::Attachment,
+            atlas_acta::entities::lifecycle::TrashKind::Attachment,
             second.id.0,
         )
         .await
@@ -2063,7 +2065,7 @@ async fn purge_cleanup_keeps_a_shared_live_digest_and_deletes_it_after_its_last_
         .expect("complete final cleanup");
     assert_eq!(
         second_complete.status,
-        atlas_domain::entities::lifecycle::PurgeStatus::Complete
+        atlas_acta::entities::lifecycle::PurgeStatus::Complete
     );
     assert!(!store.exists(&digest).await.expect("final blob removal"));
 
@@ -2073,7 +2075,7 @@ async fn purge_cleanup_keeps_a_shared_live_digest_and_deletes_it_after_its_last_
         .expect("idempotent cleanup retry");
     assert_eq!(
         retry.status,
-        atlas_domain::entities::lifecycle::PurgeStatus::Complete
+        atlas_acta::entities::lifecycle::PurgeStatus::Complete
     );
     assert_eq!(retry.attempts, second_complete.attempts);
 
@@ -2081,15 +2083,15 @@ async fn purge_cleanup_keeps_a_shared_live_digest_and_deletes_it_after_its_last_
         .record_attempt_in(
             db.conn(),
             second_operation.id,
-            atlas_domain::entities::lifecycle::PurgeStatus::CleanupPending,
-            atlas_domain::entities::lifecycle::PurgeExecutor::System,
+            atlas_acta::entities::lifecycle::PurgeStatus::CleanupPending,
+            atlas_acta::entities::lifecycle::PurgeExecutor::System,
             None,
         )
         .await
         .expect("ignore stale cleanup attempt after blob deletion");
     assert_eq!(
         stale_attempt.status,
-        atlas_domain::entities::lifecycle::PurgeStatus::Complete
+        atlas_acta::entities::lifecycle::PurgeStatus::Complete
     );
     assert_eq!(stale_attempt.attempts, second_complete.attempts);
 
@@ -2098,14 +2100,14 @@ async fn purge_cleanup_keeps_a_shared_live_digest_and_deletes_it_after_its_last_
             db.conn(),
             second_operation.id,
             &digest,
-            atlas_domain::entities::lifecycle::PurgeStatus::CleanupFailed,
+            atlas_acta::entities::lifecycle::PurgeStatus::CleanupFailed,
             Some("stale cleanup failure".into()),
         )
         .await
         .expect("ignore stale digest failure after blob deletion");
     assert_eq!(
         stale_digest_attempt.status,
-        atlas_domain::entities::lifecycle::PurgeStatus::Complete
+        atlas_acta::entities::lifecycle::PurgeStatus::Complete
     );
 
     db.teardown().await;
@@ -2167,7 +2169,7 @@ async fn purge_cleanup_records_a_retryable_system_failure_before_completing() {
     let operation = service
         .purge(
             owner.id,
-            atlas_domain::entities::lifecycle::TrashKind::Attachment,
+            atlas_acta::entities::lifecycle::TrashKind::Attachment,
             attachment.id.0,
         )
         .await
@@ -2178,11 +2180,11 @@ async fn purge_cleanup_records_a_retryable_system_failure_before_completing() {
         .expect("record cleanup failure");
     assert_eq!(
         failed.status,
-        atlas_domain::entities::lifecycle::PurgeStatus::CleanupFailed
+        atlas_acta::entities::lifecycle::PurgeStatus::CleanupFailed
     );
     assert_eq!(
         failed.last_executor,
-        atlas_domain::entities::lifecycle::PurgeExecutor::System
+        atlas_acta::entities::lifecycle::PurgeExecutor::System
     );
     assert_eq!(
         failed.last_error.as_deref(),
@@ -2200,7 +2202,7 @@ async fn purge_cleanup_records_a_retryable_system_failure_before_completing() {
         .expect("retry cleanup");
     assert_eq!(
         complete.status,
-        atlas_domain::entities::lifecycle::PurgeStatus::Complete
+        atlas_acta::entities::lifecycle::PurgeStatus::Complete
     );
     assert!(complete.attempts > failed.attempts);
     assert!(!store.exists(&digest).await.expect("retried blob removal"));

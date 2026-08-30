@@ -7,12 +7,16 @@
 
 mod support;
 
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::identity::{ApiKeyType, MemberRole},
-    ids::{UserId, WorkspaceId},
-    permissions::{Capability, CapabilityAction, CapabilityFamily, ResourceRole},
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::ids::WorkspaceId;
+use atlas_core::principal::UserId;
+use atlas_custos::capability::Capability;
+use atlas_custos::capability::CapabilityAction;
+use atlas_custos::capability::CapabilityFamily;
+use atlas_custos::entities::identity::ApiKeyType;
+use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::{
     auth::password,
@@ -34,7 +38,7 @@ use uuid::Uuid;
 async fn insert_test_subscription(
     db: &support::TestDb,
     ws_id: Uuid,
-    user_id: atlas_domain::ids::UserId,
+    user_id: atlas_core::principal::UserId,
     url: &str,
     event_types: Vec<String>,
 ) -> Uuid {
@@ -52,7 +56,7 @@ async fn insert_test_subscription(
         enc,
         nonce,
         None,
-        &Actor::User(atlas_domain::UserAttributionId(user_id.0)),
+        &Actor::User(atlas_acta::actor::UserAttributionId(user_id.0)),
     )
     .await
     .expect("create subscription");
@@ -98,7 +102,7 @@ async fn add_member_user_and_login(
     let ws_id_typed = WorkspaceId::from(ws_id);
     let ctx = WorkspaceCtx::new(
         ws_id_typed,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     membership_repo
         .add(&ctx, user.id, MemberRole::Member)
@@ -260,7 +264,7 @@ async fn add_editor_user_and_login(
 
     let ctx = WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     membership_repo
         .add(&ctx, user.id, MemberRole::Member)

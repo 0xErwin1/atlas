@@ -1,8 +1,9 @@
 use async_trait::async_trait;
-use atlas_domain::{
-    DomainError, SavedSearchId, WorkspaceCtx,
-    entities::saved_searches::{NewSavedSearch, SavedSearch},
-};
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::saved_searches::NewSavedSearch;
+use atlas_acta::entities::saved_searches::SavedSearch;
+use atlas_acta::ids::SavedSearchId;
+use atlas_core::error::DomainError;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
@@ -12,7 +13,7 @@ use sea_orm::{
 use crate::persistence::entities::saved_searches::{saved_search, saved_search_from};
 use atlas_postgres::db_err;
 
-pub use atlas_domain::ports::saved_searches::SavedSearchRepo;
+pub use atlas_acta::ports::saved_searches::SavedSearchRepo;
 
 pub struct PgSavedSearchRepo {
     pub conn: DatabaseConnection,
@@ -227,22 +228,23 @@ impl PgSavedSearchRepo {
 }
 
 /// Returns `(owner_user_id, owner_api_key_id)` for the XOR owner columns.
-fn owner_columns(actor: &atlas_domain::Actor) -> (Option<uuid::Uuid>, Option<uuid::Uuid>) {
+fn owner_columns(actor: &atlas_acta::actor::Actor) -> (Option<uuid::Uuid>, Option<uuid::Uuid>) {
     match actor {
-        atlas_domain::Actor::User(uid) => (Some(uid.0), None),
-        atlas_domain::Actor::ApiKey(kid) => (None, Some(kid.0)),
+        atlas_acta::actor::Actor::User(uid) => (Some(uid.0), None),
+        atlas_acta::actor::Actor::ApiKey(kid) => (None, Some(kid.0)),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use atlas_domain::Actor;
-    use atlas_domain::ids::{ApiKeyId, UserId};
+    use atlas_acta::actor::Actor;
+    use atlas_core::principal::ApiKeyId;
+    use atlas_core::principal::UserId;
 
     #[test]
     fn user_actor_populates_owner_user_column_only() {
-        let actor = Actor::User(atlas_domain::UserAttributionId(UserId::new().0));
+        let actor = Actor::User(atlas_acta::actor::UserAttributionId(UserId::new().0));
         let (user_col, key_col) = owner_columns(&actor);
 
         assert_eq!(
@@ -257,7 +259,7 @@ mod tests {
 
     #[test]
     fn api_key_actor_populates_owner_key_column_only() {
-        let actor = Actor::ApiKey(atlas_domain::ApiKeyAttributionId(ApiKeyId::new().0));
+        let actor = Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(ApiKeyId::new().0));
         let (user_col, key_col) = owner_columns(&actor);
 
         assert_eq!(user_col, None);

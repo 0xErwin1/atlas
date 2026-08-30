@@ -1,16 +1,20 @@
 use std::collections::BTreeSet;
 
+use crate::authz::ResourceRole;
 use crate::authz::policy::{ChainSegment, ResolutionInput, ResourceChain, resolve};
 use async_trait::async_trait;
-use atlas_domain::{
-    DomainError,
-    entities::identity::MemberRole,
-    ids::{ApiKeyId, UserId, WorkspaceId},
-    permissions::{
-        Capability, CapabilityAction, CapabilityFamily, Principal, ResourceRef, ResourceRole,
-        Visibility, VisibilityRole,
-    },
-};
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::ids::WorkspaceId;
+use atlas_acta::permissions::ResourceRef;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
+use atlas_core::error::DomainError;
+use atlas_core::principal::ApiKeyId;
+use atlas_core::principal::Principal;
+use atlas_core::principal::UserId;
+use atlas_custos::capability::Capability;
+use atlas_custos::capability::CapabilityAction;
+use atlas_custos::capability::CapabilityFamily;
 use atlas_postgres::db_err as db_error;
 use sea_orm::{DatabaseBackend, DatabaseConnection, FromQueryResult, Statement};
 use serde::Deserialize;
@@ -828,14 +832,12 @@ fn decode_resource(resource: StoredResource) -> Result<ResourceRef, DomainError>
     let id = resource.id;
     match resource.kind.as_str() {
         "workspace" if id.is_none() => Some(ResourceRef::Workspace),
-        "project" => id
-            .map(atlas_domain::ids::ProjectId)
-            .map(ResourceRef::Project),
-        "folder" => id.map(atlas_domain::ids::FolderId).map(ResourceRef::Folder),
+        "project" => id.map(atlas_acta::ids::ProjectId).map(ResourceRef::Project),
+        "folder" => id.map(atlas_acta::ids::FolderId).map(ResourceRef::Folder),
         "document" => id
-            .map(atlas_domain::ids::DocumentId)
+            .map(atlas_acta::ids::DocumentId)
             .map(ResourceRef::Document),
-        "board" => id.map(atlas_domain::ids::BoardId).map(ResourceRef::Board),
+        "board" => id.map(atlas_acta::ids::BoardId).map(ResourceRef::Board),
         _ => None,
     }
     .ok_or_else(|| DomainError::Internal {
@@ -1108,7 +1110,10 @@ fn validate_scopes(scopes: &[Capability]) -> Result<(), DomainError> {
 #[cfg(test)]
 mod distinct_resources_tests {
     use super::*;
-    use atlas_domain::ids::{BoardId, DocumentId, FolderId, ProjectId};
+    use atlas_acta::ids::BoardId;
+    use atlas_acta::ids::DocumentId;
+    use atlas_acta::ids::FolderId;
+    use atlas_acta::ids::ProjectId;
 
     fn segment(resource: ResourceRef) -> ChainSegment {
         ChainSegment {

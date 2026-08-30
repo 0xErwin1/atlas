@@ -4,16 +4,22 @@ use std::sync::{
 };
 
 use super::policy::{ChainSegment, ResourceChain};
+use crate::authz::ResourceRole;
 use async_trait::async_trait;
-use atlas_domain::{
-    DomainError,
-    entities::identity::MemberRole,
-    ids::{ApiKeyId, DocumentId, ProjectId, UserId, WorkspaceId},
-    permissions::{
-        Capability, CapabilityAction, CapabilityFamily, Principal, ResourceRef, ResourceRole,
-        Visibility, VisibilityRole,
-    },
-};
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::ids::DocumentId;
+use atlas_acta::ids::ProjectId;
+use atlas_acta::ids::WorkspaceId;
+use atlas_acta::permissions::ResourceRef;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
+use atlas_core::error::DomainError;
+use atlas_core::principal::ApiKeyId;
+use atlas_core::principal::Principal;
+use atlas_core::principal::UserId;
+use atlas_custos::capability::Capability;
+use atlas_custos::capability::CapabilityAction;
+use atlas_custos::capability::CapabilityFamily;
 use uuid::Uuid;
 
 use super::batch_authorization::{

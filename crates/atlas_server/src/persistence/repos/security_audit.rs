@@ -1,13 +1,16 @@
 use async_trait::async_trait;
-use atlas_domain::{
-    Actor, DomainError, SecurityAuditId, WorkspaceCtx,
-    entities::lifecycle::TrashKind,
-    entities::security_audit::{
-        AuditCursor, AuditFilters, NewSecurityAuditEvent, SecurityAction, SecurityAuditEvent,
-    },
-    entities::task_views::ActorTypeFilter,
-    ports::security_audit::SecurityAuditRepo,
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::lifecycle::TrashKind;
+use atlas_acta::entities::task_views::ActorTypeFilter;
+use atlas_core::error::DomainError;
+use atlas_custos::entities::security_audit::AuditCursor;
+use atlas_custos::entities::security_audit::AuditFilters;
+use atlas_custos::entities::security_audit::NewSecurityAuditEvent;
+use atlas_custos::entities::security_audit::SecurityAction;
+use atlas_custos::entities::security_audit::SecurityAuditEvent;
+use atlas_custos::ids::SecurityAuditId;
+use atlas_custos::ports::security_audit::SecurityAuditRepo;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ConnectionTrait, DatabaseConnection, FromQueryResult,
@@ -362,24 +365,25 @@ fn actor_columns(actor: &Actor) -> (Option<uuid::Uuid>, Option<uuid::Uuid>) {
 }
 
 fn actor_from_row(user_id: Option<uuid::Uuid>, api_key_id: Option<uuid::Uuid>) -> Actor {
-    use atlas_domain::ids::UserId;
+    use atlas_core::principal::UserId;
     match (user_id, api_key_id) {
-        (Some(uid), None) => Actor::User(atlas_domain::UserAttributionId(uid)),
-        (None, Some(kid)) => Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid)),
-        _ => Actor::User(atlas_domain::UserAttributionId(UserId::new().0)),
+        (Some(uid), None) => Actor::User(atlas_acta::actor::UserAttributionId(uid)),
+        (None, Some(kid)) => Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(kid)),
+        _ => Actor::User(atlas_acta::actor::UserAttributionId(UserId::new().0)),
     }
 }
 
-pub use atlas_domain::ports::security_audit::SecurityAuditRepo as SecurityAuditRepoTrait;
+pub use atlas_custos::ports::security_audit::SecurityAuditRepo as SecurityAuditRepoTrait;
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use atlas_domain::ids::{ApiKeyId, UserId};
+    use atlas_core::principal::ApiKeyId;
+    use atlas_core::principal::UserId;
 
     #[test]
     fn user_actor_round_trips_through_xor_columns() {
-        let actor = Actor::User(atlas_domain::UserAttributionId(UserId::new().0));
+        let actor = Actor::User(atlas_acta::actor::UserAttributionId(UserId::new().0));
         let (user_col, key_col) = actor_columns(&actor);
 
         assert_eq!(
@@ -395,7 +399,7 @@ mod tests {
 
     #[test]
     fn api_key_actor_round_trips_through_xor_columns() {
-        let actor = Actor::ApiKey(atlas_domain::ApiKeyAttributionId(ApiKeyId::new().0));
+        let actor = Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(ApiKeyId::new().0));
         let (user_col, key_col) = actor_columns(&actor);
 
         assert_eq!(user_col, None);

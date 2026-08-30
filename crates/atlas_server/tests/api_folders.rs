@@ -7,6 +7,9 @@
 
 mod support;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::identity::MemberRole;
 use atlas_api::dtos::{
     CreateProjectRequest,
     boards_tasks::{CreateBoardRequest, CreateColumnRequest, CreateTaskRequest, MoveBoardRequest},
@@ -14,7 +17,6 @@ use atlas_api::dtos::{
     folders::{CreateFolderRequest, MoveFolderRequest, RenameFolderRequest},
 };
 use atlas_client::ClientError;
-use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole};
 
 fn project_req(name: &str, slug: &str) -> CreateProjectRequest {
     let prefix: String = slug
@@ -717,7 +719,7 @@ async fn get_folder_non_uuid_returns_422() {
 
 #[tokio::test]
 async fn move_folder_cross_workspace_destination_returns_404() {
-    use atlas_domain::entities::workspace_core::NewFolder;
+    use atlas_acta::entities::workspace_core::NewFolder;
     use atlas_server::persistence::repos::FolderRepo;
 
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -734,7 +736,7 @@ async fn move_folder_cross_workspace_destination_returns_404() {
 
     let ctx_b = WorkspaceCtx::new(
         ws_b.id,
-        Actor::User(atlas_domain::UserAttributionId(user_b.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user_b.id.0)),
     );
     let folder_b = db
         .folder_repo()
@@ -878,7 +880,9 @@ async fn move_folder_underprivileged_destination_returns_404() {
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(caller_domain_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(
+            caller_domain_user.id.0,
+        )),
     );
     db.membership_repo()
         .add(&ctx, caller_domain_user.id, MemberRole::Member)
@@ -896,10 +900,10 @@ async fn move_folder_underprivileged_destination_returns_404() {
             api_key_id: None,
             group_id: None,
             project_id: None,
-            folder_id: Some(atlas_domain::ids::FolderId(source.id)),
+            folder_id: Some(atlas_acta::ids::FolderId(source.id)),
             document_id: None,
             board_id: None,
-            role: atlas_domain::permissions::ResourceRole::Editor,
+            role: atlas_server::authz::ResourceRole::Editor,
             created_by_user_id: Some(owner_user.id),
             created_by_api_key_id: None,
         })

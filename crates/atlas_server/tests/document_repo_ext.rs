@@ -7,7 +7,8 @@
 
 mod support;
 
-use atlas_domain::{entities::documents::NewDocument, permissions::Principal};
+use atlas_acta::entities::documents::NewDocument;
+use atlas_core::principal::Principal;
 use atlas_server::persistence::repos::{DocumentRepo, PgDocumentRepo};
 
 fn make_doc_repo(db: &support::TestDb) -> PgDocumentRepo {
@@ -24,7 +25,7 @@ async fn create_doc(
     user: &atlas_server::persistence::repos::User,
     title: &str,
     slug: Option<&str>,
-) -> atlas_domain::entities::documents::Document {
+) -> atlas_acta::entities::documents::Document {
     let ctx = support::ctx(ws, user);
     repo.create(
         &ctx,
@@ -122,9 +123,9 @@ async fn create_folder(
     db: &support::TestDb,
     ws: &atlas_server::persistence::repos::Workspace,
     user: &atlas_server::persistence::repos::User,
-    project_id: Option<atlas_domain::ids::ProjectId>,
-    parent: Option<atlas_domain::ids::FolderId>,
-) -> atlas_domain::entities::workspace_core::Folder {
+    project_id: Option<atlas_acta::ids::ProjectId>,
+    parent: Option<atlas_acta::ids::FolderId>,
+) -> atlas_acta::entities::workspace_core::Folder {
     use atlas_server::persistence::repos::{FolderRepo, PgFolderRepo};
     let repo = PgFolderRepo {
         conn: db.conn().clone(),
@@ -132,7 +133,7 @@ async fn create_folder(
     let ctx = support::ctx(ws, user);
     repo.create(
         &ctx,
-        atlas_domain::entities::workspace_core::NewFolder {
+        atlas_acta::entities::workspace_core::NewFolder {
             project_id,
             parent_folder_id: parent,
             name: "scope-folder".into(),
@@ -147,15 +148,15 @@ async fn create_doc_in_folder(
     ws: &atlas_server::persistence::repos::Workspace,
     user: &atlas_server::persistence::repos::User,
     title: &str,
-    folder_id: Option<atlas_domain::ids::FolderId>,
-    project_id: Option<atlas_domain::ids::ProjectId>,
-) -> atlas_domain::entities::documents::Document {
+    folder_id: Option<atlas_acta::ids::FolderId>,
+    project_id: Option<atlas_acta::ids::ProjectId>,
+) -> atlas_acta::entities::documents::Document {
     let ctx = support::ctx(ws, user);
     repo.create(
         &ctx,
         NewDocument {
             title: title.into(),
-            slug: Some(atlas_domain::slugify(title)),
+            slug: Some(atlas_core::slug::slugify(title)),
             content: "".into(),
             folder_id,
             project_id,
@@ -171,7 +172,7 @@ async fn create_project(
     ws: &atlas_server::persistence::repos::Workspace,
     user: &atlas_server::persistence::repos::User,
     slug: &str,
-) -> atlas_domain::entities::workspace_core::Project {
+) -> atlas_acta::entities::workspace_core::Project {
     use atlas_server::persistence::repos::{PgProjectRepo, ProjectRepo};
     let repo = PgProjectRepo {
         conn: db.conn().clone(),
@@ -186,11 +187,11 @@ async fn create_project(
 
     repo.create(
         &ctx,
-        atlas_domain::entities::workspace_core::NewProject {
+        atlas_acta::entities::workspace_core::NewProject {
             name: slug.into(),
             slug: slug.into(),
             task_prefix,
-            visibility: atlas_domain::permissions::Visibility::Private,
+            visibility: atlas_acta::permissions::Visibility::Private,
         },
     )
     .await
@@ -201,7 +202,7 @@ async fn create_api_key(
     db: &support::TestDb,
     ws: &atlas_server::persistence::repos::Workspace,
     user: &atlas_server::persistence::repos::User,
-) -> atlas_domain::ids::ApiKeyId {
+) -> atlas_core::principal::ApiKeyId {
     use atlas_server::persistence::repos::{ApiKeyRepo, NewApiKey, PgApiKeyRepo};
     let repo = PgApiKeyRepo {
         conn: db.conn().clone(),
@@ -214,9 +215,9 @@ async fn create_api_key(
             NewApiKey {
                 name: "scope-key".into(),
                 token_hash: format!("hash-{}", uuid::Uuid::now_v7()),
-                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
+                type_: atlas_custos::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
-                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
+                scopes: atlas_custos::capability::Capability::ALL.to_vec(),
             },
         )
         .await
@@ -227,11 +228,11 @@ async fn create_api_key(
 async fn grant_to_api_key(
     db: &support::TestDb,
     ws: &atlas_server::persistence::repos::Workspace,
-    api_key_id: atlas_domain::ids::ApiKeyId,
-    project_id: Option<atlas_domain::ids::ProjectId>,
-    folder_id: Option<atlas_domain::ids::FolderId>,
+    api_key_id: atlas_core::principal::ApiKeyId,
+    project_id: Option<atlas_acta::ids::ProjectId>,
+    folder_id: Option<atlas_acta::ids::FolderId>,
 ) {
-    use atlas_domain::permissions::ResourceRole;
+    use atlas_server::authz::ResourceRole;
     use atlas_server::authz::policy::NewPermissionGrant;
     use atlas_server::persistence::repos::{PermissionGrantRepo, PgPermissionGrantRepo};
     let repo = PgPermissionGrantRepo {
@@ -646,7 +647,7 @@ async fn rename_cross_tenant_not_found() {
     let result = repo.rename(&ctx1, doc.id, "Hacked".to_string()).await;
 
     assert!(
-        matches!(result, Err(atlas_domain::DomainError::NotFound { .. })),
+        matches!(result, Err(atlas_core::error::DomainError::NotFound { .. })),
         "cross-tenant rename must return NotFound"
     );
 
@@ -657,7 +658,9 @@ async fn rename_cross_tenant_not_found() {
 
 // ─── B2.6 — `_in` primitive function tests ───────────────────────────────────
 
-use atlas_domain::{DomainError, entities::documents::NewDocument as NewDoc, ids::RevisionId};
+use atlas_acta::entities::documents::NewDocument as NewDoc;
+use atlas_acta::ids::RevisionId;
+use atlas_core::error::DomainError;
 use atlas_server::persistence::repos::{
     FolderRepo, PgFolderRepo, doc_create_in, doc_move_to_in, doc_rename_in, doc_soft_delete_in,
     doc_update_content_in,
@@ -792,7 +795,7 @@ async fn move_to_in_assigns_folder_in_txn() {
     let folder = folder_repo
         .create(
             &ctx,
-            atlas_domain::entities::workspace_core::NewFolder {
+            atlas_acta::entities::workspace_core::NewFolder {
                 name: "Target Folder".into(),
                 project_id: None,
                 parent_folder_id: None,

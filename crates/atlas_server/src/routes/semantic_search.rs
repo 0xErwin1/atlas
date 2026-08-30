@@ -6,6 +6,14 @@ use axum::{
 };
 use serde::Deserialize;
 
+use atlas_acta::ids::WorkspaceId;
+use atlas_acta::semantic_search::ResourceKind;
+use atlas_acta::semantic_search::SemanticSearchAfter;
+use atlas_acta::semantic_search::SemanticSearchHit;
+use atlas_acta::semantic_search::SemanticSearchQuery;
+use atlas_acta::semantic_search::SemanticSearchRepo;
+use atlas_acta::semantic_search::SemanticSearchSource;
+use atlas_acta::semantic_search::SemanticSearchTypeFilter;
 use atlas_api::{
     dtos::semantic_search::{
         SemanticReindexPlanDto, SemanticReindexStartedDto, SemanticSearchCursor,
@@ -13,14 +21,7 @@ use atlas_api::{
     },
     pagination::Page,
 };
-use atlas_domain::{
-    ids::WorkspaceId,
-    permissions::CapabilityFamily,
-    semantic_search::{
-        ResourceKind, SemanticSearchAfter, SemanticSearchHit, SemanticSearchQuery,
-        SemanticSearchRepo, SemanticSearchSource, SemanticSearchTypeFilter,
-    },
-};
+use atlas_custos::capability::CapabilityFamily;
 
 use crate::{
     authz::{
@@ -79,7 +80,7 @@ pub(crate) async fn semantic_search(
             })?;
 
     let schema_ready = state.semantic_search_enabled_now().await.map_err(|error| {
-        ApiError::Domain(atlas_domain::DomainError::Internal {
+        ApiError::Domain(atlas_core::error::DomainError::Internal {
             message: format!("semantic search schema readiness check failed: {error}"),
         })
     })?;
@@ -252,7 +253,7 @@ async fn load_plan(
 
 async fn semantic_search_ready(state: &AppState) -> Result<bool, ApiError> {
     state.semantic_search_enabled_now().await.map_err(|error| {
-        ApiError::Domain(atlas_domain::DomainError::Internal {
+        ApiError::Domain(atlas_core::error::DomainError::Internal {
             message: format!("semantic search schema readiness check failed: {error}"),
         })
     })

@@ -1,6 +1,7 @@
 use crate::error::ApiError;
+use atlas_acta::entities::workspace_core::PropertyDefinition;
+use atlas_acta::entities::workspace_core::PropertyKind;
 use atlas_api::dtos::task_views::TaskViewFiltersDto;
-use atlas_domain::entities::workspace_core::{PropertyDefinition, PropertyKind};
 use serde_json::Value;
 
 const MAX_NAME_LEN: usize = 200;

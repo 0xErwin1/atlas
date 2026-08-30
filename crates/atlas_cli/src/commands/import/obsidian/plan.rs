@@ -299,12 +299,12 @@ fn build_link_index(docs: &[VaultDoc]) -> HashMap<String, String> {
             .and_then(|s| s.to_str())
             .unwrap_or("");
 
-        let filename_key = atlas_domain::slugify(stem);
+        let filename_key = atlas_core::slug::slugify(stem);
         index
             .entry(filename_key)
             .or_insert_with(|| doc.title.clone());
 
-        let title_key = atlas_domain::slugify(&doc.title);
+        let title_key = atlas_core::slug::slugify(&doc.title);
         index.entry(title_key).or_insert_with(|| doc.title.clone());
     }
 
@@ -337,7 +337,7 @@ pub(crate) fn resolve_links(body: &str, index: &HashMap<String, String>) -> (Str
         let target = remaining[..close].trim();
         remaining = &remaining[close + 2..];
 
-        let key = atlas_domain::slugify(target);
+        let key = atlas_core::slug::slugify(target);
 
         match index.get(&key) {
             Some(resolved_title) => {
@@ -481,7 +481,7 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::TempDir;
 
-    use atlas_domain::slugify;
+    use atlas_core::slug::slugify;
 
     use crate::commands::import::obsidian::frontmatter::parse_import_frontmatter;
     use crate::commands::import::obsidian::manifest::{Manifest, ManifestDocEntry};
@@ -500,7 +500,7 @@ mod tests {
             yaml_block: None,
             body: body.to_string(),
             frontmatter: parse_import_frontmatter(""),
-            wikilink_targets: atlas_domain::parse_wikilinks(body),
+            wikilink_targets: atlas_acta::wikilink::parse_wikilinks(body),
             attachment_candidates: vec![],
             unsupported_embeds: vec![],
         }

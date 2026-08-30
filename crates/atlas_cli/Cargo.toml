@@ -13,7 +13,9 @@ path = "src/main.rs"
 [dependencies]
 atlas_api.workspace = true
 atlas_client.workspace = true
-atlas_domain.workspace = true
+atlas_core.workspace = true
+atlas_acta.workspace = true
+atlas_custos.workspace = true
 sha2.workspace = true
 reqwest.workspace = true
 chrono.workspace = true

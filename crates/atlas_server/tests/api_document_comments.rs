@@ -7,13 +7,15 @@
 
 mod support;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::identity::MemberRole;
 use atlas_api::dtos::{
     CreateProjectRequest,
     boards_tasks::{CreateCommentRequest, UpdateCommentRequest},
     documents::CreateDocumentRequest,
 };
 use atlas_client::ClientError;
-use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole};
 use atlas_server::persistence::repos::{MembershipRepo, NewUser, UserRepo};
 
 fn project_req(slug: &str, prefix: &str) -> CreateProjectRequest {
@@ -30,7 +32,7 @@ fn project_req(slug: &str, prefix: &str) -> CreateProjectRequest {
 async fn add_member(
     db: &support::TestDb,
     server: &support::TestServer,
-    ws_id: atlas_domain::ids::WorkspaceId,
+    ws_id: atlas_acta::ids::WorkspaceId,
     username: &str,
     role: MemberRole,
 ) -> atlas_client::AtlasClient {
@@ -58,7 +60,7 @@ async fn add_member(
 
     let ctx = WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     db.membership_repo()
         .add(&ctx, user.id, role)

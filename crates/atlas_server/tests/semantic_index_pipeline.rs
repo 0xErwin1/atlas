@@ -10,18 +10,18 @@
 mod support;
 
 use async_trait::async_trait;
-use atlas_domain::{
-    DomainError, WorkspaceCtx,
-    entities::{
-        boards_tasks::{NewBoard, NewTask, PositionBetween},
-        comments::CommentOwner,
-        documents::NewDocument,
-        workspace_core::NewProject,
-    },
-    ids::DocumentId,
-    permissions::Visibility,
-    semantic_search::{EmbeddingInput, EmbeddingProvider},
-};
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::boards_tasks::NewTask;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::comments::CommentOwner;
+use atlas_acta::entities::documents::NewDocument;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::ids::DocumentId;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::semantic_search::EmbeddingInput;
+use atlas_acta::semantic_search::EmbeddingProvider;
+use atlas_core::error::DomainError;
 use atlas_server::{
     persistence::repos::{
         BoardRepo, PgBoardRepo, PgProjectRepo, PgSemanticIndexWriter, PgSemanticIndexer,
@@ -173,9 +173,9 @@ async fn seed_project(db: &support::TestDb, ctx: &WorkspaceCtx, slug: &str) -> N
 }
 
 struct NewProjectIds {
-    project_id: atlas_domain::ids::ProjectId,
-    board_id: atlas_domain::ids::BoardId,
-    column_id: atlas_domain::ids::ColumnId,
+    project_id: atlas_acta::ids::ProjectId,
+    board_id: atlas_acta::ids::BoardId,
+    column_id: atlas_acta::ids::ColumnId,
 }
 
 /// The ATL-155 acceptance criterion: creating a document produces a row in
@@ -368,7 +368,7 @@ async fn shrinking_a_document_prunes_its_trailing_chunks() -> Result<(), Box<dyn
     Ok(())
 }
 
-async fn reload_head(db: &support::TestDb, id: DocumentId) -> atlas_domain::ids::RevisionId {
+async fn reload_head(db: &support::TestDb, id: DocumentId) -> atlas_acta::ids::RevisionId {
     #[derive(Debug, FromQueryResult)]
     struct HeadRow {
         current_revision_id: Option<Uuid>,
@@ -384,5 +384,5 @@ async fn reload_head(db: &support::TestDb, id: DocumentId) -> atlas_domain::ids:
     .expect("read document head")
     .expect("document exists");
 
-    atlas_domain::ids::RevisionId(row.current_revision_id.expect("document has a head"))
+    atlas_acta::ids::RevisionId(row.current_revision_id.expect("document has a head"))
 }

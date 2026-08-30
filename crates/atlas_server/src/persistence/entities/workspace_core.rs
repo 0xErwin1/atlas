@@ -1,8 +1,15 @@
-use atlas_domain::entities::workspace_core::{
-    AppliesTo, Folder, Project, PropertyDefinition, PropertyKind,
-};
-use atlas_domain::ids::{FolderId, ProjectId, PropertyDefinitionId, UserId, WorkspaceId};
-use atlas_domain::permissions::{Visibility, VisibilityRole};
+use atlas_acta::entities::workspace_core::AppliesTo;
+use atlas_acta::entities::workspace_core::Folder;
+use atlas_acta::entities::workspace_core::Project;
+use atlas_acta::entities::workspace_core::PropertyDefinition;
+use atlas_acta::entities::workspace_core::PropertyKind;
+use atlas_acta::ids::FolderId;
+use atlas_acta::ids::ProjectId;
+use atlas_acta::ids::PropertyDefinitionId;
+use atlas_acta::ids::WorkspaceId;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
+use atlas_core::principal::UserId;
 use chrono::{DateTime, Utc};
 use sea_orm::entity::prelude::*;
 

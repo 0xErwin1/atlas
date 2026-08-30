@@ -16,15 +16,15 @@
 
 mod support;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::ids::WorkspaceId;
 use atlas_api::dtos::{
     CreateGrantRequest, CreateProjectRequest, CreateUserRequest, GrantPrincipal,
 };
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::identity::MemberRole,
-    entities::security_audit::AuditFilters,
-    ids::{UserId, WorkspaceId},
-};
+use atlas_core::principal::UserId;
+use atlas_custos::entities::security_audit::AuditFilters;
 use atlas_server::persistence::repos::{
     ActivationTokenRepo, ApiKeyRepo, MembershipRepo, NewActivationToken, NewApiKey, NewUser,
     NewWorkspace, PgSecurityAuditRepo, SecurityAuditRepo, UserRepo, WorkspaceRepo,
@@ -49,7 +49,7 @@ async fn count_workspace_audit_rows(db: &TestDb, ws_id: WorkspaceId) -> usize {
 async fn audit_rows_for_workspace(
     db: &TestDb,
     ws_id: WorkspaceId,
-) -> Vec<atlas_domain::entities::security_audit::SecurityAuditEvent> {
+) -> Vec<atlas_custos::entities::security_audit::SecurityAuditEvent> {
     let repo = PgSecurityAuditRepo::new(db.conn().clone());
     repo.list_for_workspace(
         atlas_custos::WorkspaceScope(ws_id.0),
@@ -66,7 +66,7 @@ async fn add_member_to_ws(
     ws_id: WorkspaceId,
     username: &str,
     role: MemberRole,
-) -> atlas_domain::entities::identity::User {
+) -> atlas_custos::entities::identity::User {
     let user = db
         .user_repo()
         .create(NewUser {
@@ -82,7 +82,7 @@ async fn add_member_to_ws(
 
     let ctx = WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     db.membership_repo()
         .add(&ctx, user.id, role)
@@ -99,7 +99,7 @@ async fn login_owner(
 ) -> (
     atlas_client::AtlasClient,
     atlas_server::persistence::repos::Workspace,
-    atlas_domain::entities::identity::User,
+    atlas_custos::entities::identity::User,
 ) {
     login_user_with_workspace(server, db, username).await
 }
@@ -129,10 +129,10 @@ async fn create_agent_key(
     ws_id: WorkspaceId,
     creator: UserId,
     name: &str,
-) -> atlas_domain::entities::identity::ApiKey {
+) -> atlas_custos::entities::identity::ApiKey {
     let ctx = WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(creator.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(creator.0)),
     );
     db.api_key_repo()
         .create(
@@ -141,9 +141,9 @@ async fn create_agent_key(
             NewApiKey {
                 name: name.to_string(),
                 token_hash: format!("hash-{name}"),
-                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
+                type_: atlas_custos::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
-                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
+                scopes: atlas_custos::capability::Capability::ALL.to_vec(),
             },
         )
         .await
@@ -178,7 +178,7 @@ async fn audit_membership_role_changed_happy_path_writes_one_row() {
     );
     assert_eq!(
         row.actor,
-        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0))
+        Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0))
     );
     assert_eq!(row.target_type, "user");
     assert_eq!(row.target_id, Some(target.id.0));
@@ -272,7 +272,7 @@ async fn audit_membership_role_changed_admin_on_owner_writes_zero_rows() {
         support::activate_user_in_db(&db, user.id.0).await;
         let ctx = WorkspaceCtx::new(
             ws.id,
-            Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+            Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
         );
         db.membership_repo()
             .add(&ctx, user.id, MemberRole::Admin)
@@ -333,7 +333,7 @@ async fn audit_membership_removed_happy_path_writes_one_row() {
     );
     assert_eq!(
         row.actor,
-        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0))
+        Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0))
     );
     assert_eq!(row.target_type, "user");
     assert_eq!(row.target_id, Some(target.id.0));
@@ -449,7 +449,7 @@ async fn audit_project_grant_created_happy_path_writes_one_row() {
     );
     assert_eq!(
         row.actor,
-        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0))
+        Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0))
     );
     assert_eq!(row.target_type, "grant");
     assert!(row.target_id.is_some(), "target_id must be the grant UUID");
@@ -598,7 +598,7 @@ async fn audit_project_grant_revoked_happy_path_writes_one_row() {
     );
     assert_eq!(
         row.actor,
-        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0))
+        Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0))
     );
     assert_eq!(row.target_type, "grant");
     assert_eq!(row.target_id, Some(new_grant.id));
@@ -688,7 +688,7 @@ async fn audit_workspace_grant_created_happy_path_writes_one_row() {
     );
     assert_eq!(
         row.actor,
-        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0))
+        Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0))
     );
     assert_eq!(row.target_type, "grant");
     assert!(row.target_id.is_some(), "target_id must be the grant UUID");
@@ -802,7 +802,7 @@ async fn audit_workspace_grant_revoked_happy_path_writes_one_row() {
     );
     assert_eq!(
         row.actor,
-        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0))
+        Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0))
     );
     assert_eq!(row.target_type, "grant");
     assert_eq!(row.target_id, Some(new_grant.id));
@@ -851,7 +851,7 @@ async fn audit_workspace_grant_revoked_not_found_writes_zero_rows() {
 
 async fn platform_audit_rows(
     db: &TestDb,
-) -> Vec<atlas_domain::entities::security_audit::SecurityAuditEvent> {
+) -> Vec<atlas_custos::entities::security_audit::SecurityAuditEvent> {
     let repo = PgSecurityAuditRepo::new(db.conn().clone());
     repo.list_platform(&AuditFilters::default(), None, 200)
         .await
@@ -861,7 +861,7 @@ async fn platform_audit_rows(
 async fn platform_audit_rows_for_action(
     db: &TestDb,
     action: &str,
-) -> Vec<atlas_domain::entities::security_audit::SecurityAuditEvent> {
+) -> Vec<atlas_custos::entities::security_audit::SecurityAuditEvent> {
     platform_audit_rows(db)
         .await
         .into_iter()
@@ -876,7 +876,7 @@ async fn login_admin_user(
     username: &str,
 ) -> (
     atlas_client::AtlasClient,
-    atlas_domain::entities::identity::User,
+    atlas_custos::entities::identity::User,
 ) {
     use atlas_api::dtos::LoginRequest;
     use atlas_server::auth::password;
@@ -919,7 +919,7 @@ async fn login_root(
     username: &str,
 ) -> (
     atlas_client::AtlasClient,
-    atlas_domain::entities::identity::User,
+    atlas_custos::entities::identity::User,
 ) {
     use atlas_api::dtos::LoginRequest;
     use atlas_server::auth::password;
@@ -1021,7 +1021,7 @@ async fn audit_user_created_happy_path_writes_one_row() {
 
     let ws_ctx = WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(admin_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(admin_user.id.0)),
     );
     db.membership_repo()
         .add(&ws_ctx, admin_user.id, MemberRole::Owner)
@@ -1050,7 +1050,7 @@ async fn audit_user_created_happy_path_writes_one_row() {
     );
     assert_eq!(
         row.actor,
-        Actor::User(atlas_domain::UserAttributionId(admin_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(admin_user.id.0)),
         "actor is the calling admin"
     );
     assert_eq!(row.target_type, "user");
@@ -1095,7 +1095,7 @@ async fn audit_user_created_duplicate_username_writes_zero_rows() {
 
     let ws_ctx = WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(admin_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(admin_user.id.0)),
     );
     db.membership_repo()
         .add(&ws_ctx, admin_user.id, MemberRole::Owner)
@@ -1170,7 +1170,7 @@ async fn audit_user_disabled_happy_path_writes_one_row() {
     assert_eq!(row.workspace_id, None);
     assert_eq!(
         row.actor,
-        Actor::User(atlas_domain::UserAttributionId(admin_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(admin_user.id.0)),
         "actor is the calling admin"
     );
     assert_eq!(row.target_type, "user");
@@ -1238,7 +1238,7 @@ async fn audit_user_enabled_happy_path_writes_one_row_with_real_actor() {
     // The extractor fix (rename _admin -> admin) ensures the real actor is captured, not a placeholder.
     assert_eq!(
         row.actor,
-        Actor::User(atlas_domain::UserAttributionId(admin_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(admin_user.id.0)),
         "actor must be the real calling admin (extractor-fix regression guard)"
     );
     assert_eq!(row.target_type, "user");
@@ -1299,7 +1299,7 @@ async fn audit_user_system_admin_set_happy_path_writes_one_row() {
     assert_eq!(row.workspace_id, None);
     assert_eq!(
         row.actor,
-        Actor::User(atlas_domain::UserAttributionId(root_user.id.0))
+        Actor::User(atlas_acta::actor::UserAttributionId(root_user.id.0))
     );
     assert_eq!(row.target_type, "user");
     assert_eq!(row.target_id, Some(target.id.0));
@@ -1379,7 +1379,7 @@ async fn audit_user_password_reset_happy_path_writes_one_row() {
     assert_eq!(row.workspace_id, None);
     assert_eq!(
         row.actor,
-        Actor::User(atlas_domain::UserAttributionId(admin_user.id.0))
+        Actor::User(atlas_acta::actor::UserAttributionId(admin_user.id.0))
     );
     assert_eq!(row.target_type, "user");
     assert_eq!(row.target_id, Some(target.id.0));
@@ -1459,7 +1459,7 @@ async fn audit_user_activation_regenerated_happy_path_writes_one_row_with_real_a
     // The extractor fix (rename _admin -> admin) ensures the real actor is captured.
     assert_eq!(
         row.actor,
-        Actor::User(atlas_domain::UserAttributionId(admin_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(admin_user.id.0)),
         "actor must be the real calling admin (extractor-fix regression guard)"
     );
     assert_eq!(row.target_type, "user");
@@ -1533,7 +1533,7 @@ async fn audit_api_key_created_happy_path_writes_one_row() {
     assert_eq!(row.workspace_id, None, "api_key events are platform-scoped");
     assert_eq!(
         row.actor,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0))
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0))
     );
     assert_eq!(row.target_type, "api_key");
     assert_eq!(row.target_id, Some(created.id), "target is the new key id");
@@ -1597,7 +1597,7 @@ async fn audit_api_key_created_by_api_key_principal_writes_zero_rows() {
     );
     assert_eq!(
         rows[0].actor,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0))
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0))
     );
 
     db.teardown().await;
@@ -1636,7 +1636,7 @@ async fn audit_api_key_revoked_happy_path_writes_one_row() {
     assert_eq!(row.workspace_id, None);
     assert_eq!(
         row.actor,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0))
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0))
     );
     assert_eq!(row.target_type, "api_key");
     assert_eq!(row.target_id, Some(key.id));
@@ -1684,7 +1684,7 @@ async fn audit_account_activated_happy_path_writes_one_row_actor_is_self() {
 
     let ws_ctx = WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(admin_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(admin_user.id.0)),
     );
     db.membership_repo()
         .add(&ws_ctx, admin_user.id, MemberRole::Owner)
@@ -1726,7 +1726,7 @@ async fn audit_account_activated_happy_path_writes_one_row_actor_is_self() {
     );
     assert_eq!(
         row.actor,
-        Actor::User(atlas_domain::UserAttributionId(created.user.id)),
+        Actor::User(atlas_acta::actor::UserAttributionId(created.user.id)),
         "actor == target: self-activation"
     );
     assert_eq!(row.target_type, "user");

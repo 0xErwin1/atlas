@@ -3,7 +3,8 @@
 //! the server but never reasoned about by either product crate.
 
 use async_trait::async_trait;
-use atlas_domain::{DomainError, ids::UserId};
+use atlas_core::error::DomainError;
+use atlas_core::principal::UserId;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 

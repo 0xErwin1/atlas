@@ -2,16 +2,19 @@
 
 mod support;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::workspace_core::AppliesTo;
+use atlas_acta::entities::workspace_core::NewFolder;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::entities::workspace_core::NewPropertyDefinition;
+use atlas_acta::entities::workspace_core::PropertyKind;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
 use atlas_api::dtos::{CreateProjectRequest, folders::CreateFolderRequest};
 use atlas_client::ClientError;
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::identity::{ApiKeyType, NewApiKey},
-    entities::workspace_core::{
-        AppliesTo, NewFolder, NewProject, NewPropertyDefinition, PropertyKind,
-    },
-    permissions::{Visibility, VisibilityRole},
-};
+use atlas_custos::entities::identity::ApiKeyType;
+use atlas_custos::entities::identity::NewApiKey;
 use atlas_server::persistence::repos::{
     ApiKeyRepo, FolderRepo, ProjectRepo, PropertyDefinitionRepo,
 };
@@ -290,7 +293,7 @@ async fn project_created_by_api_key_succeeds() {
                 ),
                 type_: ApiKeyType::Agent,
                 expires_at: None,
-                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
+                scopes: atlas_custos::capability::Capability::ALL.to_vec(),
             },
         )
         .await
@@ -298,7 +301,7 @@ async fn project_created_by_api_key_succeeds() {
 
     let api_key_ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::ApiKey(atlas_domain::ApiKeyAttributionId(key.id.0)),
+        Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(key.id.0)),
     );
     let result = db
         .project_repo()
@@ -341,7 +344,7 @@ async fn folder_created_by_api_key_succeeds() {
                 ),
                 type_: ApiKeyType::Agent,
                 expires_at: None,
-                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
+                scopes: atlas_custos::capability::Capability::ALL.to_vec(),
             },
         )
         .await
@@ -349,7 +352,7 @@ async fn folder_created_by_api_key_succeeds() {
 
     let api_key_ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::ApiKey(atlas_domain::ApiKeyAttributionId(key.id.0)),
+        Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(key.id.0)),
     );
     let result = db
         .folder_repo()

@@ -1,5 +1,6 @@
 use async_trait::async_trait;
-use atlas_domain::{AttachmentStore, DomainError};
+use atlas_acta::ports::attachment_store::AttachmentStore;
+use atlas_core::error::DomainError;
 use bytes::Bytes;
 use object_store::aws::AmazonS3Builder;
 use object_store::path::Path as ObjectPath;

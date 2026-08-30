@@ -1,5 +1,6 @@
-use atlas_domain::entities::tags::Tag;
-use atlas_domain::ids::{TagId, WorkspaceId};
+use atlas_acta::entities::tags::Tag;
+use atlas_acta::ids::TagId;
+use atlas_acta::ids::WorkspaceId;
 use chrono::{DateTime, Utc};
 use sea_orm::entity::prelude::*;
 

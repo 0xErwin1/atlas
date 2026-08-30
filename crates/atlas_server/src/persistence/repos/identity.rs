@@ -1,10 +1,17 @@
 use async_trait::async_trait;
-use atlas_domain::{
-    Actor, DomainError, WorkspaceCtx,
-    entities::identity::{ApiKeyType, MemberRole, WorkspaceMembership},
-    ids::{ActivationTokenId, ApiKeyId, MembershipId, SessionId, UserId, WorkspaceId},
-    permissions::Capability,
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::entities::identity::WorkspaceMembership;
+use atlas_acta::ids::MembershipId;
+use atlas_acta::ids::WorkspaceId;
+use atlas_core::error::DomainError;
+use atlas_core::principal::ApiKeyId;
+use atlas_core::principal::UserId;
+use atlas_custos::capability::Capability;
+use atlas_custos::entities::identity::ApiKeyType;
+use atlas_custos::ids::ActivationTokenId;
+use atlas_custos::ids::SessionId;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
@@ -19,14 +26,23 @@ use crate::persistence::entities::identity::{
 };
 use atlas_postgres::db_err;
 
-pub use atlas_domain::entities::identity::{
-    ActivationToken, ApiKey, NewActivationToken, NewApiKey, NewSession, NewUser, NewWorkspace,
-    Session, User, Workspace,
-};
+pub use atlas_acta::entities::identity::NewWorkspace;
+pub use atlas_acta::entities::identity::Workspace;
+pub use atlas_custos::entities::identity::ActivationToken;
+pub use atlas_custos::entities::identity::ApiKey;
+pub use atlas_custos::entities::identity::NewActivationToken;
+pub use atlas_custos::entities::identity::NewApiKey;
+pub use atlas_custos::entities::identity::NewSession;
+pub use atlas_custos::entities::identity::NewUser;
+pub use atlas_custos::entities::identity::Session;
+pub use atlas_custos::entities::identity::User;
 
-pub use atlas_domain::ports::identity::{
-    ActivationTokenRepo, ApiKeyRepo, MembershipRepo, SessionRepo, UserRepo, WorkspaceRepo,
-};
+pub use atlas_acta::ports::identity::MembershipRepo;
+pub use atlas_acta::ports::identity::WorkspaceRepo;
+pub use atlas_custos::ports::identity::ActivationTokenRepo;
+pub use atlas_custos::ports::identity::ApiKeyRepo;
+pub use atlas_custos::ports::identity::SessionRepo;
+pub use atlas_custos::ports::identity::UserRepo;
 
 pub use crate::platform::{UiStateRepo, UserUiState};
 
@@ -266,7 +282,7 @@ pub struct PgUserRepo {
 #[async_trait]
 impl UserRepo for PgUserRepo {
     async fn create(&self, new: NewUser) -> Result<User, DomainError> {
-        let uid = atlas_domain::ids::UserId::new();
+        let uid = atlas_core::principal::UserId::new();
         let model = user::ActiveModel {
             id: Set(uid.0),
             username: Set(new.username),

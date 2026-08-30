@@ -1,10 +1,15 @@
 use async_trait::async_trait;
-use atlas_domain::{
-    DomainError, WorkspaceCtx,
-    permissions::Principal,
-    ports::search::{SearchAfter, SearchRepo, SortKey},
-    search::{SearchFilter, SearchHit, SearchKind, SearchQuery, SearchSort},
-};
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::ports::search::SearchAfter;
+use atlas_acta::ports::search::SearchRepo;
+use atlas_acta::ports::search::SortKey;
+use atlas_acta::search::SearchFilter;
+use atlas_acta::search::SearchHit;
+use atlas_acta::search::SearchKind;
+use atlas_acta::search::SearchQuery;
+use atlas_acta::search::SearchSort;
+use atlas_core::error::DomainError;
+use atlas_core::principal::Principal;
 use chrono::{DateTime, TimeZone, Utc};
 use sea_orm::{DatabaseConnection, FromQueryResult};
 
@@ -110,7 +115,7 @@ impl SearchRepo for PgSearchRepo {
         // $2 — principal id
         //
         // The permission predicate mirrors the domain `resolve()` authority
-        // (atlas_domain::permissions). For a User principal, three access paths
+        // (crate::authz::policy::resolve). For a User principal, three access paths
         // exist: implicit admin (Owner/Admin membership → sees all), explicit
         // grants (resource/ancestor/workspace-scope), and the member-only
         // visibility contribution (a plain member sees a resource whose effective

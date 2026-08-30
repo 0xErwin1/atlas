@@ -13,7 +13,7 @@ use atlas_api::dtos::integrations::{
     CreateIntegrationConfigRequest, IntegrationConfigCreatedDto, IntegrationConfigDto,
     UpdateIntegrationConfigRequest,
 };
-use atlas_domain::permissions::Principal;
+use atlas_core::principal::Principal;
 
 use crate::{
     authz::{AdminMin, Authorized, WorkspaceRes},

@@ -3,21 +3,26 @@
 mod support;
 
 use async_trait::async_trait;
-use atlas_domain::{
-    DomainError, WorkspaceCtx,
-    entities::{
-        boards_tasks::{NewBoard, NewTask, PositionBetween},
-        documents::NewDocument,
-        identity::MemberRole,
-        workspace_core::NewProject,
-    },
-    ids::WorkspaceId,
-    permissions::{Principal, Visibility, VisibilityRole},
-    semantic_search::{
-        EmbeddingInput, EmbeddingProvider, ResourceKind, SemanticIndexChunk, SemanticSearchQuery,
-        SemanticSearchRepo, SemanticSearchSource, SemanticSearchTypeFilter,
-    },
-};
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::boards_tasks::NewTask;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::documents::NewDocument;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::ids::WorkspaceId;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
+use atlas_acta::semantic_search::EmbeddingInput;
+use atlas_acta::semantic_search::EmbeddingProvider;
+use atlas_acta::semantic_search::ResourceKind;
+use atlas_acta::semantic_search::SemanticIndexChunk;
+use atlas_acta::semantic_search::SemanticSearchQuery;
+use atlas_acta::semantic_search::SemanticSearchRepo;
+use atlas_acta::semantic_search::SemanticSearchSource;
+use atlas_acta::semantic_search::SemanticSearchTypeFilter;
+use atlas_core::error::DomainError;
+use atlas_core::principal::Principal;
 use atlas_server::{
     persistence::repos::{
         BoardRepo, DocumentRepo, MembershipRepo, PgBoardRepo, PgDocumentRepo, PgMembershipRepo,

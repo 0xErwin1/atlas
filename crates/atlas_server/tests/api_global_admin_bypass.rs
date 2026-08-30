@@ -17,15 +17,15 @@
 
 mod support;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::documents::NewDocument;
 use atlas_api::{
     dtos::{LoginRequest, UpdateWorkspaceRequest, search::SearchHitDto},
     pagination::Page,
 };
 use atlas_client::AtlasClient;
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::{documents::NewDocument, identity::ApiKeyType},
-};
+use atlas_custos::entities::identity::ApiKeyType;
 use atlas_server::{
     auth::{
         password,
@@ -44,7 +44,7 @@ use support::TestDb;
 async fn create_system_admin(
     db: &TestDb,
     username: &str,
-) -> atlas_domain::entities::identity::User {
+) -> atlas_custos::entities::identity::User {
     let hash = password::hash("TestPassword1!".to_string())
         .await
         .expect("hash");
@@ -66,7 +66,7 @@ async fn create_system_admin(
     user
 }
 
-async fn create_root_user(db: &TestDb, username: &str) -> atlas_domain::entities::identity::User {
+async fn create_root_user(db: &TestDb, username: &str) -> atlas_custos::entities::identity::User {
     let hash = password::hash("TestPassword1!".to_string())
         .await
         .expect("hash");
@@ -105,13 +105,13 @@ async fn login_as(server: &support::TestServer, username: &str) -> AtlasClient {
 async fn seed_document_in_ws(
     db: &TestDb,
     ws: &atlas_server::persistence::repos::Workspace,
-    owner: &atlas_domain::entities::identity::User,
+    owner: &atlas_custos::entities::identity::User,
     title: &str,
     content: &str,
-) -> (atlas_domain::ids::DocumentId, Option<String>) {
+) -> (atlas_acta::ids::DocumentId, Option<String>) {
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(owner.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(owner.id.0)),
     );
     let repo = PgDocumentRepo::new(db.conn().clone(), 50);
     let doc = repo
@@ -135,14 +135,14 @@ async fn seed_document_in_ws(
 async fn create_api_key(
     db: &TestDb,
     ws: &atlas_server::persistence::repos::Workspace,
-    owner: &atlas_domain::entities::identity::User,
+    owner: &atlas_custos::entities::identity::User,
     name: &str,
-) -> (atlas_domain::ids::ApiKeyId, String) {
+) -> (atlas_core::principal::ApiKeyId, String) {
     let raw_token = generate_api_key();
     let token_hash = hash_token(&raw_token);
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(owner.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(owner.id.0)),
     );
 
     let key = PgApiKeyRepo {
@@ -156,7 +156,7 @@ async fn create_api_key(
             token_hash,
             type_: ApiKeyType::Agent,
             expires_at: None,
-            scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
+            scopes: atlas_custos::capability::Capability::ALL.to_vec(),
         },
     )
     .await

@@ -3,32 +3,46 @@
 mod support;
 
 use async_trait::async_trait;
-use atlas_domain::{
-    Actor, DomainError, WorkspaceCtx,
-    entities::task_views::TaskViewFilters,
-    entities::{
-        boards_tasks::{
-            ActivityKind, ActivityPayload, NewBoard, NewTask, NewTaskActivity, NewTaskReference,
-            PositionBetween, ReferenceKind,
-        },
-        comments::{CommentOwner, NewComment},
-        documents::{AttachmentOwner, ExtractedLink, NewAttachment, NewDocument},
-        workspace_core::{NewFolder, NewProject},
-    },
-    permissions::{Principal, Visibility, VisibilityRole},
-    ports::{
-        boards_tasks::{
-            TaskActivityRepo, TaskReferenceRepo, WorkspaceActivityFilters, WorkspaceActivityScope,
-        },
-        documents::DocumentLinkRepo,
-        search::SearchRepo,
-    },
-    search::{SearchQuery, SearchSort, TypeSet},
-    semantic_search::{
-        EmbeddingInput, EmbeddingProvider, ResourceKind, SemanticIndexChunk, SemanticSearchQuery,
-        SemanticSearchRepo, SemanticSearchSource, SemanticSearchTypeFilter,
-    },
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::boards_tasks::ActivityKind;
+use atlas_acta::entities::boards_tasks::ActivityPayload;
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::boards_tasks::NewTask;
+use atlas_acta::entities::boards_tasks::NewTaskActivity;
+use atlas_acta::entities::boards_tasks::NewTaskReference;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::boards_tasks::ReferenceKind;
+use atlas_acta::entities::comments::CommentOwner;
+use atlas_acta::entities::comments::NewComment;
+use atlas_acta::entities::documents::AttachmentOwner;
+use atlas_acta::entities::documents::ExtractedLink;
+use atlas_acta::entities::documents::NewAttachment;
+use atlas_acta::entities::documents::NewDocument;
+use atlas_acta::entities::task_views::TaskViewFilters;
+use atlas_acta::entities::workspace_core::NewFolder;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
+use atlas_acta::ports::boards_tasks::TaskActivityRepo;
+use atlas_acta::ports::boards_tasks::TaskReferenceRepo;
+use atlas_acta::ports::boards_tasks::WorkspaceActivityFilters;
+use atlas_acta::ports::boards_tasks::WorkspaceActivityScope;
+use atlas_acta::ports::documents::DocumentLinkRepo;
+use atlas_acta::ports::search::SearchRepo;
+use atlas_acta::search::SearchQuery;
+use atlas_acta::search::SearchSort;
+use atlas_acta::search::TypeSet;
+use atlas_acta::semantic_search::EmbeddingInput;
+use atlas_acta::semantic_search::EmbeddingProvider;
+use atlas_acta::semantic_search::ResourceKind;
+use atlas_acta::semantic_search::SemanticIndexChunk;
+use atlas_acta::semantic_search::SemanticSearchQuery;
+use atlas_acta::semantic_search::SemanticSearchRepo;
+use atlas_acta::semantic_search::SemanticSearchSource;
+use atlas_acta::semantic_search::SemanticSearchTypeFilter;
+use atlas_core::error::DomainError;
+use atlas_core::principal::Principal;
 use atlas_server::persistence::repos::{
     AttachmentRepo, BoardRepo, CommentRepo, DocumentRepo, FolderRepo, PgAttachmentRepo,
     PgCommentRepo, PgDocumentLinkRepo, PgSearchRepo, PgSemanticIndexWriter, PgSemanticSearchRepo,
@@ -56,15 +70,15 @@ impl EmbeddingProvider for VisibilityEmbeddingProvider {
 
 async fn seed_project_tree(
     db: &support::TestDb,
-    ctx: &atlas_domain::WorkspaceCtx,
+    ctx: &atlas_acta::actor::WorkspaceCtx,
     suffix: &str,
 ) -> (
-    atlas_domain::entities::workspace_core::Project,
-    atlas_domain::entities::workspace_core::Folder,
-    atlas_domain::entities::workspace_core::Folder,
-    atlas_domain::entities::documents::Document,
-    atlas_domain::entities::boards_tasks::Board,
-    atlas_domain::entities::boards_tasks::Task,
+    atlas_acta::entities::workspace_core::Project,
+    atlas_acta::entities::workspace_core::Folder,
+    atlas_acta::entities::workspace_core::Folder,
+    atlas_acta::entities::documents::Document,
+    atlas_acta::entities::boards_tasks::Board,
+    atlas_acta::entities::boards_tasks::Task,
 ) {
     let task_prefix = match suffix {
         "project" => "PPRJ",
@@ -640,7 +654,7 @@ async fn owner_chain_download_visibility() {
         support::login_user_with_workspace(&server, &db, "owner-chain-download").await;
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let (project, _parent, _child, document, _board, task) =
         seed_project_tree(&db, &ctx, "project").await;

@@ -17,12 +17,13 @@ use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
 use sha2::Sha256;
 use uuid::Uuid;
 
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::boards_tasks::{NewBoard, PositionBetween},
-    entities::workspace_core::NewProject,
-    permissions::{Visibility, VisibilityRole},
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
 use atlas_server::{
     config::DispatcherConfig,
     dispatcher::{WebhookDispatcher, compute_signature},
@@ -118,7 +119,7 @@ async fn e2e_github_workflow_run_fires_automation_and_dispatches_webhook() {
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
 
     // Seed project, board, and column so the automation rule has valid targets.

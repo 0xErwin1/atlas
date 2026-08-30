@@ -11,12 +11,12 @@
 
 mod support;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::identity::MemberRole;
 use atlas_api::dtos::groups::{AddGroupMemberRequest, CreateGroupRequest};
 use atlas_client::ClientError;
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::{identity::MemberRole, security_audit::AuditFilters},
-};
+use atlas_custos::entities::security_audit::AuditFilters;
 use atlas_server::persistence::repos::{
     MembershipRepo, NewUser, PgSecurityAuditRepo, SecurityAuditRepo, UserRepo,
 };
@@ -24,9 +24,9 @@ use support::{TestDb, TestServer, login_user_with_workspace};
 
 async fn add_workspace_member(
     db: &TestDb,
-    ws_id: atlas_domain::ids::WorkspaceId,
+    ws_id: atlas_acta::ids::WorkspaceId,
     username: &str,
-) -> atlas_domain::entities::identity::User {
+) -> atlas_custos::entities::identity::User {
     let hash = atlas_server::auth::password::hash("TestPassword1!".to_string())
         .await
         .expect("hash");
@@ -48,7 +48,7 @@ async fn add_workspace_member(
 
     let ctx = WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     db.membership_repo()
         .add(&ctx, user.id, MemberRole::Member)
@@ -60,8 +60,8 @@ async fn add_workspace_member(
 
 async fn fetch_audit(
     db: &TestDb,
-    ws_id: atlas_domain::ids::WorkspaceId,
-) -> Vec<atlas_domain::entities::security_audit::SecurityAuditEvent> {
+    ws_id: atlas_acta::ids::WorkspaceId,
+) -> Vec<atlas_custos::entities::security_audit::SecurityAuditEvent> {
     let repo = PgSecurityAuditRepo {
         conn: db.conn().clone(),
     };
@@ -125,7 +125,7 @@ async fn create_group_emits_audit_row() {
     assert_eq!(entry.target_id, Some(group.id));
     assert_eq!(
         entry.actor,
-        Actor::User(atlas_domain::UserAttributionId(caller.id.0))
+        Actor::User(atlas_acta::actor::UserAttributionId(caller.id.0))
     );
 }
 
@@ -252,7 +252,7 @@ async fn delete_group_emits_audit_row() {
     assert!(
         rows.iter().any(|r| r.action.as_str() == "group.deleted"
             && r.target_id == Some(group.id)
-            && r.actor == Actor::User(atlas_domain::UserAttributionId(caller.id.0))),
+            && r.actor == Actor::User(atlas_acta::actor::UserAttributionId(caller.id.0))),
         "group.deleted audit row not found"
     );
 }
@@ -353,7 +353,7 @@ async fn add_member_emits_audit_row() {
         rows.iter()
             .any(|r| r.action.as_str() == "group.member_added"
                 && r.target_id == Some(group.id)
-                && r.actor == Actor::User(atlas_domain::UserAttributionId(caller.id.0))),
+                && r.actor == Actor::User(atlas_acta::actor::UserAttributionId(caller.id.0))),
         "group.member_added audit row not found"
     );
 }
@@ -490,7 +490,7 @@ async fn remove_member_emits_audit_row() {
         rows.iter()
             .any(|r| r.action.as_str() == "group.member_removed"
                 && r.target_id == Some(group.id)
-                && r.actor == Actor::User(atlas_domain::UserAttributionId(caller.id.0))),
+                && r.actor == Actor::User(atlas_acta::actor::UserAttributionId(caller.id.0))),
         "group.member_removed audit row not found"
     );
 }

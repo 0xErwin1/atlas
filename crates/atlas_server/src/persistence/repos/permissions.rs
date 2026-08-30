@@ -1,12 +1,20 @@
+use crate::authz::ResourceRole;
 use async_trait::async_trait;
+use atlas_acta::ids::BoardId;
+use atlas_acta::ids::DocumentId;
+use atlas_acta::ids::FolderId;
+use atlas_acta::ids::ProjectId;
+use atlas_acta::ids::WorkspaceId;
+use atlas_acta::permissions::ResourceRef;
+use atlas_core::error::DomainError;
+use atlas_core::principal::ApiKeyId;
+use atlas_core::principal::GroupId;
+use atlas_core::principal::UserId;
 use atlas_custos::WorkspaceScope;
-use atlas_domain::{
-    DomainError,
-    entities::groups::{Group, GroupMember, NewGroup},
-    ids::{ApiKeyId, BoardId, DocumentId, FolderId, GroupId, ProjectId, UserId, WorkspaceId},
-    permissions::{ResourceRef, ResourceRole},
-    ports::group_repo::GroupRepo as GroupRepoTrait,
-};
+use atlas_custos::entities::groups::Group;
+use atlas_custos::entities::groups::GroupMember;
+use atlas_custos::entities::groups::NewGroup;
+use atlas_custos::ports::group_repo::GroupRepo as GroupRepoTrait;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,

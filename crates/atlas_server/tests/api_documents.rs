@@ -9,6 +9,9 @@ mod support;
 
 use sea_orm::{ConnectionTrait, Statement};
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::identity::MemberRole;
 use atlas_api::dtos::{
     ApiKeyScope, CreateUserApiKeyRequest,
     documents::{
@@ -19,7 +22,6 @@ use atlas_api::dtos::{
     },
 };
 use atlas_client::ClientError;
-use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole};
 use atlas_server::persistence::repos::{
     FolderRepo, MembershipRepo, NewUser, PermissionGrantRepo, UserRepo,
 };
@@ -1603,7 +1605,8 @@ async fn edit_content_range_updates_content_and_returns_a_new_revision() {
 
 #[tokio::test]
 async fn edit_content_range_requires_editor_access_without_leaking_other_workspaces() {
-    use atlas_domain::{ids::ProjectId, permissions::ResourceRole};
+    use atlas_acta::ids::ProjectId;
+    use atlas_server::authz::ResourceRole;
 
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
@@ -2514,9 +2517,9 @@ async fn move_to_foreign_workspace_folder_is_rejected() {
         .create(
             &WorkspaceCtx::new(
                 ws_b.id,
-                Actor::User(atlas_domain::UserAttributionId(bob_user.id.0)),
+                Actor::User(atlas_acta::actor::UserAttributionId(bob_user.id.0)),
             ),
-            atlas_domain::entities::workspace_core::NewFolder {
+            atlas_acta::entities::workspace_core::NewFolder {
                 project_id: None,
                 parent_folder_id: None,
                 name: "bob-folder".to_string(),
@@ -2593,10 +2596,10 @@ async fn move_into_folder_adopts_folder_project() {
         .create(
             &WorkspaceCtx::new(
                 ws.id,
-                Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+                Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
             ),
-            atlas_domain::entities::workspace_core::NewFolder {
-                project_id: Some(atlas_domain::ids::ProjectId(project_b.id)),
+            atlas_acta::entities::workspace_core::NewFolder {
+                project_id: Some(atlas_acta::ids::ProjectId(project_b.id)),
                 parent_folder_id: None,
                 name: "folder-b".to_string(),
             },
@@ -2628,8 +2631,8 @@ async fn move_into_folder_adopts_folder_project() {
 
 #[tokio::test]
 async fn move_into_other_project_folder_without_access_is_rejected() {
-    use atlas_domain::ids::ProjectId;
-    use atlas_domain::permissions::ResourceRole;
+    use atlas_acta::ids::ProjectId;
+    use atlas_server::authz::ResourceRole;
 
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
@@ -2674,9 +2677,9 @@ async fn move_into_other_project_folder_without_access_is_rejected() {
         .create(
             &WorkspaceCtx::new(
                 ws.id,
-                Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+                Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0)),
             ),
-            atlas_domain::entities::workspace_core::NewFolder {
+            atlas_acta::entities::workspace_core::NewFolder {
                 project_id: Some(ProjectId(project_b.id)),
                 parent_folder_id: None,
                 name: "folder-in-b".to_string(),
@@ -2716,8 +2719,8 @@ async fn move_into_other_project_folder_without_access_is_rejected() {
 
 #[tokio::test]
 async fn move_within_authorized_project_folder_succeeds() {
-    use atlas_domain::ids::ProjectId;
-    use atlas_domain::permissions::ResourceRole;
+    use atlas_acta::ids::ProjectId;
+    use atlas_server::authz::ResourceRole;
 
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
@@ -2748,9 +2751,9 @@ async fn move_within_authorized_project_folder_succeeds() {
         .create(
             &WorkspaceCtx::new(
                 ws.id,
-                Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+                Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0)),
             ),
-            atlas_domain::entities::workspace_core::NewFolder {
+            atlas_acta::entities::workspace_core::NewFolder {
                 project_id: Some(ProjectId(project_a.id)),
                 parent_folder_id: None,
                 name: "folder-in-a".to_string(),
@@ -2813,10 +2816,10 @@ async fn document_moves_batch_preserves_order_and_prior_successes() {
         .create(
             &WorkspaceCtx::new(
                 ws.id,
-                Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+                Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
             ),
-            atlas_domain::entities::workspace_core::NewFolder {
-                project_id: Some(atlas_domain::ids::ProjectId(project.id)),
+            atlas_acta::entities::workspace_core::NewFolder {
+                project_id: Some(atlas_acta::ids::ProjectId(project.id)),
                 parent_folder_id: None,
                 name: "destination".to_string(),
             },
@@ -2910,9 +2913,9 @@ async fn document_moves_batch_preserves_order_and_prior_successes() {
 
 #[tokio::test]
 async fn document_moves_batch_hides_inaccessible_sources_and_destinations() {
-    use atlas_domain::{
-        entities::workspace_core::NewFolder, ids::ProjectId, permissions::ResourceRole,
-    };
+    use atlas_acta::entities::workspace_core::NewFolder;
+    use atlas_acta::ids::ProjectId;
+    use atlas_server::authz::ResourceRole;
 
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
@@ -2950,7 +2953,7 @@ async fn document_moves_batch_hides_inaccessible_sources_and_destinations() {
         .create(
             &WorkspaceCtx::new(
                 ws.id,
-                Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+                Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0)),
             ),
             NewFolder {
                 project_id: Some(ProjectId(source_project.id)),
@@ -2965,7 +2968,7 @@ async fn document_moves_batch_hides_inaccessible_sources_and_destinations() {
         .create(
             &WorkspaceCtx::new(
                 ws.id,
-                Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+                Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0)),
             ),
             NewFolder {
                 project_id: Some(ProjectId(destination_project.id)),
@@ -3047,7 +3050,7 @@ async fn document_moves_batch_hides_inaccessible_sources_and_destinations() {
         .create(
             &WorkspaceCtx::new(
                 foreign_ws.id,
-                Actor::User(atlas_domain::UserAttributionId(foreign_user.id.0)),
+                Actor::User(atlas_acta::actor::UserAttributionId(foreign_user.id.0)),
             ),
             NewFolder {
                 project_id: Some(ProjectId(foreign_project.id)),
@@ -3124,10 +3127,10 @@ async fn document_moves_batch_rejects_an_oversized_envelope_before_processing() 
         .create(
             &WorkspaceCtx::new(
                 ws.id,
-                Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+                Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
             ),
-            atlas_domain::entities::workspace_core::NewFolder {
-                project_id: Some(atlas_domain::ids::ProjectId(project.id)),
+            atlas_acta::entities::workspace_core::NewFolder {
+                project_id: Some(atlas_acta::ids::ProjectId(project.id)),
                 parent_folder_id: None,
                 name: "source folder".into(),
             },
@@ -3207,10 +3210,10 @@ async fn document_moves_batch_rejects_more_than_one_hundred_items_before_process
         .create(
             &WorkspaceCtx::new(
                 ws.id,
-                Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+                Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
             ),
-            atlas_domain::entities::workspace_core::NewFolder {
-                project_id: Some(atlas_domain::ids::ProjectId(project.id)),
+            atlas_acta::entities::workspace_core::NewFolder {
+                project_id: Some(atlas_acta::ids::ProjectId(project.id)),
                 parent_folder_id: None,
                 name: "source folder".into(),
             },
@@ -3273,7 +3276,7 @@ async fn member_client_with_document_grant(
     ws: &atlas_server::persistence::repos::Workspace,
     username: &str,
     document_id: uuid::Uuid,
-    role: atlas_domain::permissions::ResourceRole,
+    role: atlas_server::authz::ResourceRole,
 ) -> atlas_client::AtlasClient {
     use atlas_server::authz::policy::NewPermissionGrant;
 
@@ -3296,7 +3299,7 @@ async fn member_client_with_document_grant(
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     db.membership_repo()
         .add(&ctx, user.id, MemberRole::Member)
@@ -3315,7 +3318,7 @@ async fn member_client_with_document_grant(
             folder_id: None,
             document_id: None,
             board_id: None,
-            role: atlas_domain::permissions::ResourceRole::Viewer,
+            role: atlas_server::authz::ResourceRole::Viewer,
             created_by_user_id: None,
             created_by_api_key_id: None,
         })
@@ -3329,7 +3332,7 @@ async fn member_client_with_document_grant(
             group_id: None,
             project_id: None,
             folder_id: None,
-            document_id: Some(atlas_domain::ids::DocumentId(document_id)),
+            document_id: Some(atlas_acta::ids::DocumentId(document_id)),
             board_id: None,
             role,
             created_by_user_id: None,
@@ -3351,7 +3354,7 @@ async fn member_client_with_document_grant(
 
 #[tokio::test]
 async fn create_into_foreign_project_folder_is_rejected() {
-    use atlas_domain::ids::ProjectId;
+    use atlas_acta::ids::ProjectId;
 
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
@@ -3391,9 +3394,9 @@ async fn create_into_foreign_project_folder_is_rejected() {
         .create(
             &WorkspaceCtx::new(
                 ws.id,
-                Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+                Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0)),
             ),
-            atlas_domain::entities::workspace_core::NewFolder {
+            atlas_acta::entities::workspace_core::NewFolder {
                 project_id: Some(ProjectId(project_b.id)),
                 parent_folder_id: None,
                 name: "cr-folder-in-b".to_string(),
@@ -3420,7 +3423,7 @@ async fn create_into_foreign_project_folder_is_rejected() {
 
 #[tokio::test]
 async fn create_into_same_project_folder_succeeds() {
-    use atlas_domain::ids::ProjectId;
+    use atlas_acta::ids::ProjectId;
 
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
@@ -3446,9 +3449,9 @@ async fn create_into_same_project_folder_succeeds() {
         .create(
             &WorkspaceCtx::new(
                 ws.id,
-                Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+                Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0)),
             ),
-            atlas_domain::entities::workspace_core::NewFolder {
+            atlas_acta::entities::workspace_core::NewFolder {
                 project_id: Some(ProjectId(project_a.id)),
                 parent_folder_id: None,
                 name: "cr-folder-in-a".to_string(),
@@ -3518,15 +3521,15 @@ async fn viewer_cannot_create_document() {
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(viewer_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(viewer_user.id.0)),
     );
     db.membership_repo()
         .add(&ctx, viewer_user.id, MemberRole::Member)
         .await
         .expect("add viewer membership");
 
-    use atlas_domain::ids::ProjectId;
-    use atlas_domain::permissions::ResourceRole;
+    use atlas_acta::ids::ProjectId;
+    use atlas_server::authz::ResourceRole;
     use atlas_server::authz::policy::NewPermissionGrant;
     let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
         conn: db.conn().clone(),
@@ -3609,8 +3612,9 @@ async fn api_key_actor_write_sets_actor_type_api_key() {
         .await
         .expect("create api key");
 
-    use atlas_domain::ids::{ApiKeyId, ProjectId};
-    use atlas_domain::permissions::ResourceRole;
+    use atlas_acta::ids::ProjectId;
+    use atlas_core::principal::ApiKeyId;
+    use atlas_server::authz::ResourceRole;
     use atlas_server::authz::policy::NewPermissionGrant;
     let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
         conn: db.conn().clone(),
@@ -3671,8 +3675,8 @@ async fn member_client_with_optional_project_grant(
     db: &support::TestDb,
     ws: &atlas_server::persistence::repos::Workspace,
     username: &str,
-    project_id: Option<atlas_domain::ids::ProjectId>,
-    role: Option<atlas_domain::permissions::ResourceRole>,
+    project_id: Option<atlas_acta::ids::ProjectId>,
+    role: Option<atlas_server::authz::ResourceRole>,
 ) -> atlas_client::AtlasClient {
     use atlas_server::authz::policy::NewPermissionGrant;
 
@@ -3697,7 +3701,7 @@ async fn member_client_with_optional_project_grant(
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     db.membership_repo()
         .add(&ctx, user.id, MemberRole::Member)
@@ -3810,7 +3814,7 @@ async fn member_without_grant_cannot_download_or_delete_restricted_attachment() 
 
 #[tokio::test]
 async fn viewer_can_download_but_not_delete_attachment() {
-    use atlas_domain::permissions::ResourceRole;
+    use atlas_server::authz::ResourceRole;
 
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
@@ -3824,7 +3828,7 @@ async fn viewer_can_download_but_not_delete_attachment() {
         &db,
         &ws,
         "att-az-viewer-user",
-        Some(atlas_domain::ids::ProjectId(project.id)),
+        Some(atlas_acta::ids::ProjectId(project.id)),
         Some(ResourceRole::Viewer),
     )
     .await;
@@ -3846,7 +3850,7 @@ async fn viewer_can_download_but_not_delete_attachment() {
 
 #[tokio::test]
 async fn editor_can_delete_attachment() {
-    use atlas_domain::permissions::ResourceRole;
+    use atlas_server::authz::ResourceRole;
 
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
@@ -3860,7 +3864,7 @@ async fn editor_can_delete_attachment() {
         &db,
         &ws,
         "att-az-editor-user",
-        Some(atlas_domain::ids::ProjectId(project.id)),
+        Some(atlas_acta::ids::ProjectId(project.id)),
         Some(ResourceRole::Editor),
     )
     .await;

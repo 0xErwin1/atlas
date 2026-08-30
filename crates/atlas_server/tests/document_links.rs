@@ -2,12 +2,18 @@
 
 mod support;
 
-use atlas_domain::{
-    entities::boards_tasks::{NewBoard, NewTask, NewTaskReference, PositionBetween, ReferenceKind},
-    entities::documents::{ExtractedLink, LinkSource, NewAttachment, NewDocument},
-    entities::workspace_core::NewProject,
-    permissions::{Visibility, VisibilityRole},
-};
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::boards_tasks::NewTask;
+use atlas_acta::entities::boards_tasks::NewTaskReference;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::boards_tasks::ReferenceKind;
+use atlas_acta::entities::documents::ExtractedLink;
+use atlas_acta::entities::documents::LinkSource;
+use atlas_acta::entities::documents::NewAttachment;
+use atlas_acta::entities::documents::NewDocument;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
 use atlas_server::persistence::repos::{
     AttachmentRepo, BoardRepo, DocumentLinkRepo, DocumentRepo, PgAttachmentRepo, PgBoardRepo,
     PgDocumentLinkRepo, PgDocumentRepo, PgProjectRepo, PgTaskReferenceRepo, PgTaskRepo,
@@ -18,8 +24,8 @@ use sea_orm::{ConnectionTrait, Statement};
 
 async fn seed_project_board_task(
     db: &support::TestDb,
-    ctx: &atlas_domain::WorkspaceCtx,
-) -> atlas_domain::entities::boards_tasks::Task {
+    ctx: &atlas_acta::actor::WorkspaceCtx,
+) -> atlas_acta::entities::boards_tasks::Task {
     let project = PgProjectRepo {
         conn: db.conn().clone(),
     }

@@ -7,6 +7,9 @@
 
 mod support;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::identity::MemberRole;
 use atlas_api::dtos::{
     CreateProjectRequest,
     boards_tasks::{
@@ -14,7 +17,6 @@ use atlas_api::dtos::{
     },
     documents::CreateDocumentRequest,
 };
-use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole};
 use atlas_server::persistence::repos::{MembershipRepo, NewUser, UserRepo};
 use reqwest::Response;
 use sea_orm::{ConnectionTrait, Statement, TransactionTrait};
@@ -93,7 +95,7 @@ async fn upload_draft(
 async fn add_member(
     db: &support::TestDb,
     server: &support::TestServer,
-    workspace_id: atlas_domain::ids::WorkspaceId,
+    workspace_id: atlas_acta::ids::WorkspaceId,
     username: &str,
 ) -> atlas_client::AtlasClient {
     use atlas_api::dtos::LoginRequest;
@@ -123,7 +125,7 @@ async fn add_member(
         .add(
             &WorkspaceCtx::new(
                 workspace_id,
-                Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+                Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
             ),
             user.id,
             MemberRole::Owner,

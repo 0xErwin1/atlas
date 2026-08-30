@@ -21,7 +21,7 @@ Use full words for identifiers; avoid abbreviations (`queue`, not `q`).
 - The canonical crate map and key-file overview live in `ARCHITECTURE.md`. Keep new code in the crate and area that already owns the behavior instead of creating parallel structure.
 - Module directories use `mod.rs` (e.g. `services/mod.rs`, `authz/mod.rs`), not a sibling `services.rs`.
 - Prefer implementing in existing files unless the change is a genuinely new logical component. Avoid creating many small files.
-- Respect the compiler-enforced dependency direction: `atlas_domain` stays pure (no axum/sea-orm/tokio); SeaORM types never leak out of `atlas_server/src/persistence/`.
+- Respect the compiler-enforced dependency direction: `atlas_core`, `atlas_custos`, and `atlas_acta` stay pure (no axum/sea-orm/tokio); SeaORM types never leak out of `atlas_server/src/persistence/`.
 
 ### Imports
 
@@ -66,7 +66,7 @@ When bumping, update both files in the same commit.
 
 ### Error handling
 
-- Domain and request errors are typed (`thiserror` in `atlas_domain`; RFC 9457 problem responses in `atlas_server`). Return `Result`; propagate with `?`.
+- Domain and request errors are typed (`thiserror` in `atlas_core`; RFC 9457 problem responses in `atlas_server`). Return `Result`; propagate with `?`.
 - **Never silently discard a fallible expression with `let _ =`.** The `unused_must_use` deny lint already rejects a dropped `Result`; do not work around it. Propagate with `?`, branch with `match`/`if let`, log it, or surface it to the user.
 - Prefer `get`/`get_mut` over indexing that can panic on out-of-bounds, and handle the `None` arm (`indexing_slicing` warns).
 

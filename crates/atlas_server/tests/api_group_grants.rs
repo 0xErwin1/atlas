@@ -12,17 +12,17 @@
 
 mod support;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::ids::ProjectId;
 use atlas_api::dtos::{
     CreateGrantRequest, CreateProjectRequest, GrantPrincipal, UpdateProjectRequest,
     groups::{AddGroupMemberRequest, CreateGroupRequest},
 };
 use atlas_client::ClientError;
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::identity::MemberRole,
-    ids::{ApiKeyId, ProjectId},
-    permissions::ResourceRole,
-};
+use atlas_core::principal::ApiKeyId;
+use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::persistence::repos::{
     MembershipRepo, NewUser, PermissionGrantRepo, PgGroupRepo, PgPermissionGrantRepo, UserRepo,
@@ -36,9 +36,9 @@ use uuid::Uuid;
 
 async fn create_member(
     db: &TestDb,
-    ws_id: atlas_domain::ids::WorkspaceId,
+    ws_id: atlas_acta::ids::WorkspaceId,
     username: &str,
-) -> atlas_domain::entities::identity::User {
+) -> atlas_custos::entities::identity::User {
     let hash = atlas_server::auth::password::hash("TestPassword1!".to_string())
         .await
         .expect("hash");
@@ -60,7 +60,7 @@ async fn create_member(
 
     let ctx = WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     db.membership_repo()
         .add(&ctx, user.id, MemberRole::Member)
@@ -914,7 +914,7 @@ async fn upsert_group_grant_reads_back_correct_row() {
         conn: db.conn().clone(),
     };
 
-    use atlas_domain::entities::groups::NewGroup;
+    use atlas_custos::entities::groups::NewGroup;
     let group = group_repo
         .create(NewGroup {
             workspace_id: atlas_custos::WorkspaceScope(ws.id.0),
@@ -975,7 +975,7 @@ async fn upsert_group_grant_reads_back_correct_row() {
     let all = grant_repo
         .list_for_resource(
             ws.id,
-            &atlas_domain::permissions::ResourceRef::Project(ProjectId(project.id)),
+            &atlas_acta::permissions::ResourceRef::Project(ProjectId(project.id)),
             None,
             100,
         )
@@ -996,4 +996,4 @@ async fn upsert_group_grant_reads_back_correct_row() {
 // GroupRepoTrait needed for .create() call in upsert test
 // ---------------------------------------------------------------------------
 
-use atlas_domain::ports::group_repo::GroupRepo as GroupRepoTrait;
+use atlas_custos::ports::group_repo::GroupRepo as GroupRepoTrait;

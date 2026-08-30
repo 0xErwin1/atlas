@@ -17,11 +17,13 @@
 
 mod support;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::documents::NewDocument;
 use atlas_api::{
     dtos::search::SearchHitDto,
     pagination::{Page, SearchCursor, SortKey},
 };
-use atlas_domain::{Actor, WorkspaceCtx, entities::documents::NewDocument};
 use atlas_server::persistence::repos::{DocumentRepo, PgDocumentRepo};
 use sea_orm::{ConnectionTrait, Statement};
 use std::collections::HashSet;
@@ -158,7 +160,7 @@ async fn relevance_tie_no_duplicate_no_gap() {
     let token = client.token().expect("token");
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
 
     // Same title AND content → identical ts_rank_cd score for the same query.
@@ -216,7 +218,7 @@ async fn updated_tie_no_duplicate_no_gap() {
     let token = client.token().expect("token");
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
 
     let unique = "tieupduniqs18";
@@ -278,7 +280,7 @@ async fn updated_tie_deterministic_no_duplicate_no_gap() {
     let token = client.token().expect("token");
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
 
     let unique = "tieupddetu19x";
@@ -390,7 +392,7 @@ async fn multipage_relevance_sort_no_duplicate_no_gap() {
     let token = client.token().expect("token");
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
 
     let unique = "multipgreluniq19";
@@ -450,7 +452,7 @@ async fn multipage_updated_sort_no_duplicate_no_gap() {
     let token = client.token().expect("token");
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
 
     let unique = "multipgupduniq20";

@@ -1,11 +1,12 @@
+use crate::error::acta_conflict;
 use async_trait::async_trait;
-use atlas_domain::{
-    DomainError, PlatformStatusTemplateId,
-    entities::boards_tasks::PositionBetween,
-    entities::status_templates::{NewStatusTemplate, PlatformStatusTemplate, StatusTemplatePatch},
-    error::acta_conflict,
-    position,
-};
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::status_templates::NewStatusTemplate;
+use atlas_acta::entities::status_templates::PlatformStatusTemplate;
+use atlas_acta::entities::status_templates::StatusTemplatePatch;
+use atlas_acta::ids::PlatformStatusTemplateId;
+use atlas_core::error::DomainError;
+use atlas_core::position;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
@@ -18,7 +19,7 @@ use crate::persistence::entities::status_templates::{
 use crate::persistence::repos::status_templates::remap_anchors;
 use atlas_postgres::db_err;
 
-pub use atlas_domain::ports::status_templates::PlatformStatusTemplateRepo;
+pub use atlas_acta::ports::status_templates::PlatformStatusTemplateRepo;
 
 pub struct PgPlatformStatusTemplateRepo {
     pub conn: DatabaseConnection,

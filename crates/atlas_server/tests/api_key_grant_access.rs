@@ -12,12 +12,13 @@
 
 mod support;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
 use atlas_api::dtos::{
     CreateGrantRequest, GrantPrincipal,
     boards_tasks::{CreateBoardRequest, CreateColumnRequest, CreateTaskRequest},
 };
 use atlas_client::ClientError;
-use atlas_domain::{Actor, WorkspaceCtx};
 use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::persistence::repos::{
     ApiKeyRepo, MembershipRepo, NewApiKey, NewUser, PermissionGrantRepo, PgPermissionGrantRepo,
@@ -34,8 +35,8 @@ use support::{TestDb, TestServer, login_user_with_workspace};
 /// (key_id, secret_token). The key starts with NO permission grant.
 async fn create_ungrant_key(
     db: &TestDb,
-    ws_id: atlas_domain::ids::WorkspaceId,
-    creator: atlas_domain::ids::UserId,
+    ws_id: atlas_acta::ids::WorkspaceId,
+    creator: atlas_core::principal::UserId,
     name: &str,
 ) -> (uuid::Uuid, String) {
     let plain = format!("atlas_{name}_secret");
@@ -43,7 +44,7 @@ async fn create_ungrant_key(
 
     let ctx = WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(creator.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(creator.0)),
     );
     let key = db
         .api_key_repo()
@@ -53,9 +54,9 @@ async fn create_ungrant_key(
             NewApiKey {
                 name: name.to_string(),
                 token_hash: hash,
-                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
+                type_: atlas_custos::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
-                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
+                scopes: atlas_custos::capability::Capability::ALL.to_vec(),
             },
         )
         .await
@@ -318,7 +319,7 @@ async fn granted_api_key_is_denied_after_its_creator_is_disabled() {
 
     let may_enter = atlas_server::authz::authorized::api_key_can_access_workspace(
         db.conn(),
-        atlas_domain::ids::ApiKeyId(key_id),
+        atlas_core::principal::ApiKeyId(key_id),
         &ws,
     )
     .await
@@ -390,13 +391,13 @@ async fn granted_api_key_cannot_manage_grants() {
 
     let mctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0)),
     );
     db.membership_repo()
         .add(
             &mctx,
             second_user.id,
-            atlas_domain::entities::identity::MemberRole::Member,
+            atlas_acta::entities::identity::MemberRole::Member,
         )
         .await
         .expect("add second user as member");
@@ -508,7 +509,7 @@ async fn data_migration_backfills_grant_for_existing_workspace_key() {
     // After migration 020, the key already has a back-filled workspace-scope grant.
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0)),
     );
     let key = db
         .api_key_repo()
@@ -518,9 +519,9 @@ async fn data_migration_backfills_grant_for_existing_workspace_key() {
             NewApiKey {
                 name: "migrated-key".to_string(),
                 token_hash: "atlas_migrated_hash_b205".to_string(),
-                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
+                type_: atlas_custos::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
-                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
+                scopes: atlas_custos::capability::Capability::ALL.to_vec(),
             },
         )
         .await
@@ -559,7 +560,7 @@ async fn data_migration_backfills_grant_for_existing_workspace_key() {
             folder_id: None,
             document_id: None,
             board_id: None,
-            role: atlas_domain::permissions::ResourceRole::Editor,
+            role: atlas_server::authz::ResourceRole::Editor,
             created_by_user_id: Some(owner_user.id),
             created_by_api_key_id: None,
         })

@@ -7,11 +7,11 @@
 
 mod support;
 
-use atlas_domain::{
-    Actor,
-    entities::security_audit::{AuditFilters, NewSecurityAuditEvent, SecurityAction},
-    ids::UserId,
-};
+use atlas_acta::actor::Actor;
+use atlas_core::principal::UserId;
+use atlas_custos::entities::security_audit::AuditFilters;
+use atlas_custos::entities::security_audit::NewSecurityAuditEvent;
+use atlas_custos::entities::security_audit::SecurityAction;
 use atlas_server::persistence::repos::{
     ApiKeyRepo, NewApiKey, NewUser, PgSecurityAuditRepo, SecurityAuditRepo, UserRepo,
 };
@@ -25,7 +25,7 @@ fn user_event(
 ) -> NewSecurityAuditEvent {
     NewSecurityAuditEvent {
         workspace_id: ws_id,
-        actor: Actor::User(atlas_domain::UserAttributionId(actor_id.0)),
+        actor: Actor::User(atlas_acta::actor::UserAttributionId(actor_id.0)),
         action: SecurityAction::UserDisabled,
         target_type: "user".into(),
         target_id: Some(uuid::Uuid::now_v7()),
@@ -36,7 +36,7 @@ fn user_event(
 fn platform_event(actor_id: UserId) -> NewSecurityAuditEvent {
     NewSecurityAuditEvent {
         workspace_id: None,
-        actor: Actor::User(atlas_domain::UserAttributionId(actor_id.0)),
+        actor: Actor::User(atlas_acta::actor::UserAttributionId(actor_id.0)),
         action: SecurityAction::UserCreated,
         target_type: "user".into(),
         target_id: Some(uuid::Uuid::now_v7()),
@@ -70,7 +70,7 @@ async fn append_in_inserts_user_actor_row() {
     assert_eq!(rows.len(), 1, "one row must exist after append");
     assert_eq!(
         rows[0].actor,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0))
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0))
     );
     assert_eq!(
         rows[0].workspace_id,
@@ -87,9 +87,9 @@ async fn append_in_inserts_api_key_actor_row() {
 
     let raw_secret = "test-api-key-secret-sal-001";
     let token_hash = atlas_server::auth::tokens::hash_token(raw_secret);
-    let ctx = atlas_domain::WorkspaceCtx::new(
+    let ctx = atlas_acta::actor::WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let key = db
         .api_key_repo()
@@ -99,9 +99,9 @@ async fn append_in_inserts_api_key_actor_row() {
             NewApiKey {
                 name: "sal-key".into(),
                 token_hash,
-                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
+                type_: atlas_custos::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
-                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
+                scopes: atlas_custos::capability::Capability::ALL.to_vec(),
             },
         )
         .await
@@ -109,7 +109,7 @@ async fn append_in_inserts_api_key_actor_row() {
 
     let event = NewSecurityAuditEvent {
         workspace_id: None,
-        actor: Actor::ApiKey(atlas_domain::ApiKeyAttributionId(key.id.0)),
+        actor: Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(key.id.0)),
         action: SecurityAction::ApiKeyCreated,
         target_type: "api_key".into(),
         target_id: Some(key.id.0),
@@ -129,7 +129,7 @@ async fn append_in_inserts_api_key_actor_row() {
     assert_eq!(rows.len(), 1);
     assert_eq!(
         rows[0].actor,
-        Actor::ApiKey(atlas_domain::ApiKeyAttributionId(key.id.0))
+        Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(key.id.0))
     );
     assert!(rows[0].workspace_id.is_none());
 
@@ -189,7 +189,7 @@ async fn append_in_metadata_json_round_trips() {
 
     let event = NewSecurityAuditEvent {
         workspace_id: Some(atlas_custos::WorkspaceScope(ws.id.0)),
-        actor: Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        actor: Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
         action: SecurityAction::MembershipRoleChanged,
         target_type: "user".into(),
         target_id: Some(user.id.0),
@@ -366,7 +366,7 @@ async fn list_for_workspace_returns_newest_first() {
             db.conn(),
             NewSecurityAuditEvent {
                 workspace_id: Some(atlas_custos::WorkspaceScope(ws.id.0)),
-                actor: Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+                actor: Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
                 action,
                 target_type: "user".into(),
                 target_id: Some(user.id.0),
@@ -432,7 +432,7 @@ async fn list_for_workspace_keyset_paginates() {
     assert_eq!(page1.len(), 3, "first page must have 3 rows");
 
     let last = page1.last().expect("last");
-    let cursor = atlas_domain::entities::security_audit::AuditCursor {
+    let cursor = atlas_custos::entities::security_audit::AuditCursor {
         created_at: last.created_at,
         id: last.id,
     };
@@ -474,7 +474,7 @@ async fn list_for_workspace_filter_by_action() {
             db.conn(),
             NewSecurityAuditEvent {
                 workspace_id: Some(atlas_custos::WorkspaceScope(ws.id.0)),
-                actor: Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+                actor: Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
                 action,
                 target_type: "user".into(),
                 target_id: Some(user.id.0),
@@ -548,7 +548,7 @@ async fn list_for_workspace_filter_by_actor_user_id() {
     assert_eq!(rows.len(), 1, "only user_a's events must be returned");
     assert_eq!(
         rows[0].actor,
-        Actor::User(atlas_domain::UserAttributionId(user_a.id.0))
+        Actor::User(atlas_acta::actor::UserAttributionId(user_a.id.0))
     );
 
     db.teardown().await;
@@ -652,7 +652,7 @@ async fn audit_row_survives_target_deleted_no_fk_on_target_id() {
 
     let event = NewSecurityAuditEvent {
         workspace_id: Some(atlas_custos::WorkspaceScope(ws.id.0)),
-        actor: Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        actor: Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
         action: SecurityAction::UserDisabled,
         target_type: "user".into(),
         target_id: Some(target_id),
@@ -716,7 +716,7 @@ async fn actor_fk_on_delete_set_null_nulls_actor_but_keeps_row() {
 
     let event = NewSecurityAuditEvent {
         workspace_id: Some(atlas_custos::WorkspaceScope(ws.id.0)),
-        actor: Actor::User(atlas_domain::UserAttributionId(victim.id.0)),
+        actor: Actor::User(atlas_acta::actor::UserAttributionId(victim.id.0)),
         action: SecurityAction::MembershipRemoved,
         target_type: "user".into(),
         target_id: Some(owner.id.0),
@@ -770,7 +770,7 @@ async fn list_platform_keyset_paginates() {
     assert_eq!(page1.len(), 2);
 
     let last = page1.last().expect("last");
-    let cursor = atlas_domain::entities::security_audit::AuditCursor {
+    let cursor = atlas_custos::entities::security_audit::AuditCursor {
         created_at: last.created_at,
         id: last.id,
     };

@@ -1,8 +1,10 @@
-use atlas_domain::{
-    DomainError, WorkspaceCtx,
-    entities::events::{DomainEvent, EventActor, EventEnvelope},
-    ids::{BoardId, ProjectId},
-};
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::events::DomainEvent;
+use atlas_acta::entities::events::EventActor;
+use atlas_acta::entities::events::EventEnvelope;
+use atlas_acta::ids::BoardId;
+use atlas_acta::ids::ProjectId;
+use atlas_core::error::DomainError;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ConnectionTrait, DatabaseBackend, EntityTrait, Statement,

@@ -1,15 +1,24 @@
 use async_trait::async_trait;
-use atlas_domain::{
-    Actor, DomainError, WorkspaceCtx,
-    entities::events::{DomainEvent, FolderCreatedPayload, FolderDeletedPayload},
-    entities::lifecycle::TrashKind,
-    entities::workspace_core::{
-        Folder, NewFolder, NewProject, NewPropertyDefinition, Project, PropertyDefinition,
-        UpdateProject,
-    },
-    ids::{FolderId, ProjectId, PropertyDefinitionId},
-    permissions::{Principal, Visibility, VisibilityRole},
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::events::DomainEvent;
+use atlas_acta::entities::events::FolderCreatedPayload;
+use atlas_acta::entities::events::FolderDeletedPayload;
+use atlas_acta::entities::lifecycle::TrashKind;
+use atlas_acta::entities::workspace_core::Folder;
+use atlas_acta::entities::workspace_core::NewFolder;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::entities::workspace_core::NewPropertyDefinition;
+use atlas_acta::entities::workspace_core::Project;
+use atlas_acta::entities::workspace_core::PropertyDefinition;
+use atlas_acta::entities::workspace_core::UpdateProject;
+use atlas_acta::ids::FolderId;
+use atlas_acta::ids::ProjectId;
+use atlas_acta::ids::PropertyDefinitionId;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
+use atlas_core::error::DomainError;
+use atlas_core::principal::Principal;
 use atlas_postgres::db_err as internal_db_err;
 use chrono::Utc;
 use sea_orm::{
@@ -24,7 +33,9 @@ use crate::persistence::entities::workspace_core::{
 use crate::persistence::live_ancestors::{live_folder_chain, live_project};
 use crate::persistence::repos::{PgOutboxRepo, PgSecurityAuditRepo};
 
-pub use atlas_domain::ports::workspace_core::{FolderRepo, ProjectRepo, PropertyDefinitionRepo};
+pub use atlas_acta::ports::workspace_core::FolderRepo;
+pub use atlas_acta::ports::workspace_core::ProjectRepo;
+pub use atlas_acta::ports::workspace_core::PropertyDefinitionRepo;
 
 fn visibility_to_str(v: &Visibility) -> (&'static str, Option<&'static str>) {
     match v {
@@ -309,14 +320,14 @@ impl ProjectRepo for PgProjectRepo {
             .map(|r| {
                 let visibility = visibility_from_cols(&r.visibility, r.visibility_role.as_deref());
                 Project {
-                    id: atlas_domain::ids::ProjectId(r.id),
-                    workspace_id: atlas_domain::ids::WorkspaceId(r.workspace_id),
+                    id: atlas_acta::ids::ProjectId(r.id),
+                    workspace_id: atlas_acta::ids::WorkspaceId(r.workspace_id),
                     name: r.name,
                     slug: r.slug,
                     task_prefix: r.task_prefix,
                     next_task_number: r.next_task_number,
                     visibility,
-                    created_by_user_id: r.created_by_user_id.map(atlas_domain::ids::UserId),
+                    created_by_user_id: r.created_by_user_id.map(atlas_core::principal::UserId),
                     created_at: r.created_at,
                     updated_at: r.updated_at,
                     deleted_at: r.deleted_at,

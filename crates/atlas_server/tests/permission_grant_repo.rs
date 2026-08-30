@@ -2,10 +2,11 @@
 
 mod support;
 
-use atlas_domain::{
-    entities::workspace_core::NewProject,
-    permissions::{ResourceRef, ResourceRole, Visibility, VisibilityRole},
-};
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::permissions::ResourceRef;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
+use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::{NewPermissionGrant, ResolutionQuery};
 use atlas_server::persistence::repos::{PermissionGrantRepo, PgPermissionGrantRepo, ProjectRepo};
 

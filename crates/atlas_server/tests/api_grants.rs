@@ -7,23 +7,25 @@
 
 mod support;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::identity::MemberRole;
 use atlas_api::dtos::{
     CreateGrantRequest, CreateProjectRequest, CreateUserApiKeyRequest, GrantPrincipal,
 };
 use atlas_client::ClientError;
-use atlas_domain::{Actor, WorkspaceCtx, entities::identity::MemberRole};
 use atlas_server::persistence::repos::{ApiKeyRepo, MembershipRepo, NewApiKey, NewUser, UserRepo};
 use support::{TestDb, TestServer, login_user, login_user_with_workspace};
 
 async fn add_agent(
     db: &TestDb,
-    ws_id: atlas_domain::ids::WorkspaceId,
-    creator: atlas_domain::ids::UserId,
+    ws_id: atlas_acta::ids::WorkspaceId,
+    creator: atlas_core::principal::UserId,
     name: &str,
-) -> atlas_domain::entities::identity::ApiKey {
+) -> atlas_custos::entities::identity::ApiKey {
     let ctx = WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(creator.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(creator.0)),
     );
     db.api_key_repo()
         .create(
@@ -32,9 +34,9 @@ async fn add_agent(
             NewApiKey {
                 name: name.to_string(),
                 token_hash: format!("hash-{name}"),
-                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
+                type_: atlas_custos::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
-                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
+                scopes: atlas_custos::capability::Capability::ALL.to_vec(),
             },
         )
         .await
@@ -54,12 +56,12 @@ fn agent_grant_req(api_key_id: uuid::Uuid, role: &str) -> CreateGrantRequest {
 async fn add_user_to_workspace(
     db: &TestDb,
     server: &TestServer,
-    ws_id: atlas_domain::ids::WorkspaceId,
+    ws_id: atlas_acta::ids::WorkspaceId,
     username: &str,
     role: MemberRole,
 ) -> (
     atlas_client::AtlasClient,
-    atlas_domain::entities::identity::User,
+    atlas_custos::entities::identity::User,
 ) {
     use atlas_api::dtos::LoginRequest;
     use atlas_server::auth::password;
@@ -85,7 +87,7 @@ async fn add_user_to_workspace(
 
     let ctx = WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     db.membership_repo()
         .add(&ctx, user.id, role)
@@ -110,7 +112,7 @@ async fn create_non_member_user(
     username: &str,
 ) -> (
     atlas_client::AtlasClient,
-    atlas_domain::entities::identity::User,
+    atlas_custos::entities::identity::User,
 ) {
     use atlas_api::dtos::LoginRequest;
     use atlas_server::auth::password;
@@ -279,7 +281,7 @@ async fn create_workspace_grant_allows_sharing() {
     // First add the non-member as a workspace member (required by parse_principal).
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(non_member.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(non_member.id.0)),
     );
     db.membership_repo()
         .add(&ctx, non_member.id, MemberRole::Member)
@@ -598,7 +600,7 @@ async fn agent_with_all_capabilities_and_editor_grant_cannot_create_project_gran
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(owner_user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(owner_user.id.0)),
     );
     let key = db
         .api_key_repo()
@@ -608,15 +610,16 @@ async fn agent_with_all_capabilities_and_editor_grant_cannot_create_project_gran
             NewApiKey {
                 name: "grant-allcap-agent".to_string(),
                 token_hash: hash,
-                type_: atlas_domain::entities::identity::ApiKeyType::Agent,
+                type_: atlas_custos::entities::identity::ApiKeyType::Agent,
                 expires_at: None,
-                scopes: atlas_domain::permissions::Capability::ALL.to_vec(),
+                scopes: atlas_custos::capability::Capability::ALL.to_vec(),
             },
         )
         .await
         .expect("create all-capability agent key");
 
-    use atlas_domain::ids::{ApiKeyId, ProjectId};
+    use atlas_acta::ids::ProjectId;
+    use atlas_core::principal::ApiKeyId;
     use atlas_server::authz::policy::NewPermissionGrant;
     use atlas_server::persistence::repos::PermissionGrantRepo;
     let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
@@ -632,7 +635,7 @@ async fn agent_with_all_capabilities_and_editor_grant_cannot_create_project_gran
             folder_id: None,
             document_id: None,
             board_id: None,
-            role: atlas_domain::permissions::ResourceRole::Editor,
+            role: atlas_server::authz::ResourceRole::Editor,
             created_by_user_id: Some(owner_user.id),
             created_by_api_key_id: None,
         })

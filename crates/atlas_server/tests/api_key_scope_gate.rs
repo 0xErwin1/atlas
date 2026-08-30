@@ -2,11 +2,13 @@
 
 mod support;
 
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::identity::{ApiKeyType, NewApiKey},
-    permissions::{Capability, CapabilityAction, CapabilityFamily},
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_custos::capability::Capability;
+use atlas_custos::capability::CapabilityAction;
+use atlas_custos::capability::CapabilityFamily;
+use atlas_custos::entities::identity::ApiKeyType;
+use atlas_custos::entities::identity::NewApiKey;
 use atlas_server::{
     authz::authorized::enforce_api_key_scope, error::ApiError, persistence::repos::ApiKeyRepo,
 };
@@ -16,7 +18,7 @@ async fn create_key_with_scopes(db: &TestDb, scopes: Vec<Capability>) -> uuid::U
     let (ws, user) = seed_workspace(db, &format!("scope-gate-{}", uuid::Uuid::now_v7())).await;
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
 
     let key = db
@@ -53,7 +55,7 @@ async fn allows_when_key_holds_the_required_capability() {
 
     let result = enforce_api_key_scope(
         db.conn(),
-        atlas_domain::ids::ApiKeyId(key_id),
+        atlas_core::principal::ApiKeyId(key_id),
         Capability {
             family: CapabilityFamily::Tasks,
             action: CapabilityAction::Read,
@@ -81,7 +83,7 @@ async fn denies_when_key_lacks_the_required_capability() {
 
     let result = enforce_api_key_scope(
         db.conn(),
-        atlas_domain::ids::ApiKeyId(key_id),
+        atlas_core::principal::ApiKeyId(key_id),
         Capability {
             family: CapabilityFamily::Tasks,
             action: CapabilityAction::Update,
@@ -102,7 +104,7 @@ async fn denies_when_key_has_zero_scopes() {
 
     let result = enforce_api_key_scope(
         db.conn(),
-        atlas_domain::ids::ApiKeyId(key_id),
+        atlas_core::principal::ApiKeyId(key_id),
         Capability {
             family: CapabilityFamily::Projects,
             action: CapabilityAction::Delete,
@@ -123,7 +125,7 @@ async fn allows_every_capability_when_key_holds_all_twenty() {
 
     for cap in Capability::ALL {
         let result =
-            enforce_api_key_scope(db.conn(), atlas_domain::ids::ApiKeyId(key_id), cap).await;
+            enforce_api_key_scope(db.conn(), atlas_core::principal::ApiKeyId(key_id), cap).await;
         assert!(result.is_ok(), "expected allow for {cap:?}, got {result:?}");
     }
 

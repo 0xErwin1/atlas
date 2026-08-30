@@ -5,13 +5,13 @@ use axum::{
     response::IntoResponse,
 };
 
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::status_templates::NewStatusTemplate;
+use atlas_acta::entities::status_templates::PlatformStatusTemplate;
+use atlas_acta::entities::status_templates::StatusTemplatePatch;
+use atlas_acta::ids::PlatformStatusTemplateId;
 use atlas_api::dtos::status_templates::{
     CreateStatusTemplateRequest, PlatformStatusTemplateDto, UpdateStatusTemplateRequest,
-};
-use atlas_domain::{
-    PlatformStatusTemplateId,
-    entities::boards_tasks::PositionBetween,
-    entities::status_templates::{NewStatusTemplate, PlatformStatusTemplate, StatusTemplatePatch},
 };
 
 use crate::{
@@ -97,7 +97,7 @@ pub(crate) async fn create_platform_status_template(
 
     let existing = repo.list().await.map_err(ApiError::Domain)?;
     let last_key = existing.last().map(|t| t.position_key.clone());
-    let position_key = atlas_domain::position::between(last_key.as_deref(), None);
+    let position_key = atlas_core::position::between(last_key.as_deref(), None);
 
     let template = repo
         .create(NewStatusTemplate {

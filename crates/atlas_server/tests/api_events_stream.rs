@@ -22,23 +22,27 @@ mod support;
 use std::sync::Arc;
 use std::time::Duration;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::ids::BoardId;
+use atlas_acta::ids::ProjectId;
+use atlas_acta::ids::WorkspaceId;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
 use atlas_api::dtos::{
     CreateProjectRequest,
     boards_tasks::{CreateColumnRequest, CreateTaskRequest, MoveTaskRequest},
     documents::CreateDocumentRequest,
 };
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::{
-        boards_tasks::NewBoard,
-        identity::{ApiKeyType, MemberRole},
-        workspace_core::NewProject,
-    },
-    ids::{BoardId, ProjectId, UserId, WorkspaceId},
-    permissions::{
-        Capability, CapabilityAction, CapabilityFamily, ResourceRole, Visibility, VisibilityRole,
-    },
-};
+use atlas_core::principal::UserId;
+use atlas_custos::capability::Capability;
+use atlas_custos::capability::CapabilityAction;
+use atlas_custos::capability::CapabilityFamily;
+use atlas_custos::entities::identity::ApiKeyType;
+use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::{
     auth::tokens::{generate_api_key, hash_token},
@@ -179,7 +183,7 @@ async fn stream_delivers_forwarded_event_to_connected_principal() {
     let (client, ws, user) = support::login_user_with_workspace(&server, &db, "sse-happy").await;
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let token = client.token().expect("token").to_string();
 
@@ -325,7 +329,7 @@ async fn stream_filters_events_by_per_resource_access() {
         support::login_user_with_workspace(&server, &db, "sse-filter-owner").await;
     let owner_ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(owner.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(owner.id.0)),
     );
     let owner_token = owner_client.token().expect("owner token").to_string();
 
@@ -334,7 +338,7 @@ async fn stream_filters_events_by_per_resource_access() {
     let (member_client, member) = support::login_user(&server, &db, "sse-filter-member").await;
     let member_ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(member.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(member.id.0)),
     );
     db.membership_repo()
         .add(&member_ctx, member.id, MemberRole::Member)
@@ -470,7 +474,7 @@ async fn create_scoped_agent(
 
     let ctx = WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(owner_id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(owner_id.0)),
     );
     let key = PgApiKeyRepo {
         conn: db.conn().clone(),
@@ -633,7 +637,7 @@ async fn presence_is_gated_by_routed_family() {
         support::login_user_with_workspace(&server, &db, "sse-scope-presence").await;
     let owner_ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(owner.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(owner.id.0)),
     );
 
     let (project_id, board_id) = seed_project_and_board(
@@ -944,7 +948,7 @@ async fn task_move_reaches_authenticated_sse_through_outbox_listener() {
         support::login_user_with_workspace(&server, &db, "sse-task-move-chain").await;
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let token = client.token().expect("token").to_string();
 

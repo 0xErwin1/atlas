@@ -41,12 +41,17 @@ use tokio::sync::broadcast::{self, error::RecvError};
 use tokio::time::Instant;
 use uuid::Uuid;
 
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::identity::{MemberRole, Workspace},
-    ids::{BoardId, ProjectId, UserId},
-    permissions::{CapabilityFamily, Principal, ResourceRef, ResourceRole},
-};
+use crate::authz::ResourceRole;
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::entities::identity::Workspace;
+use atlas_acta::ids::BoardId;
+use atlas_acta::ids::ProjectId;
+use atlas_acta::permissions::ResourceRef;
+use atlas_core::principal::Principal;
+use atlas_core::principal::UserId;
+use atlas_custos::capability::CapabilityFamily;
 
 use crate::{
     authz::{
@@ -373,7 +378,7 @@ async fn build_project_chain(
     let repo = PgProjectRepo { conn: db.clone() };
     let ctx = WorkspaceCtx::new(
         workspace.id,
-        Actor::User(atlas_domain::UserAttributionId(UserId::new().0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(UserId::new().0)),
     );
 
     let Some(project) = repo
@@ -408,17 +413,33 @@ mod tests {
 
     use std::sync::Arc;
 
-    use atlas_domain::entities::events::{
-        BoardCreatedPayload, BoardDeletedPayload, BoardMovedPayload, BoardUpdatedPayload,
-        ColumnCreatedPayload, ColumnDeletedPayload, DocumentCreatedPayload, DocumentDeletedPayload,
-        DocumentMovedPayload, DocumentUpdatedPayload, DomainEvent, FolderCreatedPayload,
-        FolderDeletedPayload, ProjectCreatedPayload, TaskCreatedPayload, TaskDeletedPayload,
-        TaskMovedPayload, TaskUpdatedPayload,
-    };
-    use atlas_domain::ids::{
-        BoardId, ColumnId, DocumentId, FolderId, ProjectId, RevisionId, TaskId,
-    };
-    use atlas_domain::permissions::{Capability, CapabilityAction};
+    use atlas_acta::entities::events::BoardCreatedPayload;
+    use atlas_acta::entities::events::BoardDeletedPayload;
+    use atlas_acta::entities::events::BoardMovedPayload;
+    use atlas_acta::entities::events::BoardUpdatedPayload;
+    use atlas_acta::entities::events::ColumnCreatedPayload;
+    use atlas_acta::entities::events::ColumnDeletedPayload;
+    use atlas_acta::entities::events::DocumentCreatedPayload;
+    use atlas_acta::entities::events::DocumentDeletedPayload;
+    use atlas_acta::entities::events::DocumentMovedPayload;
+    use atlas_acta::entities::events::DocumentUpdatedPayload;
+    use atlas_acta::entities::events::DomainEvent;
+    use atlas_acta::entities::events::FolderCreatedPayload;
+    use atlas_acta::entities::events::FolderDeletedPayload;
+    use atlas_acta::entities::events::ProjectCreatedPayload;
+    use atlas_acta::entities::events::TaskCreatedPayload;
+    use atlas_acta::entities::events::TaskDeletedPayload;
+    use atlas_acta::entities::events::TaskMovedPayload;
+    use atlas_acta::entities::events::TaskUpdatedPayload;
+    use atlas_acta::ids::BoardId;
+    use atlas_acta::ids::ColumnId;
+    use atlas_acta::ids::DocumentId;
+    use atlas_acta::ids::FolderId;
+    use atlas_acta::ids::ProjectId;
+    use atlas_acta::ids::RevisionId;
+    use atlas_acta::ids::TaskId;
+    use atlas_custos::capability::Capability;
+    use atlas_custos::capability::CapabilityAction;
 
     fn nid<T: From<Uuid>>() -> T {
         Uuid::now_v7().into()

@@ -7,11 +7,15 @@
 
 mod support;
 
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::events::{DomainEvent, TaskCreatedPayload},
-    ids::{BoardId, ColumnId, ProjectId, TaskId, WorkspaceId},
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::events::DomainEvent;
+use atlas_acta::entities::events::TaskCreatedPayload;
+use atlas_acta::ids::BoardId;
+use atlas_acta::ids::ColumnId;
+use atlas_acta::ids::ProjectId;
+use atlas_acta::ids::TaskId;
+use atlas_acta::ids::WorkspaceId;
 use atlas_server::persistence::{entities::events_outbox::event_outbox, repos::PgOutboxRepo};
 use sea_orm::{EntityTrait, TransactionTrait};
 use uuid::Uuid;
@@ -19,7 +23,7 @@ use uuid::Uuid;
 fn make_ctx(ws_id: WorkspaceId, user: &atlas_server::persistence::repos::User) -> WorkspaceCtx {
     WorkspaceCtx::new(
         ws_id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     )
 }
 

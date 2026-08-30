@@ -1,27 +1,51 @@
+use crate::error::acta_conflict;
 use async_trait::async_trait;
-use atlas_domain::{
-    Actor, DomainError, WorkspaceCtx,
-    entities::boards_tasks::{
-        ActivityKind, AssigneeRef, Board, BoardColumn, ColumnPatch, NewBoard, NewTask,
-        NewTaskActivity, NewTaskAssignee, NewTaskChecklistItem, NewTaskReference, PositionBetween,
-        Task, TaskActivity, TaskAssignee, TaskChecklistItem, TaskChecklistItemPatch, TaskPatch,
-        TaskReference,
-    },
-    entities::events::{
-        BoardCreatedPayload, BoardDeletedPayload, BoardMovedPayload, BoardUpdatedPayload,
-        ColumnCreatedPayload, ColumnDeletedPayload, DomainEvent,
-    },
-    entities::task_views::{ActorTypeFilter, AssigneeFilter, TaskSort, TaskViewFilters},
-    error::acta_conflict,
-    ids::{
-        BoardId, ChecklistItemId, ColumnId, FolderId, ProjectId, TaskActivityId, TaskId,
-        TaskReferenceId,
-    },
-    ports::boards_tasks::{
-        TaskListCursor, WorkspaceActivityFilters, WorkspaceActivityRow, WorkspaceActivityScope,
-    },
-    position,
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::boards_tasks::ActivityKind;
+use atlas_acta::entities::boards_tasks::AssigneeRef;
+use atlas_acta::entities::boards_tasks::Board;
+use atlas_acta::entities::boards_tasks::BoardColumn;
+use atlas_acta::entities::boards_tasks::ColumnPatch;
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::boards_tasks::NewTask;
+use atlas_acta::entities::boards_tasks::NewTaskActivity;
+use atlas_acta::entities::boards_tasks::NewTaskAssignee;
+use atlas_acta::entities::boards_tasks::NewTaskChecklistItem;
+use atlas_acta::entities::boards_tasks::NewTaskReference;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::boards_tasks::Task;
+use atlas_acta::entities::boards_tasks::TaskActivity;
+use atlas_acta::entities::boards_tasks::TaskAssignee;
+use atlas_acta::entities::boards_tasks::TaskChecklistItem;
+use atlas_acta::entities::boards_tasks::TaskChecklistItemPatch;
+use atlas_acta::entities::boards_tasks::TaskPatch;
+use atlas_acta::entities::boards_tasks::TaskReference;
+use atlas_acta::entities::events::BoardCreatedPayload;
+use atlas_acta::entities::events::BoardDeletedPayload;
+use atlas_acta::entities::events::BoardMovedPayload;
+use atlas_acta::entities::events::BoardUpdatedPayload;
+use atlas_acta::entities::events::ColumnCreatedPayload;
+use atlas_acta::entities::events::ColumnDeletedPayload;
+use atlas_acta::entities::events::DomainEvent;
+use atlas_acta::entities::task_views::ActorTypeFilter;
+use atlas_acta::entities::task_views::AssigneeFilter;
+use atlas_acta::entities::task_views::TaskSort;
+use atlas_acta::entities::task_views::TaskViewFilters;
+use atlas_acta::ids::BoardId;
+use atlas_acta::ids::ChecklistItemId;
+use atlas_acta::ids::ColumnId;
+use atlas_acta::ids::FolderId;
+use atlas_acta::ids::ProjectId;
+use atlas_acta::ids::TaskActivityId;
+use atlas_acta::ids::TaskId;
+use atlas_acta::ids::TaskReferenceId;
+use atlas_acta::ports::boards_tasks::TaskListCursor;
+use atlas_acta::ports::boards_tasks::WorkspaceActivityFilters;
+use atlas_acta::ports::boards_tasks::WorkspaceActivityRow;
+use atlas_acta::ports::boards_tasks::WorkspaceActivityScope;
+use atlas_core::error::DomainError;
+use atlas_core::position;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
@@ -42,9 +66,12 @@ use crate::persistence::live_ancestors::{
 use crate::persistence::repos::PgOutboxRepo;
 use atlas_postgres::db_err;
 
-pub use atlas_domain::ports::boards_tasks::{
-    BoardRepo, TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo,
-};
+pub use atlas_acta::ports::boards_tasks::BoardRepo;
+pub use atlas_acta::ports::boards_tasks::TaskActivityRepo;
+pub use atlas_acta::ports::boards_tasks::TaskAssigneeRepo;
+pub use atlas_acta::ports::boards_tasks::TaskChecklistRepo;
+pub use atlas_acta::ports::boards_tasks::TaskReferenceRepo;
+pub use atlas_acta::ports::boards_tasks::TaskRepo;
 
 pub struct PgBoardRepo {
     pub conn: DatabaseConnection,
@@ -1464,7 +1491,7 @@ impl PgTaskReferenceRepo {
         ctx: &WorkspaceCtx,
         new: NewTaskReference,
     ) -> Result<TaskReference, DomainError> {
-        use atlas_domain::permissions::validate_reference;
+        use atlas_acta::permissions::validate_reference;
 
         validate_reference(
             new.source_task_id,
@@ -1501,7 +1528,7 @@ impl TaskReferenceRepo for PgTaskReferenceRepo {
         ctx: &WorkspaceCtx,
         new: NewTaskReference,
     ) -> Result<TaskReference, DomainError> {
-        use atlas_domain::permissions::validate_reference;
+        use atlas_acta::permissions::validate_reference;
 
         validate_reference(
             new.source_task_id,
@@ -2147,7 +2174,7 @@ impl PgTaskActivityRepo {
         old_value: serde_json::Value,
         new_value: serde_json::Value,
     ) -> Result<TaskActivity, DomainError> {
-        use atlas_domain::entities::boards_tasks::ActivityPayload;
+        use atlas_acta::entities::boards_tasks::ActivityPayload;
 
         let (by_user, by_key) = actor_columns(&ctx.actor);
         let cutoff = Utc::now() - chrono::Duration::minutes(FIELD_CHANGE_COALESCE_WINDOW_MINUTES);
@@ -2408,22 +2435,22 @@ impl TaskActivityRepo for PgTaskActivityRepo {
             .map(|row| {
                 let kind = activity_kind_from_str(&row.kind).map_err(internal_err)?;
                 let actor = if let Some(uid) = row.created_by_user_id {
-                    Actor::User(atlas_domain::UserAttributionId(uid))
+                    Actor::User(atlas_acta::actor::UserAttributionId(uid))
                 } else if let Some(kid) = row.created_by_api_key_id {
-                    Actor::ApiKey(atlas_domain::ApiKeyAttributionId(kid))
+                    Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(kid))
                 } else {
                     return Err(DomainError::Internal {
                         message: "task_activity row has no actor".into(),
                     });
                 };
-                let payload: atlas_domain::entities::boards_tasks::ActivityPayload =
+                let payload: atlas_acta::entities::boards_tasks::ActivityPayload =
                     serde_json::from_value(row.payload).map_err(|e| DomainError::Internal {
                         message: format!("deserialize activity payload: {e}"),
                     })?;
                 let activity = TaskActivity {
                     id: TaskActivityId(row.id),
                     task_id: TaskId(row.task_id),
-                    workspace_id: atlas_domain::ids::WorkspaceId(row.workspace_id),
+                    workspace_id: atlas_acta::ids::WorkspaceId(row.workspace_id),
                     kind,
                     payload,
                     actor,
@@ -2891,11 +2918,12 @@ fn classify_reference_insert_err(e: sea_orm::DbErr, target_id: uuid::Uuid) -> Do
 mod actor_columns_tests {
     use super::*;
     use crate::persistence::entities::boards_tasks::actor_from_columns;
-    use atlas_domain::ids::{ApiKeyId, UserId};
+    use atlas_core::principal::ApiKeyId;
+    use atlas_core::principal::UserId;
 
     #[test]
     fn user_actor_round_trips_through_xor_columns() {
-        let actor = Actor::User(atlas_domain::UserAttributionId(UserId::new().0));
+        let actor = Actor::User(atlas_acta::actor::UserAttributionId(UserId::new().0));
         let (user_col, key_col) = actor_columns(&actor);
 
         assert_eq!(
@@ -2911,7 +2939,7 @@ mod actor_columns_tests {
 
     #[test]
     fn api_key_actor_round_trips_through_xor_columns() {
-        let actor = Actor::ApiKey(atlas_domain::ApiKeyAttributionId(ApiKeyId::new().0));
+        let actor = Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(ApiKeyId::new().0));
         let (user_col, key_col) = actor_columns(&actor);
 
         assert_eq!(user_col, None);

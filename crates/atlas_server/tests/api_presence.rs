@@ -23,12 +23,15 @@ mod support;
 
 use std::time::Duration;
 
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::{boards_tasks::NewBoard, identity::MemberRole, workspace_core::NewProject},
-    ids::{BoardId, ProjectId},
-    permissions::{Visibility, VisibilityRole},
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::ids::BoardId;
+use atlas_acta::ids::ProjectId;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
 use atlas_server::persistence::repos::{
     BoardRepo, MembershipRepo, PgBoardRepo, PgProjectRepo, ProjectRepo,
 };
@@ -191,7 +194,7 @@ async fn heartbeat_lists_caller_as_present() {
         support::login_user_with_workspace(&server, &db, "presence-solo").await;
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let token = client.token().expect("token").to_string();
 
@@ -230,7 +233,7 @@ async fn second_principal_join_broadcasts_presence_with_both() {
         support::login_user_with_workspace(&server, &db, "presence-join-owner").await;
     let owner_ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(owner.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(owner.id.0)),
     );
     let owner_token = owner_client.token().expect("owner token").to_string();
 
@@ -238,7 +241,7 @@ async fn second_principal_join_broadcasts_presence_with_both() {
     let (member_client, member) = support::login_user(&server, &db, "presence-join-member").await;
     let member_ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(member.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(member.id.0)),
     );
     db.membership_repo()
         .add(&member_ctx, member.id, MemberRole::Member)
@@ -297,7 +300,7 @@ async fn refresh_does_not_rebroadcast() {
         support::login_user_with_workspace(&server, &db, "presence-refresh").await;
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let token = client.token().expect("token").to_string();
 
@@ -344,14 +347,14 @@ async fn leave_broadcasts_removal() {
         support::login_user_with_workspace(&server, &db, "presence-leave-owner").await;
     let owner_ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(owner.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(owner.id.0)),
     );
     let owner_token = owner_client.token().expect("owner token").to_string();
 
     let (member_client, member) = support::login_user(&server, &db, "presence-leave-member").await;
     let member_ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(member.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(member.id.0)),
     );
     db.membership_repo()
         .add(&member_ctx, member.id, MemberRole::Member)
@@ -423,7 +426,7 @@ async fn heartbeat_rejected_for_non_viewer() {
         support::login_user_with_workspace(&server, &db, "presence-authz-owner").await;
     let owner_ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(owner.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(owner.id.0)),
     );
     let _ = owner_client;
 
@@ -431,7 +434,7 @@ async fn heartbeat_rejected_for_non_viewer() {
     let (member_client, member) = support::login_user(&server, &db, "presence-authz-member").await;
     let member_ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(member.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(member.id.0)),
     );
     db.membership_repo()
         .add(&member_ctx, member.id, MemberRole::Member)

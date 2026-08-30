@@ -9,11 +9,14 @@ mod support;
 
 use std::sync::{Arc, Mutex};
 
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::events::{DomainEvent, TaskCreatedPayload},
-    ids::{BoardId, ColumnId, ProjectId, TaskId},
-};
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::events::DomainEvent;
+use atlas_acta::entities::events::TaskCreatedPayload;
+use atlas_acta::ids::BoardId;
+use atlas_acta::ids::ColumnId;
+use atlas_acta::ids::ProjectId;
+use atlas_acta::ids::TaskId;
 use atlas_server::{
     config::DispatcherConfig,
     crypto::WebhookCrypto,
@@ -150,7 +153,7 @@ async fn dispatcher_delivers_event_and_marks_delivered() {
     let (ws, user) = support::seed_workspace(&db, "disp-happy").await;
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let crypto = test_crypto();
 
@@ -169,7 +172,7 @@ async fn dispatcher_delivers_event_and_marks_delivered() {
         encrypted_secret,
         secret_nonce,
         None,
-        &Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        &Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     )
     .await
     .expect("create subscription");
@@ -244,7 +247,7 @@ async fn dispatcher_marks_dead_on_exhausted_attempts() {
     let (ws, user) = support::seed_workspace(&db, "disp-dead").await;
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let crypto = test_crypto();
 
@@ -262,7 +265,7 @@ async fn dispatcher_marks_dead_on_exhausted_attempts() {
         encrypted_secret,
         secret_nonce,
         None,
-        &Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        &Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     )
     .await
     .expect("create subscription");
@@ -321,7 +324,7 @@ async fn delivery_log_records_each_attempt() {
     let (ws, user) = support::seed_workspace(&db, "disp-log").await;
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let crypto = test_crypto();
 
@@ -338,7 +341,7 @@ async fn delivery_log_records_each_attempt() {
         encrypted_secret,
         secret_nonce,
         None,
-        &Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        &Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     )
     .await
     .expect("create subscription");
@@ -422,7 +425,7 @@ async fn no_matching_subscriptions_marks_delivered() {
     let (ws, user) = support::seed_workspace(&db, "disp-nosubs").await;
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let crypto = test_crypto();
 
@@ -506,7 +509,7 @@ async fn out_of_scope_subscription_is_not_delivered() {
     let (ws, user) = support::seed_workspace(&db, "disp-scope").await;
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let crypto = test_crypto();
 
@@ -525,7 +528,7 @@ async fn out_of_scope_subscription_is_not_delivered() {
         encrypted_secret,
         secret_nonce,
         None,
-        &Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        &Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     )
     .await
     .expect("create subscription");

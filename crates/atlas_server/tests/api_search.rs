@@ -7,17 +7,17 @@
 
 mod support;
 
+use atlas_acta::actor::Actor;
+use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::boards_tasks::NewTask;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::documents::NewDocument;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
 use atlas_api::dtos::search::{SearchHitDto, SearchKindDto};
 use atlas_api::pagination::{Page, SearchCursor, SortKey};
-use atlas_domain::{
-    Actor, WorkspaceCtx,
-    entities::{
-        boards_tasks::{NewBoard, NewTask, PositionBetween},
-        documents::NewDocument,
-        workspace_core::NewProject,
-    },
-    permissions::{Visibility, VisibilityRole},
-};
 use atlas_server::persistence::repos::{
     BoardRepo, DocumentRepo, PgBoardRepo, PgDocumentRepo, PgProjectRepo, PgTaskRepo, ProjectRepo,
     TaskRepo,
@@ -287,7 +287,7 @@ async fn happy_path_returns_matching_document() {
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let doc_repo = PgDocumentRepo::new(db.conn().clone(), 50);
 
@@ -345,7 +345,7 @@ async fn updated_sort_cursor_paginates_without_duplicates() {
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let doc_repo = PgDocumentRepo::new(db.conn().clone(), 50);
 
@@ -461,7 +461,7 @@ async fn title_hit_outranks_body_hit_under_relevance_sort() {
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let doc_repo = PgDocumentRepo::new(db.conn().clone(), 50);
 
@@ -552,7 +552,7 @@ async fn body_match_snippet_contains_mark_highlight() {
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let doc_repo = PgDocumentRepo::new(db.conn().clone(), 50);
 
@@ -708,7 +708,7 @@ async fn type_note_task_returns_both_kinds() {
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let unique = "xmt2bothkinds9z";
     let (doc_id, task_id) = seed_doc_and_task(&db, &ctx, unique).await;
@@ -754,7 +754,7 @@ async fn type_note_task_today_same_as_absent_type() {
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let unique = "xmt2equivterm8q";
     seed_doc_and_task(&db, &ctx, unique).await;
@@ -805,7 +805,7 @@ async fn type_note_returns_only_documents() {
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let unique = "xmt1noteonlyterm";
     let (doc_id, _task_id) = seed_doc_and_task(&db, &ctx, unique).await;
@@ -848,7 +848,7 @@ async fn type_task_returns_only_tasks() {
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let unique = "xmt1taskonlyterm";
     let (_doc_id, task_id) = seed_doc_and_task(&db, &ctx, unique).await;
@@ -894,7 +894,7 @@ async fn type_note_task_with_status_filter_does_not_short_circuit() {
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let unique = "xmt7nowarningterm";
     let (_doc_id, task_id) = seed_doc_and_task(&db, &ctx, unique).await;
@@ -933,7 +933,7 @@ async fn type_note_with_status_filter_returns_empty() {
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let unique = "xmt7warnterm9p";
     seed_doc_and_task(&db, &ctx, unique).await;
@@ -977,7 +977,7 @@ async fn type_note_task_owner_sees_both_kinds_with_readable_id() {
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let unique = "xmt8permterm7r";
     let (doc_id, task_id) = seed_doc_and_task(&db, &ctx, unique).await;
@@ -1034,7 +1034,7 @@ async fn type_unknown_token_collapses_to_all() {
 
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
     let unique = "xd1unknownterm5s";
     let (doc_id, task_id) = seed_doc_and_task(&db, &ctx, unique).await;
@@ -1097,10 +1097,12 @@ async fn type_unknown_token_collapses_to_all() {
 async fn seed_split_corpus(
     db: &support::TestDb,
     ctx: &WorkspaceCtx,
-    workspace_id: atlas_domain::ids::WorkspaceId,
+    workspace_id: atlas_acta::ids::WorkspaceId,
     query: &str,
 ) -> (Uuid, Uuid) {
-    use atlas_domain::semantic_search::{ResourceKind, SemanticIndexChunk, SemanticSearchSource};
+    use atlas_acta::semantic_search::ResourceKind;
+    use atlas_acta::semantic_search::SemanticIndexChunk;
+    use atlas_acta::semantic_search::SemanticSearchSource;
     use atlas_server::persistence::repos::PgSemanticIndexWriter;
     use std::sync::Arc;
 
@@ -1165,7 +1167,7 @@ async fn hybrid_mode_returns_what_neither_arm_finds_alone() {
     let http = reqwest::Client::new();
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
 
     let query = "quarterly retention policy";
@@ -1263,7 +1265,7 @@ async fn hybrid_mode_falls_back_to_lexical_when_embeddings_are_unavailable() {
     let http = reqwest::Client::new();
     let ctx = WorkspaceCtx::new(
         ws.id,
-        Actor::User(atlas_domain::UserAttributionId(user.id.0)),
+        Actor::User(atlas_acta::actor::UserAttributionId(user.id.0)),
     );
 
     let query = "quarterly retention policy";

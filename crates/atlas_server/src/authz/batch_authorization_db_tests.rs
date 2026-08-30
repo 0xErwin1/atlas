@@ -1,10 +1,13 @@
-use atlas_domain::{
-    entities::identity::MemberRole,
-    ids::{ApiKeyId, UserId, WorkspaceId},
-    permissions::{
-        Capability, CapabilityAction, CapabilityFamily, Principal, ResourceRef, ResourceRole,
-    },
-};
+use crate::authz::ResourceRole;
+use atlas_acta::entities::identity::MemberRole;
+use atlas_acta::ids::WorkspaceId;
+use atlas_acta::permissions::ResourceRef;
+use atlas_core::principal::ApiKeyId;
+use atlas_core::principal::Principal;
+use atlas_core::principal::UserId;
+use atlas_custos::capability::Capability;
+use atlas_custos::capability::CapabilityAction;
+use atlas_custos::capability::CapabilityFamily;
 use std::sync::{Arc, Mutex};
 
 use sea_orm::{ConnectionTrait, Database, DatabaseConnection};
@@ -81,9 +84,9 @@ async fn query_a_resolves_live_document_task_attachment_and_comment_subject_chai
     assert_chain(
         document,
         &[
-            ResourceRef::Document(atlas_domain::DocumentId(document_id)),
-            ResourceRef::Folder(atlas_domain::FolderId(folder_id)),
-            ResourceRef::Project(atlas_domain::ProjectId(project_id)),
+            ResourceRef::Document(atlas_acta::ids::DocumentId(document_id)),
+            ResourceRef::Folder(atlas_acta::ids::FolderId(folder_id)),
+            ResourceRef::Project(atlas_acta::ids::ProjectId(project_id)),
             ResourceRef::Workspace,
         ],
     );
@@ -92,8 +95,8 @@ async fn query_a_resolves_live_document_task_attachment_and_comment_subject_chai
     assert_chain(
         task,
         &[
-            ResourceRef::Board(atlas_domain::BoardId(board_id)),
-            ResourceRef::Project(atlas_domain::ProjectId(project_id)),
+            ResourceRef::Board(atlas_acta::ids::BoardId(board_id)),
+            ResourceRef::Project(atlas_acta::ids::ProjectId(project_id)),
             ResourceRef::Workspace,
         ],
     );

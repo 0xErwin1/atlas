@@ -2,9 +2,12 @@
 
 mod support;
 
-use atlas_domain::entities::boards_tasks::{NewBoard, NewTask, PositionBetween};
-use atlas_domain::entities::workspace_core::NewProject;
-use atlas_domain::permissions::{Visibility, VisibilityRole};
+use atlas_acta::entities::boards_tasks::NewBoard;
+use atlas_acta::entities::boards_tasks::NewTask;
+use atlas_acta::entities::boards_tasks::PositionBetween;
+use atlas_acta::entities::workspace_core::NewProject;
+use atlas_acta::permissions::Visibility;
+use atlas_acta::permissions::VisibilityRole;
 use atlas_server::persistence::repos::{
     BoardRepo, PgBoardRepo, PgProjectRepo, PgTaskRepo, ProjectRepo, TaskRepo,
 };
@@ -20,10 +23,10 @@ fn make_task_repo(db: &support::TestDb) -> PgTaskRepo {
 
 async fn seed_project(
     db: &support::TestDb,
-    ctx: &atlas_domain::WorkspaceCtx,
+    ctx: &atlas_acta::actor::WorkspaceCtx,
     slug: &str,
     prefix: &str,
-) -> atlas_domain::entities::workspace_core::Project {
+) -> atlas_acta::entities::workspace_core::Project {
     let repo = PgProjectRepo {
         conn: db.conn().clone(),
     };
@@ -42,10 +45,10 @@ async fn seed_project(
 
 async fn seed_board(
     db: &support::TestDb,
-    ctx: &atlas_domain::WorkspaceCtx,
-    project_id: atlas_domain::ids::ProjectId,
+    ctx: &atlas_acta::actor::WorkspaceCtx,
+    project_id: atlas_acta::ids::ProjectId,
     name: &str,
-) -> atlas_domain::entities::boards_tasks::Board {
+) -> atlas_acta::entities::boards_tasks::Board {
     let repo = make_board_repo(db);
     repo.create_board(
         ctx,
@@ -61,11 +64,11 @@ async fn seed_board(
 
 async fn seed_column(
     db: &support::TestDb,
-    ctx: &atlas_domain::WorkspaceCtx,
-    board_id: atlas_domain::ids::BoardId,
+    ctx: &atlas_acta::actor::WorkspaceCtx,
+    board_id: atlas_acta::ids::BoardId,
     name: &str,
     position: PositionBetween,
-) -> atlas_domain::entities::boards_tasks::BoardColumn {
+) -> atlas_acta::entities::boards_tasks::BoardColumn {
     let repo = make_board_repo(db);
     repo.add_column(ctx, board_id, name.into(), None, position)
         .await

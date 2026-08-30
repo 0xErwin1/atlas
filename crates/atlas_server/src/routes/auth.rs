@@ -15,7 +15,8 @@ use atlas_api::dtos::{
     AgentIdentityDto, ChangePasswordRequest, LoginRequest, LoginResponse, MeResponse,
     UpdateMeRequest, UserDto,
 };
-use atlas_domain::ids::{SessionId, UserId};
+use atlas_core::principal::UserId;
+use atlas_custos::ids::SessionId;
 
 use crate::{
     auth::{
@@ -410,7 +411,7 @@ pub(crate) async fn update_me(
     Ok(Json(user_to_dto(&user)))
 }
 
-pub(crate) fn user_to_dto(user: &atlas_domain::entities::identity::User) -> UserDto {
+pub(crate) fn user_to_dto(user: &atlas_custos::entities::identity::User) -> UserDto {
     UserDto {
         id: user.id.0,
         username: user.username.clone(),
