@@ -34,12 +34,21 @@ async fn from_empty_database_composed_migrator_reports_zero_pending_after_up() {
 }
 
 /// D5: a database migrated by the historical `migration::Migrator` alone (a
-/// "V1-migrated" database) must also report zero pending against the composed
-/// migrator, over the same `seaql_migrations` table — this is what proves the
-/// composition is additive, not a competing migration history.
+/// "V1-migrated" database, i.e. stopped right after the last historical
+/// migration and before any Custos-owned one) must catch up cleanly and then
+/// report zero pending against the composed migrator, over the same
+/// `seaql_migrations` table — this is what proves the composition is
+/// additive, not a competing migration history.
 #[tokio::test]
 async fn v1_migrated_database_composed_migrator_reports_zero_pending() {
-    let db = TestDb::create().await.expect("V1-migrated TestDb");
+    let historical_count = migration::Migrator::migrations().len() as u32;
+    let db = TestDb::create_with_migration_steps(Some(historical_count))
+        .await
+        .expect("V1-migrated TestDb");
+
+    ComposedMigrator::up(db.conn(), None)
+        .await
+        .expect("composed migrator catches up a V1-migrated database");
 
     let pending = ComposedMigrator::get_pending_migrations(db.conn())
         .await

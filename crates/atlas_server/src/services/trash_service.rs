@@ -410,13 +410,23 @@ impl TrashService {
             TrashKind::Project => {
                 purge_documents_in(conn, "project_id = $1 OR folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE project_id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)", id).await?;
                 purge_tasks_in(conn, "project_id = $1", id).await?;
+                purge_grants_in(
+                    conn,
+                    "board",
+                    "SELECT id FROM boards WHERE project_id = $1",
+                    id,
+                )
+                .await?;
                 execute(conn, "DELETE FROM boards WHERE project_id = $1", id).await?;
                 delete_folders_leaf_first(conn, "project_id = $1", id).await?;
+                purge_grants_in(conn, "project", "SELECT id FROM projects WHERE id = $1", id)
+                    .await?;
                 execute(conn, "DELETE FROM projects WHERE id = $1", id).await?;
             }
             TrashKind::Folder => {
                 purge_documents_in(conn, "folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)", id).await?;
                 purge_tasks_in(conn, "board_id IN (SELECT id FROM boards WHERE folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure))", id).await?;
+                purge_grants_in(conn, "board", "SELECT id FROM boards WHERE folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)", id).await?;
                 execute(conn, "DELETE FROM boards WHERE folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM folders WHERE id = $1 UNION ALL SELECT f.id FROM folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)", id).await?;
                 delete_folders_leaf_first(conn, "id = $1", id).await?;
             }
@@ -505,6 +515,26 @@ async fn execute(conn: &impl ConnectionTrait, sql: &str, id: Uuid) -> Result<u64
     .map_err(db_err)
 }
 
+/// Deletes `permission_grants` rows targeting a `kind` resource returned by
+/// `target_ids_sql`. Must run before the matching parent-row DELETE: the O1
+/// migration dropped the target FKs' `ON DELETE CASCADE`.
+async fn purge_grants_in(
+    conn: &impl ConnectionTrait,
+    kind: &str,
+    target_ids_sql: &str,
+    id: Uuid,
+) -> Result<(), DomainError> {
+    execute(
+        conn,
+        &format!(
+            "DELETE FROM permission_grants WHERE resource_ref IN (SELECT 'acta::{kind}::' || id::text FROM ({target_ids_sql}) targets)"
+        ),
+        id,
+    )
+    .await?;
+    Ok(())
+}
+
 async fn purge_attachments_in(
     conn: &impl ConnectionTrait,
     scope: &str,
@@ -563,6 +593,13 @@ async fn purge_documents_in(
     purge_drafts_in(
         conn,
         &format!("document_id IN (SELECT id FROM documents WHERE {scope})"),
+        id,
+    )
+    .await?;
+    purge_grants_in(
+        conn,
+        "document",
+        &format!("SELECT id FROM documents WHERE {scope}"),
         id,
     )
     .await?;
@@ -635,6 +672,15 @@ async fn delete_folders_leaf_first(
     roots: &str,
     id: Uuid,
 ) -> Result<(), DomainError> {
+    purge_grants_in(
+        conn,
+        "folder",
+        &format!(
+            "WITH RECURSIVE closure AS (SELECT id FROM folders WHERE {roots} UNION ALL SELECT child.id FROM folders child JOIN closure parent ON child.parent_folder_id = parent.id) SELECT id FROM closure"
+        ),
+        id,
+    )
+    .await?;
     loop {
         let deleted = execute(
             conn,

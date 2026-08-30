@@ -203,8 +203,7 @@ struct StoredSubjectFact {
 
 #[derive(Deserialize)]
 struct StoredChainSegment {
-    kind: String,
-    id: Option<Uuid>,
+    resource: String,
     visibility: Option<StoredVisibility>,
 }
 
@@ -216,14 +215,8 @@ struct StoredVisibility {
 
 #[derive(Deserialize)]
 struct StoredGrant {
-    resource: StoredResource,
+    resource: String,
     role: String,
-}
-
-#[derive(Deserialize)]
-struct StoredResource {
-    kind: String,
-    id: Option<Uuid>,
 }
 
 #[derive(Deserialize)]
@@ -276,7 +269,7 @@ impl ResourceChainSource for PgResourceChainSource {
                     .map_err(|error| DomainError::Internal {
                         message: format!("invalid batch subject facts payload: {error}"),
                     })
-                    .and_then(decode_subject_fact)
+                    .and_then(|fact| decode_subject_fact(fact, workspace))
             })
             .collect()
     }
@@ -302,13 +295,6 @@ impl PrincipalFactsSource for PgPrincipalFactsSource {
             }
         };
 
-        let resources = resources
-            .iter()
-            .map(|resource| {
-                atlas_acta::permissions::resource_ref_codec::from_core(resource, workspace)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
         let rows = PrincipalFactsRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             QUERY_B_PRINCIPAL_FACTS,
@@ -316,7 +302,7 @@ impl PrincipalFactsSource for PgPrincipalFactsSource {
                 workspace.0.into(),
                 principal_type.into(),
                 principal_id.into(),
-                resources_json(&resources).into(),
+                resources_json(resources).into(),
             ],
         ))
         .all(&self.conn)
@@ -334,7 +320,7 @@ impl PrincipalFactsSource for PgPrincipalFactsSource {
                 message: format!("invalid batch principal facts payload: {error}"),
             })?;
 
-        decode_principal_facts(facts)
+        decode_principal_facts(facts, workspace)
     }
 }
 
@@ -485,17 +471,17 @@ WITH RECURSIVE requested AS (
     WHERE folder_ancestry.depth < 31
 ), document_chains AS (
     SELECT subject_targets.ordinal,
-           jsonb_build_array(jsonb_build_object('kind', 'document', 'id', documents.id, 'visibility', NULL))
+           jsonb_build_array(jsonb_build_object('resource', 'acta::document::' || documents.id::text, 'visibility', NULL))
            || COALESCE(folder_rows.folders, '[]'::jsonb)
            || CASE WHEN projects.id IS NULL THEN '[]'::jsonb ELSE jsonb_build_array(jsonb_build_object(
-               'kind', 'project', 'id', projects.id,
+               'resource', 'acta::project::' || projects.id::text,
                'visibility', jsonb_build_object('visibility', projects.visibility, 'role', projects.visibility_role)
            )) END
-           || jsonb_build_array(jsonb_build_object('kind', 'workspace', 'id', NULL, 'visibility', NULL)) AS chain
+           || jsonb_build_array(jsonb_build_object('resource', 'acta::workspace::' || $1::text, 'visibility', NULL)) AS chain
     FROM subject_targets
     JOIN documents ON documents.id = subject_targets.document_id
     LEFT JOIN LATERAL (
-        SELECT jsonb_agg(jsonb_build_object('kind', 'folder', 'id', id, 'visibility', NULL) ORDER BY depth) AS folders,
+        SELECT jsonb_agg(jsonb_build_object('resource', 'acta::folder::' || id::text, 'visibility', NULL) ORDER BY depth) AS folders,
                (array_agg(project_id ORDER BY depth DESC))[1] AS inherited_project_id
         FROM folder_ancestry
         WHERE folder_ancestry.ordinal = subject_targets.ordinal
@@ -506,12 +492,12 @@ WITH RECURSIVE requested AS (
     WHERE subject_targets.document_id IS NOT NULL
 ), task_chains AS (
     SELECT subject_targets.ordinal,
-           jsonb_build_array(jsonb_build_object('kind', 'board', 'id', tasks.board_id, 'visibility', NULL))
+           jsonb_build_array(jsonb_build_object('resource', 'acta::board::' || tasks.board_id::text, 'visibility', NULL))
            || CASE WHEN projects.id IS NULL THEN '[]'::jsonb ELSE jsonb_build_array(jsonb_build_object(
-               'kind', 'project', 'id', projects.id,
+               'resource', 'acta::project::' || projects.id::text,
                'visibility', jsonb_build_object('visibility', projects.visibility, 'role', projects.visibility_role)
            )) END
-           || jsonb_build_array(jsonb_build_object('kind', 'workspace', 'id', NULL, 'visibility', NULL)) AS chain
+           || jsonb_build_array(jsonb_build_object('resource', 'acta::workspace::' || $1::text, 'visibility', NULL)) AS chain
     FROM subject_targets
     JOIN tasks ON tasks.id = subject_targets.task_id
     LEFT JOIN projects ON projects.id = tasks.project_id
@@ -532,8 +518,8 @@ const QUERY_B_PRINCIPAL_FACTS: &str = r#"
 WITH requested AS (
     SELECT $1::uuid AS workspace_id, $2::text AS principal_type, $3::uuid AS principal_id
 ), requested_resources AS (
-    SELECT kind, id
-    FROM jsonb_to_recordset($4::jsonb) AS resources(kind text, id uuid)
+    SELECT value AS resource_ref
+    FROM jsonb_array_elements_text($4::jsonb) AS resources(value)
 ), principal_users AS (
     SELECT workspace_id, principal_id AS user_id
     FROM requested
@@ -546,16 +532,7 @@ WITH requested AS (
 ), user_grants AS (
     SELECT principal_users.user_id,
            COALESCE(jsonb_agg(jsonb_build_object(
-               'resource', jsonb_build_object(
-                   'kind', CASE
-                       WHEN grants.project_id IS NOT NULL THEN 'project'
-                       WHEN grants.folder_id IS NOT NULL THEN 'folder'
-                       WHEN grants.document_id IS NOT NULL THEN 'document'
-                       WHEN grants.board_id IS NOT NULL THEN 'board'
-                       ELSE 'workspace'
-                   END,
-                   'id', COALESCE(grants.project_id, grants.folder_id, grants.document_id, grants.board_id)
-               ),
+               'resource', grants.resource_ref,
                'role', grants.role
            )) FILTER (WHERE grants.id IS NOT NULL), '[]'::jsonb) AS grants
     FROM principal_users
@@ -576,42 +553,27 @@ WITH requested AS (
             )
         )
         AND (
-            num_nonnulls(grants.project_id, grants.folder_id, grants.document_id, grants.board_id) = 0
+            grants.resource_ref = 'acta::workspace::' || principal_users.workspace_id::text
             OR EXISTS (
                 SELECT 1 FROM requested_resources
-                WHERE (requested_resources.kind = 'project' AND requested_resources.id = grants.project_id)
-                   OR (requested_resources.kind = 'folder' AND requested_resources.id = grants.folder_id)
-                   OR (requested_resources.kind = 'document' AND requested_resources.id = grants.document_id)
-                   OR (requested_resources.kind = 'board' AND requested_resources.id = grants.board_id)
+                WHERE requested_resources.resource_ref = grants.resource_ref
             )
         )
     GROUP BY principal_users.user_id
 ), key_grants AS (
     SELECT requested.principal_id AS key_id,
            COALESCE(jsonb_agg(jsonb_build_object(
-               'resource', jsonb_build_object(
-                   'kind', CASE
-                       WHEN grants.project_id IS NOT NULL THEN 'project'
-                       WHEN grants.folder_id IS NOT NULL THEN 'folder'
-                       WHEN grants.document_id IS NOT NULL THEN 'document'
-                       WHEN grants.board_id IS NOT NULL THEN 'board'
-                       ELSE 'workspace'
-                   END,
-                   'id', COALESCE(grants.project_id, grants.folder_id, grants.document_id, grants.board_id)
-               ),
+               'resource', grants.resource_ref,
                'role', grants.role
            )) FILTER (WHERE grants.id IS NOT NULL), '[]'::jsonb) AS grants
     FROM requested
     LEFT JOIN permission_grants grants ON grants.workspace_id = requested.workspace_id
         AND grants.api_key_id = requested.principal_id
         AND (
-            num_nonnulls(grants.project_id, grants.folder_id, grants.document_id, grants.board_id) = 0
+            grants.resource_ref = 'acta::workspace::' || requested.workspace_id::text
             OR EXISTS (
                 SELECT 1 FROM requested_resources
-                WHERE (requested_resources.kind = 'project' AND requested_resources.id = grants.project_id)
-                   OR (requested_resources.kind = 'folder' AND requested_resources.id = grants.folder_id)
-                   OR (requested_resources.kind = 'document' AND requested_resources.id = grants.document_id)
-                   OR (requested_resources.kind = 'board' AND requested_resources.id = grants.board_id)
+                WHERE requested_resources.resource_ref = grants.resource_ref
             )
         )
     WHERE requested.principal_type = 'api_key'
@@ -664,18 +626,17 @@ UNION ALL
 SELECT facts FROM key_facts
 "#;
 
-fn resources_json(resources: &[ResourceRef]) -> serde_json::Value {
+/// Encodes the requested resource set as an array of canonical `resource_ref`
+/// strings (`acta::<kind>::<uuid>`), the shape `QUERY_B_PRINCIPAL_FACTS`'s
+/// `requested_resources` CTE consumes directly. The set always includes the
+/// workspace-scope ref (every resolved chain ends in `ResourceRef::Workspace`,
+/// per `validate_subject_chain`), so a workspace-scope grant equality-matches
+/// without a separate "matches everything" branch in SQL.
+fn resources_json(resources: &[atlas_core::ids::ResourceRef]) -> serde_json::Value {
     serde_json::Value::Array(
         resources
             .iter()
-            .filter_map(|resource| match resource {
-                ResourceRef::Workspace => None,
-                ResourceRef::Project(id) => Some(("project", id.0)),
-                ResourceRef::Folder(id) => Some(("folder", id.0)),
-                ResourceRef::Document(id) => Some(("document", id.0)),
-                ResourceRef::Board(id) => Some(("board", id.0)),
-            })
-            .map(|(kind, id)| serde_json::json!({ "kind": kind, "id": id }))
+            .map(|resource| serde_json::Value::String(resource.to_string()))
             .collect(),
     )
 }
@@ -698,7 +659,10 @@ fn subjects_json(subjects: &[ProjectionSubject]) -> serde_json::Value {
     )
 }
 
-fn decode_subject_fact(fact: StoredSubjectFact) -> Result<SubjectFact, DomainError> {
+fn decode_subject_fact(
+    fact: StoredSubjectFact,
+    workspace: WorkspaceId,
+) -> Result<SubjectFact, DomainError> {
     let family = match fact.family.as_str() {
         "documents" => SubjectFamily::Documents,
         "tasks" => SubjectFamily::Tasks,
@@ -713,7 +677,7 @@ fn decode_subject_fact(fact: StoredSubjectFact) -> Result<SubjectFact, DomainErr
         segments: fact
             .chain
             .into_iter()
-            .map(decode_chain_segment)
+            .map(|segment| decode_chain_segment(segment, workspace))
             .collect::<Result<Vec<_>, _>>()?,
     };
     validate_subject_chain(&chain, family)?;
@@ -725,11 +689,11 @@ fn decode_subject_fact(fact: StoredSubjectFact) -> Result<SubjectFact, DomainErr
     })
 }
 
-fn decode_chain_segment(segment: StoredChainSegment) -> Result<ChainSegment, DomainError> {
-    let resource = decode_resource(StoredResource {
-        kind: segment.kind,
-        id: segment.id,
-    })?;
+fn decode_chain_segment(
+    segment: StoredChainSegment,
+    workspace: WorkspaceId,
+) -> Result<ChainSegment, DomainError> {
+    let resource = decode_resource(&segment.resource, workspace)?;
     let visibility = segment.visibility.map(decode_visibility).transpose()?;
 
     Ok(ChainSegment {
@@ -849,9 +813,14 @@ fn invalid_subject_chain() -> DomainError {
     }
 }
 
-fn decode_principal_facts(facts: StoredPrincipalFacts) -> Result<PrincipalFacts, DomainError> {
+fn decode_principal_facts(
+    facts: StoredPrincipalFacts,
+    workspace: WorkspaceId,
+) -> Result<PrincipalFacts, DomainError> {
     match facts {
-        StoredPrincipalFacts::User(facts) => Ok(PrincipalFacts::User(decode_user_facts(facts)?)),
+        StoredPrincipalFacts::User(facts) => {
+            Ok(PrincipalFacts::User(decode_user_facts(facts, workspace)?))
+        }
         StoredPrincipalFacts::ApiKey(facts) => Ok(PrincipalFacts::ApiKey(ApiKeyFacts {
             key_id: ApiKeyId(facts.key_id),
             is_active: facts.is_active,
@@ -859,13 +828,16 @@ fn decode_principal_facts(facts: StoredPrincipalFacts) -> Result<PrincipalFacts,
             is_expired: facts.is_expired,
             is_global: facts.is_global,
             scopes: decode_scopes(facts.scopes)?,
-            grants: decode_grants(facts.grants)?,
-            creator: decode_user_facts(facts.creator)?,
+            grants: decode_grants(facts.grants, workspace)?,
+            creator: decode_user_facts(facts.creator, workspace)?,
         })),
     }
 }
 
-fn decode_user_facts(facts: StoredUserFacts) -> Result<UserFacts, DomainError> {
+fn decode_user_facts(
+    facts: StoredUserFacts,
+    workspace: WorkspaceId,
+) -> Result<UserFacts, DomainError> {
     Ok(UserFacts {
         user_id: UserId(facts.user_id),
         is_active: facts.is_active,
@@ -875,7 +847,7 @@ fn decode_user_facts(facts: StoredUserFacts) -> Result<UserFacts, DomainError> {
             .map(decode_membership)
             .transpose()?,
         is_root_admin: facts.is_root_admin,
-        grants: decode_grants(facts.grants)?,
+        grants: decode_grants(facts.grants, workspace)?,
     })
 }
 
@@ -892,12 +864,13 @@ fn decode_membership(role: &str) -> Result<MemberRole, DomainError> {
 
 fn decode_grants(
     grants: Vec<StoredGrant>,
+    workspace: WorkspaceId,
 ) -> Result<Vec<(ResourceRef, ResourceRole)>, DomainError> {
     let mut decoded = Vec::with_capacity(grants.len());
     let mut resources = BTreeSet::new();
 
     for grant in grants {
-        let resource = decode_resource(grant.resource)?;
+        let resource = decode_resource(&grant.resource, workspace)?;
         if !resources.insert(resource.clone()) {
             return Err(DomainError::Internal {
                 message: "batch principal facts contained duplicate grants".into(),
@@ -927,21 +900,13 @@ fn decode_scopes(scopes: Vec<String>) -> Result<Vec<Capability>, DomainError> {
     Ok(decoded)
 }
 
-fn decode_resource(resource: StoredResource) -> Result<ResourceRef, DomainError> {
-    let id = resource.id;
-    match resource.kind.as_str() {
-        "workspace" if id.is_none() => Some(ResourceRef::Workspace),
-        "project" => id.map(atlas_acta::ids::ProjectId).map(ResourceRef::Project),
-        "folder" => id.map(atlas_acta::ids::FolderId).map(ResourceRef::Folder),
-        "document" => id
-            .map(atlas_acta::ids::DocumentId)
-            .map(ResourceRef::Document),
-        "board" => id.map(atlas_acta::ids::BoardId).map(ResourceRef::Board),
-        _ => None,
-    }
-    .ok_or_else(|| DomainError::Internal {
-        message: "batch principal facts contained an invalid grant resource".into(),
-    })
+fn decode_resource(resource_ref: &str, workspace: WorkspaceId) -> Result<ResourceRef, DomainError> {
+    let core: atlas_core::ids::ResourceRef =
+        resource_ref.parse().map_err(|_| DomainError::Internal {
+            message: "batch principal facts contained an invalid grant resource".into(),
+        })?;
+
+    atlas_acta::permissions::resource_ref_codec::from_core(&core, workspace)
 }
 
 fn decode_role(role: &str) -> Result<ResourceRole, DomainError> {

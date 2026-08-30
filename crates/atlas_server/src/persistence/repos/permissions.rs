@@ -6,6 +6,7 @@ use atlas_acta::ids::FolderId;
 use atlas_acta::ids::ProjectId;
 use atlas_acta::ids::WorkspaceId;
 use atlas_acta::permissions::ResourceRef;
+use atlas_acta::permissions::resource_ref_codec;
 use atlas_core::error::DomainError;
 use atlas_core::principal::ApiKeyId;
 use atlas_core::principal::GroupId;
@@ -49,18 +50,48 @@ fn role_to_str(role: ResourceRole) -> &'static str {
     }
 }
 
+/// Decodes a stored `resource_ref` string back to the V1 `ResourceRef` enum,
+/// scoped to the grant's own `workspace_id` (the codec validates a decoded
+/// `workspace` kind against the workspace it is asked to decode against).
+fn decode_resource_ref(
+    resource_ref: &str,
+    workspace_id: WorkspaceId,
+) -> Result<ResourceRef, DomainError> {
+    let core: atlas_core::ids::ResourceRef =
+        resource_ref.parse().map_err(|_| DomainError::Internal {
+            message: format!("permission grant row has an invalid resource_ref: {resource_ref}"),
+        })?;
+
+    resource_ref_codec::from_core(&core, workspace_id)
+}
+
 fn grant_from(m: permission_grant::Model) -> Result<PermissionGrant, DomainError> {
     let role = role_from_str(&m.role)?;
+    let workspace_id = WorkspaceId(m.workspace_id);
+    let resource = decode_resource_ref(&m.resource_ref, workspace_id)?;
+
     Ok(PermissionGrant {
         id: PermissionGrantId(m.id),
-        workspace_id: WorkspaceId(m.workspace_id),
+        workspace_id,
         user_id: m.user_id.map(UserId),
         api_key_id: m.api_key_id.map(ApiKeyId),
         group_id: m.group_id.map(GroupId),
-        project_id: m.project_id.map(ProjectId),
-        folder_id: m.folder_id.map(FolderId),
-        document_id: m.document_id.map(DocumentId),
-        board_id: m.board_id.map(BoardId),
+        project_id: match &resource {
+            ResourceRef::Project(id) => Some(*id),
+            _ => None,
+        },
+        folder_id: match &resource {
+            ResourceRef::Folder(id) => Some(*id),
+            _ => None,
+        },
+        document_id: match &resource {
+            ResourceRef::Document(id) => Some(*id),
+            _ => None,
+        },
+        board_id: match &resource {
+            ResourceRef::Board(id) => Some(*id),
+            _ => None,
+        },
         role,
         created_by_user_id: m.created_by_user_id.map(UserId),
         created_by_api_key_id: m.created_by_api_key_id.map(ApiKeyId),
@@ -69,23 +100,34 @@ fn grant_from(m: permission_grant::Model) -> Result<PermissionGrant, DomainError
     })
 }
 
-/// Narrows a grant query to one resource. A workspace-scope grant is the row
-/// with all four resource columns NULL, so `ResourceRef::Workspace` must filter
-/// on all of them, not just skip the filter.
+/// Narrows a grant query to one resource by its encoded `resource_ref`.
 fn filter_by_resource(
     query: sea_orm::Select<permission_grant::Entity>,
+    workspace_id: WorkspaceId,
     resource: &ResourceRef,
 ) -> sea_orm::Select<permission_grant::Entity> {
-    match resource {
-        ResourceRef::Workspace => query
-            .filter(permission_grant::Column::ProjectId.is_null())
-            .filter(permission_grant::Column::FolderId.is_null())
-            .filter(permission_grant::Column::DocumentId.is_null())
-            .filter(permission_grant::Column::BoardId.is_null()),
-        ResourceRef::Project(pid) => query.filter(permission_grant::Column::ProjectId.eq(pid.0)),
-        ResourceRef::Folder(fid) => query.filter(permission_grant::Column::FolderId.eq(fid.0)),
-        ResourceRef::Document(did) => query.filter(permission_grant::Column::DocumentId.eq(did.0)),
-        ResourceRef::Board(bid) => query.filter(permission_grant::Column::BoardId.eq(bid.0)),
+    let resource_ref = resource_ref_codec::to_core(resource, workspace_id).to_string();
+    query.filter(permission_grant::Column::ResourceRef.eq(resource_ref))
+}
+
+/// A grant's target column is at most one; the resource it targets falls
+/// back to the workspace itself when all four are unset.
+fn target_resource(
+    project_id: Option<ProjectId>,
+    folder_id: Option<FolderId>,
+    document_id: Option<DocumentId>,
+    board_id: Option<BoardId>,
+) -> ResourceRef {
+    if let Some(id) = project_id {
+        ResourceRef::Project(id)
+    } else if let Some(id) = folder_id {
+        ResourceRef::Folder(id)
+    } else if let Some(id) = document_id {
+        ResourceRef::Document(id)
+    } else if let Some(id) = board_id {
+        ResourceRef::Board(id)
+    } else {
+        ResourceRef::Workspace
     }
 }
 
@@ -110,10 +152,7 @@ impl PgPermissionGrantRepo {
 
         #[derive(Debug, FromQueryResult)]
         struct Row {
-            project_id: Option<Uuid>,
-            folder_id: Option<Uuid>,
-            document_id: Option<Uuid>,
-            board_id: Option<Uuid>,
+            resource_ref: String,
             role: String,
         }
 
@@ -132,7 +171,7 @@ impl PgPermissionGrantRepo {
 
         let sql = format!(
             r#"
-            SELECT project_id, folder_id, document_id, board_id, role
+            SELECT resource_ref, role
             FROM permission_grants
             WHERE workspace_id = $1
               AND {principal_condition}
@@ -151,17 +190,7 @@ impl PgPermissionGrantRepo {
         let mut result = Vec::with_capacity(rows.len());
         for row in rows {
             let role = role_from_str(&row.role)?;
-            let resource = if let Some(pid) = row.project_id {
-                ResourceRef::Project(ProjectId(pid))
-            } else if let Some(fid) = row.folder_id {
-                ResourceRef::Folder(FolderId(fid))
-            } else if let Some(did) = row.document_id {
-                ResourceRef::Document(DocumentId(did))
-            } else if let Some(bid) = row.board_id {
-                ResourceRef::Board(BoardId(bid))
-            } else {
-                ResourceRef::Workspace
-            };
+            let resource = decode_resource_ref(&row.resource_ref, workspace_id)?;
             result.push((resource, role));
         }
 
@@ -234,18 +263,24 @@ impl PgPermissionGrantRepo {
         let id = PermissionGrantId::new();
         let now = Utc::now();
         let role_str = role_to_str(grant.role);
+        let resource = target_resource(
+            grant.project_id,
+            grant.folder_id,
+            grant.document_id,
+            grant.board_id,
+        );
+        let resource_ref = resource_ref_codec::to_core(&resource, grant.workspace_id).to_string();
 
         conn.execute_raw(sea_orm::Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             r#"
             INSERT INTO permission_grants
-                (id, workspace_id, user_id, api_key_id, group_id,
-                 project_id, folder_id, document_id, board_id,
+                (id, workspace_id, user_id, api_key_id, group_id, resource_ref,
                  role, created_by_user_id, created_by_api_key_id,
                  created_at, updated_at)
             VALUES
-                ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13)
-            ON CONFLICT (workspace_id, user_id, api_key_id, group_id, project_id, folder_id, document_id, board_id)
+                ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+            ON CONFLICT (workspace_id, user_id, api_key_id, group_id, resource_ref)
             DO UPDATE SET role = EXCLUDED.role, updated_at = EXCLUDED.updated_at
             "#,
             [
@@ -254,10 +289,7 @@ impl PgPermissionGrantRepo {
                 grant.user_id.map(|u| u.0).into(),
                 grant.api_key_id.map(|k| k.0).into(),
                 grant.group_id.map(|g| g.0).into(),
-                grant.project_id.map(|p| p.0).into(),
-                grant.folder_id.map(|f| f.0).into(),
-                grant.document_id.map(|d| d.0).into(),
-                grant.board_id.map(|b| b.0).into(),
+                resource_ref.clone().into(),
                 role_str.into(),
                 grant.created_by_user_id.map(|u| u.0).into(),
                 grant.created_by_api_key_id.map(|k| k.0).into(),
@@ -281,22 +313,7 @@ impl PgPermissionGrantRepo {
                 Some(gid) => permission_grant::Column::GroupId.eq(gid.0),
                 None => permission_grant::Column::GroupId.is_null(),
             })
-            .filter(match grant.project_id {
-                Some(pid) => permission_grant::Column::ProjectId.eq(pid.0),
-                None => permission_grant::Column::ProjectId.is_null(),
-            })
-            .filter(match grant.folder_id {
-                Some(fid) => permission_grant::Column::FolderId.eq(fid.0),
-                None => permission_grant::Column::FolderId.is_null(),
-            })
-            .filter(match grant.document_id {
-                Some(did) => permission_grant::Column::DocumentId.eq(did.0),
-                None => permission_grant::Column::DocumentId.is_null(),
-            })
-            .filter(match grant.board_id {
-                Some(bid) => permission_grant::Column::BoardId.eq(bid.0),
-                None => permission_grant::Column::BoardId.is_null(),
-            })
+            .filter(permission_grant::Column::ResourceRef.eq(resource_ref))
             .one(conn)
             .await
             .map_err(db_err)?
@@ -341,16 +358,14 @@ impl PermissionGrantRepo for PgPermissionGrantRepo {
 
         #[derive(Debug, FromQueryResult)]
         struct Row {
-            project_id: Option<Uuid>,
-            folder_id: Option<Uuid>,
-            document_id: Option<Uuid>,
-            board_id: Option<Uuid>,
+            resource_ref: String,
             role: String,
         }
 
+        let workspace_id = query.workspace_id;
         let mut values: Vec<sea_orm::Value> = Vec::new();
 
-        values.push(query.workspace_id.0.into());
+        values.push(workspace_id.0.into());
         let ws_param = values.len();
 
         // Group grants are gathered into the same max-role candidate set as direct
@@ -385,61 +400,43 @@ impl PermissionGrantRepo for PgPermissionGrantRepo {
             return Ok(vec![]);
         };
 
-        let projects_cond = if query.chain_projects.is_empty() {
-            String::new()
-        } else {
-            let placeholders: String = query
-                .chain_projects
-                .iter()
-                .map(|id| {
-                    values.push((*id).into());
-                    format!("${}", values.len())
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("OR project_id = ANY(ARRAY[{placeholders}]::uuid[])")
-        };
+        // Every resource this query might match, encoded as the canonical
+        // resource_ref string: the workspace-scope ref (always present) plus
+        // one ref per chain resource actually requested.
+        let mut resource_refs: Vec<String> =
+            vec![resource_ref_codec::to_core(&ResourceRef::Workspace, workspace_id).to_string()];
+        resource_refs.extend(query.chain_projects.iter().map(|id| {
+            resource_ref_codec::to_core(&ResourceRef::Project(ProjectId(*id)), workspace_id)
+                .to_string()
+        }));
+        resource_refs.extend(query.chain_folders.iter().map(|id| {
+            resource_ref_codec::to_core(&ResourceRef::Folder(FolderId(*id)), workspace_id)
+                .to_string()
+        }));
+        resource_refs.extend(query.doc_id.map(|id| {
+            resource_ref_codec::to_core(&ResourceRef::Document(DocumentId(id)), workspace_id)
+                .to_string()
+        }));
+        resource_refs.extend(query.board_id.map(|id| {
+            resource_ref_codec::to_core(&ResourceRef::Board(BoardId(id)), workspace_id).to_string()
+        }));
 
-        let folders_cond = if query.chain_folders.is_empty() {
-            String::new()
-        } else {
-            let placeholders: String = query
-                .chain_folders
-                .iter()
-                .map(|id| {
-                    values.push((*id).into());
-                    format!("${}", values.len())
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("OR folder_id = ANY(ARRAY[{placeholders}]::uuid[])")
-        };
-
-        let doc_cond = if let Some(id) = query.doc_id {
-            values.push(id.into());
-            format!("OR document_id = ${}", values.len())
-        } else {
-            String::new()
-        };
-
-        let board_cond = if let Some(id) = query.board_id {
-            values.push(id.into());
-            format!("OR board_id = ${}", values.len())
-        } else {
-            String::new()
-        };
+        let resource_ref_placeholders: String = resource_refs
+            .into_iter()
+            .map(|resource_ref| {
+                values.push(resource_ref.into());
+                format!("${}", values.len())
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
 
         let sql = format!(
             r#"
-            SELECT project_id, folder_id, document_id, board_id, role
+            SELECT resource_ref, role
             FROM permission_grants
             WHERE workspace_id = ${ws_param}
               AND {principal_condition}
-              AND ( num_nonnulls(project_id, folder_id, document_id, board_id) = 0
-                   {projects_cond}
-                   {folders_cond}
-                   {doc_cond}
-                   {board_cond} )
+              AND resource_ref = ANY(ARRAY[{resource_ref_placeholders}]::text[])
             "#,
         );
 
@@ -455,17 +452,7 @@ impl PermissionGrantRepo for PgPermissionGrantRepo {
         let mut result = Vec::with_capacity(rows.len());
         for row in rows {
             let role = role_from_str(&row.role)?;
-            let resource = if let Some(pid) = row.project_id {
-                ResourceRef::Project(ProjectId(pid))
-            } else if let Some(fid) = row.folder_id {
-                ResourceRef::Folder(FolderId(fid))
-            } else if let Some(did) = row.document_id {
-                ResourceRef::Document(DocumentId(did))
-            } else if let Some(bid) = row.board_id {
-                ResourceRef::Board(BoardId(bid))
-            } else {
-                ResourceRef::Workspace
-            };
+            let resource = decode_resource_ref(&row.resource_ref, workspace_id)?;
             result.push((resource, role));
         }
 
@@ -490,6 +477,7 @@ impl PermissionGrantRepo for PgPermissionGrantRepo {
         let mut query = filter_by_resource(
             permission_grant::Entity::find()
                 .filter(permission_grant::Column::WorkspaceId.eq(workspace_id.0)),
+            workspace_id,
             resource,
         );
 
@@ -517,6 +505,7 @@ impl PermissionGrantRepo for PgPermissionGrantRepo {
             permission_grant::Entity::find()
                 .filter(permission_grant::Column::Id.eq(grant_id.0))
                 .filter(permission_grant::Column::WorkspaceId.eq(workspace_id.0)),
+            workspace_id,
             resource,
         )
         .one(&self.conn)

@@ -1,11 +1,29 @@
 //! Ephemeral Postgres fixtures shared by integration tests.
 
-use migration::Migrator;
 use sea_orm::{ConnectOptions, ConnectionTrait, Database, DatabaseConnection, DbErr};
-use sea_orm_migration::prelude::MigratorTrait;
+use sea_orm_migration::prelude::{MigrationTrait, MigratorTrait};
 use std::net::IpAddr;
 use url::{Host, Url};
 use uuid::Uuid;
+
+/// Composes the historical migration block with Custos-owned migrations
+/// (D5), mirroring `atlas_server::persistence::migrator::ComposedMigrator`.
+///
+/// Duplicated here rather than depending on `atlas_server` directly: `atlas_server`
+/// already dev-depends on this crate for its own test fixtures, and this crate is
+/// also an optional dependency of the desktop app's test feature, so pulling in
+/// the whole server crate would be a heavier and circular-looking dependency for
+/// a two-line composition. Both composers must produce the same migration list;
+/// `crates/atlas_server/tests/composed_migrator.rs` is the cross-check.
+struct ComposedTestMigrator;
+
+impl MigratorTrait for ComposedTestMigrator {
+    fn migrations() -> Vec<Box<dyn MigrationTrait>> {
+        let mut migrations = migration::Migrator::migrations();
+        migrations.extend(atlas_custos_postgres::migrations::custos_new());
+        migrations
+    }
+}
 
 const FIXTURE_URL_VAR: &str = "ATLAS_TEST_DATABASE_URL";
 const ALLOW_REMOTE_VAR: &str = "ATLAS_TEST_ALLOW_REMOTE_DB";
@@ -112,7 +130,7 @@ impl TestDb {
 
     /// Applies any migrations that are still pending for this fixture.
     pub async fn run_remaining_migrations(&self) -> Result<(), DbErr> {
-        Migrator::up(&self.conn, None).await
+        ComposedTestMigrator::up(&self.conn, None).await
     }
 
     /// Returns the test database connection.
@@ -165,7 +183,7 @@ async fn create_with_migration_steps_named(
 
     let migration = match injected_failure(failure, FixtureFailure::Migration) {
         Some(error) => Err(error),
-        None => Migrator::up(&conn, steps).await,
+        None => ComposedTestMigrator::up(&conn, steps).await,
     };
     if let Err(error) = migration {
         drop(conn);
