@@ -61,7 +61,7 @@ use crate::persistence::live_ancestors::{
 use crate::persistence::repos::comment_attachment_drafts::{
     lock_active_draft_for_upload, record_upload_or_replay_in,
 };
-use crate::persistence::repos::{PgSearchIndexQueueRepo, PgSecurityAuditRepo};
+use crate::persistence::repos::{PgSearchIndexQueueRepo, append_resource_deleted_in};
 use atlas_postgres::db_err;
 
 pub use atlas_acta::ports::documents::AttachmentRepo;
@@ -1544,8 +1544,7 @@ impl AttachmentRepo for PgAttachmentRepo {
         active.updated_at = Set(Utc::now());
         active.update(&txn).await.map_err(db_err)?;
 
-        PgSecurityAuditRepo::append_resource_deleted_in(&txn, ctx, TrashKind::Attachment, id.0)
-            .await?;
+        append_resource_deleted_in(&txn, ctx, TrashKind::Attachment, id.0).await?;
 
         enqueue_attachment_owner(
             &txn,
@@ -1898,13 +1897,7 @@ impl PgAttachmentLifecycle {
         attachment.updated_at = Set(deleted_at);
         attachment.update(&txn).await.map_err(db_err)?;
 
-        PgSecurityAuditRepo::append_resource_deleted_in(
-            &txn,
-            ctx,
-            TrashKind::Attachment,
-            attachment_id.0,
-        )
-        .await?;
+        append_resource_deleted_in(&txn, ctx, TrashKind::Attachment, attachment_id.0).await?;
 
         txn.commit().await.map_err(db_err)?;
 

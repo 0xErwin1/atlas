@@ -6,6 +6,7 @@ members = [
     "crates/atlas_api",
     "crates/atlas_client",
     "crates/atlas_postgres",
+    "crates/atlas_custos_postgres",
     "crates/atlas_server",
     "crates/atlas_cli",
     "crates/atlas_mcp",
@@ -21,6 +22,7 @@ default-members = [
     "crates/atlas_api",
     "crates/atlas_client",
     "crates/atlas_postgres",
+    "crates/atlas_custos_postgres",
     "crates/atlas_server",
     "crates/atlas_cli",
     "crates/atlas_mcp",
@@ -42,6 +44,7 @@ atlas_acta     = { path = "crates/atlas_acta" }
 atlas_api      = { path = "crates/atlas_api" }
 atlas_client   = { path = "crates/atlas_client" }
 atlas_postgres = { path = "crates/atlas_postgres" }
+atlas_custos_postgres = { path = "crates/atlas_custos_postgres" }
 migration      = { path = "crates/migration" }
 
 # Domain layer (pure)

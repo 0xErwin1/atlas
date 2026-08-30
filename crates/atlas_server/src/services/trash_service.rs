@@ -18,7 +18,8 @@ use sea_orm::{
 use uuid::Uuid;
 
 use crate::persistence::repos::{
-    NewPurgeOperation, PgAttachmentLifecycle, PgPurgeOperationRepo, PgSecurityAuditRepo,
+    NewPurgeOperation, PgAttachmentLifecycle, PgPurgeOperationRepo,
+    append_resource_purge_committed_in, append_resource_restored_in,
 };
 use atlas_postgres::db_err;
 
@@ -154,7 +155,7 @@ impl TrashService {
         if kind == TrashKind::Comment {
             txn.execute_raw(Statement::from_sql_and_values(sea_orm::DatabaseBackend::Postgres, "UPDATE attachments SET deleted_at = NULL, updated_at = now() WHERE workspace_id = $1 AND comment_id = $2 AND deleted_at = $3", [ctx.workspace_id.0.into(), target_id.into(), deleted_at.into()])).await.map_err(db_err)?;
         }
-        PgSecurityAuditRepo::append_resource_restored_in(&txn, &ctx, kind, target_id).await?;
+        append_resource_restored_in(&txn, &ctx, kind, target_id).await?;
         txn.commit().await.map_err(db_err)?;
         Ok(true)
     }
@@ -215,9 +216,7 @@ impl TrashService {
         }
 
         let digests = self.collect_purge_digests(&txn, kind, target_id).await?;
-        let audit_id =
-            PgSecurityAuditRepo::append_resource_purge_committed_in(&txn, &ctx, kind, target_id)
-                .await?;
+        let audit_id = append_resource_purge_committed_in(&txn, &ctx, kind, target_id).await?;
         let operation = operations
             .create_in(
                 &txn,

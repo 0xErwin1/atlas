@@ -21,7 +21,7 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Transac
 
 use crate::persistence::entities::{comments::comment_attachment_draft, documents::document};
 use crate::persistence::repos::{
-    CommentRepo, PgCommentRepo, PgOutboxRepo, PgSearchIndexQueueRepo, PgSecurityAuditRepo,
+    CommentRepo, PgCommentRepo, PgOutboxRepo, PgSearchIndexQueueRepo, append_resource_deleted_in,
     doc_create_in, doc_edit_content_in, doc_move_to_in, doc_rename_in, doc_soft_delete_in,
     doc_update_content_in,
 };
@@ -237,8 +237,7 @@ impl DocumentService {
         let event = DomainEvent::DocumentDeleted(DocumentDeletedPayload { document_id: id });
         PgOutboxRepo::insert_in(&txn, ctx, pre_project_id, None, event).await?;
         PgSearchIndexQueueRepo::enqueue_document_in(&txn, ctx.workspace_id, id).await?;
-        PgSecurityAuditRepo::append_resource_deleted_in(&txn, ctx, TrashKind::Document, id.0)
-            .await?;
+        append_resource_deleted_in(&txn, ctx, TrashKind::Document, id.0).await?;
 
         txn.commit().await.map_err(db_err)?;
         Ok(())

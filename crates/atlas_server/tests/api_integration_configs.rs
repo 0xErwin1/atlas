@@ -298,7 +298,7 @@ async fn non_admin_rejected_on_integration_config_endpoints() {
 
 #[tokio::test]
 async fn admin_delete_soft_deletes_and_revokes_key() {
-    use atlas_server::persistence::entities::identity::api_key;
+    use atlas_custos_postgres::entities::identity::api_key;
     use sea_orm::EntityTrait;
 
     let db = support::TestDb::create().await.expect("TestDb");
