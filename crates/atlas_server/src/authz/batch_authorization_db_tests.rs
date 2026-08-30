@@ -1,4 +1,5 @@
 use crate::authz::ResourceRole;
+use crate::persistence::repos::{PermissionGrantRepo, PgPermissionGrantRepo};
 use atlas_acta::entities::identity::MemberRole;
 use atlas_acta::ids::WorkspaceId;
 use atlas_acta::permissions::ResourceRef;
@@ -18,6 +19,7 @@ use super::batch_authorization::{
     BatchAuthorizationService, BatchAuthorizationSource, PgBatchAuthorizationSource,
     PrincipalFacts, ProjectionAuthContext, ProjectionSubject, SubjectFamily,
 };
+use super::policy::ResolutionQuery;
 
 #[tokio::test]
 async fn query_a_resolves_live_document_task_attachment_and_comment_subject_chains() {
@@ -454,6 +456,536 @@ async fn query_b_rejects_unknown_scopes_and_propagates_sql_failures() {
     db.teardown().await;
 }
 
+// PR3 characterization suite (design §S3b): the eight paths below pin current
+// authorization outcomes before PR4 cuts the batch seam onto the
+// `ResourceChainSource`/`PrincipalFactsSource` ports. Every test observes only
+// allow/deny/error and which rows are consulted, so it must keep passing
+// unmodified after the cut.
+
+/// Pins `repos/permissions.rs:376`'s raw group-membership predicate: a grant
+/// held only through a group must stop resolving the moment the group is
+/// soft-deleted. This path sits outside the two batch queries, but PR4's port
+/// cut must not change it either.
+#[tokio::test]
+async fn group_grant_resolution_excludes_a_soft_deleted_group() {
+    let db = BatchAuthorizationDb::create().await;
+    let workspace_id = Uuid::now_v7();
+    let user_id = Uuid::now_v7();
+    let group_id = Uuid::now_v7();
+
+    seed_workspace_user(&db.conn, workspace_id, user_id, true).await;
+    db.conn
+        .execute_unprepared(&format!(
+            "INSERT INTO groups (id, workspace_id, name, created_by, created_at, updated_at) \
+             VALUES ('{group_id}', '{workspace_id}', 'group', '{user_id}', now(), now()); \
+             INSERT INTO group_members (group_id, user_id, created_at) VALUES ('{group_id}', '{user_id}', now()); \
+             INSERT INTO permission_grants (id, workspace_id, group_id, role, created_at, updated_at) \
+             VALUES ('{}', '{workspace_id}', '{group_id}', 'editor', now(), now())",
+            Uuid::now_v7(),
+        ))
+        .await
+        .expect("seed live group grant");
+
+    let repo = PgPermissionGrantRepo {
+        conn: db.conn.clone(),
+    };
+
+    let grants = repo
+        .load_grants_for_resolution(resolution_query(workspace_id, user_id, group_id))
+        .await
+        .expect("live group grant resolves");
+    assert_eq!(grants, vec![(ResourceRef::Workspace, ResourceRole::Editor)]);
+
+    db.conn
+        .execute_unprepared(&format!(
+            "UPDATE groups SET deleted_at = now() WHERE id = '{group_id}'"
+        ))
+        .await
+        .expect("soft-delete group");
+
+    let grants = repo
+        .load_grants_for_resolution(resolution_query(workspace_id, user_id, group_id))
+        .await
+        .expect("soft-deleted group grant is excluded, not an error");
+    assert!(grants.is_empty());
+
+    db.teardown().await;
+}
+
+/// `key_facts` reuses `user_grants` for the creator's own facts. Beyond the
+/// existing single happy-path test, this pins that losing workspace
+/// membership mid-chain denies an otherwise-capable global api key, because
+/// `resolve_user_role` requires either root/system-admin or a live
+/// membership row — creator facts are read fresh on every call, not cached.
+#[tokio::test]
+async fn api_key_creator_membership_loss_denies_mid_chain() {
+    let db = BatchAuthorizationDb::create().await;
+    let workspace_id = Uuid::now_v7();
+    let creator_id = Uuid::now_v7();
+    let key_id = Uuid::now_v7();
+    let document_id = Uuid::now_v7();
+
+    seed_workspace_user(&db.conn, workspace_id, creator_id, true).await;
+    seed_workspace_scope_grant(
+        &db.conn,
+        workspace_id,
+        GrantPrincipal::User(creator_id),
+        "editor",
+    )
+    .await;
+    seed_api_key(&db.conn, key_id, creator_id, true, &["docs:read"]).await;
+    seed_minimal_document(&db.conn, workspace_id, creator_id, document_id).await;
+
+    let service = BatchAuthorizationService::new(PgBatchAuthorizationSource::new(db.conn.clone()));
+    let context = ProjectionAuthContext::from_validated(
+        WorkspaceId(workspace_id),
+        Principal::ApiKey(ApiKeyId(key_id)),
+    );
+
+    let decisions = service
+        .authorize(&context, &[ProjectionSubject::Document(document_id)])
+        .await
+        .expect("authorize while creator is still a member");
+    assert_eq!(decisions, vec![true]);
+
+    db.conn
+        .execute_unprepared(&format!(
+            "DELETE FROM workspace_memberships WHERE workspace_id = '{workspace_id}' AND user_id = '{creator_id}'"
+        ))
+        .await
+        .expect("simulate mid-chain membership loss");
+
+    let decisions = service
+        .authorize(&context, &[ProjectionSubject::Document(document_id)])
+        .await
+        .expect("authorize after the creator lost membership");
+    assert_eq!(
+        decisions,
+        vec![false],
+        "a global key's role tracks its creator's live membership, not a cached grant"
+    );
+
+    db.teardown().await;
+}
+
+/// `resolve()` unit tests exercise the enum directly; this asserts the same
+/// visibility contribution once QUERY_A has assembled a real chain. Only the
+/// project segment ever carries a visibility payload — document, folder,
+/// board, and workspace segments are always stamped `visibility: NULL` — so a
+/// member with no explicit grant is authorized exactly where a live project
+/// segment exists, and denied where the chain has none.
+#[tokio::test]
+async fn visibility_contribution_flows_only_through_the_project_segment() {
+    let db = BatchAuthorizationDb::create().await;
+    let workspace_id = Uuid::now_v7();
+    let user_id = Uuid::now_v7();
+    seed_workspace_user(&db.conn, workspace_id, user_id, true).await;
+
+    let document_project_id = Uuid::now_v7();
+    seed_project(
+        &db.conn,
+        workspace_id,
+        document_project_id,
+        user_id,
+        "workspace",
+        "viewer",
+    )
+    .await;
+    let document_id = Uuid::now_v7();
+    db.conn
+        .execute_unprepared(&format!(
+            "INSERT INTO documents (id, workspace_id, project_id, title, slug, content, frontmatter, current_revision_seq, created_by_user_id, created_at, updated_at) \
+             VALUES ('{document_id}', '{workspace_id}', '{document_project_id}', 'Document', 'document-{document_id}', '', '{{}}', 1, '{user_id}', now(), now())"
+        ))
+        .await
+        .expect("seed document under a visible project");
+
+    let task_project_id = Uuid::now_v7();
+    seed_project(
+        &db.conn,
+        workspace_id,
+        task_project_id,
+        user_id,
+        "public",
+        "editor",
+    )
+    .await;
+    let board_id = Uuid::now_v7();
+    let column_id = Uuid::now_v7();
+    db.conn
+        .execute_unprepared(&format!(
+            "INSERT INTO boards (id, workspace_id, project_id, name, created_by_user_id, created_at, updated_at) \
+             VALUES ('{board_id}', '{workspace_id}', '{task_project_id}', 'Board', '{user_id}', now(), now()); \
+             INSERT INTO board_columns (id, workspace_id, board_id, name, position_key, created_by_user_id, created_at, updated_at) \
+             VALUES ('{column_id}', '{workspace_id}', '{board_id}', 'Todo', 'a0', '{user_id}', now(), now())"
+        ))
+        .await
+        .expect("seed board under a visible project");
+    let task_id = Uuid::now_v7();
+    db.conn
+        .execute_unprepared(&format!(
+            "INSERT INTO tasks (id, workspace_id, project_id, board_id, column_id, readable_id, title, description, labels, position_key, created_by_user_id, created_at, updated_at) \
+             VALUES ('{task_id}', '{workspace_id}', '{task_project_id}', '{board_id}', '{column_id}', 'AT-1', 'Task', '', ARRAY[]::text[], 'a0', '{user_id}', now(), now())"
+        ))
+        .await
+        .expect("seed task under the visible board");
+
+    let orphan_document_id = Uuid::now_v7();
+    seed_minimal_document(&db.conn, workspace_id, user_id, orphan_document_id).await;
+
+    let service = BatchAuthorizationService::new(PgBatchAuthorizationSource::new(db.conn.clone()));
+    let context = user_context(workspace_id, user_id);
+
+    let decisions = service
+        .authorize(
+            &context,
+            &[
+                ProjectionSubject::Document(document_id),
+                ProjectionSubject::Task(task_id),
+                ProjectionSubject::Document(orphan_document_id),
+            ],
+        )
+        .await
+        .expect("authorize a mixed-visibility batch");
+
+    assert_eq!(
+        decisions,
+        vec![true, true, false],
+        "a member with no explicit grant is allowed only where the assembled chain \
+         carries a live project visibility segment"
+    );
+
+    db.teardown().await;
+}
+
+/// `folder_rows.inherited_project_id` is
+/// `(array_agg(project_id ORDER BY depth DESC))[1]`: it always reads the
+/// ancestor with the *largest* depth, i.e. the root-most folder — not the
+/// folder nearest the document. This pins both directions: a nearer folder's
+/// real project id is ignored when the root ancestor's is NULL, and a project
+/// set only on the root ancestor is correctly inherited.
+#[tokio::test]
+async fn inherited_project_id_prefers_the_root_most_folder_ancestor() {
+    let db = BatchAuthorizationDb::create().await;
+    let workspace_id = Uuid::now_v7();
+    let user_id = Uuid::now_v7();
+    seed_workspace_user(&db.conn, workspace_id, user_id, true).await;
+
+    // Root ancestor has no project; the nearer folder does — the root's NULL
+    // wins, so the resulting chain carries no project segment at all.
+    let root_folder_id = Uuid::now_v7();
+    let leaf_folder_id = Uuid::now_v7();
+    let shadowed_project_id = Uuid::now_v7();
+    seed_project(
+        &db.conn,
+        workspace_id,
+        shadowed_project_id,
+        user_id,
+        "workspace",
+        "editor",
+    )
+    .await;
+    seed_folder(
+        &db.conn,
+        workspace_id,
+        root_folder_id,
+        None,
+        None,
+        user_id,
+        "root",
+    )
+    .await;
+    seed_folder(
+        &db.conn,
+        workspace_id,
+        leaf_folder_id,
+        Some(shadowed_project_id),
+        Some(root_folder_id),
+        user_id,
+        "leaf",
+    )
+    .await;
+    let shadowed_document_id = Uuid::now_v7();
+    seed_document_in_folder(
+        &db.conn,
+        workspace_id,
+        shadowed_document_id,
+        leaf_folder_id,
+        user_id,
+    )
+    .await;
+
+    // Inverted shape: only the root ancestor carries a project — this is the
+    // "expected" inheritance direction and must still resolve correctly.
+    let root_with_project_id = Uuid::now_v7();
+    let leaf_without_project_id = Uuid::now_v7();
+    let inherited_project_id = Uuid::now_v7();
+    seed_project(
+        &db.conn,
+        workspace_id,
+        inherited_project_id,
+        user_id,
+        "workspace",
+        "editor",
+    )
+    .await;
+    seed_folder(
+        &db.conn,
+        workspace_id,
+        root_with_project_id,
+        Some(inherited_project_id),
+        None,
+        user_id,
+        "inherited-root",
+    )
+    .await;
+    seed_folder(
+        &db.conn,
+        workspace_id,
+        leaf_without_project_id,
+        None,
+        Some(root_with_project_id),
+        user_id,
+        "inherited-leaf",
+    )
+    .await;
+    let inheriting_document_id = Uuid::now_v7();
+    seed_document_in_folder(
+        &db.conn,
+        workspace_id,
+        inheriting_document_id,
+        leaf_without_project_id,
+        user_id,
+    )
+    .await;
+
+    let source = PgBatchAuthorizationSource::new(db.conn.clone());
+    let facts = source
+        .load_subject_facts(
+            &user_context(workspace_id, user_id),
+            &[
+                ProjectionSubject::Document(shadowed_document_id),
+                ProjectionSubject::Document(inheriting_document_id),
+            ],
+        )
+        .await
+        .expect("load both inheritance chains");
+    let [shadowed, inheriting] = facts.as_slice() else {
+        panic!("expected one fact per document");
+    };
+
+    assert_chain(
+        shadowed,
+        &[
+            ResourceRef::Document(atlas_acta::ids::DocumentId(shadowed_document_id)),
+            ResourceRef::Folder(atlas_acta::ids::FolderId(leaf_folder_id)),
+            ResourceRef::Folder(atlas_acta::ids::FolderId(root_folder_id)),
+            ResourceRef::Workspace,
+        ],
+    );
+    assert_chain(
+        inheriting,
+        &[
+            ResourceRef::Document(atlas_acta::ids::DocumentId(inheriting_document_id)),
+            ResourceRef::Folder(atlas_acta::ids::FolderId(leaf_without_project_id)),
+            ResourceRef::Folder(atlas_acta::ids::FolderId(root_with_project_id)),
+            ResourceRef::Project(atlas_acta::ids::ProjectId(inherited_project_id)),
+            ResourceRef::Workspace,
+        ],
+    );
+
+    db.teardown().await;
+}
+
+/// The agent cap (`apply_agent_cap`) never substitutes for the docs/tasks
+/// read-capability gate. This exercises that interaction against a real
+/// workspace-scope `admin` grant end to end, not the cap unit test's
+/// synthetic `ResolutionInput`.
+#[tokio::test]
+async fn agent_cap_does_not_bypass_the_read_capability_gate() {
+    let db = BatchAuthorizationDb::create().await;
+    let workspace_id = Uuid::now_v7();
+    let creator_id = Uuid::now_v7();
+    let key_id = Uuid::now_v7();
+    let document_id = Uuid::now_v7();
+
+    seed_workspace_user(&db.conn, workspace_id, creator_id, true).await;
+    db.conn
+        .execute_unprepared(&format!(
+            "UPDATE workspace_memberships SET role = 'owner' WHERE workspace_id = '{workspace_id}' AND user_id = '{creator_id}'"
+        ))
+        .await
+        .expect("promote creator to owner");
+    seed_api_key(&db.conn, key_id, creator_id, false, &["docs:read"]).await;
+    seed_workspace_scope_grant(
+        &db.conn,
+        workspace_id,
+        GrantPrincipal::ApiKey(key_id),
+        "admin",
+    )
+    .await;
+    seed_minimal_document(&db.conn, workspace_id, creator_id, document_id).await;
+
+    let service = BatchAuthorizationService::new(PgBatchAuthorizationSource::new(db.conn.clone()));
+    let context = ProjectionAuthContext::from_validated(
+        WorkspaceId(workspace_id),
+        Principal::ApiKey(ApiKeyId(key_id)),
+    );
+
+    let decisions = service
+        .authorize(&context, &[ProjectionSubject::Document(document_id)])
+        .await
+        .expect("authorize with the docs:read scope present");
+    assert_eq!(decisions, vec![true]);
+
+    db.conn
+        .execute_unprepared(&format!(
+            "UPDATE api_keys SET scopes = ARRAY[]::text[] WHERE id = '{key_id}'"
+        ))
+        .await
+        .expect("strip the capability scope");
+
+    let decisions = service
+        .authorize(&context, &[ProjectionSubject::Document(document_id)])
+        .await
+        .expect("authorize with no capability scope left");
+    assert_eq!(
+        decisions,
+        vec![false],
+        "an admin-strength workspace grant must not bypass a missing docs:read scope"
+    );
+
+    db.teardown().await;
+}
+
+/// The root/system-admin short circuit bypasses the membership requirement
+/// entirely, for both principal kinds: a bare `is_root`/`is_system_admin`
+/// flag stands in for `MemberRole::Admin` even with zero membership rows and
+/// zero grants.
+#[tokio::test]
+async fn root_admin_short_circuits_membership_for_both_principal_kinds() {
+    let db = BatchAuthorizationDb::create().await;
+    let workspace_id = Uuid::now_v7();
+    seed_workspace_only(&db.conn, workspace_id).await;
+
+    let root_user_id = Uuid::now_v7();
+    seed_user(&db.conn, root_user_id, true, false).await;
+    let root_document_id = Uuid::now_v7();
+    seed_minimal_document(&db.conn, workspace_id, root_user_id, root_document_id).await;
+
+    let admin_creator_id = Uuid::now_v7();
+    seed_user(&db.conn, admin_creator_id, false, true).await;
+    let key_id = Uuid::now_v7();
+    seed_api_key(&db.conn, key_id, admin_creator_id, true, &["docs:read"]).await;
+    let key_document_id = Uuid::now_v7();
+    seed_minimal_document(&db.conn, workspace_id, admin_creator_id, key_document_id).await;
+
+    let user_decisions =
+        BatchAuthorizationService::new(PgBatchAuthorizationSource::new(db.conn.clone()))
+            .authorize(
+                &user_context(workspace_id, root_user_id),
+                &[ProjectionSubject::Document(root_document_id)],
+            )
+            .await
+            .expect("root user authorizes without a membership row");
+    assert_eq!(user_decisions, vec![true]);
+
+    let key_context = ProjectionAuthContext::from_validated(
+        WorkspaceId(workspace_id),
+        Principal::ApiKey(ApiKeyId(key_id)),
+    );
+    let key_decisions =
+        BatchAuthorizationService::new(PgBatchAuthorizationSource::new(db.conn.clone()))
+            .authorize(
+                &key_context,
+                &[ProjectionSubject::Document(key_document_id)],
+            )
+            .await
+            .expect("api key authorizes via its system-admin creator, also without membership");
+    assert_eq!(key_decisions, vec![true]);
+
+    db.teardown().await;
+}
+
+/// The recursive folder walk only continues while `depth < 31`, so it ever
+/// includes depths `0..=31` (32 folders). A project set on an ancestor beyond
+/// that ceiling must never surface in the resolved chain.
+#[tokio::test]
+async fn folder_ancestry_truncates_at_the_chain_depth_ceiling() {
+    let db = BatchAuthorizationDb::create().await;
+    let workspace_id = Uuid::now_v7();
+    let user_id = Uuid::now_v7();
+    seed_workspace_user(&db.conn, workspace_id, user_id, true).await;
+
+    const CHAIN_LENGTH: usize = 35;
+    let folder_ids: Vec<Uuid> = (0..CHAIN_LENGTH).map(|_| Uuid::now_v7()).collect();
+    let beyond_ceiling_project_id = Uuid::now_v7();
+    seed_project(
+        &db.conn,
+        workspace_id,
+        beyond_ceiling_project_id,
+        user_id,
+        "workspace",
+        "editor",
+    )
+    .await;
+
+    // folder_ids[0] is the document's own folder (depth 0); folder_ids[last]
+    // is the root, 34 hops away — past the depth-31 ceiling — and holds the
+    // only project in the chain. Insert root-first so each `parent_folder_id`
+    // FK target already exists.
+    for index in (0..CHAIN_LENGTH).rev() {
+        let folder_id = *folder_ids.get(index).expect("index within folder_ids");
+        let parent = folder_ids.get(index + 1).copied();
+        let project = if index + 1 == CHAIN_LENGTH {
+            Some(beyond_ceiling_project_id)
+        } else {
+            None
+        };
+        seed_folder(
+            &db.conn,
+            workspace_id,
+            folder_id,
+            project,
+            parent,
+            user_id,
+            &format!("f{index}"),
+        )
+        .await;
+    }
+    let document_id = Uuid::now_v7();
+    let own_folder_id = *folder_ids.first().expect("chain has at least one folder");
+    seed_document_in_folder(&db.conn, workspace_id, document_id, own_folder_id, user_id).await;
+
+    let source = PgBatchAuthorizationSource::new(db.conn.clone());
+    let facts = source
+        .load_subject_facts(
+            &user_context(workspace_id, user_id),
+            &[ProjectionSubject::Document(document_id)],
+        )
+        .await
+        .expect("load the truncated ancestry chain");
+    let [fact] = facts.as_slice() else {
+        panic!("expected exactly one fact");
+    };
+
+    const INCLUDED_DEPTHS: usize = 32;
+    let mut expected = vec![ResourceRef::Document(atlas_acta::ids::DocumentId(
+        document_id,
+    ))];
+    expected.extend(
+        folder_ids
+            .iter()
+            .take(INCLUDED_DEPTHS)
+            .map(|id| ResourceRef::Folder(atlas_acta::ids::FolderId(*id))),
+    );
+    expected.push(ResourceRef::Workspace);
+
+    assert_chain(fact, &expected);
+
+    db.teardown().await;
+}
+
 #[derive(Clone, Copy)]
 struct ProjectionSubjects {
     workspace_id: Uuid,
@@ -548,6 +1080,146 @@ async fn seed_minimal_document(
     .expect("seed minimal document");
 }
 
+fn resolution_query(workspace_id: Uuid, user_id: Uuid, group_id: Uuid) -> ResolutionQuery {
+    ResolutionQuery {
+        workspace_id: WorkspaceId(workspace_id),
+        user_id: Some(user_id),
+        api_key_id: None,
+        group_ids: vec![group_id],
+        chain_projects: Vec::new(),
+        chain_folders: Vec::new(),
+        doc_id: None,
+        board_id: None,
+    }
+}
+
+async fn seed_project(
+    conn: &DatabaseConnection,
+    workspace_id: Uuid,
+    project_id: Uuid,
+    creator_id: Uuid,
+    visibility: &str,
+    visibility_role: &str,
+) {
+    // task_prefix is unique per (workspace_id, task_prefix); derive one from
+    // the project id's random tail (UUIDv7's leading bytes are a timestamp
+    // shared across ids minted in the same test, so a prefix slice would
+    // collide) so multiple projects can share a workspace in one test.
+    let hex = project_id.simple().to_string();
+    let task_prefix = format!("P{}", hex[hex.len() - 5..].to_uppercase());
+    conn.execute_unprepared(&format!(
+        "INSERT INTO projects (id, workspace_id, name, slug, task_prefix, next_task_number, visibility, visibility_role, created_by_user_id, created_at, updated_at) \
+         VALUES ('{project_id}', '{workspace_id}', 'Project', 'project-{project_id}', '{task_prefix}', 1, '{visibility}', '{visibility_role}', '{creator_id}', now(), now())"
+    ))
+    .await
+    .expect("seed project");
+}
+
+async fn seed_folder(
+    conn: &DatabaseConnection,
+    workspace_id: Uuid,
+    folder_id: Uuid,
+    project_id: Option<Uuid>,
+    parent_folder_id: Option<Uuid>,
+    creator_id: Uuid,
+    name: &str,
+) {
+    let project_value = project_id
+        .map(|id| format!("'{id}'"))
+        .unwrap_or_else(|| "NULL".to_string());
+    let parent_value = parent_folder_id
+        .map(|id| format!("'{id}'"))
+        .unwrap_or_else(|| "NULL".to_string());
+    conn.execute_unprepared(&format!(
+        "INSERT INTO folders (id, workspace_id, project_id, parent_folder_id, name, created_by_user_id, created_at, updated_at) \
+         VALUES ('{folder_id}', '{workspace_id}', {project_value}, {parent_value}, '{name}', '{creator_id}', now(), now())"
+    ))
+    .await
+    .expect("seed folder");
+}
+
+async fn seed_document_in_folder(
+    conn: &DatabaseConnection,
+    workspace_id: Uuid,
+    document_id: Uuid,
+    folder_id: Uuid,
+    creator_id: Uuid,
+) {
+    conn.execute_unprepared(&format!(
+        "INSERT INTO documents (id, workspace_id, folder_id, title, slug, content, frontmatter, current_revision_seq, created_by_user_id, created_at, updated_at) \
+         VALUES ('{document_id}', '{workspace_id}', '{folder_id}', 'Document', 'document-{document_id}', '', '{{}}', 1, '{creator_id}', now(), now())"
+    ))
+    .await
+    .expect("seed document in folder");
+}
+
+enum GrantPrincipal {
+    User(Uuid),
+    ApiKey(Uuid),
+}
+
+async fn seed_workspace_scope_grant(
+    conn: &DatabaseConnection,
+    workspace_id: Uuid,
+    principal: GrantPrincipal,
+    role: &str,
+) {
+    let (column, id) = match principal {
+        GrantPrincipal::User(id) => ("user_id", id),
+        GrantPrincipal::ApiKey(id) => ("api_key_id", id),
+    };
+    conn.execute_unprepared(&format!(
+        "INSERT INTO permission_grants (id, workspace_id, {column}, role, created_at, updated_at) \
+         VALUES ('{}', '{workspace_id}', '{id}', '{role}', now(), now())",
+        Uuid::now_v7(),
+    ))
+    .await
+    .expect("seed workspace-scope grant");
+}
+
+async fn seed_api_key(
+    conn: &DatabaseConnection,
+    key_id: Uuid,
+    creator_id: Uuid,
+    is_global: bool,
+    scopes: &[&str],
+) {
+    let scopes_sql = scopes
+        .iter()
+        .map(|scope| format!("'{scope}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    conn.execute_unprepared(&format!(
+        "INSERT INTO api_keys (id, workspace_id, created_by_user_id, name, token_hash, type, created_at, is_global, scopes) \
+         VALUES ('{key_id}', NULL, '{creator_id}', 'key', 'hash', 'agent', now(), {is_global}, ARRAY[{scopes_sql}])"
+    ))
+    .await
+    .expect("seed api key");
+}
+
+async fn seed_user(conn: &DatabaseConnection, user_id: Uuid, is_root: bool, is_system_admin: bool) {
+    conn.execute_unprepared(&format!(
+        "INSERT INTO users (id, username, display_name, is_root, is_system_admin, created_at, updated_at) \
+         VALUES ('{user_id}', 'user-{user_id}', 'User', {is_root}, {is_system_admin}, now(), now())"
+    ))
+    .await
+    .expect("seed user");
+}
+
+async fn seed_workspace_only(conn: &DatabaseConnection, workspace_id: Uuid) {
+    conn.execute_unprepared(&format!(
+        "INSERT INTO workspaces (id, name, slug, created_at, updated_at) \
+         VALUES ('{workspace_id}', 'Workspace', 'workspace-{workspace_id}', now(), now())"
+    ))
+    .await
+    .expect("seed workspace");
+}
+
+/// The exactly-two-statements contract (design §S3b, spec scenario "Statement
+/// count is unchanged after the cut"). PR4 re-runs this exact assertion,
+/// unmodified, against `ResourceChainSource`/`PrincipalFactsSource` after the
+/// port cut: any regression that grows the batch to more than one subject
+/// statement and one principal statement must fail here.
 fn assert_marked_statement_pair(statements: &Arc<Mutex<Vec<String>>>) {
     let statements = statements.lock().expect("statement metric lock");
     assert_eq!(statements.len(), 2);
