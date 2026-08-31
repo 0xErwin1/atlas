@@ -119,7 +119,7 @@ async fn semantic_search_returns_503_before_embedding_when_schema_is_absent() {
         calls: calls.clone(),
     }));
     db.conn()
-        .execute_unprepared("DROP TABLE search_embeddings")
+        .execute_unprepared("DROP TABLE acta.search_embeddings")
         .await
         .expect("drop semantic search table after startup readiness");
     let server = support::TestServer::spawn_with_state(state).await;
@@ -363,7 +363,7 @@ async fn seed_corpus_with_empty_queue(
         .expect("seed task");
 
     db.conn()
-        .execute_unprepared("DELETE FROM search_index_queue")
+        .execute_unprepared("DELETE FROM acta.search_index_queue")
         .await
         .expect("clear the queue the seeding writes filled");
 }
@@ -486,7 +486,7 @@ async fn semantic_reindex_is_refused_when_nothing_would_drain_the_queue() {
         &db.conn()
             .query_one_raw(sea_orm::Statement::from_string(
                 sea_orm::DatabaseBackend::Postgres,
-                "SELECT count(*)::bigint AS count FROM search_index_queue",
+                "SELECT count(*)::bigint AS count FROM acta.search_index_queue",
             ))
             .await
             .expect("count query")

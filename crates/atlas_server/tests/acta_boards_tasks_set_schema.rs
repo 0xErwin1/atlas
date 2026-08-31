@@ -23,9 +23,8 @@ const ACTA_BOARDS_TASKS_TABLES: &[&str] = &[
 ];
 
 /// All nine boards/tasks-group tables must live in the `acta` schema after
-/// the migration; `workspaces`/`documents` (PR11/PR12, already moved) stay
-/// `acta`, and `purge_operations` (batch 5, still unbatched as of this PR)
-/// stays in `public`.
+/// the migration; `workspaces`/`documents` (PR11/PR12, already moved) and
+/// `purge_operations` (PR15, batch 5) also live in `acta`.
 #[tokio::test]
 async fn boards_tasks_group_tables_move_to_the_acta_schema() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -59,7 +58,7 @@ async fn boards_tasks_group_tables_move_to_the_acta_schema() {
 
     for table in ACTA_BOARDS_TASKS_TABLES
         .iter()
-        .chain(["workspaces", "documents"].iter())
+        .chain(["workspaces", "documents", "purge_operations"].iter())
     {
         let schema = rows
             .iter()
@@ -69,18 +68,6 @@ async fn boards_tasks_group_tables_move_to_the_acta_schema() {
             .clone();
         assert_eq!(schema, "acta", "expected {table} to live in acta");
     }
-
-    let table = "purge_operations";
-    let schema = rows
-        .iter()
-        .find(|r| r.table_name == table)
-        .unwrap_or_else(|| panic!("table {table} not found"))
-        .table_schema
-        .clone();
-    assert_eq!(
-        schema, "public",
-        "expected {table} to stay in public until its own batch lands"
-    );
 
     db.teardown().await;
 }

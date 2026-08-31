@@ -208,7 +208,7 @@ async fn probe_semantic_search_schema(db: &DatabaseConnection) -> Result<bool, D
         .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') AS vector_extension, \
-             to_regclass('public.search_embeddings') IS NOT NULL AS embeddings_table",
+             to_regclass('acta.search_embeddings') IS NOT NULL AS embeddings_table",
         ))
         .await?
         .ok_or_else(|| DbErr::Custom("semantic search schema probe returned no row".to_owned()))?;

@@ -87,7 +87,7 @@ impl PgSemanticIndexWriter {
         self.conn
             .execute_raw(Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
-                r#"DELETE FROM search_embeddings
+                r#"DELETE FROM acta.search_embeddings
                    WHERE workspace_id = $1
                      AND resource_kind = $2
                      AND resource_id = $3
@@ -117,7 +117,7 @@ impl PgSemanticIndexWriter {
         self.conn
             .execute_raw(Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
-                r#"UPDATE search_embeddings
+                r#"UPDATE acta.search_embeddings
                    SET stale_at = now(), updated_at = now()
                    WHERE workspace_id = $1
                      AND resource_kind = $2
@@ -147,7 +147,7 @@ impl PgSemanticIndexWriter {
         let row = HashRow::find_by_statement(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             r#"SELECT content_hash
-               FROM search_embeddings
+               FROM acta.search_embeddings
                WHERE workspace_id = $1
                  AND resource_kind = $2
                  AND resource_id = $3
@@ -181,7 +181,7 @@ impl PgSemanticIndexWriter {
         self.conn
             .execute_raw(Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
-                r#"INSERT INTO search_embeddings (
+                r#"INSERT INTO acta.search_embeddings (
                        id, workspace_id, resource_kind, resource_id, source_field, chunk_ordinal,
                        content_hash, model, dimensions, embedding, excerpt, token_count,
                        indexed_at, stale_at, created_at, updated_at
@@ -369,7 +369,7 @@ pub fn semantic_search_sql(query: &SemanticSearchQuery) -> String {
                           1 - (se.embedding <=> $3::vector) AS similarity,
                           CASE se.resource_kind WHEN 'document' THEN 0 ELSE 1 END AS kind_rank,
                           se.chunk_ordinal
-                   FROM search_embeddings se
+                   FROM acta.search_embeddings se
                    WHERE se.workspace_id = $1
                      AND se.model = $4
                      AND se.dimensions = $5

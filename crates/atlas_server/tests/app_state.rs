@@ -51,7 +51,7 @@ async fn anchor_interval_is_at_least_2_with_default_env() {
 async fn semantic_search_is_disabled_when_provider_exists_but_schema_is_absent() {
     let db = support::TestDb::create().await.expect("TestDb");
     db.conn()
-        .execute_unprepared("DROP TABLE search_embeddings")
+        .execute_unprepared("DROP TABLE acta.search_embeddings")
         .await
         .expect("drop semantic search table");
 

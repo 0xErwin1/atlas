@@ -72,7 +72,7 @@ impl PgSearchIndexQueueRepo {
     ) -> Result<(), DomainError> {
         conn.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            r#"INSERT INTO search_index_queue (
+            r#"INSERT INTO acta.search_index_queue (
                    id, workspace_id, resource_kind, resource_id,
                    enqueued_at, attempt_count, next_attempt_at, locked_until, last_error
                ) VALUES (gen_random_uuid(), $1, $2, $3, now(), 0, now(), NULL, NULL)
@@ -149,7 +149,7 @@ impl PgSearchIndexQueueRepo {
                 .execute_raw(Statement::from_sql_and_values(
                     DatabaseBackend::Postgres,
                     format!(
-                        r#"INSERT INTO search_index_queue (
+                        r#"INSERT INTO acta.search_index_queue (
                                id, workspace_id, resource_kind, resource_id,
                                enqueued_at, attempt_count, next_attempt_at, locked_until, last_error
                            )
@@ -208,12 +208,12 @@ impl PgSearchIndexQueueRepo {
                       (SELECT coalesce(sum(greatest(ceil(characters::numeric / $4), 1)), 0)
                        FROM corpus WHERE characters > 0)::bigint AS estimated_chunks,
                       (SELECT count(DISTINCT (resource_kind, resource_id))
-                       FROM search_embeddings
+                       FROM acta.search_embeddings
                        WHERE workspace_id = $1
                          AND model = $2
                          AND dimensions = $3
                          AND stale_at IS NULL)::bigint AS indexed_resources,
-                      (SELECT count(*) FROM search_index_queue WHERE workspace_id = $1)::bigint AS queued_resources"#,
+                      (SELECT count(*) FROM acta.search_index_queue WHERE workspace_id = $1)::bigint AS queued_resources"#,
             vec![
                 workspace_id.0.into(),
                 model.to_owned().into(),
@@ -251,10 +251,10 @@ impl PgSearchIndexQueueRepo {
     ) -> Result<Vec<QueuedResource>, DomainError> {
         let rows = QueueRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            r#"UPDATE search_index_queue
+            r#"UPDATE acta.search_index_queue
                SET locked_until = now() + ($2 * INTERVAL '1 second')
                WHERE id IN (
-                   SELECT id FROM search_index_queue
+                   SELECT id FROM acta.search_index_queue
                    WHERE next_attempt_at <= now()
                      AND (locked_until IS NULL OR locked_until <= now())
                    ORDER BY enqueued_at
@@ -282,7 +282,7 @@ impl PgSearchIndexQueueRepo {
     ) -> Result<(), DomainError> {
         conn.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            "DELETE FROM search_index_queue WHERE id = $1 AND enqueued_at <= $2",
+            "DELETE FROM acta.search_index_queue WHERE id = $1 AND enqueued_at <= $2",
             vec![id.into(), claimed_at.into()],
         ))
         .await
@@ -301,7 +301,7 @@ impl PgSearchIndexQueueRepo {
 
         conn.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            r#"UPDATE search_index_queue
+            r#"UPDATE acta.search_index_queue
                SET attempt_count = attempt_count + 1,
                    next_attempt_at = now() + ($2 * INTERVAL '1 second'),
                    locked_until = NULL,

@@ -21,8 +21,9 @@ const CUSTOS_TABLES: &[&str] = &[
 ];
 
 /// The eight Custos tables must live in the `custos` schema after the
-/// migration, and `purge_operations` (Acta lifecycle, not yet batched) must
-/// stay in `public`.
+/// migration. `purge_operations` (Acta lifecycle) has since moved to `acta`
+/// by S4 PR15's own `SET SCHEMA acta` batch — its before/after proof lives in
+/// `acta_search_attachments_lifecycle_set_schema.rs`, not here.
 ///
 /// `user_ui_state` and `workspaces`/`workspace_memberships` are deliberately
 /// absent from both lists here: S4 PR9 moves `user_ui_state` to
@@ -80,7 +81,7 @@ async fn the_eight_custos_tables_move_to_the_custos_schema() {
         .unwrap_or_else(|| panic!("table {table} not found"))
         .table_schema
         .clone();
-    assert_eq!(schema, "public", "expected {table} to stay in public");
+    assert_eq!(schema, "acta", "expected {table} to live in acta");
 
     db.teardown().await;
 }
