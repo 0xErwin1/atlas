@@ -148,7 +148,7 @@ impl ProjectRepo for PgProjectRepo {
                 visibility_clause = "p.visibility != 'private'".to_string();
                 membership_clause = "(
                     EXISTS (
-                        SELECT 1 FROM workspace_memberships
+                        SELECT 1 FROM acta.workspace_memberships
                         WHERE workspace_id = $1
                           AND user_id = $2
                           AND role IN ('owner', 'admin')

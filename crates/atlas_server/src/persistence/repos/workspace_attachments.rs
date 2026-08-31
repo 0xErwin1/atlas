@@ -187,7 +187,7 @@ impl PrincipalClauses {
                     "TRUE".to_string()
                 } else {
                     "EXISTS (
-                        SELECT 1 FROM workspace_memberships
+                        SELECT 1 FROM acta.workspace_memberships
                         WHERE workspace_id = $1
                           AND user_id = $2
                           AND role IN ('owner', 'admin')
@@ -198,7 +198,7 @@ impl PrincipalClauses {
                 Self {
                     owner_admin,
                     member: "EXISTS (
-                        SELECT 1 FROM workspace_memberships
+                        SELECT 1 FROM acta.workspace_memberships
                         WHERE workspace_id = $1
                           AND user_id = $2
                     )"

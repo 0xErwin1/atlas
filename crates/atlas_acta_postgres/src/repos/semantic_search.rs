@@ -518,10 +518,10 @@ fn principal_sql(principal: &Principal, bypass: bool) -> (&'static str, Uuid, St
             let owner_admin_clause = if bypass {
                 "TRUE".to_owned()
             } else {
-                "EXISTS (SELECT 1 FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2 AND role IN ('owner', 'admin'))".to_owned()
+                "EXISTS (SELECT 1 FROM acta.workspace_memberships WHERE workspace_id = $1 AND user_id = $2 AND role IN ('owner', 'admin'))".to_owned()
             };
             let member_clause =
-                "EXISTS (SELECT 1 FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2)"
+                "EXISTS (SELECT 1 FROM acta.workspace_memberships WHERE workspace_id = $1 AND user_id = $2)"
                     .to_owned();
             ("user_id", user_id.0, owner_admin_clause, member_clause)
         }

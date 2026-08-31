@@ -589,7 +589,7 @@ WITH requested AS (
     ) AS facts
     FROM requested
     LEFT JOIN custos.users ON users.id = requested.principal_id
-    LEFT JOIN workspace_memberships memberships
+    LEFT JOIN acta.workspace_memberships memberships
         ON memberships.workspace_id = requested.workspace_id AND memberships.user_id = users.id
     LEFT JOIN user_grants ON user_grants.user_id = users.id
     WHERE requested.principal_type = 'user'
@@ -614,7 +614,7 @@ WITH requested AS (
     FROM requested
     LEFT JOIN custos.api_keys keys ON keys.id = requested.principal_id
     LEFT JOIN custos.users creator ON creator.id = keys.created_by_user_id
-    LEFT JOIN workspace_memberships creator_membership
+    LEFT JOIN acta.workspace_memberships creator_membership
         ON creator_membership.workspace_id = requested.workspace_id
         AND creator_membership.user_id = creator.id
     LEFT JOIN key_grants ON key_grants.key_id = keys.id

@@ -37,7 +37,16 @@ fn no_call_site_hard_deletes_a_workspace_row() {
                 continue;
             }
 
-            if line.contains("DELETE FROM workspaces") || line.contains("workspace::Entity::delete")
+            // schema-gate:off — these literals are the grep patterns this
+            // test itself searches for, not live queries; they are text data,
+            // not references needing `acta.` qualification. Both the bare and
+            // the schema-qualified DELETE forms are guarded: after PR11 every
+            // correct call site writes `acta.workspaces`, so matching only
+            // the bare form would defang this guard.
+            if line.contains("DELETE FROM workspaces")
+                || line.contains("DELETE FROM acta.workspaces")
+                || line.contains("workspace::Entity::delete")
+            // schema-gate:on
             {
                 violations.push(format!("{}:{}: {}", path.display(), line_no + 1, trimmed));
             }

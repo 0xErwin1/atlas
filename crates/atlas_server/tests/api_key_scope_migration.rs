@@ -51,7 +51,7 @@ async fn pre_migration_key_is_grandfathered_to_all_twenty_scopes_after_backfill(
         .await
         .expect("create db at pre-scopes migration state");
 
-    // custos-schema-gate:off — pre-schema-move fixture, see the doc comment above.
+    // schema-gate:off — pre-schema-move fixture, see the doc comment above.
     let user_id = uuid::Uuid::now_v7();
     db.conn()
         .execute_unprepared(&format!(
@@ -70,7 +70,7 @@ async fn pre_migration_key_is_grandfathered_to_all_twenty_scopes_after_backfill(
             [key_id.into(), user_id.into()],
         ))
         .await
-        // custos-schema-gate:on
+        // schema-gate:on
         .expect("insert pre-migration-shaped api key row");
 
     db.run_remaining_migrations()

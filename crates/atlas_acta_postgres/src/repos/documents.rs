@@ -279,7 +279,7 @@ impl DocumentRepo for PgDocumentRepo {
                 values.push(uid.0.into()); // $2
                 membership_clause = "(
                     EXISTS (
-                        SELECT 1 FROM workspace_memberships
+                        SELECT 1 FROM acta.workspace_memberships
                         WHERE workspace_id = $1
                           AND user_id = $2
                     )
