@@ -6,10 +6,10 @@ use atlas_server::persistence::migrator::ComposedMigrator;
 use sea_orm_migration::prelude::MigratorTrait;
 use support::TestDb;
 
-/// D5: the composed migrator (`historical() ++ custos_new()`) must report
-/// zero pending against a database freshly migrated from empty, proving the
-/// composition applies cleanly with no gaps against `custos_new()`'s (empty)
-/// contribution.
+/// D5/D3: the composed migrator (`historical() ++ custos_new() ++
+/// acta_new()`) must report zero pending against a database freshly
+/// migrated from empty, proving the composition applies cleanly with no
+/// gaps against `custos_new()`'s and `acta_new()`'s contributions.
 #[tokio::test]
 async fn from_empty_database_composed_migrator_reports_zero_pending_after_up() {
     let db = TestDb::create_with_migration_steps(Some(0))
@@ -33,12 +33,12 @@ async fn from_empty_database_composed_migrator_reports_zero_pending_after_up() {
     db.teardown().await;
 }
 
-/// D5: a database migrated by the historical `migration::Migrator` alone (a
-/// "V1-migrated" database, i.e. stopped right after the last historical
-/// migration and before any Custos-owned one) must catch up cleanly and then
-/// report zero pending against the composed migrator, over the same
-/// `seaql_migrations` table — this is what proves the composition is
-/// additive, not a competing migration history.
+/// D5/D3: a database migrated by the historical `migration::Migrator` alone
+/// (a "V1-migrated" database, i.e. stopped right after the last historical
+/// migration and before any Custos- or Acta-owned one) must catch up
+/// cleanly and then report zero pending against the composed migrator, over
+/// the same `seaql_migrations` table — this is what proves the composition
+/// is additive, not a competing migration history.
 #[tokio::test]
 async fn v1_migrated_database_composed_migrator_reports_zero_pending() {
     let historical_count = migration::Migrator::migrations().len() as u32;

@@ -102,8 +102,11 @@ async fn purge_operation_repo_create_record_attempt_and_digest_round_trip() {
     let workspace_id = seed_workspace(&db, "purge-op-test").await;
     let user_id = seed_user(&db, "purge-op-actor").await;
 
-    // `purge_operations.commit_audit_id` is a foreign key into
-    // `custos.security_audit_log`: seed a real row rather than a random UUID.
+    // `purge_operations.commit_audit_id` carries no live foreign key
+    // constraint into `custos.security_audit_log` — S3's O1 migration
+    // (`m20260830_000050_grant_resource_ref`) dropped it before this table
+    // moved schemas (PR15 T15.7). Seed a real row anyway, for domain realism
+    // rather than constraint enforcement.
     let commit_audit_id = Uuid::now_v7();
     sea_orm::ConnectionTrait::execute_unprepared(
         db.conn(),
