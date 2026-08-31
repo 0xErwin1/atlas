@@ -26,6 +26,7 @@ pub mod routes;
 pub mod search_indexer;
 pub mod semantic_indexer;
 pub mod services;
+pub mod startup;
 pub mod state;
 pub mod task_graph;
 pub mod webhook_url;
