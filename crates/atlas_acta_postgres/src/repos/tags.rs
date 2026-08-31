@@ -73,7 +73,7 @@ impl TagRepo for PgTagRepo {
                 sea_orm::DatabaseBackend::Postgres,
                 "SELECT id, workspace_id, name, color, created_by_user_id, \
                  created_by_api_key_id, created_at, updated_at, deleted_at \
-                 FROM tags \
+                 FROM acta.tags \
                  WHERE workspace_id = $1 AND deleted_at IS NULL AND lower(name) = $2 \
                  LIMIT 1",
                 [ctx.workspace_id.0.into(), lower.into()],
@@ -93,7 +93,7 @@ impl TagRepo for PgTagRepo {
                 sea_orm::DatabaseBackend::Postgres,
                 "SELECT id, workspace_id, name, color, created_by_user_id, \
                  created_by_api_key_id, created_at, updated_at, deleted_at \
-                 FROM tags \
+                 FROM acta.tags \
                  WHERE workspace_id = $1 AND deleted_at IS NULL \
                  ORDER BY lower(name) ASC",
                 [ctx.workspace_id.0.into()],
@@ -140,7 +140,7 @@ impl TagRepo for PgTagRepo {
         let update_result = txn
             .execute_raw(Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
-                "UPDATE tags \
+                "UPDATE acta.tags \
                  SET name = $1, color = COALESCE($2, color), updated_at = $3 \
                  WHERE id = $4 AND workspace_id = $5 AND deleted_at IS NULL",
                 [
@@ -237,7 +237,7 @@ impl TagRepo for PgTagRepo {
             .conn
             .execute_raw(Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
-                "UPDATE tags \
+                "UPDATE acta.tags \
                  SET deleted_at = $1 \
                  WHERE id = $2 AND workspace_id = $3 AND deleted_at IS NULL",
                 [Utc::now().into(), id.0.into(), ctx.workspace_id.0.into()],
@@ -267,7 +267,7 @@ async fn load_tag_in_txn<C: ConnectionTrait>(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT id, workspace_id, name, color, created_by_user_id, \
              created_by_api_key_id, created_at, updated_at, deleted_at \
-             FROM tags \
+             FROM acta.tags \
              WHERE id = $1 AND workspace_id = $2 AND deleted_at IS NULL \
              LIMIT 1",
             [id.0.into(), ctx.workspace_id.0.into()],

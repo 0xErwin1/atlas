@@ -490,7 +490,7 @@ async fn migration_enforces_digest_sizes_and_allows_drained_rollback() {
     db.conn()
         .execute_unprepared(
             &format!(
-                "INSERT INTO comments \\
+                "INSERT INTO acta.comments \\
                  (id, workspace_id, document_id, body, created_by_user_id, created_at, updated_at) \\
                  VALUES ('{comment_id}', '{}', '{}', 'finalized body', '{}', now(), now())",
                 workspace.id.0, document.id.0, user.id.0,
@@ -589,11 +589,12 @@ async fn migration_enforces_digest_sizes_and_allows_drained_rollback() {
 
     // schema-gate:off — `guarded_rollback` above already reverted every
     // `SET SCHEMA` migration registered after the comment-attachment-drafts
-    // one (including this PR's `m20260902_000054_acta_documents_set_schema`)
+    // one (including S4 PR12's `m20260902_000054_acta_documents_set_schema`
+    // and PR14's `m20260904_000056_acta_comments_events_tags_set_schema`)
     // before failing closed on that older migration's own guard, so
-    // `comment_attachment_draft_uploads`/`attachments`/`comment_attachment_drafts`
-    // are back in `public` at this point, not `acta` — see the comment above
-    // `drained_rollback` below.
+    // `comment_attachment_draft_uploads`/`attachments`/`comment_attachment_drafts`/
+    // `comments` are back in `public` at this point, not `acta` — see the
+    // comment above `drained_rollback` below.
     db.conn()
         .execute_unprepared(&format!(
             "DELETE FROM comment_attachment_draft_uploads WHERE draft_id = '{}'",
@@ -615,11 +616,11 @@ async fn migration_enforces_digest_sizes_and_allows_drained_rollback() {
         ))
         .await
         .expect("drain draft");
-    // schema-gate:on
     db.conn()
         .execute_unprepared(&format!("DELETE FROM comments WHERE id = '{comment_id}'",))
         .await
         .expect("drain finalized comment");
+    // schema-gate:on
 
     // The guarded attempt already rolled back every migration registered after
     // the draft one before failing on it, so a single step now targets it.

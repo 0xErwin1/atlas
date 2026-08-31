@@ -98,7 +98,7 @@ pub fn task_ancestor_chain_is_live_sql(task_id: &str) -> String {
 pub fn comment_chain_is_live_sql(comment_id: &str) -> String {
     format!(
         "NOT EXISTS (\
-            SELECT 1 FROM comments live_comment \
+            SELECT 1 FROM acta.comments live_comment \
             WHERE live_comment.id = {comment_id} \
               AND (\
                     live_comment.deleted_at IS NOT NULL \

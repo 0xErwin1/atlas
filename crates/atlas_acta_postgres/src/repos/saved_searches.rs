@@ -90,7 +90,7 @@ impl SavedSearchRepo for PgSavedSearchRepo {
                     sea_orm::DatabaseBackend::Postgres,
                     "SELECT id, workspace_id, name, query, owner_user_id, owner_api_key_id, \
                          created_at, updated_at, deleted_at \
-                         FROM saved_searches \
+                         FROM acta.saved_searches \
                          WHERE workspace_id = $1 AND owner_user_id = $2 AND deleted_at IS NULL \
                          ORDER BY lower(name) ASC",
                     [ctx.workspace_id.0.into(), uid.into()],
@@ -103,7 +103,7 @@ impl SavedSearchRepo for PgSavedSearchRepo {
                     sea_orm::DatabaseBackend::Postgres,
                     "SELECT id, workspace_id, name, query, owner_user_id, owner_api_key_id, \
                          created_at, updated_at, deleted_at \
-                         FROM saved_searches \
+                         FROM acta.saved_searches \
                          WHERE workspace_id = $1 AND owner_api_key_id = $2 AND deleted_at IS NULL \
                          ORDER BY lower(name) ASC",
                     [ctx.workspace_id.0.into(), kid.into()],
@@ -195,7 +195,7 @@ impl PgSavedSearchRepo {
                 .conn
                 .query_one_raw(Statement::from_sql_and_values(
                     sea_orm::DatabaseBackend::Postgres,
-                    "SELECT count(*) AS n FROM saved_searches \
+                    "SELECT count(*) AS n FROM acta.saved_searches \
                          WHERE workspace_id = $1 AND owner_user_id = $2 AND deleted_at IS NULL",
                     [ctx.workspace_id.0.into(), uid.into()],
                 ))
@@ -205,7 +205,7 @@ impl PgSavedSearchRepo {
                 .conn
                 .query_one_raw(Statement::from_sql_and_values(
                     sea_orm::DatabaseBackend::Postgres,
-                    "SELECT count(*) AS n FROM saved_searches \
+                    "SELECT count(*) AS n FROM acta.saved_searches \
                          WHERE workspace_id = $1 AND owner_api_key_id = $2 AND deleted_at IS NULL",
                     [ctx.workspace_id.0.into(), kid.into()],
                 ))

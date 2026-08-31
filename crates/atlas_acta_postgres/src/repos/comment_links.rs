@@ -227,8 +227,8 @@ impl CommentLinkRepo for PgCommentLinkRepo {
                      c.document_id AS parent_document_id, parent_task.readable_id AS parent_readable_id, \
                      parent_document.slug AS parent_slug, \
                      COALESCE(parent_task.title, parent_document.title) AS parent_title \
-                     FROM comment_links cl \
-                     JOIN comments c ON c.id = cl.comment_id AND c.workspace_id = cl.workspace_id \
+                     FROM acta.comment_links cl \
+                     JOIN acta.comments c ON c.id = cl.comment_id AND c.workspace_id = cl.workspace_id \
                      LEFT JOIN acta.tasks parent_task ON parent_task.id = c.task_id AND parent_task.workspace_id = c.workspace_id AND parent_task.deleted_at IS NULL \
                      LEFT JOIN acta.documents parent_document ON parent_document.id = c.document_id AND parent_document.workspace_id = c.workspace_id AND parent_document.deleted_at IS NULL \
                       WHERE cl.workspace_id = $1 AND cl.{target_column} = $2 AND c.deleted_at IS NULL \
@@ -292,7 +292,7 @@ impl CommentLinkRepo for PgCommentLinkRepo {
                            NULL::text AS event_kind, NULL::uuid AS target_document_id, \
                            NULL::uuid AS target_task_id, NULL::uuid AS target_attachment_id, \
                            NULL::text AS actor_type, NULL::uuid AS actor_id, 'comment'::text AS entry_type \
-                    FROM comments \
+                    FROM acta.comments \
                     WHERE workspace_id = $1 AND {parent_column} = $2 AND deleted_at IS NULL{cursor_predicate} \
                     UNION ALL \
                     SELECT id, comment_id, workspace_id, parent_task_id, parent_document_id, \
@@ -300,7 +300,7 @@ impl CommentLinkRepo for PgCommentLinkRepo {
                            NULL::uuid AS created_by_api_key_id, created_at, created_at AS updated_at, \
                            event_kind, target_document_id, target_task_id, target_attachment_id, \
                            actor_type, actor_id, 'event'::text AS entry_type \
-                    FROM comment_link_events \
+                    FROM acta.comment_link_events \
                     WHERE workspace_id = $1 AND parent_{parent_column} = $2{cursor_predicate} \
                 ) \
                 SELECT * FROM feed ORDER BY created_at ASC, id ASC LIMIT {limit_parameter}",
@@ -437,7 +437,7 @@ async fn attachment_url_matches_owner(
             "SELECT EXISTS(
                 SELECT 1
                 FROM acta.attachments attachment
-                JOIN comments comment ON comment.id = attachment.comment_id
+                JOIN acta.comments comment ON comment.id = attachment.comment_id
                   AND comment.workspace_id = attachment.workspace_id
                   AND comment.deleted_at IS NULL
                 JOIN acta.workspaces workspace ON workspace.id = attachment.workspace_id

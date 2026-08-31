@@ -781,7 +781,7 @@ async fn trash_filters_and_tied_timestamp_pages_are_complete_without_duplicates(
     for table in [
         "acta.projects",
         "acta.folders",
-        "comments",
+        "acta.comments",
         "acta.attachments",
     ] {
         db.conn()
@@ -1476,7 +1476,7 @@ async fn confirmed_purge_removes_the_five_kinds_and_reuses_its_pending_operation
         ("acta.projects", project.id.0),
         ("acta.folders", folder.id.0),
         ("acta.documents", document.id.0),
-        ("comments", comment.id.0),
+        ("acta.comments", comment.id.0),
         ("acta.attachments", attachment.id.0),
         ("acta.folders", project_folder.id.0),
         ("acta.documents", project_document.id.0),
@@ -1936,7 +1936,7 @@ async fn project_purge_correlates_each_descendant_digest_once_and_removes_every_
                 (SELECT count(*)::bigint FROM acta.documents WHERE workspace_id = $1) AS documents, \
                 (SELECT count(*)::bigint FROM acta.boards WHERE workspace_id = $1) AS boards, \
                 (SELECT count(*)::bigint FROM acta.tasks WHERE workspace_id = $1) AS tasks, \
-                (SELECT count(*)::bigint FROM comments WHERE workspace_id = $1) AS comments, \
+                (SELECT count(*)::bigint FROM acta.comments WHERE workspace_id = $1) AS comments, \
                 (SELECT count(*)::bigint FROM acta.attachments WHERE workspace_id = $1) AS attachments, \
                 (SELECT count(*)::bigint FROM acta.comment_attachment_drafts WHERE workspace_id = $1) AS drafts, \
                 (SELECT count(*)::bigint FROM acta.comment_attachment_draft_uploads WHERE draft_id IN ($2, $3)) AS uploads",

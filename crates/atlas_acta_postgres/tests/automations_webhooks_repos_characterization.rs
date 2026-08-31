@@ -183,7 +183,7 @@ async fn webhook_subscription_and_delivery_repos_create_list_and_update_round_tr
     sea_orm::ConnectionTrait::execute_unprepared(
         db.conn(),
         &format!(
-            "INSERT INTO events_outbox \
+            "INSERT INTO acta.events_outbox \
              (id, workspace_id, event_type, event_version, aggregate_type, aggregate_id, \
               payload) \
              VALUES ('{outbox_event_id}', '{}', 'task.created', 1, 'task', '{aggregate_id}', \

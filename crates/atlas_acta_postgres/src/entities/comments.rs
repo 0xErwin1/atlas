@@ -15,7 +15,7 @@ pub mod comment {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "comments")]
+    #[sea_orm(schema_name = "acta", table_name = "comments")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
@@ -40,7 +40,7 @@ pub mod comment_link {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "comment_links")]
+    #[sea_orm(schema_name = "acta", table_name = "comment_links")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
@@ -60,7 +60,7 @@ pub mod comment_link_event {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "comment_link_events")]
+    #[sea_orm(schema_name = "acta", table_name = "comment_link_events")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,

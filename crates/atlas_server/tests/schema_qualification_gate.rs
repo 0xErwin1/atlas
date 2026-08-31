@@ -25,10 +25,15 @@
 //! (`boards`, `board_columns`, `tasks`, `task_references`, `task_assignees`,
 //! `task_checklist_items`, `task_activity`, `workspace_status_templates`,
 //! `platform_status_templates`) as of S4 PR13's
-//! `m2026xxxx_0000NN_acta_boards_tasks_set_schema`, batch 3. Each later batch
-//! (PR14–PR15) adds its own tables to this map as it lands; this is a single
-//! shared table→schema map rather than one gate per product (design §D5's
-//! rejected-alternative rationale: the tree-walk/exclusion logic is
+//! `m20260903_000055_acta_boards_tasks_set_schema`, batch 3, and by eleven
+//! more (`comments`, `comment_links`, `comment_link_events`, `tags`,
+//! `events_outbox`, `webhook_subscriptions`, `webhook_delivery_log`,
+//! `automation_rules`, `integration_configs`, `saved_searches`,
+//! `task_views`) as of S4 PR14's
+//! `m20260904_000056_acta_comments_events_tags_set_schema`, batch 4. Each
+//! later batch (PR15) adds its own tables to this map as it lands; this is a
+//! single shared table→schema map rather than one gate per product (design
+//! §D5's rejected-alternative rationale: the tree-walk/exclusion logic is
 //! schema-agnostic, so a second copy would only duplicate it).
 //!
 //! Excluded from the scan: `crates/migration` (the frozen historical block,
@@ -88,6 +93,17 @@ const TABLE_SCHEMA: &[(&str, &str)] = &[
     ("task_activity", "acta"),
     ("workspace_status_templates", "acta"),
     ("platform_status_templates", "acta"),
+    ("comments", "acta"),
+    ("comment_links", "acta"),
+    ("comment_link_events", "acta"),
+    ("tags", "acta"),
+    ("events_outbox", "acta"),
+    ("webhook_subscriptions", "acta"),
+    ("webhook_delivery_log", "acta"),
+    ("automation_rules", "acta"),
+    ("integration_configs", "acta"),
+    ("saved_searches", "acta"),
+    ("task_views", "acta"),
 ];
 
 const SQL_KEYWORDS: &[&str] = &["FROM", "JOIN", "INTO", "UPDATE", "TABLE"];
