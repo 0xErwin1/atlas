@@ -14,8 +14,11 @@ pub use atlas_acta_postgres::entities::identity::{
 pub mod user_ui_state {
     use super::*;
 
+    // S4 PR9: `user_ui_state` moved to `platform.ui_state` (design §D4). The
+    // module and Rust type names stay `user_ui_state` (retired at S5 per the
+    // S2/S3 plan) — only the sea-orm schema/table attribution changed.
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "user_ui_state")]
+    #[sea_orm(schema_name = "platform", table_name = "ui_state")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub user_id: Uuid,

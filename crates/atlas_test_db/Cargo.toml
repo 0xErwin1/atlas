@@ -7,6 +7,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+atlas_acta_postgres.workspace = true
 atlas_custos_postgres.workspace = true
 migration.workspace = true
 sea-orm.workspace = true

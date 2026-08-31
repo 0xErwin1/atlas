@@ -21,9 +21,14 @@ const CUSTOS_TABLES: &[&str] = &[
 ];
 
 /// The eight Custos tables must live in the `custos` schema after the
-/// migration, and the tables the design explicitly excludes
-/// (`user_ui_state`, `workspaces`, `workspace_memberships`,
-/// `purge_operations`) must stay in `public`.
+/// migration, and the tables the design explicitly excludes (`workspaces`,
+/// `workspace_memberships`, `purge_operations`) must stay in `public`.
+///
+/// `user_ui_state` is deliberately absent from both lists here: S4 PR9 moves
+/// it to `platform.ui_state` (design §D4), by which point the composed
+/// migrator this test runs against always includes that migration too — its
+/// own before/after proof lives in
+/// `ui_state_repo_characterization.rs`, not here.
 #[tokio::test]
 async fn the_eight_custos_tables_move_to_the_custos_schema() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -38,14 +43,9 @@ async fn the_eight_custos_tables_move_to_the_custos_schema() {
         .iter()
         .map(|t| format!("'{t}'"))
         .chain(
-            [
-                "user_ui_state",
-                "workspaces",
-                "workspace_memberships",
-                "purge_operations",
-            ]
-            .iter()
-            .map(|t| format!("'{t}'")),
+            ["workspaces", "workspace_memberships", "purge_operations"]
+                .iter()
+                .map(|t| format!("'{t}'")),
         )
         .collect();
 
@@ -74,12 +74,7 @@ async fn the_eight_custos_tables_move_to_the_custos_schema() {
         assert_eq!(schema, "custos", "expected {table} to live in custos");
     }
 
-    for table in [
-        "user_ui_state",
-        "workspaces",
-        "workspace_memberships",
-        "purge_operations",
-    ] {
+    for table in ["workspaces", "workspace_memberships", "purge_operations"] {
         let schema = rows
             .iter()
             .find(|r| r.table_name == table)

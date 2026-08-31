@@ -63,7 +63,7 @@ impl UiStateRepo for PgUiStateRepo {
             .execute_raw(Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
                 r#"
-                INSERT INTO user_ui_state (user_id, state, updated_at)
+                INSERT INTO platform.ui_state (user_id, state, updated_at)
                 VALUES ($1, $2, now())
                 ON CONFLICT (user_id)
                 DO UPDATE SET state = EXCLUDED.state, updated_at = EXCLUDED.updated_at
