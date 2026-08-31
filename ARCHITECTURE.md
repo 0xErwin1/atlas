@@ -4,17 +4,30 @@ Atlas is a hexagonal (ports-and-adapters) Rust monorepo: a pure domain core, a s
 
 ## Layered crate map
 
-The dependency direction is strict and **compiler-enforced**: `atlas_custos` and `atlas_acta` each declare only `serde`/`thiserror`/`uuid`/`chrono` (plus `atlas_core` for `atlas_acta`), so an accidental `use sea_orm` or `use axum` in either fails to compile. `atlas_custos` and `atlas_acta` never depend on each other — they compose only through `atlas_server`.
+13 workspace members (plus the `atlas_test_db`/`atlas_test_harness` test utilities), matching the
+root `Cargo.toml`'s `[workspace] members` exactly. The dependency direction is strict and
+**compiler-enforced**: `atlas_custos` and `atlas_acta` each declare only `serde`/`thiserror`/`uuid`/
+`chrono` (plus `atlas_core` for `atlas_acta`), so an accidental `use sea_orm` or `use axum` in
+either fails to compile. `atlas_custos` and `atlas_acta` never depend on each other — they compose
+only through `atlas_server`. Since V2-E2, the SeaORM adapters for each pure crate live in their own
+Postgres crate (`atlas_custos_postgres`, `atlas_acta_postgres`), not in `atlas_server`; `atlas_server`
+depends on both and composes them, but owns no product entity/repo logic of its own.
 
 ```mermaid
 flowchart TD
     cli[atlas_cli<br/>clap] --> client[atlas_client<br/>typed HTTP]
     mcp[atlas_mcp<br/>rmcp] --> client
+    desktop[atlas_desktop<br/>tauri] --> client
+    desktop -. desktop-gate .-> server
     client --> api[atlas_api<br/>DTOs + OpenAPI schemas]
-    server[atlas_server<br/>axum + SeaORM adapters] --> api
-    server --> custos[atlas_custos<br/>pure: identity/auth types, ports]
-    server --> acta[atlas_acta<br/>pure: workspace/content types, ports]
-    migration[migration<br/>sea-orm-migration tool] -.schema.-> server
+    server[atlas_server<br/>axum: composition only] --> api
+    server --> custospg[atlas_custos_postgres<br/>SeaORM adapters: custos.*]
+    server --> actapg[atlas_acta_postgres<br/>SeaORM adapters: acta.*]
+    custospg --> custos[atlas_custos<br/>pure: identity/auth types, ports]
+    actapg --> acta[atlas_acta<br/>pure: workspace/content types, ports]
+    custospg --> pgcore[atlas_postgres<br/>pool + connection]
+    actapg --> pgcore
+    migration[migration<br/>sea-orm-migration tool, frozen] -.schema.-> server
     server --> pg[(PostgreSQL 17)]
 ```
 
@@ -24,12 +37,15 @@ flowchart TD
 | `atlas_postgres` | Neutral Postgres runtime — pool configuration and connection construction, with no product repositories or entities | `config.rs`, `connect.rs` |
 | `atlas_custos` | Pure identity/auth types, value objects, and **repository ports**: users, sessions, api keys, groups, security audit, capability scopes | `entities/`, `ports/`, `capability.rs`, `ids.rs` |
 | `atlas_acta` | Pure workspace/content types, value objects, and **repository ports**: workspaces, projects, folders, documents, boards/tasks, comments, plus pure logic (permission resolution, revision diff/anchor, fractional positions, wikilinks) | `entities/`, `ports/`, `permissions.rs`, `ids.rs`, `wikilink.rs` |
+| `atlas_custos_postgres` | SeaORM entities + repository **adapters** implementing every `atlas_custos` port against the `custos.*` schema | `entities/`, `repos/`, `migrations/` |
+| `atlas_acta_postgres` | SeaORM entities + repository **adapters** implementing every `atlas_acta` port against the `acta.*` schema (documents, boards/tasks, comments, search, webhooks, automation, …) | `entities/`, `repos/`, `migrations/` |
 | `atlas_api` | The wire contract: shared DTOs + their OpenAPI (`utoipa`) schemas + the pagination codec | `dtos/`, `pagination.rs`, `problem.rs` |
 | `atlas_client` | Typed HTTP client over `atlas_api` types; the single client used by CLI, MCP, and e2e tests | `lib.rs` |
-| `atlas_server` | The axum binary: auth, permission enforcement, routing, and SeaORM **adapters** implementing the domain ports | see module tree below |
+| `atlas_server` | The axum binary: auth, permission enforcement, routing, and composition of the `atlas_custos_postgres`/`atlas_acta_postgres` adapters — no product entity/repo implementations of its own | see module tree below |
 | `atlas_cli` | `atlas` command-line over `atlas_client` | `lib.rs` |
 | `atlas_mcp` | MCP server (`rmcp` 3.1.4) over `atlas_client`; serves both the `2026-07-28` revision and the legacy `2025-11-25`-and-earlier era, and advertises verb-shaped tools whose resources resolve through `catalog.rs` | `lib.rs`, `catalog.rs` |
-| `migration` | `sea-orm-migration` tool crate, run via `cargo run -p migration -- <up\|fresh>` | one migration file per schema slice |
+| `atlas_desktop` (`apps/desktop/src-tauri`) | Tauri desktop shell wrapping the web SPA; can embed `atlas_server` behind a `desktop-gate` feature for local/offline runs | `src-tauri/src/` |
+| `migration` | `sea-orm-migration` tool crate; historical and byte-frozen, carrying the pre-split migration history untouched by V2-E2 | one migration file per schema slice |
 
 ## Request lifecycle
 
@@ -62,11 +78,16 @@ flowchart LR
 | `authz/` | `Authorized<R,M>` extractor; the `ResolvedResource` types it resolves (`WorkspaceRes`, `ProjectRes`, `FolderRes`, `BoardRes`, `TaskRes`, `DocumentRes`, `DocumentSlugRes`) + the non-resource extractors `WorkspaceMember` / `RequireUserAdmin`. `DocumentSlugRes` accepts **either** a stable document UUID or its slug |
 | `routes/` | One module per resource (`auth`, `users`, `api_keys`, `workspaces`, `members`, `projects`, `folders`, `documents`, `boards`, `tasks`, `grants`, `search`, `health`); `registry` (route source of truth); `openapi` (utoipa doc + Scalar); `validation` (shared input checks) |
 | `middleware/` | `problem_stamp` (request-id into error bodies) |
-| `persistence/entities/` | SeaORM entity structs (DB shape) — never leak into `atlas_custos`/`atlas_acta` |
-| `persistence/repos/` | Adapters implementing the domain ports; map entity ↔ domain |
+| `persistence/entities/` | Only the `platform.ui_state` SeaORM entity (`identity.rs`) — every product entity moved to `atlas_custos_postgres`/`atlas_acta_postgres` in V2-E2 |
+| `persistence/repos/` | Only `platform.ui_state`'s `PgUiStateRepo`, plus composition-only glue that genuinely spans Custos and Acta in one function: the security-audit-append helpers (`security_audit.rs`), `PgProjectRepo`/`PgFolderRepo` (`workspace_core.rs`), the attachment repos and stores (`documents.rs`, `attachment_store.rs`, `s3_attachment_store.rs`, `workspace_attachments.rs`, `comment_attachment_drafts.rs`), `PgIntegrationConfigRepo`'s Custos-key provisioning, `PgSemanticIndexer`, cross-domain diagnostics (`grant_diagnostics.rs`), and the domain-crate `PermissionGrantRepo` re-export (`permissions.rs`) — no standalone re-export facade over either Postgres crate |
 | `persistence/bootstrap` | Root-user seed (`ATLAS_ROOT_PASSWORD`, fail-fast) + dev seed |
 
-`atlas_custos` and `atlas_acta` mirror the data subsystems in `entities/` and expose them through `ports/` (one trait module per aggregate: identity, workspace_core, documents, boards_tasks, permission_grant_repo — the last of which lives in `atlas_server::authz` since it composes across both crates).
+`atlas_custos` and `atlas_acta` mirror the data subsystems in `entities/` and expose them through
+`ports/` (one trait module per aggregate: identity, workspace_core, documents, boards_tasks,
+permission_grant_repo — the last of which lives in `atlas_server::authz` since it composes across
+both crates). `atlas_custos_postgres` and `atlas_acta_postgres` implement those ports against
+`custos.*`/`acta.*` respectively; `atlas_server` imports their concrete adapter types directly —
+there is no curated re-export prelude in `atlas_server::persistence`.
 
 ### HTTP surface
 
@@ -83,14 +104,22 @@ flowchart LR
 
 ## Data model
 
-PostgreSQL 17, 20 tables. IDs are app-generated **UUIDv7** (time-ordered). Full schema and ER diagram: `sdd/atlas/atlas-e02-data-model-design-2026-06-12` (Obsidian). Highlights:
+PostgreSQL 17, three live schemas: `custos.*` (8 tables, owned by `atlas_custos_postgres`),
+`acta.*` (36 tables, owned by `atlas_acta_postgres`), and `platform.*` (1 table, `ui_state`, owned
+directly by `atlas_server`) — there is no remaining `public.*` product table. IDs are
+app-generated **UUIDv7** (time-ordered). Full schema and ER diagram:
+`sdd/atlas/atlas-e02-data-model-design-2026-06-12` (Obsidian). The table below is a representative,
+non-exhaustive subset predating the schema split — table names are unchanged by the move, only
+their owning schema and crate:
 
 | Area | Tables | Notes |
 |------|--------|-------|
-| Tenancy + identity | workspaces, users, sessions, api_keys, workspace_memberships | `workspace_id NOT NULL` on every domain table; `users`/`sessions`/`api_keys` are the tenancy-root exceptions |
-| Content | folders, documents, document_revisions, document_links, attachments | document content is `TEXT` (TOAST); revisions are line diffs with snapshot anchors; attachments are metadata-only (blobs live in object storage → Cloudflare R2). `document_links` is the wikilink/backlink graph, bound to the **stable target id** |
-| Projects + tasks | projects, boards, board_columns, tasks, task_references, task_assignees, task_checklist_items, task_activity | readable IDs `PREFIX-n` per project (immutable); kanban order via `fractional_index` `TEXT` position; multiple assignees (user/agent), actor-attributed activity log. **Sub-tasks** are full tasks linked by `tasks.parent_task_id`: they carry every task field (status, assignees, description, tags, estimate, their own `readable_id` so they are wikilink-referenceable) but are excluded from the board listings (`parent_task_id IS NULL`); promoting one clears the parent so it appears on the board |
-| Properties + access | property_definitions, permission_grants | hybrid free-frontmatter (jsonb) + typed properties; grants `(principal, resource, role)` |
+| Identity (`custos.*`) | users, sessions, user_activation_tokens, api_keys, groups, group_members, permission_grants, security_audit_log | the eight Custos tables; `users`/`sessions`/`api_keys` are the tenancy-root exceptions to `workspace_id NOT NULL` |
+| Tenancy (`acta.*`) | workspaces, workspace_memberships | workspaces are an Acta concept (no other product has them); memberships FK into `custos.users` |
+| Content (`acta.*`) | folders, documents, document_revisions, document_links, attachments | document content is `TEXT` (TOAST); revisions are line diffs with snapshot anchors; attachments are metadata-only (blobs live in object storage → Cloudflare R2). `document_links` is the wikilink/backlink graph, bound to the **stable target id** |
+| Projects + tasks (`acta.*`) | projects, boards, board_columns, tasks, task_references, task_assignees, task_checklist_items, task_activity | readable IDs `PREFIX-n` per project (immutable); kanban order via `fractional_index` `TEXT` position; multiple assignees (user/agent), actor-attributed activity log. **Sub-tasks** are full tasks linked by `tasks.parent_task_id`: they carry every task field (status, assignees, description, tags, estimate, their own `readable_id` so they are wikilink-referenceable) but are excluded from the board listings (`parent_task_id IS NULL`); promoting one clears the parent so it appears on the board |
+| Properties (`acta.*`) | property_definitions | hybrid free-frontmatter (jsonb) + typed properties; grants `(principal, resource, role)` live in `custos.permission_grants` (listed under Identity above) with opaque `resource_ref` targets |
+| UI state (`platform.*`) | ui_state | per-user UI preferences, owned directly by `atlas_server`, not by either product crate |
 
 Every domain row records its `created_by` actor (user XOR api_key, DB CHECK), enabling human-vs-agent attribution. `users` carry an optional `email` (recovery only). **Wikilinks** are written as `[[<uuid>|Display Title]]` — bound to the target's stable id so they survive renames; the legacy `[[Title]]` form still resolves by slug. Slugs are immutable after creation, so addressing a document by UUID or by slug both resolve.
 
