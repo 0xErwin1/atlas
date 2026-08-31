@@ -615,6 +615,7 @@ dependencies = [
  "atlas_postgres",
  "atlas_test_db",
  "chrono",
+ "fractional_index",
  "sea-orm",
  "sea-orm-migration",
  "serde_json",
