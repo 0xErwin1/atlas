@@ -20,7 +20,9 @@
 )]
 
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 
+use atlas_core::ids::ActionId;
 use atlas_core::registry::HttpMethod;
 use atlas_custos::capability::Capability;
 
@@ -57,13 +59,30 @@ pub(crate) struct AuditedRoute {
 /// routes. `left_only`/`right_only` name which side is missing the route,
 /// not which side is "correct" — callers pick that framing from which set
 /// they passed as `left` vs `right`.
-#[derive(Debug, Default, PartialEq, Eq)]
-pub(crate) struct RouteSetDiff {
-    pub left_only: Vec<(HttpMethod, &'static str)>,
-    pub right_only: Vec<(HttpMethod, &'static str)>,
+///
+/// Generic over the path representation (`P`) because PR1's scratch fixtures
+/// compare `&'static str` literals on both sides, while PR2+'s real
+/// per-component audits compare `declared_routes()`'s `&'static str` macro
+/// literals against `ComponentEntry.api.routes`'s owned `RoutePath` strings
+/// — the same set-equality comparison, just over a different (still
+/// `Eq + Hash`) path type on each side, unified by the caller before calling
+/// this function.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct RouteSetDiff<P> {
+    pub left_only: Vec<(HttpMethod, P)>,
+    pub right_only: Vec<(HttpMethod, P)>,
 }
 
-impl RouteSetDiff {
+impl<P> Default for RouteSetDiff<P> {
+    fn default() -> Self {
+        Self {
+            left_only: Vec::new(),
+            right_only: Vec::new(),
+        }
+    }
+}
+
+impl<P> RouteSetDiff<P> {
     pub(crate) fn is_empty(&self) -> bool {
         self.left_only.is_empty() && self.right_only.is_empty()
     }
@@ -75,14 +94,47 @@ impl RouteSetDiff {
 /// true across every scenario (matched, router-only, declared-only, or
 /// both at once) — PR2–PR4 call this same function with `declared_routes()`
 /// on one side and `ComponentEntry.api.routes` on the other.
-pub(crate) fn diff_route_sets(
-    left: &HashSet<(HttpMethod, &'static str)>,
-    right: &HashSet<(HttpMethod, &'static str)>,
-) -> RouteSetDiff {
+pub(crate) fn diff_route_sets<P>(
+    left: &HashSet<(HttpMethod, P)>,
+    right: &HashSet<(HttpMethod, P)>,
+) -> RouteSetDiff<P>
+where
+    P: Eq + Hash + Clone,
+{
     RouteSetDiff {
-        left_only: left.difference(right).copied().collect(),
-        right_only: right.difference(left).copied().collect(),
+        left_only: left.difference(right).cloned().collect(),
+        right_only: right.difference(left).cloned().collect(),
     }
+}
+
+/// Translates a registry-declared `ActionId` (`<component>::<family>::<action>`)
+/// into the `Capability` its wire form (`family:action`) denotes, so the
+/// declare-and-verify audit compares the registry's declared action against
+/// the handler's enforced `S::CAPABILITY` as the SAME `Capability` type on
+/// both sides, per D5's "one fact read twice." The `<component>` segment is
+/// discarded: `ActionId` carries it for the registry's own uniqueness check
+/// (`validate_unique_ids`'s `DuplicateAction`), but `Capability` has no
+/// per-component axis — `tasks:read` means the same capability regardless of
+/// which registry entry declared it.
+///
+/// # Panics
+/// Panics if the `<family>::<action>` segment does not name a known
+/// `Capability` — this is a registry-authoring bug (a typo'd action), not a
+/// runtime condition callers should recover from, and every current caller
+/// only invokes this on `ActionId`s already vetted by `reg5.rs`'s own
+/// `reg5_registry_build.rs` workspace test.
+#[allow(
+    clippy::panic,
+    reason = "an ActionId with no matching Capability is a registry-authoring bug \
+              (a typo'd action), not a runtime condition callers should recover from; \
+              every current caller only invokes this on ActionIds already vetted by \
+              reg5.rs's own reg5_registry_build.rs workspace test"
+)]
+pub(crate) fn capability_from_action_id(action: &ActionId) -> Capability {
+    let wire = format!("{}:{}", action.kind(), action.action());
+    wire.parse().unwrap_or_else(|_| {
+        panic!("registry action `{action}` has no matching Capability (wire form `{wire}`)")
+    })
 }
 
 /// A route whose declared action (registry side) and enforced capability
@@ -229,24 +281,16 @@ macro_rules! component_routes {
     (@method options) => { ::atlas_core::registry::HttpMethod::Options };
 }
 
+/// Test-only support shared by every per-component audit test in this crate
+/// (this module's own scratch fixtures, plus `routes::platform`'s real
+/// audit in PR2 and its PR3/PR4 successors).
 #[cfg(test)]
-mod tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-    #![allow(clippy::unused_async, reason = "scratch handler shapes only")]
-    #![allow(
-        dead_code,
-        reason = "scope_extraction::router() only needs to type-check the macro's \
-                  real-component shape (AppState, Authorized<...>); these tests exercise \
-                  declared_routes() only, never mount or call router()"
-    )]
-    #![allow(
-        unreachable_pub,
-        reason = "component_routes! always emits `pub fn router` to match the real \
-                  per-component contract (D1); it is only unreachable here because these \
-                  scratch modules are test-private, not because the macro emits it wrong"
-    )]
+pub(crate) mod test_support {
+    #![allow(clippy::expect_used)]
 
-    use super::*;
+    use std::collections::HashSet;
+
+    use atlas_core::registry::HttpMethod;
     use axum::body::Body;
     use axum::http::{Method, Request, StatusCode};
     use tower::ServiceExt;
@@ -266,18 +310,18 @@ mod tests {
     /// Sends one request per candidate through the live router and returns
     /// the subset it actually serves. This is the only way to learn what an
     /// axum 0.8 `Router` really has mounted — axum exposes no introspection
-    /// — and is legitimate here specifically because the scratch tests
-    /// already know every candidate to probe (they added each one
-    /// themselves); it is not a stand-in for the real per-component audit,
-    /// which never probes a live router at all and instead compares
-    /// `declared_routes()` against the registry (D2).
+    /// — and is legitimate here specifically because the caller already
+    /// knows every candidate to probe (it built the declared set itself);
+    /// it is not a stand-in for the real per-component audit, which never
+    /// probes a live router at all and instead compares `declared_routes()`
+    /// against the registry (D2).
     ///
     /// Both `404 Not Found` (no path node at all) and `405 Method Not
     /// Allowed` (the path exists, but not for this method — the shape a
     /// multi-method path returns for an undeclared method) mean "not
     /// served"; only classifying `404` would wrongly count an undeclared
     /// method on an *already-mounted* multi-method path as served.
-    async fn probe_served_routes(
+    pub(crate) async fn probe_served_routes(
         router: axum::Router,
         candidates: &[(HttpMethod, &'static str)],
     ) -> HashSet<(HttpMethod, &'static str)> {
@@ -306,6 +350,30 @@ mod tests {
 
         served
     }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+    #![allow(clippy::unused_async, reason = "scratch handler shapes only")]
+    #![allow(
+        dead_code,
+        reason = "scope_extraction::router() only needs to type-check the macro's \
+                  real-component shape (AppState, Authorized<...>); these tests exercise \
+                  declared_routes() only, never mount or call router()"
+    )]
+    #![allow(
+        unreachable_pub,
+        reason = "component_routes! always emits `pub fn router` to match the real \
+                  per-component contract (D1); it is only unreachable here because these \
+                  scratch modules are test-private, not because the macro emits it wrong"
+    )]
+
+    use super::test_support::probe_served_routes;
+    use super::*;
+    use axum::body::Body;
+    use axum::http::{Method, Request, StatusCode};
+    use tower::ServiceExt;
 
     fn declared_set(routes: &[AuditedRoute]) -> HashSet<(HttpMethod, &'static str)> {
         routes
