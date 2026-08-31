@@ -14,9 +14,11 @@ use atlas_acta::actor::Actor;
 use atlas_acta::actor::WorkspaceCtx;
 use atlas_acta::entities::identity::MemberRole;
 use atlas_acta::ids::WorkspaceId;
+use atlas_acta_postgres::repos::identity::{MembershipRepo, PgMembershipRepo};
+use atlas_custos_postgres::repos::identity::PgUserRepo;
 use atlas_server::{
     auth::password,
-    persistence::repos::{MembershipRepo, NewUser, PgMembershipRepo, PgUserRepo, UserRepo},
+    persistence::repos::{NewUser, UserRepo},
 };
 
 fn http() -> reqwest::Client {

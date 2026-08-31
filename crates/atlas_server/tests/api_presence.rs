@@ -32,9 +32,8 @@ use atlas_acta::ids::BoardId;
 use atlas_acta::ids::ProjectId;
 use atlas_acta::permissions::Visibility;
 use atlas_acta::permissions::VisibilityRole;
-use atlas_server::persistence::repos::{
-    BoardRepo, MembershipRepo, PgBoardRepo, PgProjectRepo, ProjectRepo,
-};
+use atlas_acta_postgres::repos::identity::MembershipRepo;
+use atlas_server::persistence::repos::{BoardRepo, PgBoardRepo, PgProjectRepo, ProjectRepo};
 
 // ---------------------------------------------------------------------------
 // Helpers

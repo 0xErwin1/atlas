@@ -26,14 +26,13 @@ use atlas_api::{
 };
 use atlas_client::AtlasClient;
 use atlas_custos::entities::identity::ApiKeyType;
+use atlas_custos_postgres::repos::identity::PgApiKeyRepo;
 use atlas_server::{
     auth::{
         password,
         tokens::{generate_api_key, hash_token},
     },
-    persistence::repos::{
-        ApiKeyRepo, DocumentRepo, NewApiKey, NewUser, PgApiKeyRepo, PgDocumentRepo, UserRepo,
-    },
+    persistence::repos::{ApiKeyRepo, DocumentRepo, NewApiKey, NewUser, PgDocumentRepo, UserRepo},
 };
 use support::TestDb;
 
@@ -104,7 +103,7 @@ async fn login_as(server: &support::TestServer, username: &str) -> AtlasClient {
 /// Returns (document_id, document_slug). Slug is auto-generated from the title.
 async fn seed_document_in_ws(
     db: &TestDb,
-    ws: &atlas_server::persistence::repos::Workspace,
+    ws: &atlas_acta_postgres::repos::identity::Workspace,
     owner: &atlas_custos::entities::identity::User,
     title: &str,
     content: &str,
@@ -134,7 +133,7 @@ async fn seed_document_in_ws(
 /// Creates an API key for the given workspace.
 async fn create_api_key(
     db: &TestDb,
-    ws: &atlas_server::persistence::repos::Workspace,
+    ws: &atlas_acta_postgres::repos::identity::Workspace,
     owner: &atlas_custos::entities::identity::User,
     name: &str,
 ) -> (atlas_core::principal::ApiKeyId, String) {

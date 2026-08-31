@@ -10,6 +10,7 @@ use atlas_acta::entities::workspace_core::NewFolder;
 use atlas_acta::ids::DocumentId;
 use atlas_acta::ids::FolderId;
 use atlas_acta::permissions::ResourceRef;
+use atlas_acta_postgres::repos::identity::{MembershipRepo, PgMembershipRepo};
 use atlas_core::principal::Principal;
 use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::{NewPermissionGrant, ResolutionInput, ResolutionQuery, resolve};
@@ -17,8 +18,8 @@ use atlas_server::{
     authz::authorized::{DocumentRes, DocumentSlugRes, FolderRes, ResolvedResource},
     error::ApiError,
     persistence::repos::{
-        DocumentRepo, FolderRepo, MembershipRepo, PermissionGrantRepo, PgDocumentRepo,
-        PgFolderRepo, PgMembershipRepo, PgPermissionGrantRepo, UserRepo,
+        DocumentRepo, FolderRepo, PermissionGrantRepo, PgDocumentRepo, PgFolderRepo,
+        PgPermissionGrantRepo, UserRepo,
     },
 };
 
@@ -30,7 +31,7 @@ fn doc_params(id: DocumentId) -> HashMap<String, String> {
 
 async fn create_doc(
     db: &support::TestDb,
-    ws: &atlas_server::persistence::repos::Workspace,
+    ws: &atlas_acta_postgres::repos::identity::Workspace,
     user: &atlas_server::persistence::repos::User,
     title: &str,
 ) -> atlas_acta::entities::documents::Document {
@@ -39,7 +40,7 @@ async fn create_doc(
 
 async fn create_doc_in_folder(
     db: &support::TestDb,
-    ws: &atlas_server::persistence::repos::Workspace,
+    ws: &atlas_acta_postgres::repos::identity::Workspace,
     user: &atlas_server::persistence::repos::User,
     title: &str,
     folder_id: Option<FolderId>,
@@ -63,7 +64,7 @@ async fn create_doc_in_folder(
 
 async fn create_folder(
     db: &support::TestDb,
-    ws: &atlas_server::persistence::repos::Workspace,
+    ws: &atlas_acta_postgres::repos::identity::Workspace,
     user: &atlas_server::persistence::repos::User,
     parent: Option<FolderId>,
 ) -> atlas_acta::entities::workspace_core::Folder {
@@ -85,7 +86,7 @@ async fn create_folder(
 
 async fn grant_folder_role(
     db: &support::TestDb,
-    ws: &atlas_server::persistence::repos::Workspace,
+    ws: &atlas_acta_postgres::repos::identity::Workspace,
     user: &atlas_server::persistence::repos::User,
     folder_id: FolderId,
     role: ResourceRole,

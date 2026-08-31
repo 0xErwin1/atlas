@@ -19,23 +19,6 @@ pub use atlas_custos::ports::identity::ApiKeyRepo;
 pub use atlas_custos::ports::identity::SessionRepo;
 pub use atlas_custos::ports::identity::UserRepo;
 
-// R1 scaffolding: the identity CRUD repos (`PgUserRepo`, `PgSessionRepo`,
-// `PgApiKeyRepo`, `PgActivationTokenRepo`) now live in `atlas_custos_postgres`.
-// Re-exporting them here keeps every existing `crate::persistence::repos::*`
-// call site unaffected by the move.
-pub use atlas_custos_postgres::repos::identity::{
-    PgActivationTokenRepo, PgApiKeyRepo, PgSessionRepo, PgUserRepo,
-};
-
-// R1 scaffolding: `PgWorkspaceRepo`/`PgMembershipRepo` (and the
-// `WorkspaceRepo`/`MembershipRepo`/`NewWorkspace`/`Workspace` types they use)
-// now live in `atlas_acta_postgres::repos::identity` (S4 PR6). Re-exporting
-// them here keeps every existing `crate::persistence::repos::*` call site
-// unaffected by the move (retired at S5 per the S2/S3 plan).
-pub use atlas_acta_postgres::repos::identity::{
-    MembershipRepo, NewWorkspace, PgMembershipRepo, PgWorkspaceRepo, Workspace, WorkspaceRepo,
-};
-
 pub use crate::platform::{UiStateRepo, UserUiState};
 
 pub struct PgUiStateRepo {

@@ -9,10 +9,11 @@ use atlas_custos::entities::identity::NewUser;
 use sea_orm::DatabaseConnection;
 
 use crate::auth::password;
-use crate::persistence::repos::{
-    MembershipRepo, PgMembershipRepo, PgProjectRepo, PgUserRepo, PgWorkspaceRepo, ProjectRepo,
-    UserRepo, WorkspaceRepo,
+use crate::persistence::repos::{PgProjectRepo, ProjectRepo, UserRepo};
+use atlas_acta_postgres::repos::identity::{
+    MembershipRepo, PgMembershipRepo, PgWorkspaceRepo, WorkspaceRepo,
 };
+use atlas_custos_postgres::repos::identity::PgUserRepo;
 
 pub struct BootstrapConfig {
     pub root_password: Option<String>,

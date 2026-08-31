@@ -19,11 +19,10 @@ use sha2::Sha256;
 use uuid::Uuid;
 
 use crate::{
-    error::ApiError,
-    persistence::repos::{PgIntegrationConfigRepo, PgWorkspaceRepo, WorkspaceRepo},
-    services::AutomationService,
+    error::ApiError, persistence::repos::PgIntegrationConfigRepo, services::AutomationService,
     state::AppState,
 };
+use atlas_acta_postgres::repos::identity::{PgWorkspaceRepo, WorkspaceRepo};
 
 type HmacSha256 = Hmac<Sha256>;
 

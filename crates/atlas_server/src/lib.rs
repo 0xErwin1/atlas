@@ -32,15 +32,16 @@ pub mod webhook_url;
 /// Test-only server assembly for the desktop integration gate.
 #[cfg(feature = "desktop-gate-support")]
 pub mod desktop_gate_support {
-    use crate::persistence::repos::{
-        MembershipRepo, NewUser, NewWorkspace, PgMembershipRepo, PgSessionRepo, PgUserRepo,
-        PgWorkspaceRepo, SessionRepo, UserRepo, WorkspaceRepo,
-    };
+    use crate::persistence::repos::{NewUser, SessionRepo, UserRepo};
     use atlas_acta::actor::Actor;
     use atlas_acta::actor::WorkspaceCtx;
     use atlas_acta::entities::identity::MemberRole;
     use atlas_acta::ids::WorkspaceId;
+    use atlas_acta_postgres::repos::identity::{
+        MembershipRepo, NewWorkspace, PgMembershipRepo, PgWorkspaceRepo, WorkspaceRepo,
+    };
     use atlas_core::principal::UserId;
+    use atlas_custos_postgres::repos::identity::{PgSessionRepo, PgUserRepo};
     use sea_orm::{ConnectionTrait, DatabaseConnection};
 
     pub use crate::app;

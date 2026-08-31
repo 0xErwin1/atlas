@@ -17,14 +17,13 @@ use atlas_acta::actor::Actor;
 use atlas_acta::actor::WorkspaceCtx;
 use atlas_acta::entities::identity::MemberRole;
 use atlas_acta::ids::WorkspaceId;
+use atlas_acta_postgres::repos::identity::{MembershipRepo, PgMembershipRepo};
 use atlas_custos::capability::Capability;
 use atlas_custos::entities::identity::ApiKeyType;
+use atlas_custos_postgres::repos::identity::{PgApiKeyRepo, PgUserRepo};
 use atlas_server::{
     auth::password,
-    persistence::repos::{
-        ApiKeyRepo, MembershipRepo, NewApiKey, NewUser, PgApiKeyRepo, PgMembershipRepo, PgUserRepo,
-        UserRepo,
-    },
+    persistence::repos::{ApiKeyRepo, NewApiKey, NewUser, UserRepo},
 };
 
 type HmacSha256 = Hmac<Sha256>;

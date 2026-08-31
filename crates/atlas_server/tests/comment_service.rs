@@ -15,11 +15,11 @@ use atlas_acta::entities::identity::MemberRole;
 use atlas_acta::entities::workspace_core::NewProject;
 use atlas_acta::permissions::Visibility;
 use atlas_acta::permissions::VisibilityRole;
+use atlas_acta_postgres::repos::identity::{MembershipRepo, PgMembershipRepo};
 use atlas_core::error::DomainError;
 use atlas_server::{
     persistence::repos::{
-        BoardRepo, MembershipRepo, NewUser, PgBoardRepo, PgMembershipRepo, PgProjectRepo,
-        PgTaskRepo, ProjectRepo, TaskRepo, UserRepo,
+        BoardRepo, NewUser, PgBoardRepo, PgProjectRepo, PgTaskRepo, ProjectRepo, TaskRepo, UserRepo,
     },
     services::TaskService,
 };
@@ -114,7 +114,7 @@ async fn seed_task(
 /// acting as that member.
 async fn seed_member(
     db: &support::TestDb,
-    ws: &atlas_server::persistence::repos::Workspace,
+    ws: &atlas_acta_postgres::repos::identity::Workspace,
     username: &str,
     role: MemberRole,
 ) -> atlas_acta::actor::WorkspaceCtx {

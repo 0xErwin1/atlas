@@ -335,7 +335,7 @@ async fn add_member(
     user_id: UserId,
     role: atlas_acta::entities::identity::MemberRole,
 ) {
-    use atlas_server::persistence::repos::MembershipRepo;
+    use atlas_acta_postgres::repos::identity::MembershipRepo;
     let ctx = atlas_acta::actor::WorkspaceCtx::new(
         ws_id,
         atlas_acta::actor::Actor::User(atlas_acta::actor::UserAttributionId(user_id.0)),

@@ -14,12 +14,13 @@ use crate::{
     auth::middleware::Principal,
     authz::authorized::ReadScopeSet,
     error::ApiError,
-    persistence::repos::{
-        ApiKeyRepo, MembershipRepo, PgApiKeyRepo, PgMembershipRepo, PgUserRepo, PgWorkspaceRepo,
-        UserRepo, Workspace, WorkspaceRepo,
-    },
+    persistence::repos::{ApiKeyRepo, UserRepo},
     state::AppState,
 };
+use atlas_acta_postgres::repos::identity::{
+    MembershipRepo, PgMembershipRepo, PgWorkspaceRepo, Workspace, WorkspaceRepo,
+};
+use atlas_custos_postgres::repos::identity::{PgApiKeyRepo, PgUserRepo};
 
 /// Proof that the request's principal is an authenticated, non-disabled workspace member.
 ///

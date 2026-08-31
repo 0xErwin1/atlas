@@ -16,6 +16,7 @@ use atlas_acta::actor::Actor;
 use atlas_acta::actor::WorkspaceCtx;
 use atlas_acta::entities::identity::MemberRole;
 use atlas_acta::ids::ProjectId;
+use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_api::dtos::{
     CreateGrantRequest, CreateProjectRequest, GrantPrincipal, UpdateProjectRequest,
     groups::{AddGroupMemberRequest, CreateGroupRequest},
@@ -25,7 +26,7 @@ use atlas_core::principal::ApiKeyId;
 use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::persistence::repos::{
-    MembershipRepo, NewUser, PermissionGrantRepo, PgGroupRepo, PgPermissionGrantRepo, UserRepo,
+    NewUser, PermissionGrantRepo, PgGroupRepo, PgPermissionGrantRepo, UserRepo,
 };
 use support::{TestDb, TestServer, login_user_with_workspace};
 use uuid::Uuid;

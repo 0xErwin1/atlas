@@ -37,9 +37,10 @@ use atlas_acta::permissions::Visibility;
 use atlas_acta::permissions::VisibilityRole;
 use atlas_core::principal::ApiKeyId;
 use atlas_core::principal::UserId;
+use atlas_custos_postgres::repos::identity::PgApiKeyRepo;
 use atlas_server::persistence::repos::{
-    ApiKeyRepo, BoardRepo, NewApiKey, PgApiKeyRepo, PgBoardRepo, PgProjectRepo, PgTaskAssigneeRepo,
-    PgTaskRepo, ProjectRepo, TaskAssigneeRepo, TaskRepo,
+    ApiKeyRepo, BoardRepo, NewApiKey, PgBoardRepo, PgProjectRepo, PgTaskAssigneeRepo, PgTaskRepo,
+    ProjectRepo, TaskAssigneeRepo, TaskRepo,
 };
 use sea_orm::{FromQueryResult, Statement, TransactionTrait};
 

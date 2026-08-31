@@ -14,6 +14,7 @@ mod support;
 
 use atlas_acta::actor::Actor;
 use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_api::dtos::{
     CreateGrantRequest, GrantPrincipal,
     boards_tasks::{CreateBoardRequest, CreateColumnRequest, CreateTaskRequest},
@@ -21,8 +22,7 @@ use atlas_api::dtos::{
 use atlas_client::ClientError;
 use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::persistence::repos::{
-    ApiKeyRepo, MembershipRepo, NewApiKey, NewUser, PermissionGrantRepo, PgPermissionGrantRepo,
-    UserRepo,
+    ApiKeyRepo, NewApiKey, NewUser, PermissionGrantRepo, PgPermissionGrantRepo, UserRepo,
 };
 use sea_orm::ConnectionTrait;
 use support::{TestDb, TestServer, login_user_with_workspace};

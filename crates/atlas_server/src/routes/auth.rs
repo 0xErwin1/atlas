@@ -25,13 +25,12 @@ use crate::{
         tokens::{generate_session_token, hash_token},
     },
     error::ApiError,
-    persistence::repos::{
-        ApiKeyRepo, NewSession, PgApiKeyRepo, PgSessionRepo, PgUserRepo, SessionRepo, UserRepo,
-    },
+    persistence::repos::{ApiKeyRepo, NewSession, SessionRepo, UserRepo},
     routes::api_keys::canonical_scopes,
     routes::validation::{validate_email, validate_name, validate_password_strength},
     state::AppState,
 };
+use atlas_custos_postgres::repos::identity::{PgApiKeyRepo, PgSessionRepo, PgUserRepo};
 
 /// A pre-computed argon2 hash of a throwaway password used to equalise timing
 /// when the submitted username does not exist. Without this, an attacker could

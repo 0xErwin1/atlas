@@ -13,11 +13,12 @@ use atlas_acta::entities::workspace_core::NewPropertyDefinition;
 use atlas_acta::entities::workspace_core::PropertyKind;
 use atlas_acta::permissions::Visibility;
 use atlas_acta::permissions::VisibilityRole;
+use atlas_acta_postgres::repos::identity::{MembershipRepo, PgMembershipRepo};
 use atlas_server::persistence::repos::{
     ApiKeyRepo, AttachmentRepo, BoardRepo, DocumentLinkRepo, DocumentRepo, FolderRepo,
-    MembershipRepo, PgAttachmentRepo, PgBoardRepo, PgDocumentLinkRepo, PgDocumentRepo,
-    PgFolderRepo, PgMembershipRepo, PgPropertyDefinitionRepo, PgTaskReferenceRepo, PgTaskRepo,
-    ProjectRepo, PropertyDefinitionRepo, TaskReferenceRepo, TaskRepo, UserRepo,
+    PgAttachmentRepo, PgBoardRepo, PgDocumentLinkRepo, PgDocumentRepo, PgFolderRepo,
+    PgPropertyDefinitionRepo, PgTaskReferenceRepo, PgTaskRepo, ProjectRepo, PropertyDefinitionRepo,
+    TaskReferenceRepo, TaskRepo, UserRepo,
 };
 
 #[tokio::test]

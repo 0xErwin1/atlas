@@ -21,14 +21,13 @@ mod support;
 use atlas_acta::actor::Actor;
 use atlas_acta::entities::identity::MemberRole;
 use atlas_acta::ids::WorkspaceId;
+use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_api::{dtos::audit::AuditEntryDto, pagination::Page};
 use atlas_core::principal::UserId;
 use atlas_custos::entities::identity::ApiKeyType;
 use atlas_custos::entities::security_audit::NewSecurityAuditEvent;
 use atlas_custos::entities::security_audit::SecurityAction;
-use atlas_server::persistence::repos::{
-    ApiKeyRepo, MembershipRepo, NewApiKey, PgSecurityAuditRepo,
-};
+use atlas_server::persistence::repos::{ApiKeyRepo, NewApiKey, PgSecurityAuditRepo};
 use support::{TestDb, TestServer, login_root_user, login_user_with_workspace};
 
 // ─── helpers ─────────────────────────────────────────────────────────────────

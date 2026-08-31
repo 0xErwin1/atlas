@@ -20,9 +20,10 @@ use atlas_custos::ports::group_repo::GroupRepo;
 use crate::{
     authz::WorkspaceOwnerOrAdmin,
     error::ApiError,
-    persistence::repos::{MembershipRepo, PgGroupRepo, PgMembershipRepo, PgSecurityAuditRepo},
+    persistence::repos::{PgGroupRepo, PgSecurityAuditRepo},
     state::AppState,
 };
+use atlas_acta_postgres::repos::identity::{MembershipRepo, PgMembershipRepo};
 
 #[utoipa::path(
     post,

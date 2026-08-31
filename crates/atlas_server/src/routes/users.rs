@@ -22,12 +22,11 @@ use crate::{
     auth::tokens::{generate_session_token, hash_token},
     authz::{RequireRoot, RequireUserAdmin},
     error::ApiError,
-    persistence::repos::{
-        ActivationTokenRepo, PgActivationTokenRepo, PgSecurityAuditRepo, PgSessionRepo, PgUserRepo,
-        PgWorkspaceRepo, SessionRepo, UserRepo, WorkspaceRepo,
-    },
+    persistence::repos::{ActivationTokenRepo, PgSecurityAuditRepo, SessionRepo, UserRepo},
     state::AppState,
 };
+use atlas_acta_postgres::repos::identity::{PgWorkspaceRepo, WorkspaceRepo};
+use atlas_custos_postgres::repos::identity::{PgActivationTokenRepo, PgSessionRepo, PgUserRepo};
 
 /// How long an activation token remains valid.
 const ACTIVATION_TOKEN_TTL_DAYS: i64 = 7;

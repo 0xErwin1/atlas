@@ -407,9 +407,8 @@ async fn list_user_memberships_returns_workspaces_with_roles() {
     use atlas_acta::actor::WorkspaceCtx;
     use atlas_acta::entities::identity::MemberRole;
     use atlas_acta::ids::WorkspaceId;
-    use atlas_server::persistence::repos::{
-        MembershipRepo, NewUser, NewWorkspace, UserRepo, WorkspaceRepo,
-    };
+    use atlas_acta_postgres::repos::identity::{MembershipRepo, NewWorkspace, WorkspaceRepo};
+    use atlas_server::persistence::repos::{NewUser, UserRepo};
 
     let db = TestDb::create().await.expect("TestDb::create");
     let server = TestServer::spawn(&db).await;

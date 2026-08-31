@@ -10,6 +10,7 @@ mod support;
 use atlas_acta::actor::Actor;
 use atlas_acta::actor::WorkspaceCtx;
 use atlas_acta::entities::identity::MemberRole;
+use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_api::dtos::{
     ApiKeyScope, CreateProjectRequest, CreateUserApiKeyRequest, InitialGrantRequest,
     UpdateProjectRequest,
@@ -20,7 +21,7 @@ use atlas_api::dtos::{
     documents::CreateDocumentRequest,
 };
 use atlas_client::ClientError;
-use atlas_server::persistence::repos::{MembershipRepo, NewUser, UserRepo};
+use atlas_server::persistence::repos::{NewUser, UserRepo};
 use sea_orm::ConnectionTrait;
 use serde_json::Value;
 

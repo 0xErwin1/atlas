@@ -2,9 +2,10 @@
 
 mod support;
 
+use atlas_acta_postgres::repos::identity::WorkspaceRepo;
 use atlas_server::persistence::{
     bootstrap::{BootstrapConfig, run_bootstrap, run_dev_seed},
-    repos::{ProjectRepo, UserRepo, WorkspaceRepo},
+    repos::{ProjectRepo, UserRepo},
 };
 
 #[tokio::test]

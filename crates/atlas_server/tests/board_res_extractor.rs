@@ -15,14 +15,15 @@ use atlas_acta::ids::FolderId;
 use atlas_acta::ids::ProjectId;
 use atlas_acta::permissions::ResourceRef;
 use atlas_acta::permissions::Visibility;
+use atlas_acta_postgres::repos::identity::{MembershipRepo, PgMembershipRepo};
 use atlas_core::principal::Principal;
 use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::{NewPermissionGrant, ResolutionInput, ResolutionQuery, resolve};
 use atlas_server::{
     authz::authorized::{BoardRes, ResolvedResource},
     persistence::repos::{
-        BoardRepo, FolderRepo, MembershipRepo, PermissionGrantRepo, PgBoardRepo, PgFolderRepo,
-        PgMembershipRepo, PgPermissionGrantRepo, PgProjectRepo, ProjectRepo, UserRepo,
+        BoardRepo, FolderRepo, PermissionGrantRepo, PgBoardRepo, PgFolderRepo,
+        PgPermissionGrantRepo, PgProjectRepo, ProjectRepo, UserRepo,
     },
 };
 
@@ -34,7 +35,7 @@ fn board_params(id: BoardId) -> HashMap<String, String> {
 
 async fn create_project(
     db: &support::TestDb,
-    ws: &atlas_server::persistence::repos::Workspace,
+    ws: &atlas_acta_postgres::repos::identity::Workspace,
     user: &atlas_server::persistence::repos::User,
     slug: &str,
 ) -> ProjectId {
@@ -59,7 +60,7 @@ async fn create_project(
 
 async fn create_folder(
     db: &support::TestDb,
-    ws: &atlas_server::persistence::repos::Workspace,
+    ws: &atlas_acta_postgres::repos::identity::Workspace,
     user: &atlas_server::persistence::repos::User,
 ) -> atlas_acta::entities::workspace_core::Folder {
     let repo = PgFolderRepo {
@@ -80,7 +81,7 @@ async fn create_folder(
 
 async fn create_board_in_folder(
     db: &support::TestDb,
-    ws: &atlas_server::persistence::repos::Workspace,
+    ws: &atlas_acta_postgres::repos::identity::Workspace,
     user: &atlas_server::persistence::repos::User,
     project_id: ProjectId,
     folder_id: Option<FolderId>,

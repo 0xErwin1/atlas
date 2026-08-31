@@ -10,12 +10,12 @@ mod support;
 use atlas_acta::actor::Actor;
 use atlas_acta::actor::WorkspaceCtx;
 use atlas_acta::entities::identity::MemberRole;
+use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_client::{AtlasClient, ClientError};
 use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::persistence::repos::{
-    ApiKeyRepo, MembershipRepo, NewApiKey, NewUser, PermissionGrantRepo, PgPermissionGrantRepo,
-    UserRepo,
+    ApiKeyRepo, NewApiKey, NewUser, PermissionGrantRepo, PgPermissionGrantRepo, UserRepo,
 };
 use support::{TestDb, TestServer, login_user_with_workspace};
 

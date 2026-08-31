@@ -44,8 +44,8 @@ use crate::{
     },
     error::ApiError,
     persistence::repos::{
-        ApiKeyRepo, PgApiKeyRepo, PgAttachmentRepo, PgCommentRepo, PgDocumentRepo, PgTaskRepo,
-        PgUserRepo, PgWorkspaceAttachmentRepo, UserRepo,
+        ApiKeyRepo, PgAttachmentRepo, PgCommentRepo, PgDocumentRepo, PgTaskRepo,
+        PgWorkspaceAttachmentRepo, UserRepo,
     },
     routes::{
         documents::{member_to_actor, member_to_principal},
@@ -53,6 +53,7 @@ use crate::{
     },
     state::AppState,
 };
+use atlas_custos_postgres::repos::identity::{PgApiKeyRepo, PgUserRepo};
 
 #[derive(Deserialize)]
 pub(crate) struct ListQuery {
