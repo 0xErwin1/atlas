@@ -70,6 +70,11 @@ async fn search_vector_columns_exist_and_are_generated() {
         is_stored_generated: String,
     }
 
+    // No `nspname` filter: `documents` now lives in the `acta` schema (S4
+    // PR12) while `tasks` stays in `public` (S4 PR13 territory), so a single
+    // hardcoded schema would miss one of the two. `relname` alone is
+    // sufficient because only one live table is named `documents` and one is
+    // named `tasks` across the whole database.
     let rows = ColRow::find_by_statement(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
         r#"SELECT c.relname::text AS table_name,
@@ -77,7 +82,7 @@ async fn search_vector_columns_exist_and_are_generated() {
            FROM pg_attribute a
            JOIN pg_class c ON c.oid = a.attrelid
            JOIN pg_namespace n ON n.oid = c.relnamespace
-           WHERE n.nspname = 'public'
+           WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
              AND c.relname IN ('documents', 'tasks')
              AND a.attname = 'search_vector'
              AND NOT a.attisdropped"#,

@@ -209,8 +209,8 @@ async fn assert_descendants_remain_live(
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT \
-                (SELECT deleted_at IS NULL FROM folders WHERE id = $1) AS folder_live, \
-                (SELECT deleted_at IS NULL FROM documents WHERE id = $2) AS document_live, \
+                (SELECT deleted_at IS NULL FROM acta.folders WHERE id = $1) AS folder_live, \
+                (SELECT deleted_at IS NULL FROM acta.documents WHERE id = $2) AS document_live, \
                 (SELECT deleted_at IS NULL FROM boards WHERE id = $3) AS board_live, \
                 (SELECT deleted_at IS NULL FROM tasks WHERE id = $4) AS task_live",
             [

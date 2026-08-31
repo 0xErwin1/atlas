@@ -191,7 +191,7 @@ async fn membership_removal_conflicts_while_the_member_has_retained_draft_state(
     let draft_id = uuid::Uuid::now_v7();
     db.conn()
         .execute_unprepared(&format!(
-            "INSERT INTO comment_attachment_drafts \
+            "INSERT INTO acta.comment_attachment_drafts \
              (id, workspace_id, document_id, created_by_user_id, create_token, create_digest, state, expires_at) \
              VALUES ('{draft_id}', '{}', '{}', '{}', '{draft_id}', '\\x{}', 'cancelled', now() + interval '24 hours')",
             ws.id.0,

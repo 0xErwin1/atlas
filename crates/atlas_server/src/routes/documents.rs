@@ -2362,7 +2362,7 @@ async fn collect_existing_slugs_for_workspace(
 
     let rows = SlugRow::find_by_statement(sea_orm::Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
-        "SELECT slug FROM documents WHERE workspace_id = $1 AND deleted_at IS NULL AND slug IS NOT NULL",
+        "SELECT slug FROM acta.documents WHERE workspace_id = $1 AND deleted_at IS NULL AND slug IS NOT NULL",
         [ctx.workspace_id.0.into()],
     ))
     .all(&*state.db)

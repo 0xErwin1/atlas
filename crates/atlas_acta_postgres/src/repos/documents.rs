@@ -128,7 +128,7 @@ async fn update_backlink_titles(
 ) -> Result<(), sea_orm::DbErr> {
     conn.execute_raw(sea_orm::Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
-        "UPDATE document_links SET target_title = $1 WHERE workspace_id = $2 AND target_document_id = $3",
+        "UPDATE acta.document_links SET target_title = $1 WHERE workspace_id = $2 AND target_document_id = $3",
         [new_title.into(), workspace_id.into(), target_doc_id.into()],
     ))
     .await?;
@@ -192,7 +192,7 @@ impl PgDocumentRepo {
         let sql = format!(
             r#"
             SELECT d.id, left(d.content, $2) AS head
-            FROM documents d
+            FROM acta.documents d
             WHERE d.workspace_id = $1
               AND d.deleted_at IS NULL
               AND d.id IN ({placeholders})
@@ -333,7 +333,7 @@ impl DocumentRepo for PgDocumentRepo {
             SELECT d.id, d.workspace_id, d.project_id, d.folder_id, d.title, d.slug,
                    d.frontmatter, d.current_revision_id, d.current_revision_seq,
                    d.created_by_user_id, d.created_by_api_key_id, d.created_at, d.updated_at
-            FROM documents d
+            FROM acta.documents d
             WHERE d.workspace_id = $1
               AND d.deleted_at IS NULL
               AND {project_live}
@@ -362,13 +362,13 @@ impl DocumentRepo for PgDocumentRepo {
                         WITH RECURSIVE ancestors AS (
                             SELECT f.id, f.parent_folder_id, f.project_id,
                                    ARRAY[f.id] AS path, 1 AS depth
-                            FROM folders f
+                            FROM acta.folders f
                             WHERE f.id = d.folder_id
                               AND f.workspace_id = $1
                             UNION ALL
                             SELECT pf.id, pf.parent_folder_id, pf.project_id,
                                    a.path || pf.id, a.depth + 1
-                            FROM folders pf
+                            FROM acta.folders pf
                             JOIN ancestors a ON pf.id = a.parent_folder_id
                             WHERE pf.workspace_id = $1
                               AND NOT pf.id = ANY(a.path)
@@ -1299,7 +1299,7 @@ impl DocumentLinkRepo for PgDocumentLinkRepo {
                   dl.target_attachment_id AS link_target_attachment_id, dl.target_title AS link_target_title, \
                   dl.created_at AS link_created_at \
                   FROM tasks t \
-                  LEFT JOIN document_links dl ON dl.workspace_id = t.workspace_id AND dl.source_task_id = t.id \
+                  LEFT JOIN acta.document_links dl ON dl.workspace_id = t.workspace_id AND dl.source_task_id = t.id \
                   WHERE t.id = $1 AND t.workspace_id = $2 AND t.deleted_at IS NULL \
                     AND ({}) \
                   ORDER BY dl.created_at ASC NULLS LAST, dl.id ASC NULLS LAST",

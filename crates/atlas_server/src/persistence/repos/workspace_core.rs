@@ -191,7 +191,7 @@ impl ProjectRepo for PgProjectRepo {
             SELECT p.id, p.workspace_id, p.name, p.slug, p.task_prefix, p.next_task_number,
                    p.visibility, p.visibility_role,
                    p.created_by_user_id, p.created_at, p.updated_at, p.deleted_at
-            FROM projects p
+            FROM acta.projects p
             WHERE p.workspace_id = $1
               AND p.deleted_at IS NULL
               AND (

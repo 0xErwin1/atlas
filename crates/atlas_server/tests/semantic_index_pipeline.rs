@@ -376,7 +376,7 @@ async fn reload_head(db: &support::TestDb, id: DocumentId) -> atlas_acta::ids::R
 
     let row = HeadRow::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "SELECT current_revision_id FROM documents WHERE id = $1",
+        "SELECT current_revision_id FROM acta.documents WHERE id = $1",
         vec![id.0.into()],
     ))
     .one(db.conn())

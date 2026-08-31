@@ -259,7 +259,7 @@ async fn membership_remove_is_blocked_by_a_retained_comment_draft() {
     sea_orm::ConnectionTrait::execute_unprepared(
         db.conn(),
         &format!(
-            "INSERT INTO documents (id, workspace_id, title, created_by_user_id) \
+            "INSERT INTO acta.documents (id, workspace_id, title, created_by_user_id) \
              VALUES ('{document_id}', '{}', 'Draft guard doc', '{}')",
             workspace_id.0, user_id.0
         ),
@@ -269,7 +269,7 @@ async fn membership_remove_is_blocked_by_a_retained_comment_draft() {
     sea_orm::ConnectionTrait::execute_unprepared(
         db.conn(),
         &format!(
-            "INSERT INTO comment_attachment_drafts \
+            "INSERT INTO acta.comment_attachment_drafts \
              (id, workspace_id, document_id, created_by_user_id, create_token, \
               create_digest, state, expires_at, created_at, updated_at) \
              VALUES ('{}', '{}', '{document_id}', '{}', 'draft-guard-token', \
@@ -295,7 +295,7 @@ async fn membership_remove_is_blocked_by_a_retained_comment_draft() {
     sea_orm::ConnectionTrait::execute_unprepared(
         db.conn(),
         &format!(
-            "DELETE FROM comment_attachment_drafts WHERE workspace_id = '{}'",
+            "DELETE FROM acta.comment_attachment_drafts WHERE workspace_id = '{}'",
             workspace_id.0
         ),
     )

@@ -129,7 +129,7 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
         .conn()
         .query_one_raw(Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT COUNT(*) AS count FROM attachment_write_intents",
+            "SELECT COUNT(*) AS count FROM acta.attachment_write_intents",
         ))
         .await
         .expect("query write intents")
@@ -425,7 +425,7 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
         .conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT deleted_at FROM attachments WHERE id = $1",
+            "SELECT deleted_at FROM acta.attachments WHERE id = $1",
             [uploaded.id.into()],
         ))
         .await
@@ -442,7 +442,7 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
         .conn()
         .query_one_raw(Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT COUNT(*) AS count FROM attachment_write_intents",
+            "SELECT COUNT(*) AS count FROM acta.attachment_write_intents",
         ))
         .await
         .expect("count cleanup intents")

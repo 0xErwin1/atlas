@@ -1957,7 +1957,7 @@ async fn document_source_links(
         .query_all_raw(Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
             format!(
-                "SELECT target_title, target_document_id FROM document_links \
+                "SELECT target_title, target_document_id FROM acta.document_links \
                  WHERE source_document_id = '{source_document_id}' ORDER BY target_title"
             ),
         ))
@@ -1980,7 +1980,7 @@ async fn document_source_link_identity_rows(
     source_document_id: uuid::Uuid,
 ) -> Vec<(uuid::Uuid, String, Option<uuid::Uuid>)> {
     let sql = format!(
-        "SELECT id, target_title, target_document_id FROM document_links WHERE source_document_id = '{source_document_id}' ORDER BY id"
+        "SELECT id, target_title, target_document_id FROM acta.document_links WHERE source_document_id = '{source_document_id}' ORDER BY id"
     );
     let rows = db
         .conn()
@@ -2255,7 +2255,7 @@ async fn attach_image_and_download_roundtrip() {
         .conn()
         .query_one_raw(Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT COUNT(*) AS count FROM attachment_write_intents",
+            "SELECT COUNT(*) AS count FROM acta.attachment_write_intents",
         ))
         .await
         .expect("query write intents")
@@ -2361,7 +2361,7 @@ async fn delete_attachment_removes_it_from_list() {
         .conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT deleted_at FROM attachments WHERE id = $1",
+            "SELECT deleted_at FROM acta.attachments WHERE id = $1",
             [att.id.into()],
         ))
         .await
@@ -2378,7 +2378,7 @@ async fn delete_attachment_removes_it_from_list() {
         .conn()
         .query_one_raw(Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT COUNT(*) AS count FROM attachment_write_intents",
+            "SELECT COUNT(*) AS count FROM acta.attachment_write_intents",
         ))
         .await
         .expect("count cleanup intents")

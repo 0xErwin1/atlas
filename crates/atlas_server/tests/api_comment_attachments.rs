@@ -151,9 +151,9 @@ async fn assert_no_task_draft_upload_residue(db: &support::TestDb, draft_id: uui
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT \
-                (SELECT count(*)::bigint FROM attachments WHERE draft_id = $1) AS attachments, \
-                (SELECT count(*)::bigint FROM comment_attachment_draft_uploads WHERE draft_id = $1) AS uploads, \
-                (SELECT count(*)::bigint FROM attachment_write_intents) AS intents",
+                (SELECT count(*)::bigint FROM acta.attachments WHERE draft_id = $1) AS attachments, \
+                (SELECT count(*)::bigint FROM acta.comment_attachment_draft_uploads WHERE draft_id = $1) AS uploads, \
+                (SELECT count(*)::bigint FROM acta.attachment_write_intents) AS intents",
             [draft_id.into()],
         ))
         .await
@@ -332,7 +332,7 @@ async fn install_finalization_gate(
         .execute_unprepared(&format!(
             "CREATE FUNCTION {function_name}() RETURNS trigger LANGUAGE plpgsql AS $$ \
              BEGIN PERFORM pg_advisory_xact_lock({lock_key}); RETURN NEW; END; $$; \
-             CREATE TRIGGER {trigger_name} BEFORE UPDATE OF state ON comment_attachment_drafts \
+             CREATE TRIGGER {trigger_name} BEFORE UPDATE OF state ON acta.comment_attachment_drafts \
              FOR EACH ROW WHEN (NEW.state = 'finalized') EXECUTE FUNCTION {function_name}()"
         ))
         .await
@@ -352,7 +352,7 @@ async fn assert_no_losing_upload_residue(db: &support::TestDb, draft_id: &str) {
         .query_one_raw(Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
             format!(
-                "SELECT COUNT(*) AS count FROM attachments \
+                "SELECT COUNT(*) AS count FROM acta.attachments \
                  WHERE draft_id = '{draft_id}' OR comment_id = '{draft_id}'"
             ),
         ))
@@ -366,7 +366,7 @@ async fn assert_no_losing_upload_residue(db: &support::TestDb, draft_id: &str) {
         .query_one_raw(Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
             format!(
-                "SELECT COUNT(*) AS count FROM comment_attachment_draft_uploads \
+                "SELECT COUNT(*) AS count FROM acta.comment_attachment_draft_uploads \
                  WHERE draft_id = '{draft_id}'"
             ),
         ))
@@ -793,7 +793,7 @@ async fn assert_attachment_row_tombstoned_without_cleanup_intent(
         .conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT deleted_at FROM attachments WHERE id = $1",
+            "SELECT deleted_at FROM acta.attachments WHERE id = $1",
             [attachment_id.into()],
         ))
         .await
@@ -811,7 +811,7 @@ async fn assert_attachment_row_tombstoned_without_cleanup_intent(
         .conn()
         .query_one_raw(Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT count(*) AS count FROM attachment_write_intents",
+            "SELECT count(*) AS count FROM acta.attachment_write_intents",
         ))
         .await
         .expect("count cleanup intents")
@@ -835,7 +835,7 @@ async fn assert_finalized_upload_identity_is_retained(
         .conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT attachment_id, deleted_at FROM comment_attachment_draft_uploads \
+            "SELECT attachment_id, deleted_at FROM acta.comment_attachment_draft_uploads \
              WHERE draft_id = $1 AND original_attachment_id = $2",
             [draft_id.into(), attachment_id.into()],
         ))
@@ -1884,7 +1884,7 @@ async fn document_comment_draft_upload_replays_raw_bytes_and_rejects_changed_reu
     db.conn()
         .execute_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "UPDATE comment_attachment_drafts SET state = 'cancelled', terminal_at = NOW() WHERE id = $1",
+            "UPDATE acta.comment_attachment_drafts SET state = 'cancelled', terminal_at = NOW() WHERE id = $1",
             [draft_id
                 .parse::<uuid::Uuid>()
                 .expect("draft UUID")
@@ -2164,7 +2164,7 @@ async fn document_comment_finalization_rejects_terminal_drafts() {
         db.conn()
             .execute_raw(Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
-                "UPDATE comment_attachment_drafts SET state = $1, terminal_at = NOW() WHERE id = $2",
+                "UPDATE acta.comment_attachment_drafts SET state = $1, terminal_at = NOW() WHERE id = $2",
                 [state.into(), draft_id.parse::<uuid::Uuid>().expect("draft UUID").into()],
             ))
             .await

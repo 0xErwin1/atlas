@@ -187,7 +187,7 @@ pub async fn load_updated_at(
     // request, so inlining them carries no injection surface; the alternative is
     // a driver-specific array binding for a query that is otherwise trivial.
     let sql = format!(
-        r#"SELECT 'document' AS kind, id, updated_at FROM documents
+        r#"SELECT 'document' AS kind, id, updated_at FROM acta.documents
            WHERE workspace_id = $1 AND id IN ({documents_in})
            UNION ALL
            SELECT 'task' AS kind, id, updated_at FROM tasks

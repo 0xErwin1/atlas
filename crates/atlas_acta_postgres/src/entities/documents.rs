@@ -29,7 +29,7 @@ pub mod document {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "documents")]
+    #[sea_orm(schema_name = "acta", table_name = "documents")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
@@ -59,7 +59,7 @@ pub mod document_revision {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "document_revisions")]
+    #[sea_orm(schema_name = "acta", table_name = "document_revisions")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
@@ -84,7 +84,7 @@ pub mod document_link {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "document_links")]
+    #[sea_orm(schema_name = "acta", table_name = "document_links")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
@@ -108,7 +108,7 @@ pub mod attachment {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "attachments")]
+    #[sea_orm(schema_name = "acta", table_name = "attachments")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
@@ -137,7 +137,7 @@ pub mod attachment {
 pub mod attachment_write_intent {
     use super::*;
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "attachment_write_intents")]
+    #[sea_orm(schema_name = "acta", table_name = "attachment_write_intents")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
@@ -153,7 +153,7 @@ pub mod comment_attachment_draft {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "comment_attachment_drafts")]
+    #[sea_orm(schema_name = "acta", table_name = "comment_attachment_drafts")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
@@ -184,7 +184,7 @@ pub mod comment_attachment_draft_upload {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "comment_attachment_draft_uploads")]
+    #[sea_orm(schema_name = "acta", table_name = "comment_attachment_draft_uploads")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub draft_id: Uuid,

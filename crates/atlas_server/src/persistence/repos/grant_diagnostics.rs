@@ -30,17 +30,17 @@ pub async fn count_orphaned_grants(conn: &impl ConnectionTrait) -> Result<u64, D
         FROM custos.permission_grants g
         WHERE (g.resource_ref LIKE 'acta::project::%'
                 AND NOT EXISTS (
-                    SELECT 1 FROM projects p
+                    SELECT 1 FROM acta.projects p
                     WHERE p.id = substring(g.resource_ref FROM 16)::uuid
                 ))
            OR (g.resource_ref LIKE 'acta::folder::%'
                 AND NOT EXISTS (
-                    SELECT 1 FROM folders f
+                    SELECT 1 FROM acta.folders f
                     WHERE f.id = substring(g.resource_ref FROM 15)::uuid
                 ))
            OR (g.resource_ref LIKE 'acta::document::%'
                 AND NOT EXISTS (
-                    SELECT 1 FROM documents d
+                    SELECT 1 FROM acta.documents d
                     WHERE d.id = substring(g.resource_ref FROM 17)::uuid
                 ))
            OR (g.resource_ref LIKE 'acta::board::%'

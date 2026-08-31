@@ -309,7 +309,7 @@ async fn valid_docs_reference_with_document_target_is_accepted() {
     let doc_id = uuid::Uuid::now_v7();
     db.conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO documents
+            r#"INSERT INTO acta.documents
                (id, workspace_id, title, content, current_revision_seq,
                 created_by_user_id, created_at, updated_at)
                VALUES ('{doc_id}', '{ws_id}', 'Docs', '', 0, '{user_id}', now(), now())"#,

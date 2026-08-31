@@ -10,7 +10,7 @@ async fn slug_column_exists_after_migration() {
 
     let result = db
         .conn()
-        .execute_unprepared("SELECT slug FROM documents WHERE false")
+        .execute_unprepared("SELECT slug FROM acta.documents WHERE false")
         .await;
 
     assert!(
@@ -31,7 +31,7 @@ async fn partial_unique_index_allows_same_slug_for_deleted_rows() {
 
     db.conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO documents (id, workspace_id, title, slug, content, frontmatter,
+            r#"INSERT INTO acta.documents (id, workspace_id, title, slug, content, frontmatter,
                current_revision_seq, created_by_user_id, created_at, updated_at, deleted_at)
                VALUES
                (gen_random_uuid(), '{ws_id}', 'Deleted Doc A', 'same-slug', '',
@@ -55,7 +55,7 @@ async fn partial_unique_index_rejects_same_slug_for_live_rows() {
 
     db.conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO documents (id, workspace_id, title, slug, content, frontmatter,
+            r#"INSERT INTO acta.documents (id, workspace_id, title, slug, content, frontmatter,
                current_revision_seq, created_by_user_id, created_at, updated_at)
                VALUES (gen_random_uuid(), '{ws_id}', 'Live Doc A', 'conflict-slug', '',
                '{{}}', 0, '{user_id}', now(), now())"#
@@ -66,7 +66,7 @@ async fn partial_unique_index_rejects_same_slug_for_live_rows() {
     let second = db
         .conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO documents (id, workspace_id, title, slug, content, frontmatter,
+            r#"INSERT INTO acta.documents (id, workspace_id, title, slug, content, frontmatter,
                current_revision_seq, created_by_user_id, created_at, updated_at)
                VALUES (gen_random_uuid(), '{ws_id}', 'Live Doc B', 'conflict-slug', '',
                '{{}}', 0, '{user_id}', now(), now())"#

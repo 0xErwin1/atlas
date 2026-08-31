@@ -17,7 +17,7 @@ async fn document_requires_exactly_one_actor() {
     let result = db
         .conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO documents
+            r#"INSERT INTO acta.documents
                (id, workspace_id, title, content, current_revision_seq,
                 created_by_user_id, created_by_api_key_id, created_at, updated_at)
                VALUES
@@ -34,7 +34,7 @@ async fn document_requires_exactly_one_actor() {
     let result2 = db
         .conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO documents
+            r#"INSERT INTO acta.documents
                (id, workspace_id, title, content, current_revision_seq,
                 created_by_user_id, created_by_api_key_id, created_at, updated_at)
                VALUES
@@ -63,7 +63,7 @@ async fn document_revision_requires_exactly_one_actor() {
     let doc_id = uuid::Uuid::now_v7();
     db.conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO documents
+            r#"INSERT INTO acta.documents
                (id, workspace_id, title, content, current_revision_seq,
                 created_by_user_id, created_at, updated_at)
                VALUES ('{doc_id}', '{ws_id}', 'Rev Parent', '', 0, '{user_id}', now(), now())"#
@@ -75,7 +75,7 @@ async fn document_revision_requires_exactly_one_actor() {
     let result = db
         .conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO document_revisions
+            r#"INSERT INTO acta.document_revisions
                (id, workspace_id, document_id, seq, snapshot, is_anchor,
                 created_by_user_id, created_by_api_key_id, created_at)
                VALUES
@@ -104,7 +104,7 @@ async fn attachment_requires_exactly_one_actor() {
     let doc_id = uuid::Uuid::now_v7();
     db.conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO documents
+            r#"INSERT INTO acta.documents
                (id, workspace_id, title, content, current_revision_seq,
                 created_by_user_id, created_at, updated_at)
                VALUES ('{doc_id}', '{ws_id}', 'Att Parent', '', 0, '{user_id}', now(), now())"#
@@ -115,7 +115,7 @@ async fn attachment_requires_exactly_one_actor() {
     let result = db
         .conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO attachments
+            r#"INSERT INTO acta.attachments
                (id, workspace_id, document_id, file_name, content_type, size_bytes, sha256,
                 created_by_user_id, created_by_api_key_id, created_at, updated_at)
                VALUES
@@ -145,7 +145,7 @@ async fn attachment_task_id_must_reference_existing_task() {
     let result = db
         .conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO attachments
+            r#"INSERT INTO acta.attachments
                (id, workspace_id, document_id, task_id, file_name, content_type, size_bytes, sha256,
                 created_by_user_id, created_at, updated_at)
                VALUES
@@ -173,7 +173,7 @@ async fn property_definition_requires_exactly_one_actor() {
     let result = db
         .conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO property_definitions
+            r#"INSERT INTO acta.property_definitions
                (id, workspace_id, key, name, kind,
                 created_by_user_id, created_by_api_key_id, created_at, updated_at)
                VALUES
@@ -201,7 +201,7 @@ async fn project_requires_exactly_one_actor() {
     let result = db
         .conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO projects
+            r#"INSERT INTO acta.projects
                (id, workspace_id, name, slug, task_prefix,
                 created_by_user_id, created_by_api_key_id, created_at, updated_at)
                VALUES
@@ -229,7 +229,7 @@ async fn folder_requires_exactly_one_actor() {
     let result = db
         .conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO folders
+            r#"INSERT INTO acta.folders
                (id, workspace_id, name,
                 created_by_user_id, created_by_api_key_id, created_at, updated_at)
                VALUES
@@ -259,7 +259,7 @@ async fn document_frontmatter_is_not_null() {
     let result = db
         .conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO documents
+            r#"INSERT INTO acta.documents
                (id, workspace_id, title, content, frontmatter, current_revision_seq,
                 created_by_user_id, created_at, updated_at)
                VALUES
@@ -288,7 +288,7 @@ async fn board_requires_actor() {
     let proj_id = uuid::Uuid::now_v7();
     db.conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO projects
+            r#"INSERT INTO acta.projects
                (id, workspace_id, name, slug, task_prefix,
                 created_by_user_id, created_at, updated_at)
                VALUES ('{proj_id}', '{ws_id}', 'P', 'p-board-actor', 'BA', '{user_id}', now(), now())"#
@@ -331,7 +331,7 @@ async fn seed_task_chain(
 
     db.conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO projects
+            r#"INSERT INTO acta.projects
                (id, workspace_id, name, slug, task_prefix,
                 created_by_user_id, created_at, updated_at)
                VALUES ('{proj_id}', '{ws_id}', 'P', '{slug}', '{prefix}', '{user_id}', now(), now())"#
@@ -390,7 +390,7 @@ async fn task_reference_kind_must_match_target_type() {
     let doc_id = uuid::Uuid::now_v7();
     db.conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO documents
+            r#"INSERT INTO acta.documents
                (id, workspace_id, title, content, current_revision_seq,
                 created_by_user_id, created_at, updated_at)
                VALUES ('{doc_id}', '{ws_id}', 'Spec', '', 0, '{user_id}', now(), now())"#

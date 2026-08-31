@@ -17,7 +17,7 @@ pub mod property_definition {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "property_definitions")]
+    #[sea_orm(schema_name = "acta", table_name = "property_definitions")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
@@ -44,7 +44,7 @@ pub mod project {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "projects")]
+    #[sea_orm(schema_name = "acta", table_name = "projects")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
@@ -72,7 +72,7 @@ pub mod folder {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "folders")]
+    #[sea_orm(schema_name = "acta", table_name = "folders")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,

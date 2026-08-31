@@ -316,7 +316,7 @@ async fn updated_tie_deterministic_no_duplicate_no_gap() {
         .collect::<Vec<_>>()
         .join(", ");
     let update_sql = format!(
-        "UPDATE documents SET updated_at = '2020-01-01 00:00:00+00' WHERE id IN ({placeholders})"
+        "UPDATE acta.documents SET updated_at = '2020-01-01 00:00:00+00' WHERE id IN ({placeholders})"
     );
     let values: Vec<sea_orm::Value> = seeded_ids
         .iter()
