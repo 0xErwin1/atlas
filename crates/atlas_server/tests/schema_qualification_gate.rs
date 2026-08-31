@@ -21,8 +21,12 @@
 //! `document_revisions`, `document_links`, `attachments`,
 //! `attachment_write_intents`, `comment_attachment_drafts`,
 //! `comment_attachment_draft_uploads`) as of S4 PR12's
-//! `m20260902_000054_acta_documents_set_schema`, batch 2. Each later batch
-//! (PR13–PR15) adds its own tables to this map as it lands; this is a single
+//! `m20260902_000054_acta_documents_set_schema`, batch 2, and by nine more
+//! (`boards`, `board_columns`, `tasks`, `task_references`, `task_assignees`,
+//! `task_checklist_items`, `task_activity`, `workspace_status_templates`,
+//! `platform_status_templates`) as of S4 PR13's
+//! `m2026xxxx_0000NN_acta_boards_tasks_set_schema`, batch 3. Each later batch
+//! (PR14–PR15) adds its own tables to this map as it lands; this is a single
 //! shared table→schema map rather than one gate per product (design §D5's
 //! rejected-alternative rationale: the tree-walk/exclusion logic is
 //! schema-agnostic, so a second copy would only duplicate it).
@@ -75,6 +79,15 @@ const TABLE_SCHEMA: &[(&str, &str)] = &[
     ("attachment_write_intents", "acta"),
     ("comment_attachment_drafts", "acta"),
     ("comment_attachment_draft_uploads", "acta"),
+    ("boards", "acta"),
+    ("board_columns", "acta"),
+    ("tasks", "acta"),
+    ("task_references", "acta"),
+    ("task_assignees", "acta"),
+    ("task_checklist_items", "acta"),
+    ("task_activity", "acta"),
+    ("workspace_status_templates", "acta"),
+    ("platform_status_templates", "acta"),
 ];
 
 const SQL_KEYWORDS: &[&str] = &["FROM", "JOIN", "INTO", "UPDATE", "TABLE"];

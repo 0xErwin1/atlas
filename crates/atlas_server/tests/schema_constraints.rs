@@ -299,7 +299,7 @@ async fn board_requires_actor() {
     let result = db
         .conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO boards
+            r#"INSERT INTO acta.boards
                (id, workspace_id, project_id, name,
                 created_by_user_id, created_at, updated_at)
                VALUES
@@ -341,7 +341,7 @@ async fn seed_task_chain(
 
     db.conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO boards
+            r#"INSERT INTO acta.boards
                (id, workspace_id, project_id, name, created_by_user_id, created_at, updated_at)
                VALUES ('{board_id}', '{ws_id}', '{proj_id}', 'B', '{user_id}', now(), now())"#
         ))
@@ -350,7 +350,7 @@ async fn seed_task_chain(
 
     db.conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO board_columns
+            r#"INSERT INTO acta.board_columns
                (id, workspace_id, board_id, name, position_key,
                 created_by_user_id, created_at, updated_at)
                VALUES ('{column_id}', '{ws_id}', '{board_id}', 'Todo', 'a',
@@ -361,7 +361,7 @@ async fn seed_task_chain(
 
     db.conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO tasks
+            r#"INSERT INTO acta.tasks
                (id, workspace_id, project_id, board_id, column_id, readable_id, title,
                 position_key, created_by_user_id, created_at, updated_at)
                VALUES ('{task_id}', '{ws_id}', '{proj_id}', '{board_id}', '{column_id}',
@@ -401,7 +401,7 @@ async fn task_reference_kind_must_match_target_type() {
     let spec_to_task = db
         .conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO task_references
+            r#"INSERT INTO acta.task_references
                (id, workspace_id, source_task_id, kind, target_task_id, target_document_id,
                 created_by_user_id, created_at)
                VALUES (gen_random_uuid(), '{ws_id}', '{source_task_id}', 'spec',
@@ -417,7 +417,7 @@ async fn task_reference_kind_must_match_target_type() {
     let blocks_to_doc = db
         .conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO task_references
+            r#"INSERT INTO acta.task_references
                (id, workspace_id, source_task_id, kind, target_task_id, target_document_id,
                 created_by_user_id, created_at)
                VALUES (gen_random_uuid(), '{ws_id}', '{source_task_id}', 'blocks',
@@ -433,7 +433,7 @@ async fn task_reference_kind_must_match_target_type() {
     let spec_to_doc = db
         .conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO task_references
+            r#"INSERT INTO acta.task_references
                (id, workspace_id, source_task_id, kind, target_task_id, target_document_id,
                 created_by_user_id, created_at)
                VALUES (gen_random_uuid(), '{ws_id}', '{source_task_id}', 'spec',
@@ -449,7 +449,7 @@ async fn task_reference_kind_must_match_target_type() {
     let blocks_to_task = db
         .conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO task_references
+            r#"INSERT INTO acta.task_references
                (id, workspace_id, source_task_id, kind, target_task_id, target_document_id,
                 created_by_user_id, created_at)
                VALUES (gen_random_uuid(), '{ws_id}', '{source_task_id}', 'blocks',
@@ -465,7 +465,7 @@ async fn task_reference_kind_must_match_target_type() {
     let docs_to_doc = db
         .conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO task_references
+            r#"INSERT INTO acta.task_references
                (id, workspace_id, source_task_id, kind, target_task_id, target_document_id,
                 created_by_user_id, created_at)
                VALUES (gen_random_uuid(), '{ws_id}', '{source_task_id}', 'docs',
@@ -481,7 +481,7 @@ async fn task_reference_kind_must_match_target_type() {
     let docs_to_task = db
         .conn()
         .execute_unprepared(&format!(
-            r#"INSERT INTO task_references
+            r#"INSERT INTO acta.task_references
                (id, workspace_id, source_task_id, kind, target_task_id, target_document_id,
                 created_by_user_id, created_at)
                VALUES (gen_random_uuid(), '{ws_id}', '{source_task_id}', 'docs',

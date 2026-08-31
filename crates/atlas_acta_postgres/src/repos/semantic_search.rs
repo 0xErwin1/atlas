@@ -417,13 +417,13 @@ pub fn semantic_search_sql(query: &SemanticSearchQuery) -> String {
                       ranked.source_field AS source,
                       ranked.excerpt
                FROM ranked
-               JOIN tasks t ON t.id = ranked.resource_id
+               JOIN acta.tasks t ON t.id = ranked.resource_id
                    AND t.workspace_id = $1
                     AND t.deleted_at IS NULL
                     AND ({task_live_board})
                    AND ranked.resource_kind = 'task'
                LEFT JOIN acta.projects p ON p.id = t.project_id AND p.workspace_id = $1 AND p.deleted_at IS NULL
-               LEFT JOIN board_columns bc ON bc.id = t.column_id AND bc.workspace_id = $1 AND bc.deleted_at IS NULL
+               LEFT JOIN acta.board_columns bc ON bc.id = t.column_id AND bc.workspace_id = $1 AND bc.deleted_at IS NULL
                WHERE ranked.resource_rank = 1
                  {kind_cond}
                  {cursor_cond}

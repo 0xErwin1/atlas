@@ -63,7 +63,7 @@ async fn task_reference_count(db: &support::TestDb) -> i64 {
         .conn()
         .query_one_raw(Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT COUNT(*) AS cnt FROM task_references".to_string(),
+            "SELECT COUNT(*) AS cnt FROM acta.task_references".to_string(),
         ))
         .await
         .expect("query task reference count")
@@ -5303,7 +5303,7 @@ async fn count_activity_of_kind(db: &support::TestDb, task_id: uuid::Uuid, kind:
         .query_one_raw(Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
             format!(
-                "SELECT COUNT(*) AS cnt FROM task_activity \
+                "SELECT COUNT(*) AS cnt FROM acta.task_activity \
                  WHERE task_id = '{task_id}' AND kind = '{kind}'"
             ),
         ))
@@ -5326,7 +5326,7 @@ async fn latest_field_changed_payload(
         .query_one_raw(Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
             format!(
-                "SELECT payload FROM task_activity \
+                "SELECT payload FROM acta.task_activity \
                  WHERE task_id = '{task_id}' AND kind = 'field_changed' \
                  ORDER BY created_at DESC LIMIT 1"
             ),
@@ -5796,7 +5796,7 @@ async fn delete_blocks_reference_records_correct_kind_in_activity() {
         .query_one_raw(Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
             format!(
-                "SELECT payload FROM task_activity \
+                "SELECT payload FROM acta.task_activity \
                  WHERE task_id = '{}' AND kind = 'reference_removed'",
                 task_a.id
             ),
@@ -6079,7 +6079,7 @@ async fn create_reference_unknown_task_target_returns_404_and_no_row() {
         .query_one_raw(Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
             format!(
-                "SELECT COUNT(*) AS cnt FROM task_references WHERE source_task_id = '{}'",
+                "SELECT COUNT(*) AS cnt FROM acta.task_references WHERE source_task_id = '{}'",
                 task.id
             ),
         ))
@@ -6195,7 +6195,7 @@ async fn create_reference_cross_tenant_document_target_returns_404() {
         .query_one_raw(Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
             format!(
-                "SELECT COUNT(*) AS cnt FROM task_references WHERE source_task_id = '{}'",
+                "SELECT COUNT(*) AS cnt FROM acta.task_references WHERE source_task_id = '{}'",
                 task_a.id
             ),
         ))
@@ -7182,7 +7182,7 @@ async fn assign_non_member_principal_returns_404() {
         .query_one_raw(Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
             format!(
-                "SELECT COUNT(*) AS cnt FROM task_assignees \
+                "SELECT COUNT(*) AS cnt FROM acta.task_assignees \
                  WHERE task_id = '{}' AND assignee_user_id = '{}'",
                 task.id, user_b.id.0
             ),
@@ -8057,7 +8057,7 @@ async fn revoked_api_key_assignee_is_hidden_after_revoke() {
         .query_one_raw(Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
             format!(
-                "SELECT COUNT(*) AS cnt FROM task_assignees \
+                "SELECT COUNT(*) AS cnt FROM acta.task_assignees \
                  WHERE task_id = '{}' AND assignee_api_key_id = '{}'",
                 task.id, api_key.id
             ),

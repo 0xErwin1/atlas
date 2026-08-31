@@ -173,7 +173,7 @@ impl TagRepo for PgTagRepo {
         if name.is_some() && new_name_ref != old_name {
             txn.execute_raw(Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
-                "UPDATE tasks \
+                "UPDATE acta.tasks \
                  SET labels = array_replace(labels, $1, $2), updated_at = $3 \
                  WHERE workspace_id = $4 AND $1 = ANY(labels) AND deleted_at IS NULL",
                 [
@@ -188,7 +188,7 @@ impl TagRepo for PgTagRepo {
 
             txn.execute_raw(Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
-                "UPDATE tasks \
+                "UPDATE acta.tasks \
                  SET labels = ARRAY(SELECT DISTINCT unnest(labels) ORDER BY 1), \
                      updated_at = $1 \
                  WHERE workspace_id = $2 \
@@ -216,7 +216,7 @@ impl TagRepo for PgTagRepo {
         let rows = LabelRow::find_by_statement(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT DISTINCT unnest(labels) AS label \
-             FROM tasks \
+             FROM acta.tasks \
              WHERE workspace_id = $1 AND deleted_at IS NULL \
              ORDER BY 1",
             [ctx.workspace_id.0.into()],

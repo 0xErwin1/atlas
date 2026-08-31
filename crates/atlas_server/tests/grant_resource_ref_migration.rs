@@ -294,7 +294,7 @@ async fn down_restores_target_columns_and_survives_a_forward_only_orphan() {
              INSERT INTO acta.projects (id, workspace_id, name, slug, task_prefix, next_task_number, visibility, created_by_user_id, created_at, updated_at) VALUES ('{project_id}', '{workspace_id}', 'Project', 'project-{project_id}', 'PRJ', 1, 'workspace', '{user_id}', now(), now()); \
              INSERT INTO acta.folders (id, workspace_id, project_id, name, created_by_user_id, created_at, updated_at) VALUES ('{folder_id}', '{workspace_id}', '{project_id}', 'Folder', '{user_id}', now(), now()); \
              INSERT INTO acta.documents (id, workspace_id, folder_id, title, slug, content, frontmatter, current_revision_seq, created_by_user_id, created_at, updated_at) VALUES ('{document_id}', '{workspace_id}', '{folder_id}', 'Document', 'document-{document_id}', '', '{{}}', 1, '{user_id}', now(), now()); \
-             INSERT INTO boards (id, workspace_id, project_id, name, created_by_user_id, created_at, updated_at) VALUES ('{board_id}', '{workspace_id}', '{project_id}', 'Board', '{user_id}', now(), now())"
+             INSERT INTO acta.boards (id, workspace_id, project_id, name, created_by_user_id, created_at, updated_at) VALUES ('{board_id}', '{workspace_id}', '{project_id}', 'Board', '{user_id}', now(), now())"
         ))
         .await
         .expect("seed user, workspace, and the four target resources");
@@ -316,20 +316,22 @@ async fn down_restores_target_columns_and_survives_a_forward_only_orphan() {
         .await
         .expect("seed post-migration grant rows, including one orphaned by a never-live target");
 
-    // Reverts five steps, not one: S3d appended `m20260830_000051_custos_set_schema`,
+    // Reverts six steps, not one: S3d appended `m20260830_000051_custos_set_schema`,
     // S4 PR9 appended `m20260831_000052_acta_platform_ui_state`, S4 PR11
-    // appended `m20260901_000053_acta_identity_workspaces_set_schema`, and S4
-    // PR12 appended `m20260902_000054_acta_documents_set_schema` after this
+    // appended `m20260901_000053_acta_identity_workspaces_set_schema`, S4
+    // PR12 appended `m20260902_000054_acta_documents_set_schema`, and S4 PR13
+    // appended `m20260903_000055_acta_boards_tasks_set_schema` after this
     // migration in `custos_new()`/`acta_new()`, so "the last applied migration"
-    // is now the documents-group schema move rather than the O1 migration
-    // under test here. Reverting five steps undoes the documents-group move
-    // (moving `projects`/`folders`/`documents`/etc. back to `public`), then the
-    // identity/workspaces move (moving `workspaces`/`workspace_memberships`
-    // back to `public`), then the `platform.ui_state` move, then the Custos
-    // schema move (moving the eight tables back to `public`), then O1's own
-    // down(), landing on the same pre-O1, unqualified-table-name state this
-    // test asserted before S3d/S4 existed.
-    ComposedMigrator::down(db.conn(), Some(5))
+    // is now the boards/tasks-group schema move rather than the O1 migration
+    // under test here. Reverting six steps undoes the boards/tasks-group move
+    // (moving `boards`/`tasks`/etc. back to `public`), then the documents-group
+    // move (moving `projects`/`folders`/`documents`/etc. back to `public`),
+    // then the identity/workspaces move (moving `workspaces`/
+    // `workspace_memberships` back to `public`), then the `platform.ui_state`
+    // move, then the Custos schema move (moving the eight tables back to
+    // `public`), then O1's own down(), landing on the same pre-O1,
+    // unqualified-table-name state this test asserted before S3d/S4 existed.
+    ComposedMigrator::down(db.conn(), Some(6))
         .await
         .expect("down survives an orphaned grant");
 
@@ -342,7 +344,7 @@ async fn down_restores_target_columns_and_survives_a_forward_only_orphan() {
         board_id: Option<Uuid>,
     }
 
-    // schema-gate:off — after the five-step down() above, SET SCHEMA has
+    // schema-gate:off — after the six-step down() above, SET SCHEMA has
     // been reverted, so `permission_grants` is back in `public` at this point.
     let rows = TargetRow::find_by_statement(Statement::from_string(
         sea_orm::DatabaseBackend::Postgres,

@@ -563,7 +563,10 @@ async fn list_workspace_tasks_invalid_sort_returns_400() {
         .list_workspace_tasks(
             &seed.ws_slug,
             &WorkspaceTaskQueryParams {
+                // schema-gate:off — an injection payload the API must reject
+                // (asserted below), never real SQL run against the database.
                 sort: Some("'; DROP TABLE tasks; --".to_string()),
+                // schema-gate:on
                 ..Default::default()
             },
         )

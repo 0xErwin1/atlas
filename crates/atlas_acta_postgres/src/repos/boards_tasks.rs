@@ -251,7 +251,7 @@ impl BoardRepo for PgBoardRepo {
 
         let sql = format!(
             "SELECT t.board_id AS board_id, count(*) AS task_count
-             FROM tasks t
+             FROM acta.tasks t
              WHERE t.workspace_id = $1
                 AND t.board_id IN ({placeholders})
                 AND t.parent_task_id IS NULL
@@ -1212,7 +1212,7 @@ impl TaskRepo for PgTaskRepo {
 
         let sql = format!(
             "SELECT t.parent_task_id AS parent_task_id, count(*) AS child_count
-             FROM tasks t
+             FROM acta.tasks t
              WHERE t.workspace_id = $1
                 AND t.parent_task_id IN ({placeholders})
                 AND t.deleted_at IS NULL
@@ -1357,7 +1357,7 @@ impl TaskRepo for PgTaskRepo {
                         let pn = values.len();
                         format!(
                             "EXISTS (
-                                    SELECT 1 FROM task_assignees ta
+                                    SELECT 1 FROM acta.task_assignees ta
                                     WHERE ta.task_id = t.id
                                       AND ta.workspace_id = t.workspace_id
                                       AND ta.assignee_user_id = ${pn}
@@ -1369,7 +1369,7 @@ impl TaskRepo for PgTaskRepo {
                         let pn = values.len();
                         format!(
                             "EXISTS (
-                                    SELECT 1 FROM task_assignees ta
+                                    SELECT 1 FROM acta.task_assignees ta
                                     WHERE ta.task_id = t.id
                                       AND ta.workspace_id = t.workspace_id
                                       AND ta.assignee_api_key_id = ${pn}
@@ -1382,7 +1382,7 @@ impl TaskRepo for PgTaskRepo {
                     let pn = values.len();
                     format!(
                         "EXISTS (
-                            SELECT 1 FROM task_assignees ta
+                            SELECT 1 FROM acta.task_assignees ta
                             WHERE ta.task_id = t.id
                               AND ta.workspace_id = t.workspace_id
                               AND ta.assignee_user_id = ${pn}
@@ -1394,7 +1394,7 @@ impl TaskRepo for PgTaskRepo {
                     let pn = values.len();
                     format!(
                         "EXISTS (
-                            SELECT 1 FROM task_assignees ta
+                            SELECT 1 FROM acta.task_assignees ta
                             WHERE ta.task_id = t.id
                               AND ta.workspace_id = t.workspace_id
                               AND ta.assignee_api_key_id = ${pn}
@@ -1465,7 +1465,7 @@ impl TaskRepo for PgTaskRepo {
         let sql = format!(
             r#"
             SELECT t.*
-            FROM tasks t
+            FROM acta.tasks t
             WHERE t.workspace_id = $1
               AND t.parent_task_id IS NULL
               AND t.deleted_at IS NULL
@@ -1749,7 +1749,7 @@ impl PgTaskAssigneeRepo {
     ) -> Result<(), DomainError> {
         conn.execute_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "DELETE FROM task_assignees WHERE assignee_api_key_id = $1",
+            "DELETE FROM acta.task_assignees WHERE assignee_api_key_id = $1",
             [api_key_id.0.into()],
         ))
         .await
@@ -1788,7 +1788,7 @@ impl TaskAssigneeRepo for PgTaskAssigneeRepo {
             sea_orm::DatabaseBackend::Postgres,
             "SELECT ta.task_id, ta.workspace_id, ta.assignee_user_id, ta.assignee_api_key_id,
                     ta.assigned_by_user_id, ta.assigned_by_api_key_id, ta.assigned_at
-             FROM task_assignees ta
+             FROM acta.task_assignees ta
              LEFT JOIN custos.api_keys ak ON ak.id = ta.assignee_api_key_id
              WHERE ta.workspace_id = $1
                AND ta.task_id = $2
@@ -1835,7 +1835,7 @@ impl TaskAssigneeRepo for PgTaskAssigneeRepo {
         let sql = format!(
             "SELECT ta.task_id, ta.workspace_id, ta.assignee_user_id, ta.assignee_api_key_id,
                     ta.assigned_by_user_id, ta.assigned_by_api_key_id, ta.assigned_at
-             FROM task_assignees ta
+             FROM acta.task_assignees ta
              LEFT JOIN custos.api_keys ak ON ak.id = ta.assignee_api_key_id
              WHERE ta.workspace_id = $1
                AND ta.task_id IN ({placeholders})
@@ -2450,8 +2450,8 @@ impl TaskActivityRepo for PgTaskActivityRepo {
                 a.created_by_api_key_id,
                 a.created_at,
                 t.readable_id AS task_readable_id
-            FROM task_activity a
-             JOIN tasks t ON t.id = a.task_id AND t.workspace_id = a.workspace_id
+            FROM acta.task_activity a
+             JOIN acta.tasks t ON t.id = a.task_id AND t.workspace_id = a.workspace_id
              WHERE a.workspace_id = ${ws_param}
                AND t.deleted_at IS NULL
                AND ({})
@@ -2749,7 +2749,7 @@ async fn try_move_to_in(
     let row = txn
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "UPDATE tasks \
+            "UPDATE acta.tasks \
              SET column_id = $1, board_id = $2, project_id = $3, position_key = $4, updated_at = $5 \
              WHERE id = $6 AND workspace_id = $7 AND deleted_at IS NULL \
              RETURNING *",

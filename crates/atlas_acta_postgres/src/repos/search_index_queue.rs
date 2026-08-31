@@ -143,7 +143,7 @@ impl PgSearchIndexQueueRepo {
         let mut enqueued: u64 = 0;
         for (kind, table) in [
             (ResourceKind::Document, "acta.documents"),
-            (ResourceKind::Task, "tasks"),
+            (ResourceKind::Task, "acta.tasks"),
         ] {
             let result = conn
                 .execute_raw(Statement::from_sql_and_values(
@@ -197,7 +197,7 @@ impl PgSearchIndexQueueRepo {
                               FROM comments c
                               WHERE c.task_id = t.id AND c.deleted_at IS NULL
                           ), 0) AS characters
-                   FROM tasks t
+                   FROM acta.tasks t
                    WHERE t.workspace_id = $1 AND t.deleted_at IS NULL
                ), corpus AS (
                    SELECT * FROM document_text UNION ALL SELECT * FROM task_text

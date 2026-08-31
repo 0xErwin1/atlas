@@ -434,9 +434,12 @@ impl TrashService {
 
                 purge_tasks_in(conn, "project_id = $1", id).await?;
 
-                let board_ids =
-                    execute_returning_ids(conn, "DELETE FROM boards WHERE project_id = $1", id)
-                        .await?;
+                let board_ids = execute_returning_ids(
+                    conn,
+                    "DELETE FROM acta.boards WHERE project_id = $1",
+                    id,
+                )
+                .await?;
                 extend_resource_refs(&mut revoked, ctx, board_ids, |i| {
                     ResourceRef::Board(BoardId(i))
                 });
@@ -459,9 +462,9 @@ impl TrashService {
                     ResourceRef::Document(DocumentId(i))
                 });
 
-                purge_tasks_in(conn, "board_id IN (SELECT id FROM boards WHERE folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM acta.folders WHERE id = $1 UNION ALL SELECT f.id FROM acta.folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure))", id).await?;
+                purge_tasks_in(conn, "board_id IN (SELECT id FROM acta.boards WHERE folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM acta.folders WHERE id = $1 UNION ALL SELECT f.id FROM acta.folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure))", id).await?;
 
-                let board_ids = execute_returning_ids(conn, "DELETE FROM boards WHERE folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM acta.folders WHERE id = $1 UNION ALL SELECT f.id FROM acta.folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)", id).await?;
+                let board_ids = execute_returning_ids(conn, "DELETE FROM acta.boards WHERE folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM acta.folders WHERE id = $1 UNION ALL SELECT f.id FROM acta.folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)", id).await?;
                 extend_resource_refs(&mut revoked, ctx, board_ids, |i| {
                     ResourceRef::Board(BoardId(i))
                 });
@@ -504,10 +507,10 @@ impl TrashService {
                 "SELECT EXISTS (SELECT 1 FROM acta.documents d WHERE d.workspace_id = $1 AND d.id = $2 AND ((d.project_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM acta.projects p WHERE p.id = d.project_id AND p.deleted_at IS NULL)) OR (d.folder_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM acta.folders f WHERE f.id = d.folder_id AND f.deleted_at IS NULL))))"
             }
             TrashKind::Comment => {
-                "SELECT EXISTS (SELECT 1 FROM comments c WHERE c.workspace_id = $1 AND c.id = $2 AND ((c.document_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM acta.documents d WHERE d.id = c.document_id AND d.deleted_at IS NULL)) OR (c.task_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = c.task_id AND t.deleted_at IS NULL))))"
+                "SELECT EXISTS (SELECT 1 FROM comments c WHERE c.workspace_id = $1 AND c.id = $2 AND ((c.document_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM acta.documents d WHERE d.id = c.document_id AND d.deleted_at IS NULL)) OR (c.task_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM acta.tasks t WHERE t.id = c.task_id AND t.deleted_at IS NULL))))"
             }
             TrashKind::Attachment => {
-                "SELECT EXISTS (SELECT 1 FROM acta.attachments a WHERE a.workspace_id = $1 AND a.id = $2 AND ((a.document_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM acta.documents d WHERE d.id = a.document_id AND d.deleted_at IS NULL)) OR (a.task_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = a.task_id AND t.deleted_at IS NULL)) OR (a.comment_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM comments c WHERE c.id = a.comment_id AND c.deleted_at IS NULL))))"
+                "SELECT EXISTS (SELECT 1 FROM acta.attachments a WHERE a.workspace_id = $1 AND a.id = $2 AND ((a.document_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM acta.documents d WHERE d.id = a.document_id AND d.deleted_at IS NULL)) OR (a.task_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM acta.tasks t WHERE t.id = a.task_id AND t.deleted_at IS NULL)) OR (a.comment_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM comments c WHERE c.id = a.comment_id AND c.deleted_at IS NULL))))"
             }
         };
         let parent_blocked = restore_exists(conn, parent_sql, ctx, id).await?;
@@ -540,10 +543,10 @@ impl TrashService {
 fn attachment_scope(kind: TrashKind) -> &'static str {
     match kind {
         TrashKind::Project => {
-            "document_id IN (SELECT id FROM acta.documents WHERE project_id = $1 OR folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM acta.folders WHERE project_id = $1 UNION ALL SELECT f.id FROM acta.folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)) OR task_id IN (SELECT id FROM tasks WHERE project_id = $1) OR comment_id IN (SELECT id FROM comments WHERE document_id IN (SELECT id FROM acta.documents WHERE project_id = $1 OR folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM acta.folders WHERE project_id = $1 UNION ALL SELECT f.id FROM acta.folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)) OR task_id IN (SELECT id FROM tasks WHERE project_id = $1)) OR draft_id IN (SELECT id FROM acta.comment_attachment_drafts WHERE document_id IN (SELECT id FROM acta.documents WHERE project_id = $1 OR folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM acta.folders WHERE project_id = $1 UNION ALL SELECT f.id FROM acta.folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)) OR task_id IN (SELECT id FROM tasks WHERE project_id = $1))"
+            "document_id IN (SELECT id FROM acta.documents WHERE project_id = $1 OR folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM acta.folders WHERE project_id = $1 UNION ALL SELECT f.id FROM acta.folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)) OR task_id IN (SELECT id FROM acta.tasks WHERE project_id = $1) OR comment_id IN (SELECT id FROM comments WHERE document_id IN (SELECT id FROM acta.documents WHERE project_id = $1 OR folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM acta.folders WHERE project_id = $1 UNION ALL SELECT f.id FROM acta.folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)) OR task_id IN (SELECT id FROM acta.tasks WHERE project_id = $1)) OR draft_id IN (SELECT id FROM acta.comment_attachment_drafts WHERE document_id IN (SELECT id FROM acta.documents WHERE project_id = $1 OR folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM acta.folders WHERE project_id = $1 UNION ALL SELECT f.id FROM acta.folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)) OR task_id IN (SELECT id FROM acta.tasks WHERE project_id = $1))"
         }
         TrashKind::Folder => {
-            "document_id IN (SELECT id FROM acta.documents WHERE folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM acta.folders WHERE id = $1 UNION ALL SELECT f.id FROM acta.folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)) OR task_id IN (SELECT t.id FROM tasks t JOIN boards b ON b.id = t.board_id WHERE b.folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM acta.folders WHERE id = $1 UNION ALL SELECT f.id FROM acta.folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)) OR comment_id IN (SELECT id FROM comments WHERE document_id IN (SELECT id FROM acta.documents WHERE folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM acta.folders WHERE id = $1 UNION ALL SELECT f.id FROM acta.folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)) OR task_id IN (SELECT t.id FROM tasks t JOIN boards b ON b.id = t.board_id WHERE b.folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM acta.folders WHERE id = $1 UNION ALL SELECT f.id FROM acta.folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure))) OR draft_id IN (SELECT id FROM acta.comment_attachment_drafts WHERE document_id IN (SELECT id FROM acta.documents WHERE folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM acta.folders WHERE id = $1 UNION ALL SELECT f.id FROM acta.folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)) OR task_id IN (SELECT t.id FROM tasks t JOIN boards b ON b.id = t.board_id WHERE b.folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM acta.folders WHERE id = $1 UNION ALL SELECT f.id FROM acta.folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)))"
+            "document_id IN (SELECT id FROM acta.documents WHERE folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM acta.folders WHERE id = $1 UNION ALL SELECT f.id FROM acta.folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)) OR task_id IN (SELECT t.id FROM acta.tasks t JOIN acta.boards b ON b.id = t.board_id WHERE b.folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM acta.folders WHERE id = $1 UNION ALL SELECT f.id FROM acta.folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)) OR comment_id IN (SELECT id FROM comments WHERE document_id IN (SELECT id FROM acta.documents WHERE folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM acta.folders WHERE id = $1 UNION ALL SELECT f.id FROM acta.folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)) OR task_id IN (SELECT t.id FROM acta.tasks t JOIN acta.boards b ON b.id = t.board_id WHERE b.folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM acta.folders WHERE id = $1 UNION ALL SELECT f.id FROM acta.folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure))) OR draft_id IN (SELECT id FROM acta.comment_attachment_drafts WHERE document_id IN (SELECT id FROM acta.documents WHERE folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM acta.folders WHERE id = $1 UNION ALL SELECT f.id FROM acta.folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)) OR task_id IN (SELECT t.id FROM acta.tasks t JOIN acta.boards b ON b.id = t.board_id WHERE b.folder_id IN (WITH RECURSIVE folders_in_closure AS (SELECT id FROM acta.folders WHERE id = $1 UNION ALL SELECT f.id FROM acta.folders f JOIN folders_in_closure c ON f.parent_folder_id = c.id) SELECT id FROM folders_in_closure)))"
         }
         TrashKind::Document => {
             "document_id = $1 OR comment_id IN (SELECT id FROM comments WHERE document_id = $1) OR draft_id IN (SELECT id FROM acta.comment_attachment_drafts WHERE document_id = $1)"
@@ -687,31 +690,31 @@ async fn purge_tasks_in(
 ) -> Result<(), DomainError> {
     purge_comments_in(
         conn,
-        &format!("task_id IN (SELECT id FROM tasks WHERE {scope})"),
+        &format!("task_id IN (SELECT id FROM acta.tasks WHERE {scope})"),
         id,
     )
     .await?;
     purge_attachments_in(
         conn,
-        &format!("task_id IN (SELECT id FROM tasks WHERE {scope})"),
+        &format!("task_id IN (SELECT id FROM acta.tasks WHERE {scope})"),
         id,
     )
     .await?;
     purge_drafts_in(
         conn,
-        &format!("task_id IN (SELECT id FROM tasks WHERE {scope})"),
+        &format!("task_id IN (SELECT id FROM acta.tasks WHERE {scope})"),
         id,
     )
     .await?;
     execute(
         conn,
         &format!(
-            "DELETE FROM task_references WHERE source_task_id IN (SELECT id FROM tasks WHERE {scope}) OR target_task_id IN (SELECT id FROM tasks WHERE {scope})"
+            "DELETE FROM acta.task_references WHERE source_task_id IN (SELECT id FROM acta.tasks WHERE {scope}) OR target_task_id IN (SELECT id FROM acta.tasks WHERE {scope})"
         ),
         id,
     )
     .await?;
-    execute(conn, &format!("DELETE FROM tasks WHERE {scope}"), id).await?;
+    execute(conn, &format!("DELETE FROM acta.tasks WHERE {scope}"), id).await?;
     Ok(())
 }
 

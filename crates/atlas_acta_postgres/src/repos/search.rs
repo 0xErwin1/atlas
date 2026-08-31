@@ -617,9 +617,9 @@ fn build_task_arm(
             {score_expr} AS score,
             t.updated_at,
             bc.name AS column_name
-        FROM tasks t
+        FROM acta.tasks t
         LEFT JOIN acta.projects p ON p.id = t.project_id AND p.workspace_id = $1 AND p.deleted_at IS NULL
-        LEFT JOIN board_columns bc ON bc.id = t.column_id AND bc.workspace_id = $1 AND bc.deleted_at IS NULL
+        LEFT JOIN acta.board_columns bc ON bc.id = t.column_id AND bc.workspace_id = $1 AND bc.deleted_at IS NULL
         WHERE t.workspace_id = $1
            AND t.deleted_at IS NULL
            AND ({live_board})
@@ -700,7 +700,7 @@ fn build_status_cond(values: &mut Vec<sea_orm::Value>, status_values: &[String])
         let pn = values.len();
         parts.push(format!(
             "t.column_id IN (
-                SELECT bc.id FROM board_columns bc
+                SELECT bc.id FROM acta.board_columns bc
                 WHERE bc.workspace_id = $1
                   AND bc.board_id = t.board_id
                   AND bc.deleted_at IS NULL
@@ -733,7 +733,7 @@ fn build_assignee_cond(values: &mut Vec<sea_orm::Value>, assignee_values: &[Stri
         let pn = values.len();
         parts.push(format!(
             "EXISTS (
-                SELECT 1 FROM task_assignees ta
+                SELECT 1 FROM acta.task_assignees ta
                 JOIN custos.users u ON u.id = ta.assignee_user_id
                 WHERE ta.task_id = t.id
                   AND lower(u.username) = lower(${pn})

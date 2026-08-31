@@ -1,8 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-//! S4 PR12 `SET SCHEMA acta` batch 2 migration (design §D1 batch 2, §D3,
-//! §D5) — second of the five Acta SET SCHEMA batches, moving the
-//! documents-group tables.
+//! S4 PR13 `SET SCHEMA acta` batch 3 migration (design §D1 batch 3, §D3) —
+//! third of the five Acta SET SCHEMA batches, moving the boards/tasks-group
+//! tables.
 
 mod support;
 
@@ -10,25 +10,24 @@ use atlas_server::persistence::migrator::ComposedMigrator;
 use sea_orm::{FromQueryResult, Statement};
 use sea_orm_migration::prelude::MigratorTrait;
 
-const ACTA_DOCUMENTS_TABLES: &[&str] = &[
-    "property_definitions",
-    "projects",
-    "folders",
-    "documents",
-    "document_revisions",
-    "document_links",
-    "attachments",
-    "attachment_write_intents",
-    "comment_attachment_drafts",
-    "comment_attachment_draft_uploads",
+const ACTA_BOARDS_TASKS_TABLES: &[&str] = &[
+    "boards",
+    "board_columns",
+    "tasks",
+    "task_references",
+    "task_assignees",
+    "task_checklist_items",
+    "task_activity",
+    "workspace_status_templates",
+    "platform_status_templates",
 ];
 
-/// All ten documents-group tables must live in the `acta` schema after the
-/// migration; `workspaces` (PR11) and `boards` (PR13, batch 3) have also
-/// since moved to `acta`, and `purge_operations` (batch 5) remains unbatched
-/// as of this PR and stays in `public`.
+/// All nine boards/tasks-group tables must live in the `acta` schema after
+/// the migration; `workspaces`/`documents` (PR11/PR12, already moved) stay
+/// `acta`, and `purge_operations` (batch 5, still unbatched as of this PR)
+/// stays in `public`.
 #[tokio::test]
-async fn documents_group_tables_move_to_the_acta_schema() {
+async fn boards_tasks_group_tables_move_to_the_acta_schema() {
     let db = support::TestDb::create().await.expect("TestDb::create");
 
     #[derive(Debug, FromQueryResult)]
@@ -37,9 +36,9 @@ async fn documents_group_tables_move_to_the_acta_schema() {
         table_schema: String,
     }
 
-    let all_names: Vec<String> = ACTA_DOCUMENTS_TABLES
+    let all_names: Vec<String> = ACTA_BOARDS_TASKS_TABLES
         .iter()
-        .chain(["workspaces", "boards", "purge_operations"].iter())
+        .chain(["workspaces", "documents", "purge_operations"].iter())
         .map(|t| format!("'{t}'"))
         .collect();
 
@@ -58,9 +57,9 @@ async fn documents_group_tables_move_to_the_acta_schema() {
     .await
     .expect("query information_schema.tables");
 
-    for table in ACTA_DOCUMENTS_TABLES
+    for table in ACTA_BOARDS_TASKS_TABLES
         .iter()
-        .chain(["workspaces", "boards"].iter())
+        .chain(["workspaces", "documents"].iter())
     {
         let schema = rows
             .iter()
@@ -90,14 +89,13 @@ async fn documents_group_tables_move_to_the_acta_schema() {
 /// recreating it, so every inbound and outbound foreign key must survive
 /// unchanged and still resolve to the moved table. Picks four representative
 /// FKs (discovered live against a fully-migrated test database, not
-/// guessed — see the PR11 precedent's deviation note about not trusting the
-/// brief's constraint-name guesses): `documents_folder_id_fkey` (internal to
-/// this batch, both sides moved together), `projects_workspace_id_fkey` (this
-/// batch referencing PR11's already-moved `acta.workspaces`),
-/// `boards_project_id_fkey` (an Acta table that has since moved to `acta`
-/// too, S4 PR13, referencing this batch's now-moved `acta.projects`), and
-/// `documents_created_by_user_id_fkey` (the pre-existing, already-qualified
-/// Acta→Custos edge to `custos.users`, S3), rather than re-asserting every
+/// guessed): `tasks_board_id_fkey` (internal to this batch, both sides moved
+/// together), `task_references_target_document_id_fkey` (this batch
+/// referencing PR12's already-moved `acta.documents`),
+/// `task_assignees_assignee_api_key_id_fkey` (the live cross-schema edge to
+/// `custos.api_keys` the S3b1 revoke-split composition depends on), and
+/// `boards_created_by_user_id_fkey` (the pre-existing, already-qualified
+/// Acta→Custos edge to `custos.users`), rather than re-asserting every
 /// inbound/outbound FK this batch's tables carry.
 #[tokio::test]
 async fn foreign_keys_survive_the_schema_move() {
@@ -127,10 +125,10 @@ async fn foreign_keys_survive_the_schema_move() {
         JOIN pg_namespace nc ON nc.oid = rc.relnamespace
         WHERE contype = 'f'
           AND conname IN (
-              'documents_folder_id_fkey',
-              'projects_workspace_id_fkey',
-              'boards_project_id_fkey',
-              'documents_created_by_user_id_fkey'
+              'tasks_board_id_fkey',
+              'task_references_target_document_id_fkey',
+              'task_assignees_assignee_api_key_id_fkey',
+              'boards_created_by_user_id_fkey'
           )
         "#
         .to_string(),
@@ -140,31 +138,25 @@ async fn foreign_keys_survive_the_schema_move() {
     .expect("query pg_constraint for representative foreign keys");
 
     let expectations = [
+        ("tasks_board_id_fkey", "acta", "tasks", "acta", "boards"),
         (
-            "documents_folder_id_fkey",
+            "task_references_target_document_id_fkey",
+            "acta",
+            "task_references",
             "acta",
             "documents",
-            "acta",
-            "folders",
         ),
         (
-            "projects_workspace_id_fkey",
+            "task_assignees_assignee_api_key_id_fkey",
             "acta",
-            "projects",
-            "acta",
-            "workspaces",
+            "task_assignees",
+            "custos",
+            "api_keys",
         ),
         (
-            "boards_project_id_fkey",
+            "boards_created_by_user_id_fkey",
             "acta",
             "boards",
-            "acta",
-            "projects",
-        ),
-        (
-            "documents_created_by_user_id_fkey",
-            "acta",
-            "documents",
             "custos",
             "users",
         ),
@@ -216,27 +208,23 @@ async fn composed_migrator_has_zero_pending_including_the_set_schema_migration()
     .map(|r| r.version)
     .collect();
     assert!(
-        applied.contains(&"m20260902_000054_acta_documents_set_schema".to_string()),
+        applied.contains(&"m20260903_000055_acta_boards_tasks_set_schema".to_string()),
         "expected the SET SCHEMA migration to be part of the applied set"
     );
 
     db.teardown().await;
 }
 
-/// T12.1's PL/pgSQL function-body audit (design "Open Questions"): queries
-/// `pg_proc`/`information_schema.triggers` on a live, fully-migrated
-/// database and asserts no application-authored routine's body contains an
-/// unqualified reference to any of the ten documents-group tables. Runs
-/// against the real database rather than only reading migration source, so
-/// this is a genuine regression guard, not a one-time note: if a future PR
-/// ever adds a trigger/function touching these tables without qualifying
-/// them, this test catches it. Filters out `pg_catalog`/`information_schema`
-/// (built-in) and the `pgvector` extension's C-language functions
-/// (`prolang` for `plpgsql` is the only application-authored language in
-/// this codebase; C-language entries are the vector/halfvec/sparsevec
-/// support functions, never referencing application tables by name).
+/// The permanent regression form of this PR's PL/pgSQL function-body audit
+/// (mirrors T12.1/`acta_documents_set_schema.rs`): queries `pg_proc` on a
+/// live, fully-migrated database and asserts no application-authored
+/// `plpgsql` routine's body contains an unqualified reference to any of the
+/// nine boards/tasks-group tables. Filters out `pg_catalog`/
+/// `information_schema` (built-in) and non-`plpgsql` routines (the
+/// `pgvector` extension's C-language support functions never reference
+/// application tables by name).
 #[tokio::test]
-async fn no_plpgsql_routine_references_a_documents_group_table_unqualified() {
+async fn no_plpgsql_routine_references_a_boards_tasks_group_table_unqualified() {
     let db = support::TestDb::create().await.expect("TestDb::create");
 
     #[derive(Debug, FromQueryResult)]
@@ -263,7 +251,7 @@ async fn no_plpgsql_routine_references_a_documents_group_table_unqualified() {
 
     let mut violations = Vec::new();
     for func in &funcs {
-        for table in ACTA_DOCUMENTS_TABLES {
+        for table in ACTA_BOARDS_TASKS_TABLES {
             for keyword in ["FROM", "JOIN", "INTO", "UPDATE"] {
                 let unqualified = format!("{keyword} {table}");
                 if func.prosrc.contains(&unqualified) {

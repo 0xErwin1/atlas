@@ -710,7 +710,7 @@ async fn task_service_move_task_recovers_after_resequence() {
 
     // Collapse Left and Right onto one shared key: the exhausted slot.
     let collision = left.position_key.clone();
-    force_position_key(&db, "tasks", right.id.0, &collision).await;
+    force_position_key(&db, "acta.tasks", right.id.0, &collision).await;
 
     // Move the mover "between" the two colliding neighbors. Anchors are task ids;
     // both Left and Right now resolve to the same collided key, so the first
@@ -729,8 +729,8 @@ async fn task_service_move_task_recovers_after_resequence() {
         .await
         .expect("move must succeed after resequence");
 
-    let left_key = read_position_key(&db, "tasks", left.id.0).await;
-    let right_key = read_position_key(&db, "tasks", right.id.0).await;
+    let left_key = read_position_key(&db, "acta.tasks", left.id.0).await;
+    let right_key = read_position_key(&db, "acta.tasks", right.id.0).await;
     assert!(
         left_key < moved.position_key && moved.position_key < right_key,
         "mover ({}) must land strictly between left ({left_key}) and right ({right_key})",
@@ -863,7 +863,7 @@ async fn task_create_between_recovers_after_resequence() {
 
     // Collapse A and B onto one shared key: the exhausted slot.
     let collision = anchor_a.position_key.clone();
-    force_position_key(&db, "tasks", anchor_b.id.0, &collision).await;
+    force_position_key(&db, "acta.tasks", anchor_b.id.0, &collision).await;
 
     let created = svc
         .create(
@@ -888,8 +888,8 @@ async fn task_create_between_recovers_after_resequence() {
         .await
         .expect("create must succeed after resequence");
 
-    let a_key = read_position_key(&db, "tasks", anchor_a.id.0).await;
-    let b_key = read_position_key(&db, "tasks", anchor_b.id.0).await;
+    let a_key = read_position_key(&db, "acta.tasks", anchor_a.id.0).await;
+    let b_key = read_position_key(&db, "acta.tasks", anchor_b.id.0).await;
     assert!(
         a_key < created.position_key && created.position_key < b_key,
         "inserted ({}) must land strictly between A ({a_key}) and B ({b_key})",
@@ -963,7 +963,7 @@ async fn checklist_add_between_recovers_after_resequence() {
         .expect("add item B");
 
     let collision = item_a.position_key.clone();
-    force_position_key(&db, "task_checklist_items", item_b.id.0, &collision).await;
+    force_position_key(&db, "acta.task_checklist_items", item_b.id.0, &collision).await;
 
     let inserted = svc
         .add_checklist_item(
@@ -980,8 +980,8 @@ async fn checklist_add_between_recovers_after_resequence() {
         .await
         .expect("add must succeed after resequence");
 
-    let a_key = read_position_key(&db, "task_checklist_items", item_a.id.0).await;
-    let b_key = read_position_key(&db, "task_checklist_items", item_b.id.0).await;
+    let a_key = read_position_key(&db, "acta.task_checklist_items", item_a.id.0).await;
+    let b_key = read_position_key(&db, "acta.task_checklist_items", item_b.id.0).await;
     assert!(
         a_key < inserted.position_key && inserted.position_key < b_key,
         "inserted item ({}) must land strictly between A ({a_key}) and B ({b_key})",
@@ -1073,7 +1073,7 @@ async fn checklist_patch_position_recovers_after_resequence() {
 
     // Collapse A and B onto one shared key: the exhausted slot.
     let collision = item_a.position_key.clone();
-    force_position_key(&db, "task_checklist_items", item_b.id.0, &collision).await;
+    force_position_key(&db, "acta.task_checklist_items", item_b.id.0, &collision).await;
 
     svc.patch_checklist_item(
         &ctx,
@@ -1091,9 +1091,9 @@ async fn checklist_patch_position_recovers_after_resequence() {
     .await
     .expect("patch must succeed after resequence");
 
-    let a_key = read_position_key(&db, "task_checklist_items", item_a.id.0).await;
-    let b_key = read_position_key(&db, "task_checklist_items", item_b.id.0).await;
-    let c_key = read_position_key(&db, "task_checklist_items", item_c.id.0).await;
+    let a_key = read_position_key(&db, "acta.task_checklist_items", item_a.id.0).await;
+    let b_key = read_position_key(&db, "acta.task_checklist_items", item_b.id.0).await;
+    let c_key = read_position_key(&db, "acta.task_checklist_items", item_c.id.0).await;
     assert!(
         a_key < c_key && c_key < b_key,
         "repositioned item ({c_key}) must land strictly between A ({a_key}) and B ({b_key})"
@@ -1223,7 +1223,7 @@ async fn promote_checklist_item_concurrent_double_promote_is_rejected() {
         txn.execute_raw(Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
             format!(
-                "SELECT id FROM task_checklist_items \
+                "SELECT id FROM acta.task_checklist_items \
                  WHERE id = '{item_id_raw}' AND workspace_id = '{ws_id_raw}' \
                  FOR UPDATE"
             ),
@@ -1234,7 +1234,7 @@ async fn promote_checklist_item_concurrent_double_promote_is_rejected() {
         txn.execute_raw(Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
             format!(
-                "UPDATE task_checklist_items \
+                "UPDATE acta.task_checklist_items \
                  SET promoted_task_id = '{dummy_child_id}' \
                  WHERE id = '{item_id_raw}'"
             ),

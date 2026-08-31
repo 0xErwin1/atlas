@@ -127,10 +127,10 @@ async fn inbound_acta_foreign_keys_survive_the_schema_move() {
     .expect("query pg_constraint for representative inbound FKs");
 
     let expectations = [
-        ("tasks_created_by_user_id_fkey", "tasks", "users"),
+        ("tasks_created_by_user_id_fkey", "acta.tasks", "users"),
         (
             "task_assignees_assignee_api_key_id_fkey",
-            "task_assignees",
+            "acta.task_assignees",
             "api_keys",
         ),
         (

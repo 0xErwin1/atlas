@@ -27,7 +27,7 @@ pub mod board {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "boards")]
+    #[sea_orm(schema_name = "acta", table_name = "boards")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
@@ -53,7 +53,7 @@ pub mod board_column {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "board_columns")]
+    #[sea_orm(schema_name = "acta", table_name = "board_columns")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
@@ -79,7 +79,7 @@ pub mod task {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "tasks")]
+    #[sea_orm(schema_name = "acta", table_name = "tasks")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
@@ -114,7 +114,7 @@ pub mod task_reference {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "task_references")]
+    #[sea_orm(schema_name = "acta", table_name = "task_references")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
@@ -138,7 +138,7 @@ pub mod task_assignee {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "task_assignees")]
+    #[sea_orm(schema_name = "acta", table_name = "task_assignees")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false, column_name = "task_id")]
         pub task_id: Uuid,
@@ -160,7 +160,7 @@ pub mod task_checklist_item {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "task_checklist_items")]
+    #[sea_orm(schema_name = "acta", table_name = "task_checklist_items")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
@@ -187,7 +187,7 @@ pub mod task_activity {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "task_activity")]
+    #[sea_orm(schema_name = "acta", table_name = "task_activity")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,

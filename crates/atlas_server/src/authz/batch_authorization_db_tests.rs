@@ -259,7 +259,7 @@ async fn query_a_omits_dead_projects_and_unavailable_subjects() {
     db.conn
         .execute_unprepared(&format!(
             "UPDATE acta.documents SET deleted_at = now() WHERE id = '{}'; \
-             UPDATE tasks SET deleted_at = now() WHERE id = '{}'",
+             UPDATE acta.tasks SET deleted_at = now() WHERE id = '{}'",
             ids.document_id, ids.task_id
         ))
         .await
@@ -623,9 +623,9 @@ async fn visibility_contribution_flows_only_through_the_project_segment() {
     let column_id = Uuid::now_v7();
     db.conn
         .execute_unprepared(&format!(
-            "INSERT INTO boards (id, workspace_id, project_id, name, created_by_user_id, created_at, updated_at) \
+            "INSERT INTO acta.boards (id, workspace_id, project_id, name, created_by_user_id, created_at, updated_at) \
              VALUES ('{board_id}', '{workspace_id}', '{task_project_id}', 'Board', '{user_id}', now(), now()); \
-             INSERT INTO board_columns (id, workspace_id, board_id, name, position_key, created_by_user_id, created_at, updated_at) \
+             INSERT INTO acta.board_columns (id, workspace_id, board_id, name, position_key, created_by_user_id, created_at, updated_at) \
              VALUES ('{column_id}', '{workspace_id}', '{board_id}', 'Todo', 'a0', '{user_id}', now(), now())"
         ))
         .await
@@ -633,7 +633,7 @@ async fn visibility_contribution_flows_only_through_the_project_segment() {
     let task_id = Uuid::now_v7();
     db.conn
         .execute_unprepared(&format!(
-            "INSERT INTO tasks (id, workspace_id, project_id, board_id, column_id, readable_id, title, description, labels, position_key, created_by_user_id, created_at, updated_at) \
+            "INSERT INTO acta.tasks (id, workspace_id, project_id, board_id, column_id, readable_id, title, description, labels, position_key, created_by_user_id, created_at, updated_at) \
              VALUES ('{task_id}', '{workspace_id}', '{task_project_id}', '{board_id}', '{column_id}', 'AT-1', 'Task', '', ARRAY[]::text[], 'a0', '{user_id}', now(), now())"
         ))
         .await
@@ -1078,11 +1078,11 @@ async fn seed_projection_subjects(conn: &DatabaseConnection, ids: ProjectionSubj
          VALUES ('{}', '{}', '{}', 'Folder', '{}', now(), now()); \
          INSERT INTO acta.documents (id, workspace_id, project_id, folder_id, title, slug, content, frontmatter, current_revision_seq, created_by_user_id, created_at, updated_at) \
          VALUES ('{}', '{}', '{}', '{}', 'Document', 'document-{}', '', '{{}}', 1, '{}', now(), now()); \
-         INSERT INTO boards (id, workspace_id, project_id, name, created_by_user_id, created_at, updated_at) \
+         INSERT INTO acta.boards (id, workspace_id, project_id, name, created_by_user_id, created_at, updated_at) \
          VALUES ('{}', '{}', '{}', 'Board', '{}', now(), now()); \
-         INSERT INTO board_columns (id, workspace_id, board_id, name, position_key, created_by_user_id, created_at, updated_at) \
+         INSERT INTO acta.board_columns (id, workspace_id, board_id, name, position_key, created_by_user_id, created_at, updated_at) \
          VALUES ('{}', '{}', '{}', 'Todo', 'a0', '{}', now(), now()); \
-         INSERT INTO tasks (id, workspace_id, project_id, board_id, column_id, readable_id, title, description, labels, position_key, created_by_user_id, created_at, updated_at) \
+         INSERT INTO acta.tasks (id, workspace_id, project_id, board_id, column_id, readable_id, title, description, labels, position_key, created_by_user_id, created_at, updated_at) \
          VALUES ('{}', '{}', '{}', '{}', '{}', 'AT-1', 'Task', '', ARRAY[]::text[], 'a0', '{}', now(), now()); \
          INSERT INTO acta.attachments (id, workspace_id, document_id, file_name, content_type, size_bytes, sha256, created_by_user_id, created_at, updated_at) \
          VALUES ('{}', '{}', '{}', 'document.txt', 'text/plain', 1, 'document-digest', '{}', now(), now()); \
