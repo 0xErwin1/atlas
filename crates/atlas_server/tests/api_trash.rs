@@ -20,13 +20,13 @@ use atlas_acta::ports::documents::AttachmentRepo;
 use atlas_acta::ports::documents::DocumentRepo;
 use atlas_acta::ports::workspace_core::FolderRepo;
 use atlas_acta::ports::workspace_core::ProjectRepo;
+use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_custos::entities::security_audit::AuditFilters;
 use atlas_custos::ports::security_audit::SecurityAuditRepo;
 use atlas_server::routes::registry::ROUTE_REGISTRY;
 use atlas_server::{
     persistence::repos::{
-        DiskAttachmentStore, MembershipRepo, NewUser, PgAttachmentRepo, PgSecurityAuditRepo,
-        UserRepo,
+        DiskAttachmentStore, NewUser, PgAttachmentRepo, PgSecurityAuditRepo, UserRepo,
     },
     services::{CommentService, DocumentService, TrashService},
 };

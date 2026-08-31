@@ -11,6 +11,7 @@ use atlas_acta::actor::Actor;
 use atlas_acta::actor::WorkspaceCtx;
 use atlas_acta::entities::identity::MemberRole;
 use atlas_acta::ids::BoardId;
+use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_api::dtos::{
     CreateProjectRequest, CreateUserApiKeyRequest, InitialGrantRequest,
     boards_tasks::{
@@ -27,7 +28,7 @@ use atlas_core::principal::UserId;
 use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::persistence::repos::{
-    MembershipRepo, NewUser, PermissionGrantRepo, PgPermissionGrantRepo, UserRepo,
+    NewUser, PermissionGrantRepo, PgPermissionGrantRepo, UserRepo,
 };
 
 fn project_req(slug: &str, prefix: &str) -> CreateProjectRequest {

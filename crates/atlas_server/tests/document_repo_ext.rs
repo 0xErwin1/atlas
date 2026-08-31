@@ -21,7 +21,7 @@ fn user_principal(user: &atlas_server::persistence::repos::User) -> Principal {
 
 async fn create_doc(
     repo: &PgDocumentRepo,
-    ws: &atlas_server::persistence::repos::Workspace,
+    ws: &atlas_acta_postgres::repos::identity::Workspace,
     user: &atlas_server::persistence::repos::User,
     title: &str,
     slug: Option<&str>,
@@ -121,7 +121,7 @@ async fn list_visible_cursor_pagination_works() {
 
 async fn create_folder(
     db: &support::TestDb,
-    ws: &atlas_server::persistence::repos::Workspace,
+    ws: &atlas_acta_postgres::repos::identity::Workspace,
     user: &atlas_server::persistence::repos::User,
     project_id: Option<atlas_acta::ids::ProjectId>,
     parent: Option<atlas_acta::ids::FolderId>,
@@ -145,7 +145,7 @@ async fn create_folder(
 
 async fn create_doc_in_folder(
     repo: &PgDocumentRepo,
-    ws: &atlas_server::persistence::repos::Workspace,
+    ws: &atlas_acta_postgres::repos::identity::Workspace,
     user: &atlas_server::persistence::repos::User,
     title: &str,
     folder_id: Option<atlas_acta::ids::FolderId>,
@@ -169,7 +169,7 @@ async fn create_doc_in_folder(
 
 async fn create_project(
     db: &support::TestDb,
-    ws: &atlas_server::persistence::repos::Workspace,
+    ws: &atlas_acta_postgres::repos::identity::Workspace,
     user: &atlas_server::persistence::repos::User,
     slug: &str,
 ) -> atlas_acta::entities::workspace_core::Project {
@@ -200,10 +200,11 @@ async fn create_project(
 
 async fn create_api_key(
     db: &support::TestDb,
-    ws: &atlas_server::persistence::repos::Workspace,
+    ws: &atlas_acta_postgres::repos::identity::Workspace,
     user: &atlas_server::persistence::repos::User,
 ) -> atlas_core::principal::ApiKeyId {
-    use atlas_server::persistence::repos::{ApiKeyRepo, NewApiKey, PgApiKeyRepo};
+    use atlas_custos_postgres::repos::identity::PgApiKeyRepo;
+    use atlas_server::persistence::repos::{ApiKeyRepo, NewApiKey};
     let repo = PgApiKeyRepo {
         conn: db.conn().clone(),
     };
@@ -227,7 +228,7 @@ async fn create_api_key(
 
 async fn grant_to_api_key(
     db: &support::TestDb,
-    ws: &atlas_server::persistence::repos::Workspace,
+    ws: &atlas_acta_postgres::repos::identity::Workspace,
     api_key_id: atlas_core::principal::ApiKeyId,
     project_id: Option<atlas_acta::ids::ProjectId>,
     folder_id: Option<atlas_acta::ids::FolderId>,

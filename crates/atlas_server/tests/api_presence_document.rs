@@ -29,8 +29,8 @@ use std::time::{Duration, Instant};
 use atlas_acta::actor::Actor;
 use atlas_acta::actor::WorkspaceCtx;
 use atlas_acta::entities::identity::MemberRole;
+use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_api::dtos::{CreateProjectRequest, documents::CreateDocumentRequest};
-use atlas_server::persistence::repos::MembershipRepo;
 
 // ---------------------------------------------------------------------------
 // Helpers

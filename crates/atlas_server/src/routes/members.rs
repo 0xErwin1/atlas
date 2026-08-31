@@ -15,13 +15,12 @@ use atlas_custos::entities::security_audit::SecurityAction;
 use crate::{
     authz::{CallerClass, WorkspaceMember, WorkspaceOwnerOrAdmin},
     error::ApiError,
-    persistence::repos::{
-        ApiKeyRepo, MembershipRepo, PgApiKeyRepo, PgMembershipRepo, PgSecurityAuditRepo,
-        PgUserRepo, UserRepo,
-    },
+    persistence::repos::{ApiKeyRepo, PgSecurityAuditRepo, UserRepo},
     routes::account_status,
     state::AppState,
 };
+use atlas_acta_postgres::repos::identity::{MembershipRepo, PgMembershipRepo};
+use atlas_custos_postgres::repos::identity::{PgApiKeyRepo, PgUserRepo};
 
 #[utoipa::path(
     get,

@@ -10,14 +10,16 @@ mod support;
 use atlas_acta::actor::Actor;
 use atlas_acta::actor::WorkspaceCtx;
 use atlas_acta::entities::identity::MemberRole;
+use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_api::dtos::{
     CreateGrantRequest, CreateProjectRequest, CreateUserApiKeyRequest, GrantPrincipal,
     UpdateProjectRequest,
 };
 use atlas_custos::capability::Capability;
 use atlas_custos::entities::identity::ApiKeyType;
+use atlas_custos_postgres::repos::identity::PgApiKeyRepo;
 use atlas_server::persistence::repos::{
-    ApiKeyRepo, MembershipRepo, NewApiKey, NewUser, PermissionGrantRepo, PgApiKeyRepo, UserRepo,
+    ApiKeyRepo, NewApiKey, NewUser, PermissionGrantRepo, UserRepo,
 };
 
 fn proj_req(name: &str, slug: &str) -> CreateProjectRequest {

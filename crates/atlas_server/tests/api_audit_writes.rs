@@ -20,14 +20,15 @@ use atlas_acta::actor::Actor;
 use atlas_acta::actor::WorkspaceCtx;
 use atlas_acta::entities::identity::MemberRole;
 use atlas_acta::ids::WorkspaceId;
+use atlas_acta_postgres::repos::identity::{MembershipRepo, NewWorkspace, WorkspaceRepo};
 use atlas_api::dtos::{
     CreateGrantRequest, CreateProjectRequest, CreateUserRequest, GrantPrincipal,
 };
 use atlas_core::principal::UserId;
 use atlas_custos::entities::security_audit::AuditFilters;
 use atlas_server::persistence::repos::{
-    ActivationTokenRepo, ApiKeyRepo, MembershipRepo, NewActivationToken, NewApiKey, NewUser,
-    NewWorkspace, PgSecurityAuditRepo, SecurityAuditRepo, UserRepo, WorkspaceRepo,
+    ActivationTokenRepo, ApiKeyRepo, NewActivationToken, NewApiKey, NewUser, PgSecurityAuditRepo,
+    SecurityAuditRepo, UserRepo,
 };
 use support::{TestDb, TestServer, login_user_with_workspace};
 
@@ -98,7 +99,7 @@ async fn login_owner(
     username: &str,
 ) -> (
     atlas_client::AtlasClient,
-    atlas_server::persistence::repos::Workspace,
+    atlas_acta_postgres::repos::identity::Workspace,
     atlas_custos::entities::identity::User,
 ) {
     login_user_with_workspace(server, db, username).await

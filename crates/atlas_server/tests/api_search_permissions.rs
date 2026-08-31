@@ -33,20 +33,22 @@ use atlas_acta::ports::search::SearchRepo;
 use atlas_acta::search::SearchQuery;
 use atlas_acta::search::SearchSort;
 use atlas_acta::search::TypeSet;
+use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_api::dtos::search::{SearchHitDto, SearchKindDto};
 use atlas_api::pagination::Page;
 use atlas_core::principal::Principal;
 use atlas_custos::capability::Capability;
 use atlas_custos::capability::CapabilityAction;
 use atlas_custos::capability::CapabilityFamily;
+use atlas_custos_postgres::repos::identity::PgApiKeyRepo;
 use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::{
     auth::tokens::{generate_api_key, hash_token},
     persistence::repos::{
-        ApiKeyRepo, BoardRepo, DocumentRepo, MembershipRepo, NewApiKey, NewUser,
-        PermissionGrantRepo, PgApiKeyRepo, PgBoardRepo, PgDocumentRepo, PgPermissionGrantRepo,
-        PgProjectRepo, PgSearchRepo, PgTaskRepo, ProjectRepo, TaskRepo, UserRepo,
+        ApiKeyRepo, BoardRepo, DocumentRepo, NewApiKey, NewUser, PermissionGrantRepo, PgBoardRepo,
+        PgDocumentRepo, PgPermissionGrantRepo, PgProjectRepo, PgSearchRepo, PgTaskRepo,
+        ProjectRepo, TaskRepo, UserRepo,
     },
 };
 use uuid::Uuid;
@@ -96,7 +98,7 @@ async fn seed_workspace_with_member(
     db: &support::TestDb,
     username: &str,
 ) -> (
-    atlas_server::persistence::repos::Workspace,
+    atlas_acta_postgres::repos::identity::Workspace,
     atlas_server::persistence::repos::User,
 ) {
     support::seed_workspace(db, username).await

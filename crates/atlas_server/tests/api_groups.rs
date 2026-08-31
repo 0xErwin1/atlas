@@ -14,12 +14,11 @@ mod support;
 use atlas_acta::actor::Actor;
 use atlas_acta::actor::WorkspaceCtx;
 use atlas_acta::entities::identity::MemberRole;
+use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_api::dtos::groups::{AddGroupMemberRequest, CreateGroupRequest};
 use atlas_client::ClientError;
 use atlas_custos::entities::security_audit::AuditFilters;
-use atlas_server::persistence::repos::{
-    MembershipRepo, NewUser, PgSecurityAuditRepo, SecurityAuditRepo, UserRepo,
-};
+use atlas_server::persistence::repos::{NewUser, PgSecurityAuditRepo, SecurityAuditRepo, UserRepo};
 use support::{TestDb, TestServer, login_user_with_workspace};
 
 async fn add_workspace_member(

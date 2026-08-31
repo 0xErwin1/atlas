@@ -8,11 +8,10 @@ use axum_extra::extract::CookieJar;
 use crate::{
     auth::tokens::hash_token,
     error::ApiError,
-    persistence::repos::{
-        ApiKeyRepo, PgApiKeyRepo, PgSessionRepo, PgUserRepo, SessionRepo, UserRepo,
-    },
+    persistence::repos::{ApiKeyRepo, SessionRepo, UserRepo},
     state::AppState,
 };
+use atlas_custos_postgres::repos::identity::{PgApiKeyRepo, PgSessionRepo, PgUserRepo};
 
 /// The resolved authentication principal injected into request extensions.
 #[derive(Debug, Clone)]

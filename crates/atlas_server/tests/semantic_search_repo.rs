@@ -21,13 +21,13 @@ use atlas_acta::semantic_search::SemanticSearchQuery;
 use atlas_acta::semantic_search::SemanticSearchRepo;
 use atlas_acta::semantic_search::SemanticSearchSource;
 use atlas_acta::semantic_search::SemanticSearchTypeFilter;
+use atlas_acta_postgres::repos::identity::{MembershipRepo, PgMembershipRepo};
 use atlas_core::error::DomainError;
 use atlas_core::principal::Principal;
 use atlas_server::{
     persistence::repos::{
-        BoardRepo, DocumentRepo, MembershipRepo, PgBoardRepo, PgDocumentRepo, PgMembershipRepo,
-        PgProjectRepo, PgSemanticIndexWriter, PgSemanticSearchRepo, PgTaskRepo, ProjectRepo,
-        TaskRepo, UserRepo, semantic_search_sql,
+        BoardRepo, DocumentRepo, PgBoardRepo, PgDocumentRepo, PgProjectRepo, PgSemanticIndexWriter,
+        PgSemanticSearchRepo, PgTaskRepo, ProjectRepo, TaskRepo, UserRepo, semantic_search_sql,
     },
     semantic_indexer::{
         AttachmentText, ChecklistText, CommentText, SubtaskText, TaskIndexInput,

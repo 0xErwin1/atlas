@@ -10,11 +10,12 @@ mod support;
 use atlas_acta::actor::Actor;
 use atlas_acta::actor::WorkspaceCtx;
 use atlas_acta::entities::identity::MemberRole;
+use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_api::dtos::{
     CreateGrantRequest, CreateProjectRequest, CreateUserApiKeyRequest, GrantPrincipal,
 };
 use atlas_client::ClientError;
-use atlas_server::persistence::repos::{ApiKeyRepo, MembershipRepo, NewApiKey, NewUser, UserRepo};
+use atlas_server::persistence::repos::{ApiKeyRepo, NewApiKey, NewUser, UserRepo};
 use support::{TestDb, TestServer, login_user, login_user_with_workspace};
 
 async fn add_agent(

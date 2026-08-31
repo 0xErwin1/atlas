@@ -10,13 +10,14 @@ mod support;
 use atlas_acta::actor::Actor;
 use atlas_acta::actor::WorkspaceCtx;
 use atlas_acta::entities::identity::MemberRole;
+use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_api::dtos::{
     CreateProjectRequest,
     boards_tasks::{CreateCommentRequest, UpdateCommentRequest},
     documents::CreateDocumentRequest,
 };
 use atlas_client::ClientError;
-use atlas_server::persistence::repos::{MembershipRepo, NewUser, UserRepo};
+use atlas_server::persistence::repos::{NewUser, UserRepo};
 
 fn project_req(slug: &str, prefix: &str) -> CreateProjectRequest {
     CreateProjectRequest {

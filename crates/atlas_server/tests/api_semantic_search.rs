@@ -20,10 +20,11 @@ use atlas_api::{
     pagination::Page,
 };
 use atlas_core::error::DomainError;
+use atlas_custos_postgres::repos::identity::PgApiKeyRepo;
 use atlas_server::{
     embeddings::DeterministicEmbeddingProvider,
     persistence::repos::{
-        BoardRepo, DocumentRepo, PermissionGrantRepo, PgApiKeyRepo, PgBoardRepo, PgDocumentRepo,
+        BoardRepo, DocumentRepo, PermissionGrantRepo, PgBoardRepo, PgDocumentRepo,
         PgPermissionGrantRepo, PgSemanticIndexWriter, PgTaskRepo, TaskRepo,
     },
 };

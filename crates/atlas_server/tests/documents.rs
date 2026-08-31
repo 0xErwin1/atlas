@@ -7,9 +7,9 @@ use atlas_acta::entities::documents::NewAttachment;
 use atlas_acta::entities::documents::NewDocument;
 use atlas_core::principal::ApiKeyId;
 use atlas_core::principal::Principal;
+use atlas_custos_postgres::repos::identity::PgApiKeyRepo;
 use atlas_server::persistence::repos::{
-    ApiKeyRepo, AttachmentRepo, DocumentRepo, NewApiKey, PgApiKeyRepo, PgAttachmentRepo,
-    PgDocumentRepo,
+    ApiKeyRepo, AttachmentRepo, DocumentRepo, NewApiKey, PgAttachmentRepo, PgDocumentRepo,
 };
 use serde_json::json;
 
@@ -19,7 +19,7 @@ fn make_doc_repo(db: &support::TestDb, anchor_interval: u32) -> PgDocumentRepo {
 
 async fn seed_api_key(
     db: &support::TestDb,
-    ws: &atlas_server::persistence::repos::Workspace,
+    ws: &atlas_acta_postgres::repos::identity::Workspace,
     user: &atlas_server::persistence::repos::User,
 ) -> ApiKeyId {
     let api_key_repo = PgApiKeyRepo {

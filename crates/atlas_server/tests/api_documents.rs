@@ -12,6 +12,7 @@ use sea_orm::{ConnectionTrait, Statement};
 use atlas_acta::actor::Actor;
 use atlas_acta::actor::WorkspaceCtx;
 use atlas_acta::entities::identity::MemberRole;
+use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_api::dtos::{
     ApiKeyScope, CreateUserApiKeyRequest,
     documents::{
@@ -22,9 +23,7 @@ use atlas_api::dtos::{
     },
 };
 use atlas_client::ClientError;
-use atlas_server::persistence::repos::{
-    FolderRepo, MembershipRepo, NewUser, PermissionGrantRepo, UserRepo,
-};
+use atlas_server::persistence::repos::{FolderRepo, NewUser, PermissionGrantRepo, UserRepo};
 
 fn doc_req(title: &str) -> CreateDocumentRequest {
     CreateDocumentRequest {
@@ -3273,7 +3272,7 @@ async fn document_moves_batch_rejects_more_than_one_hundred_items_before_process
 async fn member_client_with_document_grant(
     server: &support::TestServer,
     db: &support::TestDb,
-    ws: &atlas_server::persistence::repos::Workspace,
+    ws: &atlas_acta_postgres::repos::identity::Workspace,
     username: &str,
     document_id: uuid::Uuid,
     role: atlas_server::authz::ResourceRole,
@@ -3675,7 +3674,7 @@ async fn api_key_actor_write_sets_actor_type_api_key() {
 async fn member_client_with_optional_project_grant(
     server: &support::TestServer,
     db: &support::TestDb,
-    ws: &atlas_server::persistence::repos::Workspace,
+    ws: &atlas_acta_postgres::repos::identity::Workspace,
     username: &str,
     project_id: Option<atlas_acta::ids::ProjectId>,
     role: Option<atlas_server::authz::ResourceRole>,
@@ -3748,7 +3747,7 @@ async fn private_project_with_attachment(
     server: &support::TestServer,
     db: &support::TestDb,
     owner: &atlas_client::AtlasClient,
-    ws: &atlas_server::persistence::repos::Workspace,
+    ws: &atlas_acta_postgres::repos::identity::Workspace,
     slug_prefix: &str,
 ) -> (atlas_api::dtos::ProjectDto, uuid::Uuid) {
     let _ = (server, db);

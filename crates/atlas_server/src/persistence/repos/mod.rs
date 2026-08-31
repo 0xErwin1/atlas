@@ -47,10 +47,8 @@ mod workspace_attachments;
 mod workspace_core;
 
 pub use identity::{
-    ActivationTokenRepo, ApiKey, ApiKeyRepo, MembershipRepo, NewActivationToken, NewApiKey,
-    NewSession, NewUser, NewWorkspace, PgActivationTokenRepo, PgApiKeyRepo, PgMembershipRepo,
-    PgSessionRepo, PgUiStateRepo, PgUserRepo, PgWorkspaceRepo, Session, SessionRepo, UiStateRepo,
-    User, UserRepo, UserUiState, Workspace, WorkspaceRepo,
+    ActivationTokenRepo, ApiKey, ApiKeyRepo, NewActivationToken, NewApiKey, NewSession, NewUser,
+    PgUiStateRepo, Session, SessionRepo, UiStateRepo, User, UserRepo, UserUiState,
 };
 
 pub use attachment_store::DiskAttachmentStore;

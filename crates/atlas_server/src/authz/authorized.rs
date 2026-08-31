@@ -42,13 +42,16 @@ use crate::{
         },
         live_ancestors::{live_board_chain, live_folder_chain, live_project},
         repos::{
-            ApiKeyRepo, MembershipRepo, PermissionGrantRepo, PgApiKeyRepo, PgMembershipRepo,
-            PgPermissionGrantRepo, PgProjectRepo, PgUserRepo, PgWorkspaceRepo, ProjectRepo,
-            UserRepo, WorkspaceRepo,
+            ApiKeyRepo, PermissionGrantRepo, PgPermissionGrantRepo, PgProjectRepo, ProjectRepo,
+            UserRepo,
         },
     },
     state::AppState,
 };
+use atlas_acta_postgres::repos::identity::{
+    MembershipRepo, PgMembershipRepo, PgWorkspaceRepo, WorkspaceRepo,
+};
+use atlas_custos_postgres::repos::identity::{PgApiKeyRepo, PgUserRepo};
 
 pub trait MinRole: Send + Sync {
     /// The minimum effective role a human (or group) principal must hold on the

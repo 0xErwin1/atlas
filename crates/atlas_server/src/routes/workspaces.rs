@@ -32,14 +32,17 @@ use crate::{
     authz::{RequireUserAdmin, WorkspaceMember, enforce_api_key_scope},
     error::ApiError,
     persistence::repos::{
-        ApiKeyRepo, BoardRepo, MembershipRepo, PgApiKeyRepo, PgBoardRepo, PgMembershipRepo,
-        PgPlatformStatusTemplateRepo, PgProjectRepo, PgStatusTemplateRepo, PgUserRepo,
-        PgWorkspaceRepo, PlatformStatusTemplateRepo, ProjectRepo, StatusTemplateRepo, UserRepo,
-        WorkspaceRepo,
+        ApiKeyRepo, BoardRepo, PgBoardRepo, PgPlatformStatusTemplateRepo, PgProjectRepo,
+        PgStatusTemplateRepo, PlatformStatusTemplateRepo, ProjectRepo, StatusTemplateRepo,
+        UserRepo,
     },
     routes::validation::{validate_name, validate_slug},
     state::AppState,
 };
+use atlas_acta_postgres::repos::identity::{
+    MembershipRepo, PgMembershipRepo, PgWorkspaceRepo, WorkspaceRepo,
+};
+use atlas_custos_postgres::repos::identity::{PgApiKeyRepo, PgUserRepo};
 
 /// Fallback status columns for a new workspace, in board order, used when the
 /// Atlas-wide defaults (`/api/admin/status-templates`) are empty. The default

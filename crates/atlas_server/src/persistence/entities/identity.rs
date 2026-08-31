@@ -3,14 +3,6 @@ use atlas_core::principal::UserId;
 use chrono::{DateTime, Utc};
 use sea_orm::entity::prelude::*;
 
-// R1 scaffolding: `workspace`/`workspace_membership` (and their `_from`
-// conversions) now live in `atlas_acta_postgres` (S4 PR1). Re-exporting them
-// here keeps every existing `crate::persistence::entities::identity::*` call
-// site unaffected by the move (retired at S5 per the S2/S3 plan).
-pub use atlas_acta_postgres::entities::identity::{
-    membership, membership_from, workspace, workspace_from,
-};
-
 pub mod user_ui_state {
     use super::*;
 

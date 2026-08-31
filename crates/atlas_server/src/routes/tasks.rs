@@ -104,13 +104,12 @@ use crate::{
     persistence::entities::boards_tasks::task,
     persistence::entities::documents::document,
     persistence::repos::{
-        ApiKeyRepo, AttachmentRepo, DocumentRepo, MembershipRepo, PgApiKeyRepo,
-        PgAttachmentLifecycle, PgAttachmentRepo, PgBoardRepo, PgCommentLinkRepo, PgCommentRepo,
-        PgDocumentLinkRepo, PgDocumentRepo, PgMembershipRepo, PgPermissionGrantRepo, PgProjectRepo,
-        PgPropertyDefinitionRepo, PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo,
-        PgTaskReferenceRepo, PgTaskRepo, PgUserRepo, ProjectRepo, PropertyDefinitionRepo,
-        TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo,
-        UserRepo,
+        ApiKeyRepo, AttachmentRepo, DocumentRepo, PgAttachmentLifecycle, PgAttachmentRepo,
+        PgBoardRepo, PgCommentLinkRepo, PgCommentRepo, PgDocumentLinkRepo, PgDocumentRepo,
+        PgPermissionGrantRepo, PgProjectRepo, PgPropertyDefinitionRepo, PgTaskActivityRepo,
+        PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo, ProjectRepo,
+        PropertyDefinitionRepo, TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo,
+        TaskReferenceRepo, TaskRepo, UserRepo,
     },
     routes::comment_attachment_markdown,
     routes::comments::{
@@ -126,6 +125,8 @@ use crate::{
     state::AppState,
     task_graph::{self, GraphEdge, GraphNodeKind, TaskGraphExplorer},
 };
+use atlas_acta_postgres::repos::identity::{MembershipRepo, PgMembershipRepo};
+use atlas_custos_postgres::repos::identity::{PgApiKeyRepo, PgUserRepo};
 
 // ---------------------------------------------------------------------------
 // Shared path structs

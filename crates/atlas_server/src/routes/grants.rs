@@ -48,11 +48,11 @@ use crate::{
     },
     error::ApiError,
     persistence::repos::{
-        ApiKeyRepo, MembershipRepo, PermissionGrantRepo, PgGroupRepo, PgPermissionGrantRepo,
-        PgSecurityAuditRepo,
+        ApiKeyRepo, PermissionGrantRepo, PgGroupRepo, PgPermissionGrantRepo, PgSecurityAuditRepo,
     },
     state::AppState,
 };
+use atlas_acta_postgres::repos::identity::MembershipRepo;
 
 #[derive(Deserialize)]
 pub(crate) struct PaginationQuery {
@@ -654,7 +654,7 @@ async fn parse_principal(
     match principal.r#type.as_str() {
         "user" => {
             let uid = UserId(principal.id);
-            let membership_repo = crate::persistence::repos::PgMembershipRepo {
+            let membership_repo = atlas_acta_postgres::repos::identity::PgMembershipRepo {
                 conn: (*state.db).clone(),
             };
             let ctx = atlas_acta::actor::WorkspaceCtx::new(
@@ -676,7 +676,7 @@ async fn parse_principal(
         }
         "api_key" => {
             let kid = ApiKeyId(principal.id);
-            let api_key_repo = crate::persistence::repos::PgApiKeyRepo {
+            let api_key_repo = atlas_custos_postgres::repos::identity::PgApiKeyRepo {
                 conn: (*state.db).clone(),
             };
 
