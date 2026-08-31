@@ -175,13 +175,6 @@ pub fn app(state: AppState) -> Router {
             "/api/users/me",
             axum::routing::patch(routes::auth::update_me),
         )
-        // Self-service UI state (human users only; agents are rejected at the handler)
-        .route(
-            "/api/me/ui-state",
-            get(routes::ui_state::get_ui_state).put(routes::ui_state::set_ui_state),
-        )
-        // Server metadata (any authenticated principal)
-        .route("/api/meta", get(routes::health::meta))
         .route("/api/admin/trash", get(routes::trash::list_trash))
         .route("/api/admin/trash/restore", axum::routing::post(routes::trash::restore_trash))
         .route("/api/admin/trash/purge", axum::routing::post(routes::trash::purge_trash))
@@ -801,9 +794,6 @@ pub fn app(state: AppState) -> Router {
     };
 
     let public = Router::new()
-        .route("/health", get(routes::health::health))
-        .route("/ready", get(routes::health::ready))
-        .route("/version", get(routes::health::version))
         .route(
             "/api/auth/login",
             axum::routing::post(routes::auth::login).layer(GovernorLayer::new(login_config)),
@@ -825,7 +815,14 @@ pub fn app(state: AppState) -> Router {
         .merge(routes::openapi::scalar_router())
         .with_state(state.clone());
 
-    let router = public.merge(protected);
+    // `platform`'s six routes (health/ready/version/meta/ui-state) are
+    // assembled by `routes::platform::router`, which reproduces the exact
+    // public/protected split and layer stack they carried inline above
+    // (D6, `v2-e3-s2-router-audit` PR2) — merging an already-layered router
+    // is the same operation as merging two already-layered routers.
+    let router = public
+        .merge(protected)
+        .merge(routes::platform::router(state));
     apply_layers(router)
 }
 
