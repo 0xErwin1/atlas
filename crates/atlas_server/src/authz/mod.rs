@@ -8,8 +8,11 @@ pub(crate) mod batch_authorization;
 mod batch_authorization_db_tests;
 #[cfg(test)]
 mod batch_authorization_tests;
+pub mod extract_scope;
 pub mod extractors;
 pub mod policy;
+
+pub use extract_scope::ExtractScope;
 
 pub use policy::{
     ChainSegment, NewPermissionGrant, PermissionGrant, PermissionGrantId, PermissionGrantRepo,
