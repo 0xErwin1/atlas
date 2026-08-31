@@ -19,17 +19,19 @@ use atlas_api::{
 };
 use atlas_core::principal::Principal;
 
+use atlas_acta_postgres::entities::webhook_delivery::webhook_delivery_log;
+use atlas_acta_postgres::entities::webhook_subscription::webhook_subscriptions;
+use atlas_acta_postgres::repos::webhook_delivery::PgWebhookDeliveryRepo;
+use atlas_acta_postgres::repos::webhook_subscription::{
+    PgWebhookSubscriptionRepo, WebhookSubscriptionPatch,
+};
+
 use crate::{
     authz::{
         AdminMinAgentEditor, Authorized, WebhooksCreate, WebhooksDelete, WebhooksRead,
         WebhooksUpdate, WorkspaceRes,
     },
     error::ApiError,
-    persistence::{
-        entities::webhook_delivery::webhook_delivery_log,
-        entities::webhook_subscription::webhook_subscriptions,
-        repos::{PgWebhookDeliveryRepo, PgWebhookSubscriptionRepo, WebhookSubscriptionPatch},
-    },
     state::AppState,
 };
 

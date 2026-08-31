@@ -14,19 +14,19 @@ use sea_orm::{
 };
 use sha2::{Digest, Sha256};
 
-use crate::persistence::repos::{
-    PgCommentLinkRepo, PgSearchIndexQueueRepo, append_resource_deleted_in,
-};
+use crate::persistence::repos::append_resource_deleted_in;
 use atlas_acta_postgres::entities::documents::{attachment, comment_attachment_draft};
+use atlas_acta_postgres::repos::comment_links::PgCommentLinkRepo;
 use atlas_acta_postgres::repos::comments::PgCommentRepo;
+use atlas_acta_postgres::repos::search_index_queue::PgSearchIndexQueueRepo;
 use atlas_postgres::db_err;
 
-// Relocated to `atlas_acta_postgres::repos::comment_links` (S4 PR8): it is
-// threaded into `PgCommentLinkRepo::replace_for_comment_with_fault_in` as a
-// parameter, so it must live in that crate. Re-exported (not just imported)
-// here so `services::mod.rs`'s existing `pub use
-// comment_service::CommentMutationFault` keeps resolving unchanged.
-pub use crate::persistence::repos::CommentMutationFault;
+// Lives in `atlas_acta_postgres::repos::comment_links`: it is threaded into
+// `PgCommentLinkRepo::replace_for_comment_with_fault_in` as a parameter, so it
+// must live in that crate. Re-exported (not just imported) here so
+// `services::mod.rs`'s existing `pub use comment_service::CommentMutationFault`
+// keeps resolving unchanged.
+pub use atlas_acta_postgres::repos::comment_links::CommentMutationFault;
 
 /// Coordinates comment bodies, their derived graph, and comment-owned blob cleanup.
 #[derive(Clone)]

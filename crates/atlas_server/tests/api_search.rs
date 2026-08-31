@@ -1102,7 +1102,7 @@ async fn seed_split_corpus(
     use atlas_acta::semantic_search::ResourceKind;
     use atlas_acta::semantic_search::SemanticIndexChunk;
     use atlas_acta::semantic_search::SemanticSearchSource;
-    use atlas_server::persistence::repos::PgSemanticIndexWriter;
+    use atlas_acta_postgres::repos::semantic_search::PgSemanticIndexWriter;
     use std::sync::Arc;
 
     let lexical_only = PgDocumentRepo::new(db.conn().clone(), 50)

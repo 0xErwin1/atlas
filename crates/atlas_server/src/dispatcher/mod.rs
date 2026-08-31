@@ -21,10 +21,10 @@ use uuid::Uuid;
 
 use crate::config::DispatcherConfig;
 use crate::crypto::WebhookCrypto;
-use crate::persistence::entities::webhook_subscription::webhook_subscriptions;
-use crate::persistence::repos::PgWebhookDeliveryRepo;
 use atlas_acta_postgres::entities::events_outbox::event_outbox;
+use atlas_acta_postgres::entities::webhook_subscription::webhook_subscriptions;
 use atlas_acta_postgres::repos::outbox::PgOutboxRepo;
+use atlas_acta_postgres::repos::webhook_delivery::PgWebhookDeliveryRepo;
 
 type HmacSha256 = Hmac<Sha256>;
 

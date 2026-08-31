@@ -12,6 +12,9 @@ use atlas_acta::actor::WorkspaceCtx;
 use atlas_acta::entities::identity::MemberRole;
 use atlas_acta::ids::WorkspaceId;
 use atlas_acta_postgres::repos::identity::{MembershipRepo, PgMembershipRepo};
+use atlas_acta_postgres::repos::webhook_subscription::{
+    PgWebhookSubscriptionRepo, WebhookSubscriptionPatch,
+};
 use atlas_core::principal::UserId;
 use atlas_custos::capability::Capability;
 use atlas_custos::capability::CapabilityAction;
@@ -24,10 +27,7 @@ use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::{
     auth::password,
     crypto::WebhookCrypto,
-    persistence::repos::{
-        ApiKeyRepo, NewApiKey, NewUser, PermissionGrantRepo, PgWebhookSubscriptionRepo, UserRepo,
-        WebhookSubscriptionPatch,
-    },
+    persistence::repos::{ApiKeyRepo, NewApiKey, NewUser, PermissionGrantRepo, UserRepo},
 };
 use serde_json::Value;
 use uuid::Uuid;

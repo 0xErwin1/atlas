@@ -102,8 +102,8 @@ use crate::{
     },
     error::ApiError,
     persistence::repos::{
-        ApiKeyRepo, AttachmentRepo, PgAttachmentLifecycle, PgAttachmentRepo, PgCommentLinkRepo,
-        PgProjectRepo, ProjectRepo, UserRepo,
+        ApiKeyRepo, AttachmentRepo, PgAttachmentLifecycle, PgAttachmentRepo, PgProjectRepo,
+        ProjectRepo, UserRepo,
     },
     routes::comment_attachment_markdown,
     routes::comments::{
@@ -125,6 +125,7 @@ use atlas_acta_postgres::repos::boards_tasks::{
     PgBoardRepo, PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo,
     PgTaskRepo, TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo,
 };
+use atlas_acta_postgres::repos::comment_links::PgCommentLinkRepo;
 use atlas_acta_postgres::repos::comments::PgCommentRepo;
 use atlas_acta_postgres::repos::documents::{DocumentRepo, PgDocumentLinkRepo, PgDocumentRepo};
 use atlas_acta_postgres::repos::identity::{MembershipRepo, PgMembershipRepo};

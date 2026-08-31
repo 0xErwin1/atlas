@@ -100,7 +100,7 @@ async fn main() -> Result<()> {
     // until embeddings are configured.
     let search_index_handle = state.embedding_provider.clone().map(|provider| {
         let writer = std::sync::Arc::new(
-            atlas_server::persistence::repos::PgSemanticIndexWriter::new(
+            atlas_acta_postgres::repos::semantic_search::PgSemanticIndexWriter::new(
                 (*state.db).clone(),
                 provider,
             ),

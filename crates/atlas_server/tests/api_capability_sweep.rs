@@ -30,6 +30,7 @@
 mod support;
 
 use atlas_acta::actor::Actor;
+use atlas_acta_postgres::repos::webhook_subscription::PgWebhookSubscriptionRepo;
 use atlas_api::{
     dtos::{
         CreateProjectRequest, UpdateProjectRequest, UpdateWorkspaceRequest,
@@ -60,7 +61,7 @@ use atlas_custos::entities::identity::ApiKeyType;
 use atlas_custos_postgres::repos::identity::PgApiKeyRepo;
 use atlas_server::{
     crypto::WebhookCrypto,
-    persistence::repos::{ApiKeyRepo, NewApiKey, PgWebhookSubscriptionRepo},
+    persistence::repos::{ApiKeyRepo, NewApiKey},
     routes::registry::ROUTE_REGISTRY,
 };
 use support::{TestDb, TestServer, login_user_with_workspace};

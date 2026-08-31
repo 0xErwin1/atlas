@@ -15,10 +15,12 @@ use atlas_api::{
 };
 use atlas_core::principal::Principal;
 
+use atlas_acta_postgres::entities::automation_rule::automation_rules;
+use atlas_acta_postgres::repos::automation_rule::PgAutomationRuleRepo;
+
 use crate::{
     authz::{AdminMin, Authorized, WorkspaceRes},
     error::ApiError,
-    persistence::{entities::automation_rule::automation_rules, repos::PgAutomationRuleRepo},
     state::AppState,
 };
 
@@ -289,7 +291,7 @@ pub(crate) async fn patch_automation_rule(
 ) -> Result<Json<AutomationRuleDto>, ApiError> {
     let ws_id = auth.workspace.id.0;
 
-    let patch = crate::persistence::repos::AutomationRulePatch {
+    let patch = atlas_acta_postgres::repos::automation_rule::AutomationRulePatch {
         name: body.name,
         is_active: body.is_active,
         trigger_filter: body.trigger_filter,

@@ -7,9 +7,9 @@ use atlas_acta::entities::lifecycle::PurgeStatus;
 use atlas_acta::entities::lifecycle::RestoreTarget;
 use atlas_acta::entities::lifecycle::SecurityAuditRef;
 use atlas_acta::entities::lifecycle::TrashKind;
+use atlas_acta_postgres::repos::lifecycle::{NewPurgeOperation, PgPurgeOperationRepo};
 use atlas_core::principal::UserId;
 use atlas_custos::ids::SecurityAuditId;
-use atlas_server::persistence::repos::{NewPurgeOperation, PgPurgeOperationRepo};
 use sea_orm::{ConnectionTrait, Statement};
 use support::TestDb;
 

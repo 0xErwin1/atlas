@@ -14,10 +14,13 @@ use atlas_api::dtos::status_templates::{
     CreateStatusTemplateRequest, PlatformStatusTemplateDto, UpdateStatusTemplateRequest,
 };
 
+use atlas_acta_postgres::repos::platform_status_templates::{
+    PgPlatformStatusTemplateRepo, PlatformStatusTemplateRepo,
+};
+
 use crate::{
     authz::RequireUserAdmin,
     error::ApiError,
-    persistence::repos::{PgPlatformStatusTemplateRepo, PlatformStatusTemplateRepo},
     routes::validation::{validate_name, validate_swatch},
     state::AppState,
 };

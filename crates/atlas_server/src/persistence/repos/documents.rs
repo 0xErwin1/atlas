@@ -24,10 +24,10 @@ use sha2::{Digest, Sha256};
 use sqlx::{Postgres, pool::PoolConnection};
 use uuid::Uuid;
 
+use crate::persistence::repos::append_resource_deleted_in;
 use crate::persistence::repos::comment_attachment_drafts::{
     lock_active_draft_for_upload, record_upload_or_replay_in,
 };
-use crate::persistence::repos::{PgSearchIndexQueueRepo, append_resource_deleted_in};
 use atlas_acta_postgres::entities::documents::{
     attachment, attachment_from, attachment_write_intent, attachment_write_intent_from,
     comment_attachment_draft, comment_attachment_draft_upload,
@@ -35,6 +35,7 @@ use atlas_acta_postgres::entities::documents::{
 use atlas_acta_postgres::live_ancestors::{
     live_comment_chain, live_document_chain, live_task_chain,
 };
+use atlas_acta_postgres::repos::search_index_queue::PgSearchIndexQueueRepo;
 use atlas_postgres::db_err;
 
 // `PgAttachmentRepo`, `PgAttachmentWriteIntentRepo`, and

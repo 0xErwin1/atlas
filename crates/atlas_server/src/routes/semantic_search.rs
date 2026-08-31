@@ -14,6 +14,8 @@ use atlas_acta::semantic_search::SemanticSearchQuery;
 use atlas_acta::semantic_search::SemanticSearchRepo;
 use atlas_acta::semantic_search::SemanticSearchSource;
 use atlas_acta::semantic_search::SemanticSearchTypeFilter;
+use atlas_acta_postgres::repos::search_index_queue::PgSearchIndexQueueRepo;
+use atlas_acta_postgres::repos::semantic_search::PgSemanticSearchRepo;
 use atlas_api::{
     dtos::semantic_search::{
         SemanticReindexPlanDto, SemanticReindexStartedDto, SemanticSearchCursor,
@@ -28,7 +30,7 @@ use crate::{
         AdminMinAgentEditor, Authorized, ConfigRead, ConfigUpdate, WorkspaceAccess, WorkspaceRes,
     },
     error::ApiError,
-    persistence::repos::{MAX_CHUNK_CHARS, PgSearchIndexQueueRepo, PgSemanticSearchRepo},
+    persistence::repos::MAX_CHUNK_CHARS,
     state::AppState,
 };
 

@@ -31,10 +31,7 @@ use crate::{
     auth::middleware::Principal,
     authz::{RequireUserAdmin, WorkspaceMember, enforce_api_key_scope},
     error::ApiError,
-    persistence::repos::{
-        ApiKeyRepo, PgPlatformStatusTemplateRepo, PgProjectRepo, PgStatusTemplateRepo,
-        PlatformStatusTemplateRepo, ProjectRepo, StatusTemplateRepo, UserRepo,
-    },
+    persistence::repos::{ApiKeyRepo, PgProjectRepo, ProjectRepo, UserRepo},
     routes::validation::{validate_name, validate_slug},
     state::AppState,
 };
@@ -42,6 +39,10 @@ use atlas_acta_postgres::repos::boards_tasks::{BoardRepo, PgBoardRepo};
 use atlas_acta_postgres::repos::identity::{
     MembershipRepo, PgMembershipRepo, PgWorkspaceRepo, WorkspaceRepo,
 };
+use atlas_acta_postgres::repos::platform_status_templates::{
+    PgPlatformStatusTemplateRepo, PlatformStatusTemplateRepo,
+};
+use atlas_acta_postgres::repos::status_templates::{PgStatusTemplateRepo, StatusTemplateRepo};
 use atlas_custos_postgres::repos::identity::{PgApiKeyRepo, PgUserRepo};
 
 /// Fallback status columns for a new workspace, in board order, used when the

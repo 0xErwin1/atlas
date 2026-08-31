@@ -14,6 +14,7 @@ use atlas_acta::semantic_search::SemanticIndexChunk;
 use atlas_acta::semantic_search::SemanticSearchSource;
 use atlas_acta_postgres::repos::boards_tasks::{BoardRepo, PgBoardRepo, PgTaskRepo, TaskRepo};
 use atlas_acta_postgres::repos::documents::{DocumentRepo, PgDocumentRepo};
+use atlas_acta_postgres::repos::semantic_search::PgSemanticIndexWriter;
 use atlas_api::{
     dtos::{
         ApiKeyScope, CreateProjectRequest, CreateUserApiKeyRequest,
@@ -25,8 +26,7 @@ use atlas_core::error::DomainError;
 use atlas_custos_postgres::repos::identity::PgApiKeyRepo;
 use atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo;
 use atlas_server::{
-    embeddings::DeterministicEmbeddingProvider,
-    persistence::repos::{PermissionGrantRepo, PgSemanticIndexWriter},
+    embeddings::DeterministicEmbeddingProvider, persistence::repos::PermissionGrantRepo,
 };
 use sea_orm::ConnectionTrait;
 use serde_json::Value;

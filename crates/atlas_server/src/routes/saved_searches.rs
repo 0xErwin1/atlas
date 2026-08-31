@@ -16,10 +16,11 @@ use atlas_custos::capability::Capability;
 use atlas_custos::capability::CapabilityAction;
 use atlas_custos::capability::CapabilityFamily;
 
+use atlas_acta_postgres::repos::saved_searches::{PgSavedSearchRepo, SavedSearchRepo};
+
 use crate::{
     authz::{WorkspaceMember, enforce_api_key_scope},
     error::ApiError,
-    persistence::repos::{PgSavedSearchRepo, SavedSearchRepo},
     routes::validation::{validate_name, validate_query},
     state::AppState,
 };

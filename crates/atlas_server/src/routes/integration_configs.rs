@@ -15,12 +15,12 @@ use atlas_api::dtos::integrations::{
 };
 use atlas_core::principal::Principal;
 
+use atlas_acta_postgres::entities::integration_config::integration_configs;
+
 use crate::{
     authz::{AdminMin, Authorized, WorkspaceRes},
     error::ApiError,
-    persistence::{
-        entities::integration_config::integration_configs, repos::PgIntegrationConfigRepo,
-    },
+    persistence::repos::PgIntegrationConfigRepo,
     state::AppState,
 };
 

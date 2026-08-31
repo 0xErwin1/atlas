@@ -33,14 +33,14 @@ use atlas_acta::search::SearchSort;
 use atlas_acta::search::TypeSet;
 use atlas_acta_postgres::repos::boards_tasks::{BoardRepo, PgBoardRepo, PgTaskRepo, TaskRepo};
 use atlas_acta_postgres::repos::documents::{DocumentRepo, PgDocumentRepo};
+use atlas_acta_postgres::repos::search::PgSearchRepo;
 use atlas_core::principal::Principal;
 use atlas_core::principal::UserId;
 use atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo;
 use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::persistence::repos::{
-    FolderRepo, PermissionGrantRepo, PgFolderRepo, PgProjectRepo, PgSearchRepo, ProjectRepo,
-    UserRepo,
+    FolderRepo, PermissionGrantRepo, PgFolderRepo, PgProjectRepo, ProjectRepo, UserRepo,
 };
 
 // ---------------------------------------------------------------------------

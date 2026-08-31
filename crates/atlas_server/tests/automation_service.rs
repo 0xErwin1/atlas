@@ -16,11 +16,10 @@ use atlas_acta::ids::TaskId;
 use atlas_acta::permissions::Visibility;
 use atlas_acta::permissions::VisibilityRole;
 use atlas_acta_postgres::entities::{boards_tasks::task, comments::comment};
+use atlas_acta_postgres::repos::automation_rule::PgAutomationRuleRepo;
 use atlas_acta_postgres::repos::boards_tasks::{BoardRepo, PgBoardRepo};
 use atlas_server::{
-    persistence::repos::{
-        PgAutomationRuleRepo, PgIntegrationConfigRepo, PgProjectRepo, ProjectRepo,
-    },
+    persistence::repos::{PgIntegrationConfigRepo, PgProjectRepo, ProjectRepo},
     services::{AutomationService, TaskService},
 };
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};

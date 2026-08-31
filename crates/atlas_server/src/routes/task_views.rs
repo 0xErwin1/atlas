@@ -25,10 +25,11 @@ use atlas_custos::capability::Capability;
 use atlas_custos::capability::CapabilityAction;
 use atlas_custos::capability::CapabilityFamily;
 
+use atlas_acta_postgres::repos::task_views::{PgTaskViewRepo, TaskViewRepo};
+
 use crate::{
     authz::{WorkspaceMember, enforce_api_key_scope},
     error::ApiError,
-    persistence::repos::{PgTaskViewRepo, TaskViewRepo},
     routes::validation::{validate_name, validate_task_view_filters},
     state::AppState,
 };

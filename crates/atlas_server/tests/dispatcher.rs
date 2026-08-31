@@ -19,9 +19,9 @@ use atlas_acta::ids::ProjectId;
 use atlas_acta::ids::TaskId;
 use atlas_acta_postgres::entities::events_outbox::event_outbox;
 use atlas_acta_postgres::repos::outbox::PgOutboxRepo;
+use atlas_acta_postgres::repos::webhook_subscription::PgWebhookSubscriptionRepo;
 use atlas_server::{
     config::DispatcherConfig, crypto::WebhookCrypto, dispatcher::WebhookDispatcher,
-    persistence::repos::PgWebhookSubscriptionRepo,
 };
 use axum::{Router, extract::State, routing::post};
 use sea_orm::{EntityTrait, TransactionTrait};
@@ -224,7 +224,7 @@ async fn dispatcher_delivers_event_and_marks_delivered() {
 
     // Delivery log must have one success row
     let log_rows =
-        atlas_server::persistence::entities::webhook_delivery::webhook_delivery_log::Entity::find()
+        atlas_acta_postgres::entities::webhook_delivery::webhook_delivery_log::Entity::find()
             .all(db.conn())
             .await
             .expect("find log");
@@ -299,7 +299,7 @@ async fn dispatcher_marks_dead_on_exhausted_attempts() {
 
     // Delivery log must have one failure row
     let log_rows =
-        atlas_server::persistence::entities::webhook_delivery::webhook_delivery_log::Entity::find()
+        atlas_acta_postgres::entities::webhook_delivery::webhook_delivery_log::Entity::find()
             .all(db.conn())
             .await
             .expect("find log");
@@ -387,7 +387,7 @@ async fn delivery_log_records_each_attempt() {
 
     // Expect 3 delivery log rows (one per attempt)
     let log_rows =
-        atlas_server::persistence::entities::webhook_delivery::webhook_delivery_log::Entity::find()
+        atlas_acta_postgres::entities::webhook_delivery::webhook_delivery_log::Entity::find()
             .all(db.conn())
             .await
             .expect("find log");
