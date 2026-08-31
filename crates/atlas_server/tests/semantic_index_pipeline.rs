@@ -86,7 +86,7 @@ struct EmbeddingRow {
 async fn embedding_rows(db: &support::TestDb, resource_id: Uuid) -> Vec<EmbeddingRow> {
     EmbeddingRow::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "SELECT content_hash, excerpt FROM search_embeddings \
+        "SELECT content_hash, excerpt FROM acta.search_embeddings \
          WHERE resource_id = $1 ORDER BY chunk_ordinal",
         vec![resource_id.into()],
     ))
@@ -113,7 +113,7 @@ async fn queue_depth(db: &support::TestDb) -> i64 {
 
     CountRow::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "SELECT COUNT(*)::bigint AS count FROM search_index_queue",
+        "SELECT COUNT(*)::bigint AS count FROM acta.search_index_queue",
         vec![],
     ))
     .one(db.conn())

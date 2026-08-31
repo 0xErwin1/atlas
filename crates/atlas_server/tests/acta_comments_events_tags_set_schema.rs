@@ -40,8 +40,7 @@ const ACTA_COMMENTS_EVENTS_TAGS_TABLES: &[&str] = &[
 
 /// All eleven comments/events/tags-group tables must live in the `acta`
 /// schema after the migration; `workspaces`/`boards` (PR11/PR13, already
-/// moved) stay `acta`, and `purge_operations` (batch 5, still unbatched as of
-/// this PR) stays in `public`.
+/// moved) and `purge_operations` (PR15, batch 5) also live in `acta`.
 #[tokio::test]
 async fn comments_events_tags_group_tables_move_to_the_acta_schema() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -75,7 +74,7 @@ async fn comments_events_tags_group_tables_move_to_the_acta_schema() {
 
     for table in ACTA_COMMENTS_EVENTS_TAGS_TABLES
         .iter()
-        .chain(["workspaces", "boards"].iter())
+        .chain(["workspaces", "boards", "purge_operations"].iter())
     {
         let schema = rows
             .iter()
@@ -85,18 +84,6 @@ async fn comments_events_tags_group_tables_move_to_the_acta_schema() {
             .clone();
         assert_eq!(schema, "acta", "expected {table} to live in acta");
     }
-
-    let table = "purge_operations";
-    let schema = rows
-        .iter()
-        .find(|r| r.table_name == table)
-        .unwrap_or_else(|| panic!("table {table} not found"))
-        .table_schema
-        .clone();
-    assert_eq!(
-        schema, "public",
-        "expected {table} to stay in public until its own batch lands"
-    );
 
     db.teardown().await;
 }

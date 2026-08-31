@@ -171,7 +171,7 @@ async fn purge_operation_rejects_contradictory_status_and_action() {
         .conn()
         .execute_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "UPDATE purge_operations SET status = 'complete', last_action = 'resource.purge_cleanup_failed' WHERE id = $1",
+            "UPDATE acta.purge_operations SET status = 'complete', last_action = 'resource.purge_cleanup_failed' WHERE id = $1",
             [operation.id.0.into()],
         ))
         .await;

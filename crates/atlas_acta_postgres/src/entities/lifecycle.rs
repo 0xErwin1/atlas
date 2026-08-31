@@ -5,7 +5,7 @@ pub mod purge_operation {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "purge_operations")]
+    #[sea_orm(schema_name = "acta", table_name = "purge_operations")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
@@ -35,7 +35,7 @@ pub mod purge_operation_digest {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "purge_operation_digests")]
+    #[sea_orm(schema_name = "acta", table_name = "purge_operation_digests")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub operation_id: Uuid,

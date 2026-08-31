@@ -30,11 +30,15 @@
 //! `events_outbox`, `webhook_subscriptions`, `webhook_delivery_log`,
 //! `automation_rules`, `integration_configs`, `saved_searches`,
 //! `task_views`) as of S4 PR14's
-//! `m20260904_000056_acta_comments_events_tags_set_schema`, batch 4. Each
-//! later batch (PR15) adds its own tables to this map as it lands; this is a
-//! single shared table→schema map rather than one gate per product (design
-//! §D5's rejected-alternative rationale: the tree-walk/exclusion logic is
-//! schema-agnostic, so a second copy would only duplicate it).
+//! `m20260904_000056_acta_comments_events_tags_set_schema`, batch 4, and by
+//! four more (`search_embeddings`, `search_index_queue`, `purge_operations`,
+//! `purge_operation_digests`) as of S4 PR15's
+//! `m20260905_000057_acta_search_attachments_lifecycle_set_schema`, batch 5
+//! — the last of the five Acta SET SCHEMA batches; every D1-inventoried Acta
+//! table now appears in this map. This is a single shared table→schema map
+//! rather than one gate per product (design §D5's rejected-alternative
+//! rationale: the tree-walk/exclusion logic is schema-agnostic, so a second
+//! copy would only duplicate it).
 //!
 //! Excluded from the scan: `crates/migration` (the frozen historical block,
 //! D5), `crates/atlas_custos_postgres/src/migrations` (Custos-owned
@@ -104,6 +108,10 @@ const TABLE_SCHEMA: &[(&str, &str)] = &[
     ("integration_configs", "acta"),
     ("saved_searches", "acta"),
     ("task_views", "acta"),
+    ("search_embeddings", "acta"),
+    ("search_index_queue", "acta"),
+    ("purge_operations", "acta"),
+    ("purge_operation_digests", "acta"),
 ];
 
 const SQL_KEYWORDS: &[&str] = &["FROM", "JOIN", "INTO", "UPDATE", "TABLE"];

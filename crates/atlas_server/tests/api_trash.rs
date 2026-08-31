@@ -126,7 +126,7 @@ async fn purge_operation_id(db: &support::TestDb, target_id: uuid::Uuid) -> uuid
     db.conn()
         .query_one_raw(sea_orm::Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT id FROM purge_operations WHERE target_id = $1",
+            "SELECT id FROM acta.purge_operations WHERE target_id = $1",
             [target_id.into()],
         ))
         .await
@@ -233,7 +233,7 @@ async fn count_purge_side_effects(db: &support::TestDb, target_id: uuid::Uuid) -
         .query_one_raw(sea_orm::Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT \
-                (SELECT count(*)::bigint FROM purge_operations WHERE target_id = $1) AS operations, \
+                (SELECT count(*)::bigint FROM acta.purge_operations WHERE target_id = $1) AS operations, \
                 (SELECT count(*)::bigint FROM custos.security_audit_log WHERE target_id = $1 AND action = 'resource.purge_committed') AS audits",
             [target_id.into()],
         ))
@@ -1621,7 +1621,7 @@ async fn purge_removes_active_draft_dependencies_and_retains_all_closure_digests
                 (SELECT count(*)::bigint FROM acta.comment_attachment_drafts WHERE id = $1) AS drafts, \
                 (SELECT count(*)::bigint FROM acta.attachments WHERE id = $2) AS attachments, \
                 (SELECT count(*)::bigint FROM acta.comment_attachment_draft_uploads WHERE draft_id = $1) AS uploads, \
-                (SELECT count(*)::bigint FROM purge_operation_digests WHERE operation_id = $3 AND digest = $4) AS digests",
+                (SELECT count(*)::bigint FROM acta.purge_operation_digests WHERE operation_id = $3 AND digest = $4) AS digests",
             [
                 draft_id.parse::<uuid::Uuid>().expect("draft UUID").into(),
                 draft_attachment_id.into(),
@@ -1908,7 +1908,7 @@ async fn project_purge_correlates_each_descendant_digest_once_and_removes_every_
         .conn()
         .query_all_raw(sea_orm::Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT digest, count(*)::bigint AS occurrences FROM purge_operation_digests WHERE operation_id = $1 GROUP BY digest",
+            "SELECT digest, count(*)::bigint AS occurrences FROM acta.purge_operation_digests WHERE operation_id = $1 GROUP BY digest",
             [operation_id.into()],
         ))
         .await

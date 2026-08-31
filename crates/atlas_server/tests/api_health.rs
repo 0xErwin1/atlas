@@ -66,7 +66,7 @@ async fn meta_reports_semantic_search_disabled_when_no_embedding_provider_exists
 async fn meta_reports_semantic_search_disabled_when_schema_is_absent() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     db.conn()
-        .execute_unprepared("DROP TABLE search_embeddings")
+        .execute_unprepared("DROP TABLE acta.search_embeddings")
         .await
         .expect("drop semantic search table");
     let state = atlas_server::state::AppState::for_test(db.conn().clone())
@@ -89,7 +89,7 @@ async fn meta_reports_semantic_search_disabled_when_schema_disappears_after_star
         .await
         .expect("test state");
     db.conn()
-        .execute_unprepared("DROP TABLE search_embeddings")
+        .execute_unprepared("DROP TABLE acta.search_embeddings")
         .await
         .expect("drop semantic search table after startup readiness");
     let server = support::TestServer::spawn_with_state(state).await;

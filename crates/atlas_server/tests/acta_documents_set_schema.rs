@@ -24,9 +24,8 @@ const ACTA_DOCUMENTS_TABLES: &[&str] = &[
 ];
 
 /// All ten documents-group tables must live in the `acta` schema after the
-/// migration; `workspaces` (PR11) and `boards` (PR13, batch 3) have also
-/// since moved to `acta`, and `purge_operations` (batch 5) remains unbatched
-/// as of this PR and stays in `public`.
+/// migration; `workspaces` (PR11), `boards` (PR13, batch 3), and
+/// `purge_operations` (PR15, batch 5) have also since moved to `acta`.
 #[tokio::test]
 async fn documents_group_tables_move_to_the_acta_schema() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -60,7 +59,7 @@ async fn documents_group_tables_move_to_the_acta_schema() {
 
     for table in ACTA_DOCUMENTS_TABLES
         .iter()
-        .chain(["workspaces", "boards"].iter())
+        .chain(["workspaces", "boards", "purge_operations"].iter())
     {
         let schema = rows
             .iter()
@@ -70,18 +69,6 @@ async fn documents_group_tables_move_to_the_acta_schema() {
             .clone();
         assert_eq!(schema, "acta", "expected {table} to live in acta");
     }
-
-    let table = "purge_operations";
-    let schema = rows
-        .iter()
-        .find(|r| r.table_name == table)
-        .unwrap_or_else(|| panic!("table {table} not found"))
-        .table_schema
-        .clone();
-    assert_eq!(
-        schema, "public",
-        "expected {table} to stay in public until its own batch lands"
-    );
 
     db.teardown().await;
 }
