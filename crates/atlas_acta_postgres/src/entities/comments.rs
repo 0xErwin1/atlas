@@ -1,0 +1,166 @@
+use crate::entities::boards_tasks::actor_from_columns;
+use atlas_acta::entities::comments::Comment;
+use atlas_acta::entities::comments::CommentLink;
+use atlas_acta::entities::comments::CommentLinkTarget;
+use atlas_acta::ids::AttachmentId;
+use atlas_acta::ids::CommentId;
+use atlas_acta::ids::CommentLinkId;
+use atlas_acta::ids::DocumentId;
+use atlas_acta::ids::TaskId;
+use atlas_acta::ids::WorkspaceId;
+use chrono::{DateTime, Utc};
+use sea_orm::entity::prelude::*;
+
+pub mod comment {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "comments")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub workspace_id: Uuid,
+        pub task_id: Option<Uuid>,
+        pub document_id: Option<Uuid>,
+        pub body: String,
+        pub created_by_user_id: Option<Uuid>,
+        pub created_by_api_key_id: Option<Uuid>,
+        pub created_at: DateTime<Utc>,
+        pub updated_at: DateTime<Utc>,
+        pub deleted_at: Option<DateTime<Utc>>,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+pub mod comment_link {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "comment_links")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub workspace_id: Uuid,
+        pub comment_id: Uuid,
+        pub target_document_id: Option<Uuid>,
+        pub target_task_id: Option<Uuid>,
+        pub target_attachment_id: Option<Uuid>,
+        pub created_at: DateTime<Utc>,
+    }
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+pub mod comment_link_event {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "comment_link_events")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub workspace_id: Uuid,
+        pub parent_task_id: Option<Uuid>,
+        pub parent_document_id: Option<Uuid>,
+        pub comment_id: Uuid,
+        pub event_kind: String,
+        pub target_document_id: Option<Uuid>,
+        pub target_task_id: Option<Uuid>,
+        pub target_attachment_id: Option<Uuid>,
+        pub actor_type: String,
+        pub actor_id: Uuid,
+        pub created_at: DateTime<Utc>,
+    }
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+pub fn comment_from(m: comment::Model) -> Comment {
+    Comment {
+        id: CommentId(m.id),
+        workspace_id: WorkspaceId(m.workspace_id),
+        task_id: m.task_id.map(TaskId),
+        document_id: m.document_id.map(DocumentId),
+        body: m.body,
+        created_by: actor_from_columns(m.created_by_user_id, m.created_by_api_key_id),
+        created_at: m.created_at,
+        updated_at: m.updated_at,
+        deleted_at: m.deleted_at,
+    }
+}
+
+pub fn comment_link_from(m: comment_link::Model) -> CommentLink {
+    let target = match (
+        m.target_document_id,
+        m.target_task_id,
+        m.target_attachment_id,
+    ) {
+        (Some(id), None, None) => CommentLinkTarget::Document(DocumentId(id)),
+        (None, Some(id), None) => CommentLinkTarget::Task(TaskId(id)),
+        (None, None, Some(id)) => CommentLinkTarget::Attachment(AttachmentId(id)),
+        _ => unreachable!("comment_links target constraint must hold"),
+    };
+
+    CommentLink {
+        id: CommentLinkId(m.id),
+        workspace_id: WorkspaceId(m.workspace_id),
+        comment_id: CommentId(m.comment_id),
+        target,
+        created_at: m.created_at,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uuid::Uuid;
+
+    fn base_model() -> comment::Model {
+        comment::Model {
+            id: Uuid::now_v7(),
+            workspace_id: Uuid::now_v7(),
+            task_id: Some(Uuid::now_v7()),
+            document_id: None,
+            body: "hello".into(),
+            created_by_user_id: Some(Uuid::now_v7()),
+            created_by_api_key_id: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            deleted_at: None,
+        }
+    }
+
+    #[test]
+    fn comment_from_roundtrips_task_owner_and_body() {
+        let m = base_model();
+        let task_id = m.task_id;
+        let body = m.body.clone();
+
+        let comment = comment_from(m);
+
+        assert_eq!(comment.task_id.map(|id| id.0), task_id);
+        assert!(comment.document_id.is_none());
+        assert_eq!(comment.body, body);
+    }
+
+    #[test]
+    fn comment_from_resolves_api_key_author() {
+        let mut m = base_model();
+        let key_id = Uuid::now_v7();
+        m.created_by_user_id = None;
+        m.created_by_api_key_id = Some(key_id);
+
+        let comment = comment_from(m);
+
+        assert_eq!(
+            comment.created_by,
+            atlas_acta::actor::Actor::ApiKey(atlas_acta::actor::ApiKeyAttributionId(key_id))
+        );
+    }
+}
