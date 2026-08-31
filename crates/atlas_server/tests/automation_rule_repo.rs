@@ -249,7 +249,7 @@ async fn db_check_rejects_internal_event_type() {
         .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
-            INSERT INTO automation_rules (
+            INSERT INTO acta.automation_rules (
                 id, workspace_id, name, is_active, trigger_event_type,
                 trigger_filter, project_id, action_type, action_params,
                 created_by_user_id, created_at, updated_at, deleted_at

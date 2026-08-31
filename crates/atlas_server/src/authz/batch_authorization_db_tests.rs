@@ -1086,7 +1086,7 @@ async fn seed_projection_subjects(conn: &DatabaseConnection, ids: ProjectionSubj
          VALUES ('{}', '{}', '{}', '{}', '{}', 'AT-1', 'Task', '', ARRAY[]::text[], 'a0', '{}', now(), now()); \
          INSERT INTO acta.attachments (id, workspace_id, document_id, file_name, content_type, size_bytes, sha256, created_by_user_id, created_at, updated_at) \
          VALUES ('{}', '{}', '{}', 'document.txt', 'text/plain', 1, 'document-digest', '{}', now(), now()); \
-         INSERT INTO comments (id, workspace_id, task_id, body, created_by_user_id, created_at, updated_at) \
+         INSERT INTO acta.comments (id, workspace_id, task_id, body, created_by_user_id, created_at, updated_at) \
          VALUES ('{}', '{}', '{}', 'comment', '{}', now(), now()); \
          INSERT INTO acta.attachments (id, workspace_id, comment_id, file_name, content_type, size_bytes, sha256, created_by_user_id, created_at, updated_at) \
          VALUES ('{}', '{}', '{}', 'comment.txt', 'text/plain', 1, 'comment-digest', '{}', now(), now())",

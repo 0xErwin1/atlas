@@ -103,6 +103,14 @@ async fn seed_live_comment_owned_records(
 ) -> (uuid::Uuid, uuid::Uuid) {
     let comment_id = uuid::Uuid::now_v7();
     let attachment_id = uuid::Uuid::now_v7();
+    // schema-gate:off — frozen at `COMMENT_FREEDOM_MIGRATION_STEPS`/
+    // `COMMENT_ATTACHMENT_DRAFT_MIGRATION_STEPS` steps, before `acta_new()`
+    // (and therefore before any of its SET SCHEMA batches, including S4
+    // PR14's comments/events/tags-group move) has run, so `comments`,
+    // `attachments`, `comment_links`, `comment_link_events`, and
+    // `attachment_write_intents` all still physically live in `public` here
+    // (see `seed_pre_acta_schema_document`'s doc comment for the same
+    // rationale applied to `document_id`).
     conn.execute_raw(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
         "INSERT INTO comments (id, workspace_id, document_id, body, created_by_user_id, created_at, updated_at) \
@@ -116,10 +124,6 @@ async fn seed_live_comment_owned_records(
     ))
     .await
     .expect("seed comment owner");
-    // schema-gate:off — `document_id` above is frozen at the same
-    // pre-`acta_new()`-documents-batch step (see
-    // `seed_pre_acta_schema_document`'s doc comment), so `attachments` and
-    // `attachment_write_intents` still physically live in `public` here too.
     conn.execute_raw(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
         "INSERT INTO attachments (id, workspace_id, comment_id, file_name, content_type, size_bytes, sha256, created_by_user_id, created_at, updated_at) \
@@ -134,7 +138,6 @@ async fn seed_live_comment_owned_records(
     ))
     .await
     .expect("seed live comment-owned attachment");
-    // schema-gate:on
     conn.execute_raw(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
         "INSERT INTO comment_links (id, workspace_id, comment_id, target_document_id, created_at) \
@@ -162,7 +165,6 @@ async fn seed_live_comment_owned_records(
     ))
     .await
     .expect("seed comment link event");
-    // schema-gate:off — same pre-move fixture as above.
     conn.execute_raw(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
         "INSERT INTO attachment_write_intents (id, digest, created_at) VALUES ($1, $2, now())",
@@ -200,8 +202,8 @@ async fn comment_freedom_down_rejects_live_comment_attachment_without_destructiv
     );
 
     // schema-gate:off — same pre-`acta_new()`-documents-batch fixture as
-    // `seed_live_comment_owned_records`; `attachments`/`attachment_write_intents`
-    // still physically live in `public` here.
+    // `seed_live_comment_owned_records`; `attachments`/`comment_links`/
+    // `attachment_write_intents` still physically live in `public` here.
     let attachment_count = db
         .conn()
         .query_one_raw(Statement::from_sql_and_values(
@@ -214,12 +216,6 @@ async fn comment_freedom_down_rejects_live_comment_attachment_without_destructiv
         .expect("attachment count row")
         .try_get::<i64>("", "count")
         .expect("attachment count");
-    // schema-gate:on
-    assert_eq!(
-        attachment_count, 1,
-        "failed rollback must preserve the attachment row"
-    );
-
     let link_count = db
         .conn()
         .query_one_raw(Statement::from_string(
@@ -231,13 +227,19 @@ async fn comment_freedom_down_rejects_live_comment_attachment_without_destructiv
         .expect("link count row")
         .try_get::<i64>("", "count")
         .expect("link count");
+    // schema-gate:on
+    assert_eq!(
+        attachment_count, 1,
+        "failed rollback must preserve the attachment row"
+    );
     assert_eq!(
         link_count, 1,
         "failed rollback must not partially drop comment links"
     );
 
-    // schema-gate:off — `attachment_write_intents` is the same pre-move
-    // fixture; `comment_link_events` is not batched by this PR.
+    // schema-gate:off — `comment_link_events`/`attachment_write_intents` are
+    // the same pre-`acta_new()` fixture as above; both still physically live
+    // in `public` here.
     for table in ["comment_link_events", "attachment_write_intents"] {
         let count = db
             .conn()

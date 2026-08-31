@@ -235,7 +235,7 @@ async fn task_backlinks_expose_only_authorized_comment_parent_navigation() {
 
     db.conn()
         .execute_unprepared(&format!(
-            "INSERT INTO comment_links (id, workspace_id, comment_id, target_task_id, created_at) VALUES ('{}', '{}', '{}', '{}', now())",
+            "INSERT INTO acta.comment_links (id, workspace_id, comment_id, target_task_id, created_at) VALUES ('{}', '{}', '{}', '{}', now())",
             uuid::Uuid::now_v7(), ws.id.0, comment.id, target_task.id,
         ))
         .await
@@ -290,7 +290,7 @@ async fn task_backlinks_omit_comment_sources_with_deleted_parents() {
 
     db.conn()
         .execute_unprepared(&format!(
-            "INSERT INTO comment_links (id, workspace_id, comment_id, target_task_id, created_at) VALUES ('{}', '{}', '{}', '{}', now()); UPDATE acta.tasks SET deleted_at = now() WHERE readable_id = '{}'",
+            "INSERT INTO acta.comment_links (id, workspace_id, comment_id, target_task_id, created_at) VALUES ('{}', '{}', '{}', '{}', now()); UPDATE acta.tasks SET deleted_at = now() WHERE readable_id = '{}'",
             uuid::Uuid::now_v7(), ws.id.0, comment.id, target_task.id, source_readable_id,
         ))
         .await
@@ -362,7 +362,7 @@ async fn document_backlinks_omit_comment_sources_with_deleted_parents() {
 
     db.conn()
         .execute_unprepared(&format!(
-            "INSERT INTO comment_links (id, workspace_id, comment_id, target_document_id, created_at) VALUES ('{}', '{}', '{}', '{}', now()); UPDATE acta.documents SET deleted_at = now() WHERE id = '{}'",
+            "INSERT INTO acta.comment_links (id, workspace_id, comment_id, target_document_id, created_at) VALUES ('{}', '{}', '{}', '{}', now()); UPDATE acta.documents SET deleted_at = now() WHERE id = '{}'",
             uuid::Uuid::now_v7(), ws.id.0, comment.id, target.id, source.id,
         ))
         .await
@@ -439,7 +439,7 @@ async fn document_backlinks_batch_authorize_many_comment_sources() {
             .expect("create source comment");
         db.conn()
             .execute_unprepared(&format!(
-                "INSERT INTO comment_links (id, workspace_id, comment_id, target_document_id, created_at) VALUES ('{}', '{}', '{}', '{}', now())",
+                "INSERT INTO acta.comment_links (id, workspace_id, comment_id, target_document_id, created_at) VALUES ('{}', '{}', '{}', '{}', now())",
                 uuid::Uuid::now_v7(), ws.id.0, comment.id, target.id,
             ))
             .await
@@ -532,7 +532,7 @@ async fn task_backlinks_batch_authorize_many_comment_sources_without_source_leak
             .expect("create private source comment");
         db.conn()
             .execute_unprepared(&format!(
-                "INSERT INTO comment_links (id, workspace_id, comment_id, target_task_id, created_at) VALUES ('{}', '{}', '{}', '{}', now())",
+                "INSERT INTO acta.comment_links (id, workspace_id, comment_id, target_task_id, created_at) VALUES ('{}', '{}', '{}', '{}', now())",
                 uuid::Uuid::now_v7(), ws.id.0, comment.id, target_task.id,
             ))
             .await
@@ -647,7 +647,7 @@ async fn task_backlinks_omit_deleted_and_cross_workspace_comment_sources() {
 
     db.conn()
         .execute_unprepared(&format!(
-            "INSERT INTO comment_links (id, workspace_id, comment_id, target_task_id, created_at) VALUES ('{}', '{}', '{}', '{}', now()), ('{}', '{}', '{}', '{}', now()); UPDATE comments SET deleted_at = now() WHERE id = '{}'",
+            "INSERT INTO acta.comment_links (id, workspace_id, comment_id, target_task_id, created_at) VALUES ('{}', '{}', '{}', '{}', now()), ('{}', '{}', '{}', '{}', now()); UPDATE acta.comments SET deleted_at = now() WHERE id = '{}'",
             uuid::Uuid::now_v7(),
             ws.id.0,
             deleted_comment.id,
@@ -718,7 +718,7 @@ async fn document_backlinks_expose_comment_source_without_attachment_links() {
     let attachment_id = uuid::Uuid::now_v7();
     db.conn()
         .execute_unprepared(&format!(
-            "INSERT INTO acta.attachments (id, workspace_id, task_id, file_name, content_type, size_bytes, sha256, created_by_user_id, created_at, updated_at) VALUES ('{attachment_id}', '{}', '{}', 'attachment.txt', 'text/plain', 1, '{}', '{}', now(), now()); INSERT INTO comment_links (id, workspace_id, comment_id, target_document_id, created_at) VALUES ('{}', '{}', '{}', '{}', now()); INSERT INTO comment_links (id, workspace_id, comment_id, target_attachment_id, created_at) VALUES ('{}', '{}', '{}', '{attachment_id}', now())",
+            "INSERT INTO acta.attachments (id, workspace_id, task_id, file_name, content_type, size_bytes, sha256, created_by_user_id, created_at, updated_at) VALUES ('{attachment_id}', '{}', '{}', 'attachment.txt', 'text/plain', 1, '{}', '{}', now(), now()); INSERT INTO acta.comment_links (id, workspace_id, comment_id, target_document_id, created_at) VALUES ('{}', '{}', '{}', '{}', now()); INSERT INTO acta.comment_links (id, workspace_id, comment_id, target_attachment_id, created_at) VALUES ('{}', '{}', '{}', '{attachment_id}', now())",
             ws.id.0,
             source_task.id,
             "c".repeat(64),
@@ -1104,7 +1104,7 @@ async fn full_feeds_redact_deleted_targets_for_human_and_api_key_viewers() {
         ] {
             db.conn()
                 .execute_unprepared(&format!(
-                    "INSERT INTO comment_links (id, workspace_id, comment_id, {column}, created_at) VALUES ('{}', '{}', '{}', '{target}', now())",
+                    "INSERT INTO acta.comment_links (id, workspace_id, comment_id, {column}, created_at) VALUES ('{}', '{}', '{}', '{target}', now())",
                     uuid::Uuid::now_v7(), ws.id.0, source_comment,
                 ))
                 .await
@@ -1259,7 +1259,7 @@ async fn full_feeds_retain_deleted_comment_events_without_deleted_comment_data_o
     for comment_id in [task_comment.id, document_comment.id] {
         db.conn()
             .execute_unprepared(&format!(
-                "INSERT INTO comment_links (id, workspace_id, comment_id, target_document_id, created_at) VALUES ('{}', '{}', '{comment_id}', '{}', now())",
+                "INSERT INTO acta.comment_links (id, workspace_id, comment_id, target_document_id, created_at) VALUES ('{}', '{}', '{comment_id}', '{}', now())",
                 uuid::Uuid::now_v7(), ws.id.0, target_document.id,
             ))
             .await
@@ -1440,7 +1440,7 @@ async fn full_feeds_recheck_target_access_after_the_link_is_written() {
     for comment_id in [task_comment.id, document_comment.id] {
         db.conn()
             .execute_unprepared(&format!(
-                "INSERT INTO comment_links (id, workspace_id, comment_id, target_document_id, created_at) VALUES ('{}', '{}', '{comment_id}', '{}', now())",
+                "INSERT INTO acta.comment_links (id, workspace_id, comment_id, target_document_id, created_at) VALUES ('{}', '{}', '{comment_id}', '{}', now())",
                 uuid::Uuid::now_v7(), ws.id.0, target_document.id,
             ))
             .await
@@ -1586,7 +1586,7 @@ async fn full_feeds_paginate_merged_comment_and_event_boundaries_without_gaps_or
         let document_parent = document_parent
             .map(|id| format!("'{id}'"))
             .unwrap_or_else(|| "NULL".into());
-        db.conn().execute_unprepared(&format!("INSERT INTO comment_link_events (id, workspace_id, parent_task_id, parent_document_id, comment_id, event_kind, actor_type, actor_id, created_at) VALUES ('{}', '{}', {task_parent}, {document_parent}, '{comment_id}', 'comment_deleted', 'user', '{}', now())", uuid::Uuid::now_v7(), ws.id.0, user.id.0)).await.expect("insert retained event");
+        db.conn().execute_unprepared(&format!("INSERT INTO acta.comment_link_events (id, workspace_id, parent_task_id, parent_document_id, comment_id, event_kind, actor_type, actor_id, created_at) VALUES ('{}', '{}', {task_parent}, {document_parent}, '{comment_id}', 'comment_deleted', 'user', '{}', now())", uuid::Uuid::now_v7(), ws.id.0, user.id.0)).await.expect("insert retained event");
     }
     for (url, first, second) in [
         (

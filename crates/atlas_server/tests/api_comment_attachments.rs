@@ -392,8 +392,8 @@ async fn comment_graph_counts(db: &support::TestDb, comment_id: &str) -> (i64, i
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT \
-                (SELECT count(*)::bigint FROM comment_links WHERE comment_id = $1) AS links, \
-                (SELECT count(*)::bigint FROM comment_link_events WHERE comment_id = $1) AS events",
+                (SELECT count(*)::bigint FROM acta.comment_links WHERE comment_id = $1) AS links, \
+                (SELECT count(*)::bigint FROM acta.comment_link_events WHERE comment_id = $1) AS events",
             [comment_id
                 .parse::<uuid::Uuid>()
                 .expect("comment UUID")

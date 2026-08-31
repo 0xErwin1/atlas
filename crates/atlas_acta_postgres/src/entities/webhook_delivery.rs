@@ -5,7 +5,7 @@ pub mod webhook_delivery_log {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "webhook_delivery_log")]
+    #[sea_orm(schema_name = "acta", table_name = "webhook_delivery_log")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,

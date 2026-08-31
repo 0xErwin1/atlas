@@ -180,7 +180,7 @@ async fn recovery_sweep_resets_stale_delivering_rows() {
     // Force locked_until into the past so the row becomes stale.
     let stale_stmt = Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
-        "UPDATE events_outbox SET locked_until = NOW() - INTERVAL '1 second' WHERE id = $1",
+        "UPDATE acta.events_outbox SET locked_until = NOW() - INTERVAL '1 second' WHERE id = $1",
         [row_id.into()],
     );
     db.conn()

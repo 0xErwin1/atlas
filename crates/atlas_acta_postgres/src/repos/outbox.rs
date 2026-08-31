@@ -90,13 +90,13 @@ impl PgOutboxRepo {
         let stmt = Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
-            UPDATE events_outbox
+            UPDATE acta.events_outbox
             SET status        = 'delivering',
                 locked_until  = NOW() + ($2 * INTERVAL '1 second'),
                 attempt_count = attempt_count + 1,
                 updated_at    = NOW()
             WHERE id IN (
-                SELECT id FROM events_outbox
+                SELECT id FROM acta.events_outbox
                 WHERE  status          = 'pending'
                   AND  next_attempt_at <= NOW()
                 ORDER  BY occurred_at
@@ -126,7 +126,7 @@ impl PgOutboxRepo {
         let stmt = Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
-            UPDATE events_outbox
+            UPDATE acta.events_outbox
             SET status       = 'pending',
                 locked_until = NULL,
                 updated_at   = NOW()
@@ -156,7 +156,7 @@ impl PgOutboxRepo {
         let stmt = Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
-            UPDATE events_outbox
+            UPDATE acta.events_outbox
             SET status           = CASE
                                        WHEN $2 = 0             THEN 'delivered'
                                        WHEN attempt_count >= $3 THEN 'dead'
@@ -200,7 +200,7 @@ impl PgOutboxRepo {
                    encrypted_secret, secret_nonce, is_active, label,
                    created_by_user_id, created_by_api_key_id,
                    created_at, updated_at, deleted_at
-            FROM   webhook_subscriptions
+            FROM   acta.webhook_subscriptions
             WHERE  workspace_id = $1
               AND  is_active    = true
               AND  deleted_at   IS NULL
@@ -268,7 +268,7 @@ impl PgOutboxRepo {
         let stmt = Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
-            INSERT INTO events_outbox (
+            INSERT INTO acta.events_outbox (
                 id, workspace_id, event_type, event_version, source,
                 project_id, board_id, aggregate_type, aggregate_id,
                 payload, occurred_at, status, attempt_count, next_attempt_at,

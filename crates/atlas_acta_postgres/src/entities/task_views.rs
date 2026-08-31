@@ -13,7 +13,7 @@ pub mod task_view {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "task_views")]
+    #[sea_orm(schema_name = "acta", table_name = "task_views")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,

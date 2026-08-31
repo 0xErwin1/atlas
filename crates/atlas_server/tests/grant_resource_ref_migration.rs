@@ -316,22 +316,25 @@ async fn down_restores_target_columns_and_survives_a_forward_only_orphan() {
         .await
         .expect("seed post-migration grant rows, including one orphaned by a never-live target");
 
-    // Reverts six steps, not one: S3d appended `m20260830_000051_custos_set_schema`,
+    // Reverts seven steps, not one: S3d appended `m20260830_000051_custos_set_schema`,
     // S4 PR9 appended `m20260831_000052_acta_platform_ui_state`, S4 PR11
     // appended `m20260901_000053_acta_identity_workspaces_set_schema`, S4
-    // PR12 appended `m20260902_000054_acta_documents_set_schema`, and S4 PR13
-    // appended `m20260903_000055_acta_boards_tasks_set_schema` after this
-    // migration in `custos_new()`/`acta_new()`, so "the last applied migration"
-    // is now the boards/tasks-group schema move rather than the O1 migration
-    // under test here. Reverting six steps undoes the boards/tasks-group move
-    // (moving `boards`/`tasks`/etc. back to `public`), then the documents-group
-    // move (moving `projects`/`folders`/`documents`/etc. back to `public`),
-    // then the identity/workspaces move (moving `workspaces`/
-    // `workspace_memberships` back to `public`), then the `platform.ui_state`
-    // move, then the Custos schema move (moving the eight tables back to
-    // `public`), then O1's own down(), landing on the same pre-O1,
-    // unqualified-table-name state this test asserted before S3d/S4 existed.
-    ComposedMigrator::down(db.conn(), Some(6))
+    // PR12 appended `m20260902_000054_acta_documents_set_schema`, S4 PR13
+    // appended `m20260903_000055_acta_boards_tasks_set_schema`, and S4 PR14
+    // appended `m20260904_000056_acta_comments_events_tags_set_schema` after
+    // this migration in `custos_new()`/`acta_new()`, so "the last applied
+    // migration" is now the comments/events/tags-group schema move rather
+    // than the O1 migration under test here. Reverting seven steps undoes the
+    // comments/events/tags-group move (moving `comments`/`tags`/etc. back to
+    // `public`), then the boards/tasks-group move (moving `boards`/`tasks`/etc.
+    // back to `public`), then the documents-group move (moving `projects`/
+    // `folders`/`documents`/etc. back to `public`), then the
+    // identity/workspaces move (moving `workspaces`/`workspace_memberships`
+    // back to `public`), then the `platform.ui_state` move, then the Custos
+    // schema move (moving the eight tables back to `public`), then O1's own
+    // down(), landing on the same pre-O1, unqualified-table-name state this
+    // test asserted before S3d/S4 existed.
+    ComposedMigrator::down(db.conn(), Some(7))
         .await
         .expect("down survives an orphaned grant");
 
@@ -344,7 +347,7 @@ async fn down_restores_target_columns_and_survives_a_forward_only_orphan() {
         board_id: Option<Uuid>,
     }
 
-    // schema-gate:off — after the six-step down() above, SET SCHEMA has
+    // schema-gate:off — after the seven-step down() above, SET SCHEMA has
     // been reverted, so `permission_grants` is back in `public` at this point.
     let rows = TargetRow::find_by_statement(Statement::from_string(
         sea_orm::DatabaseBackend::Postgres,

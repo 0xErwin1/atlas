@@ -11,7 +11,7 @@ pub mod saved_search {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "saved_searches")]
+    #[sea_orm(schema_name = "acta", table_name = "saved_searches")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,

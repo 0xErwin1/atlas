@@ -128,7 +128,7 @@ impl PgAutomationRuleRepo {
             SELECT id, workspace_id, name, is_active, trigger_event_type, trigger_filter,
                    project_id, action_type, action_params, created_by_user_id,
                    created_at, updated_at, deleted_at
-            FROM   automation_rules
+            FROM   acta.automation_rules
             WHERE  workspace_id        = $1
               AND  trigger_event_type  = $2
               AND  is_active           = true

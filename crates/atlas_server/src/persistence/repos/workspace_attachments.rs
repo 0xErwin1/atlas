@@ -82,7 +82,7 @@ const ATTACHMENT_COLUMNS: &str = "
 
 const ATTACHMENT_SOURCE: &str = "
     FROM acta.attachments a
-    LEFT JOIN comments c ON c.id = a.comment_id AND c.workspace_id = $1 AND c.deleted_at IS NULL";
+    LEFT JOIN acta.comments c ON c.id = a.comment_id AND c.workspace_id = $1 AND c.deleted_at IS NULL";
 
 /// Attachments still hanging off an unpublished comment draft are private to
 /// their author until the comment is posted, so they never enter the listing.

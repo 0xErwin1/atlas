@@ -463,7 +463,7 @@ async fn comment_freedom_schema_enforces_owner_and_link_constraints() {
     let link_id = uuid::Uuid::now_v7();
     let insert_link = Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
-        "INSERT INTO comment_links (id, workspace_id, comment_id, target_task_id, created_at) VALUES ($1, $2, $3, $4, now())",
+        "INSERT INTO acta.comment_links (id, workspace_id, comment_id, target_task_id, created_at) VALUES ($1, $2, $3, $4, now())",
         [
             link_id.into(),
             ws.id.0.into(),
@@ -478,7 +478,7 @@ async fn comment_freedom_schema_enforces_owner_and_link_constraints() {
 
     let duplicate_statement = Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
-        "INSERT INTO comment_links (id, workspace_id, comment_id, target_task_id, created_at) VALUES ($1, $2, $3, $4, now())",
+        "INSERT INTO acta.comment_links (id, workspace_id, comment_id, target_task_id, created_at) VALUES ($1, $2, $3, $4, now())",
         [
             uuid::Uuid::now_v7().into(),
             ws.id.0.into(),
@@ -1838,7 +1838,7 @@ async fn deleting_a_finalized_comment_retains_its_replay_data_and_blob() {
         .conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT deleted_at FROM comments WHERE id = $1",
+            "SELECT deleted_at FROM acta.comments WHERE id = $1",
             [comment.id.0.into()],
         ))
         .await
@@ -1880,7 +1880,7 @@ async fn deleting_a_finalized_comment_retains_its_replay_data_and_blob() {
         .conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT deleted_at FROM comments WHERE id = $1",
+            "SELECT deleted_at FROM acta.comments WHERE id = $1",
             [comment.id.0.into()],
         ))
         .await
@@ -2873,7 +2873,7 @@ async fn comment_link_event_user_actor_round_trips_through_string_discriminant()
         .query_one_raw(Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
             format!(
-                "SELECT actor_type, actor_id FROM comment_link_events WHERE comment_id = '{}'",
+                "SELECT actor_type, actor_id FROM acta.comment_link_events WHERE comment_id = '{}'",
                 comment.id.0
             ),
         ))
@@ -2966,7 +2966,7 @@ async fn comment_link_event_api_key_actor_round_trips_through_string_discriminan
         .query_one_raw(Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
             format!(
-                "SELECT actor_type, actor_id FROM comment_link_events WHERE comment_id = '{}'",
+                "SELECT actor_type, actor_id FROM acta.comment_link_events WHERE comment_id = '{}'",
                 comment.id.0
             ),
         ))
@@ -3038,13 +3038,13 @@ async fn comment_link_event_unknown_actor_type_fails_with_internal_error() {
     // exercise the application-level defensive error path directly.
     db.conn()
         .execute_unprepared(
-            "ALTER TABLE comment_link_events DROP CONSTRAINT comment_link_events_actor_type_check",
+            "ALTER TABLE acta.comment_link_events DROP CONSTRAINT comment_link_events_actor_type_check",
         )
         .await
         .expect("drop actor_type check constraint");
     db.conn()
         .execute_unprepared(&format!(
-            "UPDATE comment_link_events SET actor_type = 'robot' WHERE comment_id = '{}'",
+            "UPDATE acta.comment_link_events SET actor_type = 'robot' WHERE comment_id = '{}'",
             comment.id.0
         ))
         .await

@@ -605,9 +605,9 @@ async fn comment_mutation_faults_rollback_task_and_document_bodies_graphs_and_ev
                 .query_one_raw(Statement::from_sql_and_values(
                     sea_orm::DatabaseBackend::Postgres,
                     "SELECT \
-                        (SELECT count(*) FROM comments WHERE workspace_id = $1) AS comments, \
-                        (SELECT count(*) FROM comment_links WHERE workspace_id = $1) AS links, \
-                        (SELECT count(*) FROM comment_link_events WHERE workspace_id = $1) AS events",
+                        (SELECT count(*) FROM acta.comments WHERE workspace_id = $1) AS comments, \
+                        (SELECT count(*) FROM acta.comment_links WHERE workspace_id = $1) AS links, \
+                        (SELECT count(*) FROM acta.comment_link_events WHERE workspace_id = $1) AS events",
                     [workspace.id.0.into()],
                 ))
                 .await
@@ -978,7 +978,7 @@ async fn comment_body(db: &support::TestDb, comment_id: atlas_acta::ids::Comment
     db.conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT body FROM comments WHERE id = $1",
+            "SELECT body FROM acta.comments WHERE id = $1",
             [comment_id.0.into()],
         ))
         .await
@@ -992,7 +992,7 @@ async fn comment_event_count(db: &support::TestDb, comment_id: atlas_acta::ids::
     db.conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT count(*) AS count FROM comment_link_events WHERE comment_id = $1",
+            "SELECT count(*) AS count FROM acta.comment_link_events WHERE comment_id = $1",
             [comment_id.0.into()],
         ))
         .await
@@ -1009,7 +1009,7 @@ async fn comment_event_kinds(
     db.conn()
         .query_all_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT event_kind FROM comment_link_events WHERE comment_id = $1 ORDER BY created_at, id",
+            "SELECT event_kind FROM acta.comment_link_events WHERE comment_id = $1 ORDER BY created_at, id",
             [comment_id.0.into()],
         ))
         .await
@@ -1044,7 +1044,7 @@ async fn comment_deleted(db: &support::TestDb, comment_id: atlas_acta::ids::Comm
     db.conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT deleted_at IS NOT NULL AS deleted FROM comments WHERE id = $1",
+            "SELECT deleted_at IS NOT NULL AS deleted FROM acta.comments WHERE id = $1",
             [comment_id.0.into()],
         ))
         .await

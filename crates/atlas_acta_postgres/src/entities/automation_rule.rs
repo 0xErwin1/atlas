@@ -5,7 +5,7 @@ pub mod automation_rules {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "automation_rules")]
+    #[sea_orm(schema_name = "acta", table_name = "automation_rules")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,

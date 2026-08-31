@@ -410,7 +410,7 @@ WITH RECURSIVE requested AS (
         AND attachments.workspace_id = $1::uuid
         AND attachments.deleted_at IS NULL
         AND num_nonnulls(attachments.document_id, attachments.task_id, attachments.comment_id) = 1
-    JOIN comments ON comments.id = attachments.comment_id
+    JOIN acta.comments ON comments.id = attachments.comment_id
         AND comments.workspace_id = $1::uuid
         AND comments.deleted_at IS NULL
         AND num_nonnulls(comments.document_id, comments.task_id) = 1
@@ -425,7 +425,7 @@ WITH RECURSIVE requested AS (
         AND attachments.workspace_id = $1::uuid
         AND attachments.deleted_at IS NULL
         AND num_nonnulls(attachments.document_id, attachments.task_id, attachments.comment_id) = 1
-    JOIN comments ON comments.id = attachments.comment_id
+    JOIN acta.comments ON comments.id = attachments.comment_id
         AND comments.workspace_id = $1::uuid
         AND comments.deleted_at IS NULL
         AND num_nonnulls(comments.document_id, comments.task_id) = 1
@@ -435,7 +435,7 @@ WITH RECURSIVE requested AS (
     UNION ALL
     SELECT requested.ordinal, 'documents'::text, documents.id, NULL
     FROM requested
-    JOIN comments ON requested.kind = 'source_comment'
+    JOIN acta.comments ON requested.kind = 'source_comment'
         AND comments.id = requested.id
         AND comments.workspace_id = $1::uuid
         AND comments.deleted_at IS NULL
@@ -446,7 +446,7 @@ WITH RECURSIVE requested AS (
     UNION ALL
     SELECT requested.ordinal, 'tasks'::text, NULL, tasks.id
     FROM requested
-    JOIN comments ON requested.kind = 'source_comment'
+    JOIN acta.comments ON requested.kind = 'source_comment'
         AND comments.id = requested.id
         AND comments.workspace_id = $1::uuid
         AND comments.deleted_at IS NULL

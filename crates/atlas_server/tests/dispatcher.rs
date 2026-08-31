@@ -370,7 +370,7 @@ async fn delivery_log_records_each_attempt() {
     // Reset next_attempt_at to now so the row is immediately reclaimable
     db.conn()
         .execute_unprepared(
-            "UPDATE events_outbox SET next_attempt_at = NOW() - INTERVAL '1 second'",
+            "UPDATE acta.events_outbox SET next_attempt_at = NOW() - INTERVAL '1 second'",
         )
         .await
         .expect("reset next_attempt_at");
@@ -380,7 +380,7 @@ async fn delivery_log_records_each_attempt() {
 
     db.conn()
         .execute_unprepared(
-            "UPDATE events_outbox SET next_attempt_at = NOW() - INTERVAL '1 second'",
+            "UPDATE acta.events_outbox SET next_attempt_at = NOW() - INTERVAL '1 second'",
         )
         .await
         .expect("reset next_attempt_at");

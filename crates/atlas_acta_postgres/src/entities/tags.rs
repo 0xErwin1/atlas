@@ -10,7 +10,7 @@ pub mod tag {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "tags")]
+    #[sea_orm(schema_name = "acta", table_name = "tags")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,

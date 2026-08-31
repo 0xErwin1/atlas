@@ -185,7 +185,7 @@ impl PgSearchIndexQueueRepo {
                    SELECT char_length(coalesce(d.title, '')) + char_length(coalesce(d.content, ''))
                           + coalesce((
                               SELECT sum(char_length(c.body))
-                              FROM comments c
+                              FROM acta.comments c
                               WHERE c.document_id = d.id AND c.deleted_at IS NULL
                           ), 0) AS characters
                    FROM acta.documents d
@@ -194,7 +194,7 @@ impl PgSearchIndexQueueRepo {
                    SELECT char_length(coalesce(t.title, '')) + char_length(coalesce(t.description, ''))
                           + coalesce((
                               SELECT sum(char_length(c.body))
-                              FROM comments c
+                              FROM acta.comments c
                               WHERE c.task_id = t.id AND c.deleted_at IS NULL
                           ), 0) AS characters
                    FROM acta.tasks t

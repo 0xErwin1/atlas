@@ -5,7 +5,7 @@ pub mod event_outbox {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "events_outbox")]
+    #[sea_orm(schema_name = "acta", table_name = "events_outbox")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
