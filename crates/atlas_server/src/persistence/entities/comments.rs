@@ -1,12 +1,8 @@
 use crate::persistence::entities::boards_tasks::actor_from_columns;
 use atlas_acta::entities::comments::Comment;
-use atlas_acta::entities::comments::CommentAttachmentDraft;
-use atlas_acta::entities::comments::CommentAttachmentDraftState;
 use atlas_acta::entities::comments::CommentLink;
 use atlas_acta::entities::comments::CommentLinkTarget;
-use atlas_acta::entities::comments::CommentOwner;
 use atlas_acta::ids::AttachmentId;
-use atlas_acta::ids::CommentDraftId;
 use atlas_acta::ids::CommentId;
 use atlas_acta::ids::CommentLinkId;
 use atlas_acta::ids::DocumentId;
@@ -86,15 +82,16 @@ pub mod comment_link_event {
 }
 
 // R1 scaffolding: `comment_attachment_draft`'s and
-// `comment_attachment_draft_upload`'s entity structs now live in
-// `atlas_acta_postgres::entities::documents` (S4 PR2). Their `_from`
-// conversions below stay here because they call `actor_from_columns`, which
-// lives in `boards_tasks` and only moves to `atlas_acta_postgres` in PR3.
-// Re-exporting the entity structs keeps every existing
+// `comment_attachment_draft_upload`'s entity structs and `_from` conversions
+// now live in `atlas_acta_postgres::entities::documents` (S4 PR2/PR3 — PR2
+// moved the structs, PR3 completes the deferral by moving the conversions
+// once `actor_from_columns` lands in `atlas_acta_postgres`). Re-exporting
+// keeps every existing
 // `crate::persistence::entities::comments::comment_attachment_draft*` call
 // site unaffected by the move (retired at S5 per the S2/S3 plan).
 pub use atlas_acta_postgres::entities::documents::{
-    comment_attachment_draft, comment_attachment_draft_upload,
+    comment_attachment_draft, comment_attachment_draft_from, comment_attachment_draft_upload,
+    comment_attachment_draft_upload_from,
 };
 
 pub fn comment_from(m: comment::Model) -> Comment {
@@ -109,65 +106,6 @@ pub fn comment_from(m: comment::Model) -> Comment {
         updated_at: m.updated_at,
         deleted_at: m.deleted_at,
     }
-}
-
-pub fn comment_attachment_draft_from(
-    m: comment_attachment_draft::Model,
-) -> Result<CommentAttachmentDraft, String> {
-    let owner = match (m.task_id, m.document_id) {
-        (Some(task_id), None) => CommentOwner::Task(TaskId(task_id)),
-        (None, Some(document_id)) => CommentOwner::Document(DocumentId(document_id)),
-        _ => return Err("comment attachment draft violates parent constraint".into()),
-    };
-    let state = match m.state.as_str() {
-        "active" => CommentAttachmentDraftState::Active,
-        "finalized" => CommentAttachmentDraftState::Finalized,
-        "cancelled" => CommentAttachmentDraftState::Cancelled,
-        "expired" => CommentAttachmentDraftState::Expired,
-        "deleted_finalized" => CommentAttachmentDraftState::DeletedFinalized,
-        _ => return Err("comment attachment draft has invalid state".into()),
-    };
-
-    Ok(CommentAttachmentDraft {
-        id: CommentDraftId(m.id),
-        workspace_id: WorkspaceId(m.workspace_id),
-        owner,
-        created_by: actor_from_columns(m.created_by_user_id, m.created_by_api_key_id),
-        create_token: m.create_token,
-        create_digest: m.create_digest,
-        state,
-        finalized_comment_id: m.finalized_comment_id.map(CommentId),
-        final_body_digest: m.final_body_digest,
-        final_request_digest: m.final_request_digest,
-        expires_at: m.expires_at,
-        terminal_at: m.terminal_at,
-        created_at: m.created_at,
-        updated_at: m.updated_at,
-    })
-}
-
-pub fn comment_attachment_draft_upload_from(
-    m: comment_attachment_draft_upload::Model,
-) -> Result<atlas_acta::entities::comments::CommentAttachmentDraftUpload, String> {
-    let metadata = atlas_acta::entities::comments::CommentDraftMetadata::normalize(
-        &m.file_name,
-        &m.content_type,
-    )
-    .map_err(|error| error.to_string())?;
-
-    Ok(
-        atlas_acta::entities::comments::CommentAttachmentDraftUpload {
-            draft_id: CommentDraftId(m.draft_id),
-            upload_token: m.upload_token,
-            original_attachment_id: AttachmentId(m.original_attachment_id),
-            attachment_id: m.attachment_id.map(AttachmentId),
-            request_digest: m.request_digest,
-            payload_digest: m.payload_digest,
-            metadata,
-            size_bytes: m.size_bytes,
-            deleted_at: m.deleted_at,
-        },
-    )
 }
 
 pub fn comment_link_from(m: comment_link::Model) -> CommentLink {

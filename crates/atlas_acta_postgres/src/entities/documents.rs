@@ -1,3 +1,9 @@
+use crate::entities::boards_tasks::actor_from_columns;
+use atlas_acta::entities::comments::CommentAttachmentDraft;
+use atlas_acta::entities::comments::CommentAttachmentDraftState;
+use atlas_acta::entities::comments::CommentAttachmentDraftUpload;
+use atlas_acta::entities::comments::CommentDraftMetadata;
+use atlas_acta::entities::comments::CommentOwner;
 use atlas_acta::entities::documents::Attachment;
 use atlas_acta::entities::documents::AttachmentWriteIntent;
 use atlas_acta::entities::documents::Document;
@@ -6,6 +12,8 @@ use atlas_acta::entities::documents::DocumentRevision;
 use atlas_acta::entities::documents::DocumentSummary;
 use atlas_acta::entities::documents::RevisionMeta;
 use atlas_acta::ids::AttachmentId;
+use atlas_acta::ids::CommentDraftId;
+use atlas_acta::ids::CommentId;
 use atlas_acta::ids::DocumentId;
 use atlas_acta::ids::FolderId;
 use atlas_acta::ids::ProjectId;
@@ -141,10 +149,6 @@ pub mod attachment_write_intent {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
-/// `comment_attachment_drafts`' entity struct. The `comment_attachment_draft_from` domain
-/// conversion stays in `atlas_server::persistence::entities::comments` for this PR because it
-/// calls `actor_from_columns`, which lives in
-/// `atlas_server::persistence::entities::boards_tasks` and only moves in S4 PR3.
 pub mod comment_attachment_draft {
     use super::*;
 
@@ -176,9 +180,6 @@ pub mod comment_attachment_draft {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
-/// `comment_attachment_draft_uploads`' entity struct. See `comment_attachment_draft`'s doc
-/// comment for why its domain conversion (`comment_attachment_draft_upload_from`) stays in
-/// `atlas_server` for this PR.
 pub mod comment_attachment_draft_upload {
     use super::*;
 
@@ -319,6 +320,60 @@ pub fn attachment_write_intent_from(m: attachment_write_intent::Model) -> Attach
         digest: m.digest,
         created_at: m.created_at,
     }
+}
+
+pub fn comment_attachment_draft_from(
+    m: comment_attachment_draft::Model,
+) -> Result<CommentAttachmentDraft, String> {
+    let owner = match (m.task_id, m.document_id) {
+        (Some(task_id), None) => CommentOwner::Task(TaskId(task_id)),
+        (None, Some(document_id)) => CommentOwner::Document(DocumentId(document_id)),
+        _ => return Err("comment attachment draft violates parent constraint".into()),
+    };
+    let state = match m.state.as_str() {
+        "active" => CommentAttachmentDraftState::Active,
+        "finalized" => CommentAttachmentDraftState::Finalized,
+        "cancelled" => CommentAttachmentDraftState::Cancelled,
+        "expired" => CommentAttachmentDraftState::Expired,
+        "deleted_finalized" => CommentAttachmentDraftState::DeletedFinalized,
+        _ => return Err("comment attachment draft has invalid state".into()),
+    };
+
+    Ok(CommentAttachmentDraft {
+        id: CommentDraftId(m.id),
+        workspace_id: WorkspaceId(m.workspace_id),
+        owner,
+        created_by: actor_from_columns(m.created_by_user_id, m.created_by_api_key_id),
+        create_token: m.create_token,
+        create_digest: m.create_digest,
+        state,
+        finalized_comment_id: m.finalized_comment_id.map(CommentId),
+        final_body_digest: m.final_body_digest,
+        final_request_digest: m.final_request_digest,
+        expires_at: m.expires_at,
+        terminal_at: m.terminal_at,
+        created_at: m.created_at,
+        updated_at: m.updated_at,
+    })
+}
+
+pub fn comment_attachment_draft_upload_from(
+    m: comment_attachment_draft_upload::Model,
+) -> Result<CommentAttachmentDraftUpload, String> {
+    let metadata = CommentDraftMetadata::normalize(&m.file_name, &m.content_type)
+        .map_err(|error| error.to_string())?;
+
+    Ok(CommentAttachmentDraftUpload {
+        draft_id: CommentDraftId(m.draft_id),
+        upload_token: m.upload_token,
+        original_attachment_id: AttachmentId(m.original_attachment_id),
+        attachment_id: m.attachment_id.map(AttachmentId),
+        request_digest: m.request_digest,
+        payload_digest: m.payload_digest,
+        metadata,
+        size_bytes: m.size_bytes,
+        deleted_at: m.deleted_at,
+    })
 }
 
 #[cfg(test)]
