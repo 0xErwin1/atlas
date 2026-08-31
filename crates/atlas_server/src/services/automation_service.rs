@@ -21,8 +21,9 @@ use atlas_core::error::DomainError;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait};
 use uuid::Uuid;
 
-use crate::{persistence::repos::PgAutomationRuleRepo, services::TaskService};
+use crate::services::TaskService;
 use atlas_acta_postgres::entities::boards_tasks::{board, task};
+use atlas_acta_postgres::repos::automation_rule::PgAutomationRuleRepo;
 use atlas_acta_postgres::repos::outbox::PgOutboxRepo;
 use atlas_postgres::db_err;
 
@@ -114,7 +115,7 @@ impl AutomationService {
     async fn execute_rule(
         &self,
         task_svc: &TaskService,
-        rule: &crate::persistence::entities::automation_rule::automation_rules::Model,
+        rule: &atlas_acta_postgres::entities::automation_rule::automation_rules::Model,
         workspace_id: Uuid,
         integration_api_key_id: Uuid,
         data: &serde_json::Value,
@@ -144,7 +145,7 @@ impl AutomationService {
     async fn execute_create_task(
         &self,
         task_svc: &TaskService,
-        rule: &crate::persistence::entities::automation_rule::automation_rules::Model,
+        rule: &atlas_acta_postgres::entities::automation_rule::automation_rules::Model,
         workspace_id: Uuid,
         integration_api_key_id: Uuid,
         data: &serde_json::Value,
@@ -228,7 +229,7 @@ impl AutomationService {
     async fn execute_add_comment(
         &self,
         task_svc: &TaskService,
-        rule: &crate::persistence::entities::automation_rule::automation_rules::Model,
+        rule: &atlas_acta_postgres::entities::automation_rule::automation_rules::Model,
         workspace_id: Uuid,
         integration_api_key_id: Uuid,
         data: &serde_json::Value,

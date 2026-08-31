@@ -20,13 +20,12 @@ use atlas_acta::semantic_search::{
     SemanticSearchRepo, SemanticSearchSource, SemanticSearchTypeFilter,
 };
 use atlas_acta_postgres::repos::documents::{DocumentRepo, PgDocumentRepo};
+use atlas_acta_postgres::repos::lifecycle::{NewPurgeOperation, PgPurgeOperationRepo};
+use atlas_acta_postgres::repos::semantic_search::{PgSemanticIndexWriter, PgSemanticSearchRepo};
 use atlas_core::error::DomainError;
 use atlas_core::principal::{Principal, UserId};
 use atlas_server::persistence::migrator::ComposedMigrator;
-use atlas_server::persistence::repos::{
-    NewPurgeOperation, PgProjectRepo, PgPurgeOperationRepo, PgSemanticIndexWriter,
-    PgSemanticSearchRepo, ProjectRepo, UserRepo,
-};
+use atlas_server::persistence::repos::{PgProjectRepo, ProjectRepo, UserRepo};
 use sea_orm::{FromQueryResult, Statement};
 use sea_orm_migration::prelude::MigratorTrait;
 

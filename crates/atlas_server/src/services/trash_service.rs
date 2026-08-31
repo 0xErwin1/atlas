@@ -24,9 +24,9 @@ use sea_orm::{
 use uuid::Uuid;
 
 use crate::persistence::repos::{
-    NewPurgeOperation, PgAttachmentLifecycle, PgPurgeOperationRepo,
-    append_resource_purge_committed_in, append_resource_restored_in,
+    PgAttachmentLifecycle, append_resource_purge_committed_in, append_resource_restored_in,
 };
+use atlas_acta_postgres::repos::lifecycle::{NewPurgeOperation, PgPurgeOperationRepo};
 use atlas_custos_postgres::repos::grant_hygiene::PgGrantHygiene;
 use atlas_postgres::db_err;
 

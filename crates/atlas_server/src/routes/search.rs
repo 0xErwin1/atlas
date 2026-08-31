@@ -17,16 +17,14 @@ use atlas_acta::search::SearchWarning;
 use atlas_acta::search::TypeSet;
 use atlas_acta::search::parse_query;
 use atlas_acta::search::task_filter_on_notes;
+use atlas_acta_postgres::repos::search::PgSearchRepo;
 use atlas_api::{
     dtos::search::{SearchHitDto, SearchKindDto},
     pagination::{Page, SearchCursor, SortKey as ApiSortKey},
 };
 use atlas_custos::capability::CapabilityFamily;
 
-use crate::{
-    authz::WorkspaceAccess, error::ApiError, hybrid_search, persistence::repos::PgSearchRepo,
-    state::AppState,
-};
+use crate::{authz::WorkspaceAccess, error::ApiError, hybrid_search, state::AppState};
 
 /// Query parameters for `GET /api/workspaces/{ws}/search`.
 #[derive(Debug, Deserialize)]

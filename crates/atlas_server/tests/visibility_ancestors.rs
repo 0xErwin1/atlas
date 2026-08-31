@@ -46,12 +46,11 @@ use atlas_acta_postgres::repos::boards_tasks::{
 };
 use atlas_acta_postgres::repos::comments::{CommentRepo, PgCommentRepo};
 use atlas_acta_postgres::repos::documents::{DocumentRepo, PgDocumentLinkRepo};
+use atlas_acta_postgres::repos::search::PgSearchRepo;
+use atlas_acta_postgres::repos::semantic_search::{PgSemanticIndexWriter, PgSemanticSearchRepo};
 use atlas_core::error::DomainError;
 use atlas_core::principal::Principal;
-use atlas_server::persistence::repos::{
-    AttachmentRepo, FolderRepo, PgAttachmentRepo, PgSearchRepo, PgSemanticIndexWriter,
-    PgSemanticSearchRepo, ProjectRepo,
-};
+use atlas_server::persistence::repos::{AttachmentRepo, FolderRepo, PgAttachmentRepo, ProjectRepo};
 use sea_orm::{ConnectionTrait, Statement};
 use std::sync::Arc;
 

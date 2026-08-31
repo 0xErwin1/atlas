@@ -10,6 +10,7 @@ use atlas_acta::actor::WorkspaceCtx;
 use atlas_acta::entities::tags::NewTag;
 use atlas_acta::entities::tags::Tag;
 use atlas_acta::ids::TagId;
+use atlas_acta_postgres::repos::tags::{PgTagRepo, TagRepo};
 use atlas_api::dtos::tags::{CreateTagRequest, TagDto, UpdateTagRequest};
 use atlas_core::principal::Principal;
 
@@ -19,7 +20,6 @@ use crate::{
         authorized::WorkspaceRes,
     },
     error::ApiError,
-    persistence::repos::{PgTagRepo, TagRepo},
     routes::validation::{validate_name, validate_swatch},
     state::AppState,
 };

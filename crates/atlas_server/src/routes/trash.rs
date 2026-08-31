@@ -15,10 +15,9 @@ use axum::{
 };
 use serde::Deserialize;
 
-use crate::{
-    authz::RequireUserAdmin, error::ApiError, persistence::repos::PgPurgeOperationRepo,
-    services::TrashService, state::AppState,
-};
+use atlas_acta_postgres::repos::lifecycle::PgPurgeOperationRepo;
+
+use crate::{authz::RequireUserAdmin, error::ApiError, services::TrashService, state::AppState};
 
 #[derive(Deserialize)]
 pub(crate) struct TrashQuery {

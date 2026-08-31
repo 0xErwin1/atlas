@@ -19,7 +19,7 @@ use atlas_acta::ids::RevisionId;
 use atlas_core::error::DomainError;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait};
 
-use crate::persistence::repos::{PgSearchIndexQueueRepo, append_resource_deleted_in};
+use crate::persistence::repos::append_resource_deleted_in;
 use atlas_acta_postgres::entities::documents::{comment_attachment_draft, document};
 use atlas_acta_postgres::repos::comments::{CommentRepo, PgCommentRepo};
 use atlas_acta_postgres::repos::documents::{
@@ -28,6 +28,7 @@ use atlas_acta_postgres::repos::documents::{
     update_content_in as doc_update_content_in,
 };
 use atlas_acta_postgres::repos::outbox::PgOutboxRepo;
+use atlas_acta_postgres::repos::search_index_queue::PgSearchIndexQueueRepo;
 use atlas_postgres::db_err;
 
 /// Coordinates document mutations with transactional outbox emission.

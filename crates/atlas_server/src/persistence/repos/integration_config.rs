@@ -9,7 +9,7 @@ use sea_orm::{
 };
 use uuid::Uuid;
 
-use crate::persistence::entities::integration_config::integration_configs;
+use atlas_acta_postgres::entities::integration_config::integration_configs;
 use atlas_custos_postgres::repos::identity::PgApiKeyRepo;
 use atlas_postgres::db_err;
 

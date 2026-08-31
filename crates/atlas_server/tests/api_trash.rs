@@ -2083,7 +2083,7 @@ async fn purge_cleanup_keeps_a_shared_live_digest_and_deletes_it_after_its_last_
     );
     assert_eq!(retry.attempts, second_complete.attempts);
 
-    let stale_attempt = atlas_server::persistence::repos::PgPurgeOperationRepo
+    let stale_attempt = atlas_acta_postgres::repos::lifecycle::PgPurgeOperationRepo
         .record_attempt_in(
             db.conn(),
             second_operation.id,
@@ -2099,7 +2099,7 @@ async fn purge_cleanup_keeps_a_shared_live_digest_and_deletes_it_after_its_last_
     );
     assert_eq!(stale_attempt.attempts, second_complete.attempts);
 
-    let stale_digest_attempt = atlas_server::persistence::repos::PgPurgeOperationRepo
+    let stale_digest_attempt = atlas_acta_postgres::repos::lifecycle::PgPurgeOperationRepo
         .record_digest_attempt_in(
             db.conn(),
             second_operation.id,

@@ -32,10 +32,11 @@ use crate::{
         ProjectionSubject,
     },
     error::ApiError,
-    persistence::repos::{ApiKeyRepo, PgCommentLinkRepo, UserRepo},
+    persistence::repos::{ApiKeyRepo, UserRepo},
     routes::tasks::resolve_actor_dto,
     state::AppState,
 };
+use atlas_acta_postgres::repos::comment_links::PgCommentLinkRepo;
 use atlas_custos_postgres::repos::identity::{PgApiKeyRepo, PgUserRepo};
 
 const UNAVAILABLE_LABEL: &str = "Recurso no disponible";

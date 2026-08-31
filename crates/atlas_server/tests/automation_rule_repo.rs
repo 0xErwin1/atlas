@@ -7,7 +7,7 @@
 
 mod support;
 
-use atlas_server::persistence::repos::{AutomationRulePatch, PgAutomationRuleRepo};
+use atlas_acta_postgres::repos::automation_rule::{AutomationRulePatch, PgAutomationRuleRepo};
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 
 fn valid_action_params() -> serde_json::Value {

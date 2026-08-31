@@ -75,9 +75,7 @@ use crate::{
         resolve_folder_ancestry,
     },
     error::ApiError,
-    persistence::repos::{
-        AttachmentRepo, PgAttachmentLifecycle, PgAttachmentRepo, PgCommentLinkRepo,
-    },
+    persistence::repos::{AttachmentRepo, PgAttachmentLifecycle, PgAttachmentRepo},
     routes::comments::{
         comment_to_dto, decode_feed_cursor, enrich_comment_entries, project_comment_feed,
     },
@@ -87,6 +85,7 @@ use crate::{
 };
 use atlas_acta_postgres::entities::documents::document;
 use atlas_acta_postgres::entities::workspace_core::project;
+use atlas_acta_postgres::repos::comment_links::PgCommentLinkRepo;
 use atlas_acta_postgres::repos::comments::PgCommentRepo;
 use atlas_acta_postgres::repos::documents::{
     DocumentLinkRepo, DocumentRepo, PgDocumentLinkRepo, PgDocumentRepo,

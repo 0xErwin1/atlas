@@ -774,8 +774,9 @@ async fn ingest_filter_match_creates_task() {
     use atlas_acta::permissions::Visibility;
     use atlas_acta::permissions::VisibilityRole;
     use atlas_acta_postgres::entities::boards_tasks::task;
+    use atlas_acta_postgres::repos::automation_rule::PgAutomationRuleRepo;
     use atlas_acta_postgres::repos::boards_tasks::BoardRepo;
-    use atlas_server::persistence::repos::{PgAutomationRuleRepo, PgProjectRepo, ProjectRepo};
+    use atlas_server::persistence::repos::{PgProjectRepo, ProjectRepo};
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
     let db = support::TestDb::create().await.expect("TestDb");
@@ -921,8 +922,9 @@ async fn ingest_filter_no_match_no_task() {
     use atlas_acta::permissions::Visibility;
     use atlas_acta::permissions::VisibilityRole;
     use atlas_acta_postgres::entities::boards_tasks::task;
+    use atlas_acta_postgres::repos::automation_rule::PgAutomationRuleRepo;
     use atlas_acta_postgres::repos::boards_tasks::BoardRepo;
-    use atlas_server::persistence::repos::{PgAutomationRuleRepo, PgProjectRepo, ProjectRepo};
+    use atlas_server::persistence::repos::{PgProjectRepo, ProjectRepo};
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
     let db = support::TestDb::create().await.expect("TestDb");

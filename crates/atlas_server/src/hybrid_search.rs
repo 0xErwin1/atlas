@@ -22,7 +22,7 @@ use sea_orm::{DatabaseBackend, DatabaseConnection, FromQueryResult, Statement};
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::persistence::repos::PgSemanticSearchRepo;
+use atlas_acta_postgres::repos::semantic_search::PgSemanticSearchRepo;
 
 /// The kinds both arms agree on, used to key a resource across them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

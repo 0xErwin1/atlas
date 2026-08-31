@@ -44,7 +44,6 @@ use atlas_acta::entities::documents::ExtractedLink;
 use atlas_acta::entities::documents::LinkSource;
 use sea_orm::ConnectionTrait;
 
-use crate::persistence::repos::PgSearchIndexQueueRepo;
 use atlas_acta_postgres::entities::boards_tasks::{
     board, board_column, task, task_checklist_item, task_checklist_item_from,
 };
@@ -56,6 +55,7 @@ use atlas_acta_postgres::repos::boards_tasks::{
 use atlas_acta_postgres::repos::comments::{CommentRepo as _, PgCommentRepo};
 use atlas_acta_postgres::repos::documents::PgDocumentLinkRepo;
 use atlas_acta_postgres::repos::outbox::PgOutboxRepo;
+use atlas_acta_postgres::repos::search_index_queue::PgSearchIndexQueueRepo;
 use atlas_postgres::db_err;
 
 /// Result of a checklist item promotion: the three records committed atomically.

@@ -25,11 +25,12 @@ use atlas_acta::entities::workspace_core::NewProject;
 use atlas_acta::permissions::Visibility;
 use atlas_acta::permissions::VisibilityRole;
 use atlas_acta_postgres::entities::boards_tasks::{task, task_activity};
+use atlas_acta_postgres::repos::automation_rule::PgAutomationRuleRepo;
 use atlas_acta_postgres::repos::boards_tasks::{BoardRepo, PgBoardRepo};
 use atlas_server::{
     config::DispatcherConfig,
     dispatcher::{WebhookDispatcher, compute_signature},
-    persistence::repos::{PgAutomationRuleRepo, PgProjectRepo, ProjectRepo},
+    persistence::repos::{PgProjectRepo, ProjectRepo},
     state::AppState,
 };
 use axum::{Router, extract::State, routing::post};

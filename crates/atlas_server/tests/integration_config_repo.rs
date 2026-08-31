@@ -7,10 +7,9 @@
 
 mod support;
 
+use atlas_acta_postgres::entities::integration_config::integration_configs;
 use atlas_custos_postgres::entities::identity::api_key;
-use atlas_server::persistence::{
-    entities::integration_config::integration_configs, repos::PgIntegrationConfigRepo,
-};
+use atlas_server::persistence::repos::PgIntegrationConfigRepo;
 use sea_orm::{EntityTrait, TransactionTrait};
 
 // ---------------------------------------------------------------------------

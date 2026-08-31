@@ -6,7 +6,7 @@ use sea_orm::DatabaseConnection;
 use tokio::sync::watch;
 use tracing::{debug, error, warn};
 
-use crate::persistence::repos::{PgSearchIndexQueueRepo, QueuedResource};
+use atlas_acta_postgres::repos::search_index_queue::{PgSearchIndexQueueRepo, QueuedResource};
 
 /// How long a claimed row stays leased to this worker.
 ///
