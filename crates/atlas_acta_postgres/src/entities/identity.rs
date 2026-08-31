@@ -11,7 +11,7 @@ pub mod workspace {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "workspaces")]
+    #[sea_orm(schema_name = "acta", table_name = "workspaces")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
@@ -32,7 +32,7 @@ pub mod membership {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "workspace_memberships")]
+    #[sea_orm(schema_name = "acta", table_name = "workspace_memberships")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,

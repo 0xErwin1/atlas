@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-//! S3d `SET SCHEMA custos` migration (design §S3d, spec "PR7 — `SET SCHEMA
-//! custos` with qualified production SQL and a CI grep gate").
+//! S4 PR11 `SET SCHEMA acta` batch 1 migration (design §D1 batch 1, §D3,
+//! §D5) — first of the five Acta SET SCHEMA batches.
 
 mod support;
 
@@ -9,31 +9,14 @@ use atlas_server::persistence::migrator::ComposedMigrator;
 use sea_orm::{FromQueryResult, Statement};
 use sea_orm_migration::prelude::MigratorTrait;
 
-const CUSTOS_TABLES: &[&str] = &[
-    "users",
-    "sessions",
-    "user_activation_tokens",
-    "api_keys",
-    "groups",
-    "group_members",
-    "permission_grants",
-    "security_audit_log",
-];
+const ACTA_IDENTITY_WORKSPACES_TABLES: &[&str] = &["workspaces", "workspace_memberships"];
 
-/// The eight Custos tables must live in the `custos` schema after the
-/// migration, and `purge_operations` (Acta lifecycle, not yet batched) must
-/// stay in `public`.
-///
-/// `user_ui_state` and `workspaces`/`workspace_memberships` are deliberately
-/// absent from both lists here: S4 PR9 moves `user_ui_state` to
-/// `platform.ui_state` (design §D4), and S4 PR11 moves `workspaces`/
-/// `workspace_memberships` to `acta.*` (design §D1 batch 1) — by which point
-/// the composed migrator this test runs against always includes both
-/// migrations too. Their own before/after proofs live in
-/// `ui_state_repo_characterization.rs` and
-/// `acta_identity_workspaces_set_schema.rs`, not here.
+/// `workspaces` and `workspace_memberships` must live in the `acta` schema
+/// after the migration; every other batch's table (still unbatched in this
+/// PR) stays in `public`, and `purge_operations` (Acta lifecycle, batch 5)
+/// stays in `public` too.
 #[tokio::test]
-async fn the_eight_custos_tables_move_to_the_custos_schema() {
+async fn identity_workspaces_tables_move_to_the_acta_schema() {
     let db = support::TestDb::create().await.expect("TestDb::create");
 
     #[derive(Debug, FromQueryResult)]
@@ -42,10 +25,10 @@ async fn the_eight_custos_tables_move_to_the_custos_schema() {
         table_schema: String,
     }
 
-    let all_names: Vec<String> = CUSTOS_TABLES
+    let all_names: Vec<String> = ACTA_IDENTITY_WORKSPACES_TABLES
         .iter()
+        .chain(["documents", "boards", "purge_operations"].iter())
         .map(|t| format!("'{t}'"))
-        .chain(["purge_operations"].iter().map(|t| format!("'{t}'")))
         .collect();
 
     let rows = Row::find_by_statement(Statement::from_string(
@@ -63,36 +46,43 @@ async fn the_eight_custos_tables_move_to_the_custos_schema() {
     .await
     .expect("query information_schema.tables");
 
-    for table in CUSTOS_TABLES {
+    for table in ACTA_IDENTITY_WORKSPACES_TABLES {
         let schema = rows
             .iter()
             .find(|r| r.table_name == *table)
             .unwrap_or_else(|| panic!("table {table} not found"))
             .table_schema
             .clone();
-        assert_eq!(schema, "custos", "expected {table} to live in custos");
+        assert_eq!(schema, "acta", "expected {table} to live in acta");
     }
 
-    let table = "purge_operations";
-    let schema = rows
-        .iter()
-        .find(|r| r.table_name == table)
-        .unwrap_or_else(|| panic!("table {table} not found"))
-        .table_schema
-        .clone();
-    assert_eq!(schema, "public", "expected {table} to stay in public");
+    for table in ["documents", "boards", "purge_operations"] {
+        let schema = rows
+            .iter()
+            .find(|r| r.table_name == table)
+            .unwrap_or_else(|| panic!("table {table} not found"))
+            .table_schema
+            .clone();
+        assert_eq!(
+            schema, "public",
+            "expected {table} to stay in public until its own batch lands"
+        );
+    }
 
     db.teardown().await;
 }
 
 /// `ALTER TABLE ... SET SCHEMA` moves a table by OID without dropping or
-/// recreating it, so every inbound foreign key from an Acta-owned table into
-/// a moved Custos table must survive unchanged and still resolve to the
-/// moved table. Picks one representative FK per moved referenced table
-/// (`users`, `api_keys`, `groups`) rather than re-asserting all 59 inbound
-/// FKs the live schema carries.
+/// recreating it, so every inbound foreign key must survive unchanged and
+/// still resolve to the moved table. Picks three representative FKs:
+/// `workspace_memberships_workspace_id_fkey` (the batch's own internal FK,
+/// both sides moved together), `documents_workspace_id_fkey` (an
+/// Acta-owned table still in `public`, referencing the now-moved
+/// `acta.workspaces`), and `workspace_memberships_user_id_fkey` (the
+/// pre-existing, already-qualified inbound edge to `custos.users`, S3),
+/// rather than re-asserting all 31 inbound FKs the live schema carries.
 #[tokio::test]
-async fn inbound_acta_foreign_keys_survive_the_schema_move() {
+async fn inbound_foreign_keys_survive_the_schema_move() {
     let db = support::TestDb::create().await.expect("TestDb::create");
 
     #[derive(Debug, FromQueryResult)]
@@ -115,9 +105,9 @@ async fn inbound_acta_foreign_keys_survive_the_schema_move() {
         JOIN pg_namespace nc ON nc.oid = rc.relnamespace
         WHERE contype = 'f'
           AND conname IN (
-              'tasks_created_by_user_id_fkey',
-              'task_assignees_assignee_api_key_id_fkey',
-              'permission_grants_group_id_fkey'
+              'workspace_memberships_workspace_id_fkey',
+              'documents_workspace_id_fkey',
+              'workspace_memberships_user_id_fkey'
           )
         "#
         .to_string(),
@@ -127,39 +117,43 @@ async fn inbound_acta_foreign_keys_survive_the_schema_move() {
     .expect("query pg_constraint for representative inbound FKs");
 
     let expectations = [
-        ("tasks_created_by_user_id_fkey", "tasks", "users"),
         (
-            "task_assignees_assignee_api_key_id_fkey",
-            "task_assignees",
-            "api_keys",
+            "workspace_memberships_workspace_id_fkey",
+            "acta.workspace_memberships",
+            "acta",
+            "workspaces",
         ),
         (
-            "permission_grants_group_id_fkey",
-            "custos.permission_grants",
-            "groups",
+            "documents_workspace_id_fkey",
+            "documents",
+            "acta",
+            "workspaces",
+        ),
+        (
+            "workspace_memberships_user_id_fkey",
+            "acta.workspace_memberships",
+            "custos",
+            "users",
         ),
     ];
 
-    for (conname, table_name, ref_table) in expectations {
+    for (conname, table_name, ref_schema, ref_table) in expectations {
         let row = rows
             .iter()
             .find(|r| r.conname == conname)
             .unwrap_or_else(|| panic!("constraint {conname} not found after the schema move"));
         assert_eq!(row.table_name, table_name);
-        assert_eq!(row.ref_table, format!("custos.{ref_table}"));
-        assert_eq!(
-            row.ref_schema, "custos",
-            "{conname} must still resolve to the moved custos.{ref_table}"
-        );
+        assert_eq!(row.ref_schema, ref_schema);
+        assert_eq!(row.ref_table, format!("{ref_schema}.{ref_table}"));
     }
 
     db.teardown().await;
 }
 
-/// The composed migrator (`historical() ++ custos_new()`) reports zero
-/// pending migrations against both a from-empty database and a
-/// V1-migrated database, and includes the SET SCHEMA migration by name
-/// (D5 regression guard, extended for this PR's addition).
+/// The composed migrator (`historical() ++ custos_new() ++ acta_new()`)
+/// reports zero pending migrations against a from-empty database, and
+/// includes this PR's SET SCHEMA migration by name (D5 regression guard,
+/// extended for this PR's addition).
 #[tokio::test]
 async fn composed_migrator_has_zero_pending_including_the_set_schema_migration() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -188,7 +182,7 @@ async fn composed_migrator_has_zero_pending_including_the_set_schema_migration()
     .map(|r| r.version)
     .collect();
     assert!(
-        applied.contains(&"m20260830_000051_custos_set_schema".to_string()),
+        applied.contains(&"m20260901_000053_acta_identity_workspaces_set_schema".to_string()),
         "expected the SET SCHEMA migration to be part of the applied set"
     );
 

@@ -303,7 +303,7 @@ async fn query_b_reloads_user_membership_and_active_state() {
 
     db.conn
         .execute_unprepared(&format!(
-            "DELETE FROM workspace_memberships WHERE workspace_id = '{workspace_id}' AND user_id = '{user_id}'"
+            "DELETE FROM acta.workspace_memberships WHERE workspace_id = '{workspace_id}' AND user_id = '{user_id}'"
         ))
         .await
         .expect("remove membership");
@@ -559,7 +559,7 @@ async fn api_key_creator_membership_loss_denies_mid_chain() {
 
     db.conn
         .execute_unprepared(&format!(
-            "DELETE FROM workspace_memberships WHERE workspace_id = '{workspace_id}' AND user_id = '{creator_id}'"
+            "DELETE FROM acta.workspace_memberships WHERE workspace_id = '{workspace_id}' AND user_id = '{creator_id}'"
         ))
         .await
         .expect("simulate mid-chain membership loss");
@@ -821,7 +821,7 @@ async fn agent_cap_does_not_bypass_the_read_capability_gate() {
     seed_workspace_user(&db.conn, workspace_id, creator_id, true).await;
     db.conn
         .execute_unprepared(&format!(
-            "UPDATE workspace_memberships SET role = 'owner' WHERE workspace_id = '{workspace_id}' AND user_id = '{creator_id}'"
+            "UPDATE acta.workspace_memberships SET role = 'owner' WHERE workspace_id = '{workspace_id}' AND user_id = '{creator_id}'"
         ))
         .await
         .expect("promote creator to owner");
@@ -1277,7 +1277,7 @@ async fn seed_user(conn: &DatabaseConnection, user_id: Uuid, is_root: bool, is_s
 
 async fn seed_workspace_only(conn: &DatabaseConnection, workspace_id: Uuid) {
     conn.execute_unprepared(&format!(
-        "INSERT INTO workspaces (id, name, slug, created_at, updated_at) \
+        "INSERT INTO acta.workspaces (id, name, slug, created_at, updated_at) \
          VALUES ('{workspace_id}', 'Workspace', 'workspace-{workspace_id}', now(), now())"
     ))
     .await
@@ -1358,7 +1358,7 @@ async fn seed_workspace_user(
     conn.execute_unprepared(&format!(
         "INSERT INTO custos.users (id, username, display_name, is_root, is_system_admin, created_at, updated_at) \
          VALUES ('{user_id}', 'user-{user_id}', 'User', false, false, now(), now()); \
-         INSERT INTO workspaces (id, name, slug, created_at, updated_at) \
+         INSERT INTO acta.workspaces (id, name, slug, created_at, updated_at) \
          VALUES ('{workspace_id}', 'Workspace', 'workspace-{workspace_id}', now(), now())"
     ))
     .await
@@ -1366,7 +1366,7 @@ async fn seed_workspace_user(
 
     if member {
         conn.execute_unprepared(&format!(
-            "INSERT INTO workspace_memberships (id, workspace_id, user_id, role, created_at, updated_at) \
+            "INSERT INTO acta.workspace_memberships (id, workspace_id, user_id, role, created_at, updated_at) \
              VALUES ('{}', '{workspace_id}', '{user_id}', 'member', now(), now())",
             Uuid::now_v7(),
         ))

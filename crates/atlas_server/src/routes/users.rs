@@ -721,7 +721,7 @@ async fn create_pending_user_txn(
     let membership_id = MembershipId::new();
     txn.execute_raw(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
-        "INSERT INTO workspace_memberships \
+        "INSERT INTO acta.workspace_memberships \
             (id, workspace_id, user_id, role, created_at, updated_at) \
          VALUES ($1, $2, $3, $4, $5, $6)",
         [

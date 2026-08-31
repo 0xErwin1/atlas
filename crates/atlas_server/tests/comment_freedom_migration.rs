@@ -26,7 +26,10 @@ async fn seed_pre_custos_schema_workspace(
     db: &TestDb,
     slug: &str,
 ) -> (WorkspaceCtx, uuid::Uuid, uuid::Uuid) {
-    // custos-schema-gate:off — pre-schema-move fixture, see the doc comment above.
+    // schema-gate:off — pre-schema-move fixture, see the doc comment above.
+    // `workspaces`/`workspace_memberships` are frozen at the same historical
+    // step, before `acta_new()` (and the SET SCHEMA acta migration) has run,
+    // so they also still physically live in `public` here.
     let user_id = uuid::Uuid::now_v7();
     let workspace_id = uuid::Uuid::now_v7();
 
@@ -37,7 +40,6 @@ async fn seed_pre_custos_schema_workspace(
         ))
         .await
         .expect("seed pre-migration-shaped user row");
-    // custos-schema-gate:on
 
     db.conn()
         .execute_unprepared(&format!(
@@ -55,6 +57,7 @@ async fn seed_pre_custos_schema_workspace(
         ))
         .await
         .expect("seed membership row");
+    // schema-gate:on
 
     let ctx = WorkspaceCtx::new(
         WorkspaceId(workspace_id),

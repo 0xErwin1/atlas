@@ -174,7 +174,7 @@ impl WorkspaceRepo for PgWorkspaceRepo {
         // resolution must keep avoiding it.
         let rows = SlugRow::find_by_statement(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT slug FROM workspaces",
+            "SELECT slug FROM acta.workspaces",
             [],
         ))
         .all(&self.conn)

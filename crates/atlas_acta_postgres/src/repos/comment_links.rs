@@ -440,7 +440,7 @@ async fn attachment_url_matches_owner(
                 JOIN comments comment ON comment.id = attachment.comment_id
                   AND comment.workspace_id = attachment.workspace_id
                   AND comment.deleted_at IS NULL
-                JOIN workspaces workspace ON workspace.id = attachment.workspace_id
+                JOIN acta.workspaces workspace ON workspace.id = attachment.workspace_id
                 {owner_join}
                 WHERE attachment.id = $1
                   AND attachment.workspace_id = $2

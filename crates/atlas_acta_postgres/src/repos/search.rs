@@ -137,7 +137,7 @@ impl SearchRepo for PgSearchRepo {
                     owner_admin_clause = "TRUE".to_string();
                 } else {
                     owner_admin_clause = "EXISTS (
-                            SELECT 1 FROM workspace_memberships
+                            SELECT 1 FROM acta.workspace_memberships
                             WHERE workspace_id = $1
                               AND user_id = $2
                               AND role IN ('owner', 'admin')
@@ -146,7 +146,7 @@ impl SearchRepo for PgSearchRepo {
                 }
 
                 member_clause = "EXISTS (
-                        SELECT 1 FROM workspace_memberships
+                        SELECT 1 FROM acta.workspace_memberships
                         WHERE workspace_id = $1
                           AND user_id = $2
                     )"
