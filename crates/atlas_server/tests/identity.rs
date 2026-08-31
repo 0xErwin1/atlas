@@ -6,11 +6,10 @@ use atlas_acta::actor::Actor;
 use atlas_acta::actor::WorkspaceCtx;
 use atlas_acta::entities::documents::NewDocument;
 use atlas_acta::entities::identity::MemberRole;
+use atlas_acta_postgres::repos::documents::{DocumentRepo, PgDocumentRepo};
 use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_core::error::DomainError;
-use atlas_server::persistence::repos::{
-    DocumentRepo, NewSession, NewUser, PgDocumentRepo, SessionRepo, UserRepo,
-};
+use atlas_server::persistence::repos::{NewSession, NewUser, SessionRepo, UserRepo};
 use chrono::Duration;
 use sea_orm::ConnectionTrait;
 

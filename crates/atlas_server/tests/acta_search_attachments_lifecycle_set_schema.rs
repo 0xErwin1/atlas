@@ -19,12 +19,13 @@ use atlas_acta::semantic_search::{
     EmbeddingInput, EmbeddingProvider, ResourceKind, SemanticIndexChunk, SemanticSearchQuery,
     SemanticSearchRepo, SemanticSearchSource, SemanticSearchTypeFilter,
 };
+use atlas_acta_postgres::repos::documents::{DocumentRepo, PgDocumentRepo};
 use atlas_core::error::DomainError;
 use atlas_core::principal::{Principal, UserId};
 use atlas_server::persistence::migrator::ComposedMigrator;
 use atlas_server::persistence::repos::{
-    DocumentRepo, NewPurgeOperation, PgDocumentRepo, PgProjectRepo, PgPurgeOperationRepo,
-    PgSemanticIndexWriter, PgSemanticSearchRepo, ProjectRepo, UserRepo,
+    NewPurgeOperation, PgProjectRepo, PgPurgeOperationRepo, PgSemanticIndexWriter,
+    PgSemanticSearchRepo, ProjectRepo, UserRepo,
 };
 use sea_orm::{FromQueryResult, Statement};
 use sea_orm_migration::prelude::MigratorTrait;

@@ -35,13 +35,13 @@ use atlas_acta::entities::workspace_core::NewProject;
 use atlas_acta::ids::TaskId;
 use atlas_acta::permissions::Visibility;
 use atlas_acta::permissions::VisibilityRole;
+use atlas_acta_postgres::repos::boards_tasks::{
+    BoardRepo, PgBoardRepo, PgTaskAssigneeRepo, PgTaskRepo, TaskAssigneeRepo, TaskRepo,
+};
 use atlas_core::principal::ApiKeyId;
 use atlas_core::principal::UserId;
 use atlas_custos_postgres::repos::identity::PgApiKeyRepo;
-use atlas_server::persistence::repos::{
-    ApiKeyRepo, BoardRepo, NewApiKey, PgBoardRepo, PgProjectRepo, PgTaskAssigneeRepo, PgTaskRepo,
-    ProjectRepo, TaskAssigneeRepo, TaskRepo,
-};
+use atlas_server::persistence::repos::{ApiKeyRepo, NewApiKey, PgProjectRepo, ProjectRepo};
 use sea_orm::{FromQueryResult, Statement, TransactionTrait};
 
 /// Seeds a project/board/column/task and assigns a fresh, user-owned api key

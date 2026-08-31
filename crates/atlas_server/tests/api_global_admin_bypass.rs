@@ -20,6 +20,7 @@ mod support;
 use atlas_acta::actor::Actor;
 use atlas_acta::actor::WorkspaceCtx;
 use atlas_acta::entities::documents::NewDocument;
+use atlas_acta_postgres::repos::documents::{DocumentRepo, PgDocumentRepo};
 use atlas_api::{
     dtos::{LoginRequest, UpdateWorkspaceRequest, search::SearchHitDto},
     pagination::Page,
@@ -32,7 +33,7 @@ use atlas_server::{
         password,
         tokens::{generate_api_key, hash_token},
     },
-    persistence::repos::{ApiKeyRepo, DocumentRepo, NewApiKey, NewUser, PgDocumentRepo, UserRepo},
+    persistence::repos::{ApiKeyRepo, NewApiKey, NewUser, UserRepo},
 };
 use support::TestDb;
 

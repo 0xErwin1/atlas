@@ -15,6 +15,7 @@ use atlas_acta::ids::FolderId;
 use atlas_acta::ids::ProjectId;
 use atlas_acta::permissions::ResourceRef;
 use atlas_acta::permissions::Visibility;
+use atlas_acta_postgres::repos::boards_tasks::{BoardRepo, PgBoardRepo};
 use atlas_acta_postgres::repos::identity::{MembershipRepo, PgMembershipRepo};
 use atlas_core::principal::Principal;
 use atlas_server::authz::ResourceRole;
@@ -22,8 +23,8 @@ use atlas_server::authz::policy::{NewPermissionGrant, ResolutionInput, Resolutio
 use atlas_server::{
     authz::authorized::{BoardRes, ResolvedResource},
     persistence::repos::{
-        BoardRepo, FolderRepo, PermissionGrantRepo, PgBoardRepo, PgFolderRepo,
-        PgPermissionGrantRepo, PgProjectRepo, ProjectRepo, UserRepo,
+        FolderRepo, PermissionGrantRepo, PgFolderRepo, PgPermissionGrantRepo, PgProjectRepo,
+        ProjectRepo, UserRepo,
     },
 };
 

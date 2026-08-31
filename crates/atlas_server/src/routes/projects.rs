@@ -34,10 +34,11 @@ use crate::{
         policy::NewPermissionGrant,
     },
     error::ApiError,
-    persistence::repos::{PgOutboxRepo, PgPermissionGrantRepo, PgProjectRepo, ProjectRepo},
+    persistence::repos::{PgPermissionGrantRepo, PgProjectRepo, ProjectRepo},
     routes::validation::{validate_name, validate_task_prefix},
     state::AppState,
 };
+use atlas_acta_postgres::repos::outbox::PgOutboxRepo;
 
 #[derive(Deserialize)]
 pub(crate) struct PaginationQuery {

@@ -34,20 +34,18 @@ use super::policy::{ChainSegment, ResolutionInput, ResolutionQuery, ResourceChai
 use crate::{
     auth::middleware::Principal as MiddlewarePrincipal,
     error::ApiError,
-    persistence::{
-        entities::{
-            boards_tasks::{board, board_from, task, task_from},
-            documents::{document, document_from},
-            workspace_core::folder,
-        },
-        live_ancestors::{live_board_chain, live_folder_chain, live_project},
-        repos::{
-            ApiKeyRepo, PermissionGrantRepo, PgPermissionGrantRepo, PgProjectRepo, ProjectRepo,
-            UserRepo,
-        },
+    persistence::repos::{
+        ApiKeyRepo, PermissionGrantRepo, PgPermissionGrantRepo, PgProjectRepo, ProjectRepo,
+        UserRepo,
     },
     state::AppState,
 };
+use atlas_acta_postgres::entities::{
+    boards_tasks::{board, board_from, task, task_from},
+    documents::{document, document_from},
+    workspace_core::folder,
+};
+use atlas_acta_postgres::live_ancestors::{live_board_chain, live_folder_chain, live_project};
 use atlas_acta_postgres::repos::identity::{
     MembershipRepo, PgMembershipRepo, PgWorkspaceRepo, WorkspaceRepo,
 };
@@ -278,7 +276,7 @@ impl ResolvedResource for FolderRes {
             })?
             .ok_or(ApiError::NotFound)?;
 
-        let f = crate::persistence::entities::workspace_core::folder_from(row);
+        let f = atlas_acta_postgres::entities::workspace_core::folder_from(row);
         let chain = build_folder_chain(db, ws, &f).await?;
         Ok((FolderRes(f), chain))
     }
@@ -820,7 +818,7 @@ pub async fn resolve_folder_ancestry(
     workspace_id: atlas_acta::ids::WorkspaceId,
     leaf_id: FolderId,
 ) -> Result<Vec<atlas_acta::entities::workspace_core::Folder>, ApiError> {
-    use crate::persistence::entities::workspace_core::folder_from;
+    use atlas_acta_postgres::entities::workspace_core::folder_from;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
     const MAX_DEPTH: usize = 32;
@@ -938,7 +936,7 @@ pub async fn authorize_board_destination(
     column_id: atlas_acta::ids::ColumnId,
     min: ResourceRole,
 ) -> Result<(), ApiError> {
-    use crate::persistence::entities::boards_tasks::board_column;
+    use atlas_acta_postgres::entities::boards_tasks::board_column;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
     let column = board_column::Entity::find_by_id(column_id.0)

@@ -5,18 +5,18 @@ pub(crate) mod route_matrix;
 use atlas_acta::actor::Actor;
 use atlas_acta::actor::WorkspaceCtx;
 use atlas_acta::ids::WorkspaceId;
+use atlas_acta_postgres::repos::boards_tasks::{PgBoardRepo, PgTaskRepo};
+use atlas_acta_postgres::repos::documents::PgDocumentRepo;
 use atlas_acta_postgres::repos::identity::{
     MembershipRepo, NewWorkspace, PgMembershipRepo, PgWorkspaceRepo, Workspace, WorkspaceRepo,
 };
+use atlas_acta_postgres::repos::workspace_core::PgPropertyDefinitionRepo;
 use atlas_client::AtlasClient;
 use atlas_custos_postgres::repos::identity::{
     PgActivationTokenRepo, PgApiKeyRepo, PgSessionRepo, PgUserRepo,
 };
 use atlas_server::{
-    persistence::repos::{
-        NewUser, PgBoardRepo, PgDocumentRepo, PgFolderRepo, PgProjectRepo,
-        PgPropertyDefinitionRepo, PgTaskRepo, User, UserRepo,
-    },
+    persistence::repos::{NewUser, PgFolderRepo, PgProjectRepo, User, UserRepo},
     state::AppState,
 };
 use atlas_test_db::TestDb as DatabaseFixture;

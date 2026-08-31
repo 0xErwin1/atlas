@@ -14,10 +14,14 @@ use atlas_acta::entities::documents::NewDocument;
 use atlas_acta::entities::workspace_core::NewProject;
 use atlas_acta::permissions::Visibility;
 use atlas_acta::permissions::VisibilityRole;
+use atlas_acta_postgres::repos::boards_tasks::{
+    BoardRepo, PgBoardRepo, PgTaskReferenceRepo, PgTaskRepo, TaskReferenceRepo, TaskRepo,
+};
+use atlas_acta_postgres::repos::documents::{
+    DocumentLinkRepo, DocumentRepo, PgDocumentLinkRepo, PgDocumentRepo,
+};
 use atlas_server::persistence::repos::{
-    AttachmentRepo, BoardRepo, DocumentLinkRepo, DocumentRepo, PgAttachmentRepo, PgBoardRepo,
-    PgDocumentLinkRepo, PgDocumentRepo, PgProjectRepo, PgTaskReferenceRepo, PgTaskRepo,
-    ProjectRepo, TaskReferenceRepo, TaskRepo,
+    AttachmentRepo, PgAttachmentRepo, PgProjectRepo, ProjectRepo,
 };
 use chrono::{TimeDelta, Utc};
 use sea_orm::{ConnectionTrait, Statement};

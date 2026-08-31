@@ -34,10 +34,10 @@ use crate::{
         resolve_folder_ancestry,
     },
     error::ApiError,
-    persistence::repos::{BoardRepo, PgBoardRepo},
     routes::validation::{validate_name, validate_swatch},
     state::AppState,
 };
+use atlas_acta_postgres::repos::boards_tasks::{BoardRepo, PgBoardRepo};
 
 #[derive(Deserialize)]
 pub(crate) struct PaginationQuery {

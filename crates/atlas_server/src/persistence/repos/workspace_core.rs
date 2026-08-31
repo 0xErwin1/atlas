@@ -23,17 +23,15 @@ use sea_orm::{
     EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
 };
 
-use crate::persistence::entities::workspace_core::{
+use crate::persistence::repos::append_resource_deleted_in;
+use atlas_acta_postgres::entities::workspace_core::{
     folder, folder_from, project, project_from, visibility_from_cols,
 };
-use crate::persistence::live_ancestors::{live_folder_chain, live_project};
-use crate::persistence::repos::{PgOutboxRepo, append_resource_deleted_in};
+use atlas_acta_postgres::live_ancestors::{live_folder_chain, live_project};
+use atlas_acta_postgres::repos::outbox::PgOutboxRepo;
 
 pub use atlas_acta::ports::workspace_core::FolderRepo;
 pub use atlas_acta::ports::workspace_core::ProjectRepo;
-pub use atlas_acta_postgres::repos::workspace_core::{
-    PgPropertyDefinitionRepo, PropertyDefinitionRepo,
-};
 
 fn visibility_to_str(v: &Visibility) -> (&'static str, Option<&'static str>) {
     match v {

@@ -34,15 +34,14 @@ use atlas_acta::ids::BoardId;
 use atlas_acta::ids::ProjectId;
 use atlas_acta::permissions::Visibility;
 use atlas_acta::permissions::VisibilityRole;
+use atlas_acta_postgres::repos::boards_tasks::{BoardRepo, PgBoardRepo};
 use atlas_api::dtos::{
     CreateGrantRequest, CreateProjectRequest, GrantPrincipal,
     boards_tasks::{CreateBoardRequest, CreateColumnRequest, CreateTaskRequest},
     documents::ActorDto,
 };
 use atlas_server::{
-    persistence::repos::{
-        ApiKeyRepo, BoardRepo, NewApiKey, PgBoardRepo, PgProjectRepo, ProjectRepo,
-    },
+    persistence::repos::{ApiKeyRepo, NewApiKey, PgProjectRepo, ProjectRepo},
     presence::{PresenceResource, broadcast_presence},
     state::AppState,
 };

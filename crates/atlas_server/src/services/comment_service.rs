@@ -14,10 +14,11 @@ use sea_orm::{
 };
 use sha2::{Digest, Sha256};
 
-use crate::persistence::{
-    entities::{comments::comment_attachment_draft, documents::attachment},
-    repos::{PgCommentLinkRepo, PgCommentRepo, PgSearchIndexQueueRepo, append_resource_deleted_in},
+use crate::persistence::repos::{
+    PgCommentLinkRepo, PgSearchIndexQueueRepo, append_resource_deleted_in,
 };
+use atlas_acta_postgres::entities::documents::{attachment, comment_attachment_draft};
+use atlas_acta_postgres::repos::comments::PgCommentRepo;
 use atlas_postgres::db_err;
 
 // Relocated to `atlas_acta_postgres::repos::comment_links` (S4 PR8): it is
@@ -306,7 +307,7 @@ async fn find_draft_for_finalize(
     ctx: &WorkspaceCtx,
     owner: CommentOwner,
     draft_id: CommentDraftId,
-) -> Result<crate::persistence::entities::comments::comment_attachment_draft::Model, DomainError> {
+) -> Result<comment_attachment_draft::Model, DomainError> {
     let (task_id, document_id) = match owner {
         CommentOwner::Task(id) => (Some(id.0), None),
         CommentOwner::Document(id) => (None, Some(id.0)),

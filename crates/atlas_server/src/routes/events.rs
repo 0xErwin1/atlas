@@ -317,7 +317,7 @@ async fn load_board_project(
     workspace: &Workspace,
     board_id: BoardId,
 ) -> Result<Option<ProjectId>, ApiError> {
-    use crate::persistence::entities::boards_tasks::board;
+    use atlas_acta_postgres::entities::boards_tasks::board;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
     let row = board::Entity::find_by_id(board_id.0)
@@ -345,7 +345,7 @@ async fn build_document_event_chain(
     workspace: &Workspace,
     document_uuid: Uuid,
 ) -> Result<Option<ResourceChain>, ApiError> {
-    use crate::persistence::entities::documents::{document, document_from};
+    use atlas_acta_postgres::entities::documents::{document, document_from};
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
     let row = document::Entity::find_by_id(document_uuid)

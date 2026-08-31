@@ -15,13 +15,11 @@ use atlas_acta::entities::workspace_core::NewProject;
 use atlas_acta::ids::TaskId;
 use atlas_acta::permissions::Visibility;
 use atlas_acta::permissions::VisibilityRole;
+use atlas_acta_postgres::entities::{boards_tasks::task, comments::comment};
+use atlas_acta_postgres::repos::boards_tasks::{BoardRepo, PgBoardRepo};
 use atlas_server::{
-    persistence::{
-        entities::{boards_tasks::task, comments::comment},
-        repos::{
-            BoardRepo, PgAutomationRuleRepo, PgBoardRepo, PgIntegrationConfigRepo, PgProjectRepo,
-            ProjectRepo,
-        },
+    persistence::repos::{
+        PgAutomationRuleRepo, PgIntegrationConfigRepo, PgProjectRepo, ProjectRepo,
     },
     services::{AutomationService, TaskService},
 };

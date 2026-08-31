@@ -14,13 +14,9 @@ use atlas_acta::entities::workspace_core::NewFolder;
 use atlas_acta::entities::workspace_core::NewProject;
 use atlas_acta::permissions::Visibility;
 use atlas_acta::permissions::VisibilityRole;
-use atlas_server::persistence::{
-    entities::events_outbox::event_outbox,
-    repos::{
-        BoardRepo, FolderRepo, PgBoardRepo, PgFolderRepo, PgProjectRepo, ProjectRepo,
-        resequence_column,
-    },
-};
+use atlas_acta_postgres::entities::events_outbox::event_outbox;
+use atlas_acta_postgres::repos::boards_tasks::{BoardRepo, PgBoardRepo, resequence_column};
+use atlas_server::persistence::repos::{FolderRepo, PgFolderRepo, PgProjectRepo, ProjectRepo};
 use sea_orm::{EntityTrait, TransactionTrait};
 
 async fn make_project(

@@ -19,11 +19,10 @@ use sea_orm::{
 };
 use sha2::{Digest, Sha256};
 
-use crate::persistence::entities::comments::{
-    comment_attachment_draft, comment_attachment_draft_from, comment_attachment_draft_upload,
-    comment_attachment_draft_upload_from,
+use atlas_acta_postgres::entities::documents::{
+    attachment, comment_attachment_draft, comment_attachment_draft_from,
+    comment_attachment_draft_upload, comment_attachment_draft_upload_from,
 };
-use crate::persistence::entities::documents::attachment;
 use atlas_postgres::db_err;
 
 pub struct PgCommentAttachmentDraftRepo {

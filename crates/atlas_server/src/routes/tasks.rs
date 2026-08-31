@@ -101,15 +101,9 @@ use crate::{
         resolve_effective_role,
     },
     error::ApiError,
-    persistence::entities::boards_tasks::task,
-    persistence::entities::documents::document,
     persistence::repos::{
-        ApiKeyRepo, AttachmentRepo, DocumentRepo, PgAttachmentLifecycle, PgAttachmentRepo,
-        PgBoardRepo, PgCommentLinkRepo, PgCommentRepo, PgDocumentLinkRepo, PgDocumentRepo,
-        PgPermissionGrantRepo, PgProjectRepo, PgPropertyDefinitionRepo, PgTaskActivityRepo,
-        PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo, ProjectRepo,
-        PropertyDefinitionRepo, TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo,
-        TaskReferenceRepo, TaskRepo, UserRepo,
+        ApiKeyRepo, AttachmentRepo, PgAttachmentLifecycle, PgAttachmentRepo, PgCommentLinkRepo,
+        PgPermissionGrantRepo, PgProjectRepo, ProjectRepo, UserRepo,
     },
     routes::comment_attachment_markdown,
     routes::comments::{
@@ -125,7 +119,18 @@ use crate::{
     state::AppState,
     task_graph::{self, GraphEdge, GraphNodeKind, TaskGraphExplorer},
 };
+use atlas_acta_postgres::entities::boards_tasks::task;
+use atlas_acta_postgres::entities::documents::document;
+use atlas_acta_postgres::repos::boards_tasks::{
+    PgBoardRepo, PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo,
+    PgTaskRepo, TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo,
+};
+use atlas_acta_postgres::repos::comments::PgCommentRepo;
+use atlas_acta_postgres::repos::documents::{DocumentRepo, PgDocumentLinkRepo, PgDocumentRepo};
 use atlas_acta_postgres::repos::identity::{MembershipRepo, PgMembershipRepo};
+use atlas_acta_postgres::repos::workspace_core::{
+    PgPropertyDefinitionRepo, PropertyDefinitionRepo,
+};
 use atlas_custos_postgres::repos::identity::{PgApiKeyRepo, PgUserRepo};
 
 // ---------------------------------------------------------------------------

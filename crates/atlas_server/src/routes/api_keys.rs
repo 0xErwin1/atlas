@@ -51,10 +51,11 @@ use crate::{
     error::ApiError,
     persistence::repos::{
         ApiKeyRepo, NewApiKey, PermissionGrantRepo, PgPermissionGrantRepo, PgProjectRepo,
-        PgSecurityAuditRepo, PgTaskAssigneeRepo, ProjectRepo, UserRepo,
+        PgSecurityAuditRepo, ProjectRepo, UserRepo,
     },
     state::AppState,
 };
+use atlas_acta_postgres::repos::boards_tasks::PgTaskAssigneeRepo;
 use atlas_acta_postgres::repos::identity::{PgWorkspaceRepo, WorkspaceRepo};
 use atlas_custos_postgres::repos::identity::{PgApiKeyRepo, PgUserRepo};
 

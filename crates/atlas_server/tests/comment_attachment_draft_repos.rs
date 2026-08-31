@@ -12,12 +12,13 @@ use atlas_acta::entities::comments::NewCommentAttachmentDraftUpload;
 use atlas_acta::entities::documents::NewDocument;
 use atlas_acta::ids::AttachmentId;
 use atlas_acta::ports::CommentAttachmentDraftRepo;
+use atlas_acta_postgres::repos::documents::{DocumentRepo, PgDocumentRepo};
 use atlas_core::error::DomainError;
 use atlas_custos::entities::identity::ApiKeyType;
 use atlas_custos::entities::identity::NewApiKey;
 use atlas_server::persistence::migrator::ComposedMigrator as Migrator;
 use atlas_server::persistence::repos::{
-    ApiKeyRepo, DocumentRepo, NewUser, PgCommentAttachmentDraftRepo, PgDocumentRepo, UserRepo,
+    ApiKeyRepo, NewUser, PgCommentAttachmentDraftRepo, UserRepo,
 };
 use atlas_server::services::CommentDraftService;
 use chrono::{Duration, Utc};

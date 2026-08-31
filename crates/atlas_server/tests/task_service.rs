@@ -21,12 +21,12 @@ use atlas_acta::entities::boards_tasks::TaskPatch;
 use atlas_acta::entities::workspace_core::NewProject;
 use atlas_acta::permissions::Visibility;
 use atlas_acta::permissions::VisibilityRole;
+use atlas_acta_postgres::repos::boards_tasks::{
+    BoardRepo, PgBoardRepo, PgTaskActivityRepo, PgTaskChecklistRepo, PgTaskReferenceRepo,
+    PgTaskRepo, TaskActivityRepo, TaskChecklistRepo, TaskReferenceRepo, TaskRepo,
+};
 use atlas_server::{
-    persistence::repos::{
-        BoardRepo, PgBoardRepo, PgProjectRepo, PgTaskActivityRepo, PgTaskChecklistRepo,
-        PgTaskReferenceRepo, PgTaskRepo, ProjectRepo, TaskActivityRepo, TaskChecklistRepo,
-        TaskReferenceRepo, TaskRepo,
-    },
+    persistence::repos::{PgProjectRepo, ProjectRepo},
     services::TaskService,
 };
 
@@ -1151,7 +1151,7 @@ async fn promote_checklist_item_concurrent_double_promote_is_rejected() {
         .expect("create parent");
 
     let checklist_repo =
-        atlas_server::persistence::repos::PgTaskChecklistRepo::new(db.conn().clone());
+        atlas_acta_postgres::repos::boards_tasks::PgTaskChecklistRepo::new(db.conn().clone());
     let item = checklist_repo
         .add_item(
             &ctx,

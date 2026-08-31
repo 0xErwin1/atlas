@@ -21,13 +21,9 @@ use atlas_core::error::DomainError;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait};
 use uuid::Uuid;
 
-use crate::{
-    persistence::{
-        entities::boards_tasks::{board, task},
-        repos::{PgAutomationRuleRepo, PgOutboxRepo},
-    },
-    services::TaskService,
-};
+use crate::{persistence::repos::PgAutomationRuleRepo, services::TaskService};
+use atlas_acta_postgres::entities::boards_tasks::{board, task};
+use atlas_acta_postgres::repos::outbox::PgOutboxRepo;
 use atlas_postgres::db_err;
 
 /// Maximum characters allowed for any single substituted value in a title template.

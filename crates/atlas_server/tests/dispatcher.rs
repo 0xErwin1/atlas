@@ -17,14 +17,11 @@ use atlas_acta::ids::BoardId;
 use atlas_acta::ids::ColumnId;
 use atlas_acta::ids::ProjectId;
 use atlas_acta::ids::TaskId;
+use atlas_acta_postgres::entities::events_outbox::event_outbox;
+use atlas_acta_postgres::repos::outbox::PgOutboxRepo;
 use atlas_server::{
-    config::DispatcherConfig,
-    crypto::WebhookCrypto,
-    dispatcher::WebhookDispatcher,
-    persistence::{
-        entities::events_outbox::event_outbox,
-        repos::{PgOutboxRepo, PgWebhookSubscriptionRepo},
-    },
+    config::DispatcherConfig, crypto::WebhookCrypto, dispatcher::WebhookDispatcher,
+    persistence::repos::PgWebhookSubscriptionRepo,
 };
 use axum::{Router, extract::State, routing::post};
 use sea_orm::{EntityTrait, TransactionTrait};

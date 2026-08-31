@@ -43,16 +43,16 @@ use crate::{
         enforce_api_key_scope, resolve_effective_role,
     },
     error::ApiError,
-    persistence::repos::{
-        ApiKeyRepo, PgAttachmentRepo, PgCommentRepo, PgDocumentRepo, PgTaskRepo,
-        PgWorkspaceAttachmentRepo, UserRepo,
-    },
+    persistence::repos::{ApiKeyRepo, PgAttachmentRepo, PgWorkspaceAttachmentRepo, UserRepo},
     routes::{
         documents::{member_to_actor, member_to_principal},
         validation::{validate_name, validate_upload_extension},
     },
     state::AppState,
 };
+use atlas_acta_postgres::repos::boards_tasks::PgTaskRepo;
+use atlas_acta_postgres::repos::comments::PgCommentRepo;
+use atlas_acta_postgres::repos::documents::PgDocumentRepo;
 use atlas_custos_postgres::repos::identity::{PgApiKeyRepo, PgUserRepo};
 
 #[derive(Deserialize)]
@@ -428,7 +428,7 @@ async fn rewrite_document_references(
 
     crate::routes::documents::update_document_links(
         ctx,
-        &crate::persistence::repos::PgDocumentLinkRepo {
+        &atlas_acta_postgres::repos::documents::PgDocumentLinkRepo {
             conn: (*state.db).clone(),
         },
         saved.id,

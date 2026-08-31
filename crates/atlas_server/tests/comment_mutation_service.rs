@@ -23,11 +23,12 @@ use atlas_acta::permissions::Visibility;
 use atlas_acta::permissions::VisibilityRole;
 use atlas_acta::ports::attachment_store::AttachmentStore;
 use atlas_acta::ports::comments::CommentLinkRepo;
+use atlas_acta_postgres::repos::boards_tasks::{BoardRepo, PgBoardRepo, PgTaskRepo, TaskRepo};
+use atlas_acta_postgres::repos::documents::{DocumentRepo, PgDocumentRepo};
 use atlas_server::{
     persistence::repos::{
-        AttachmentRepo, BoardRepo, DiskAttachmentStore, DocumentRepo, PgAttachmentLifecycle,
-        PgAttachmentRepo, PgBoardRepo, PgCommentLinkRepo, PgDocumentRepo, PgProjectRepo,
-        PgTaskRepo, ProjectRepo, TaskRepo,
+        AttachmentRepo, DiskAttachmentStore, PgAttachmentLifecycle, PgAttachmentRepo,
+        PgCommentLinkRepo, PgProjectRepo, ProjectRepo,
     },
     services::{CommentMutationFault, CommentService},
 };

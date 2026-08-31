@@ -25,13 +25,11 @@ use crate::{
         ViewerMin, authorized::WorkspaceRes,
     },
     error::ApiError,
-    persistence::repos::{
-        BoardRepo, PgBoardRepo, PgStatusTemplateRepo, StatusTemplateRepo,
-        list_templates_for_workspace,
-    },
+    persistence::repos::{PgStatusTemplateRepo, StatusTemplateRepo, list_templates_for_workspace},
     routes::validation::{validate_name, validate_swatch},
     state::AppState,
 };
+use atlas_acta_postgres::repos::boards_tasks::{BoardRepo, PgBoardRepo};
 
 #[derive(Deserialize)]
 pub(crate) struct TemplatePath {

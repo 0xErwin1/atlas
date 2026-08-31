@@ -11,7 +11,7 @@ use sea_orm::{ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilt
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
-use crate::persistence::entities::{
+use atlas_acta_postgres::entities::{
     boards_tasks::{board_column, task, task_reference},
     documents::document,
 };
