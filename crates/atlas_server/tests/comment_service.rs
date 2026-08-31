@@ -15,12 +15,11 @@ use atlas_acta::entities::identity::MemberRole;
 use atlas_acta::entities::workspace_core::NewProject;
 use atlas_acta::permissions::Visibility;
 use atlas_acta::permissions::VisibilityRole;
+use atlas_acta_postgres::repos::boards_tasks::{BoardRepo, PgBoardRepo, PgTaskRepo, TaskRepo};
 use atlas_acta_postgres::repos::identity::{MembershipRepo, PgMembershipRepo};
 use atlas_core::error::DomainError;
 use atlas_server::{
-    persistence::repos::{
-        BoardRepo, NewUser, PgBoardRepo, PgProjectRepo, PgTaskRepo, ProjectRepo, TaskRepo, UserRepo,
-    },
+    persistence::repos::{NewUser, PgProjectRepo, ProjectRepo, UserRepo},
     services::TaskService,
 };
 

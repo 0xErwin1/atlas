@@ -32,13 +32,13 @@ use crate::{
     authz::{RequireUserAdmin, WorkspaceMember, enforce_api_key_scope},
     error::ApiError,
     persistence::repos::{
-        ApiKeyRepo, BoardRepo, PgBoardRepo, PgPlatformStatusTemplateRepo, PgProjectRepo,
-        PgStatusTemplateRepo, PlatformStatusTemplateRepo, ProjectRepo, StatusTemplateRepo,
-        UserRepo,
+        ApiKeyRepo, PgPlatformStatusTemplateRepo, PgProjectRepo, PgStatusTemplateRepo,
+        PlatformStatusTemplateRepo, ProjectRepo, StatusTemplateRepo, UserRepo,
     },
     routes::validation::{validate_name, validate_slug},
     state::AppState,
 };
+use atlas_acta_postgres::repos::boards_tasks::{BoardRepo, PgBoardRepo};
 use atlas_acta_postgres::repos::identity::{
     MembershipRepo, PgMembershipRepo, PgWorkspaceRepo, WorkspaceRepo,
 };

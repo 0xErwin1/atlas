@@ -24,34 +24,26 @@ use sha2::{Digest, Sha256};
 use sqlx::{Postgres, pool::PoolConnection};
 use uuid::Uuid;
 
-use crate::persistence::entities::comments::{
-    comment_attachment_draft, comment_attachment_draft_upload,
-};
-use crate::persistence::entities::documents::{
-    attachment, attachment_from, attachment_write_intent, attachment_write_intent_from,
-};
-use crate::persistence::live_ancestors::{
-    live_comment_chain, live_document_chain, live_task_chain,
-};
 use crate::persistence::repos::comment_attachment_drafts::{
     lock_active_draft_for_upload, record_upload_or_replay_in,
 };
 use crate::persistence::repos::{PgSearchIndexQueueRepo, append_resource_deleted_in};
+use atlas_acta_postgres::entities::documents::{
+    attachment, attachment_from, attachment_write_intent, attachment_write_intent_from,
+    comment_attachment_draft, comment_attachment_draft_upload,
+};
+use atlas_acta_postgres::live_ancestors::{
+    live_comment_chain, live_document_chain, live_task_chain,
+};
 use atlas_postgres::db_err;
 
-// R1 scaffolding: `DocumentRepo`/`DocumentLinkRepo` (`PgDocumentRepo`,
-// `PgDocumentLinkRepo`, their `*_in` transaction-scoped helpers) now live in
-// `atlas_acta_postgres::repos::documents` (S4 PR7). Re-exporting them here
-// keeps every existing `crate::persistence::repos::*` call site unaffected.
-//
 // `PgAttachmentRepo`, `PgAttachmentWriteIntentRepo`, and
 // `PgAttachmentLifecycle` stay here: their methods compose a Custos
 // security-audit append (`append_resource_deleted_in`) with Acta context,
 // the same boundary `security_audit.rs` already documents.
-pub use atlas_acta_postgres::repos::documents::{
-    DocumentLinkRepo, DocumentRepo, PgDocumentLinkRepo, PgDocumentRepo, create_in, edit_content_in,
-    move_to_in, rename_in, soft_delete_in, update_content_in,
-};
+// `DocumentRepo`/`DocumentLinkRepo` (`PgDocumentRepo`, `PgDocumentLinkRepo`,
+// their `*_in` transaction-scoped helpers) live in
+// `atlas_acta_postgres::repos::documents`.
 
 pub use atlas_acta::ports::documents::AttachmentRepo;
 pub use atlas_acta::ports::documents::AttachmentWriteIntentRepo;
@@ -457,13 +449,16 @@ impl PgAttachmentLifecycle {
         store: &dyn AttachmentStore,
     ) -> Result<(), DomainError> {
         let txn = conn.begin().await.map_err(db_err)?;
-        let draft = crate::persistence::entities::comments::comment_attachment_draft::Entity::find_by_id(draft_id.0)
-            .filter(crate::persistence::entities::comments::comment_attachment_draft::Column::WorkspaceId.eq(ctx.workspace_id.0))
+        let draft = comment_attachment_draft::Entity::find_by_id(draft_id.0)
+            .filter(comment_attachment_draft::Column::WorkspaceId.eq(ctx.workspace_id.0))
             .lock_exclusive()
             .one(&txn)
             .await
             .map_err(db_err)?
-            .ok_or(DomainError::NotFound { entity: "comment attachment draft", id: draft_id.0 })?;
+            .ok_or(DomainError::NotFound {
+                entity: "comment attachment draft",
+                id: draft_id.0,
+            })?;
 
         match draft.state.as_str() {
             "active" => {}

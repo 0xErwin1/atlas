@@ -9,9 +9,10 @@ mod support;
 
 use atlas_acta::actor::Actor;
 use atlas_acta::actor::WorkspaceCtx;
+use atlas_acta_postgres::repos::documents::DocumentRepo;
 use atlas_api::dtos::documents::CreateDocumentRequest;
 use atlas_client::ClientError;
-use atlas_server::persistence::repos::{DocumentRepo, FolderRepo};
+use atlas_server::persistence::repos::FolderRepo;
 
 fn doc_req(title: &str, content: Option<&str>) -> CreateDocumentRequest {
     CreateDocumentRequest {

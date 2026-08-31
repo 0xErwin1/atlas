@@ -32,6 +32,7 @@ use atlas_acta::ids::ProjectId;
 use atlas_acta::ids::WorkspaceId;
 use atlas_acta::permissions::Visibility;
 use atlas_acta::permissions::VisibilityRole;
+use atlas_acta_postgres::repos::boards_tasks::{BoardRepo, PgBoardRepo};
 use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_api::dtos::{
     CreateProjectRequest,
@@ -50,8 +51,8 @@ use atlas_server::{
     auth::tokens::{generate_api_key, hash_token},
     live::LiveEvent,
     persistence::repos::{
-        ApiKeyRepo, BoardRepo, NewApiKey, PermissionGrantRepo, PgBoardRepo, PgPermissionGrantRepo,
-        PgProjectRepo, ProjectRepo,
+        ApiKeyRepo, NewApiKey, PermissionGrantRepo, PgPermissionGrantRepo, PgProjectRepo,
+        ProjectRepo,
     },
     state::AppState,
 };

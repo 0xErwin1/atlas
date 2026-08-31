@@ -7,13 +7,13 @@
 
 mod support;
 
+use atlas_acta_postgres::entities::events_outbox::event_outbox;
 use atlas_api::dtos::{
     CreateProjectRequest, UpdateProjectRequest,
     boards_tasks::{CreateBoardRequest, CreateColumnRequest, CreateTaskRequest},
 };
 use atlas_client::ClientError;
 use atlas_custos_postgres::entities::permissions::permission_grant;
-use atlas_server::persistence::entities::events_outbox::event_outbox;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use support::{TestDb, TestServer, login_root_user, login_user_with_workspace};
 

@@ -11,13 +11,12 @@ use atlas_acta::entities::workspace_core::NewPropertyDefinition;
 use atlas_acta::entities::workspace_core::PropertyKind;
 use atlas_acta::permissions::Visibility;
 use atlas_acta::permissions::VisibilityRole;
+use atlas_acta_postgres::repos::workspace_core::PropertyDefinitionRepo;
 use atlas_api::dtos::{CreateProjectRequest, folders::CreateFolderRequest};
 use atlas_client::ClientError;
 use atlas_custos::entities::identity::ApiKeyType;
 use atlas_custos::entities::identity::NewApiKey;
-use atlas_server::persistence::repos::{
-    ApiKeyRepo, FolderRepo, ProjectRepo, PropertyDefinitionRepo,
-};
+use atlas_server::persistence::repos::{ApiKeyRepo, FolderRepo, ProjectRepo};
 
 // ---- Characterization: duplicate-name unique-violation maps to 409 --------------
 //

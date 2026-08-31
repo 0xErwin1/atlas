@@ -26,13 +26,13 @@ use crate::{
         resolve_folder_ancestry,
     },
     error::ApiError,
-    persistence::repos::{
-        BoardRepo, DocumentRepo, FolderRepo, PgBoardRepo, PgDocumentRepo, PgFolderRepo,
-    },
+    persistence::repos::{FolderRepo, PgFolderRepo},
     routes::{documents::copy_document_into, validation::validate_name},
     services::DocumentService,
     state::AppState,
 };
+use atlas_acta_postgres::repos::boards_tasks::{BoardRepo, PgBoardRepo};
+use atlas_acta_postgres::repos::documents::{DocumentRepo, PgDocumentRepo};
 
 /// Maximum folder nesting depth honored by the recursive copy. Mirrors the
 /// 32-level bound used by `resolve_folder_ancestry` so a pathological or cyclic

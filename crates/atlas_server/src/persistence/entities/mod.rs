@@ -1,8 +1,4 @@
 pub mod automation_rule;
-pub mod boards_tasks;
-pub mod comments;
-pub mod documents;
-pub mod events_outbox;
 pub mod identity;
 pub mod integration_config;
 pub mod lifecycle;
@@ -12,4 +8,3 @@ pub mod tags;
 pub mod task_views;
 pub mod webhook_delivery;
 pub mod webhook_subscription;
-pub mod workspace_core;

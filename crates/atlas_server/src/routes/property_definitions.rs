@@ -25,9 +25,11 @@ use crate::{
         authorized::WorkspaceRes,
     },
     error::ApiError,
-    persistence::repos::{PgPropertyDefinitionRepo, PropertyDefinitionRepo},
     routes::validation::validate_name,
     state::AppState,
+};
+use atlas_acta_postgres::repos::workspace_core::{
+    PgPropertyDefinitionRepo, PropertyDefinitionRepo,
 };
 
 fn principal_to_actor(principal: &Principal) -> Actor {

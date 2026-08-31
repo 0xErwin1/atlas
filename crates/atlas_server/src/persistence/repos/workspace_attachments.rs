@@ -18,9 +18,9 @@ use atlas_core::principal::UserId;
 use chrono::{DateTime, Utc};
 use sea_orm::{DatabaseConnection, FromQueryResult, Statement};
 
-use crate::persistence::{
-    live_ancestors::{board_chain_is_live_sql, folder_chain_is_live_sql, project_is_live_sql},
-    repos::search::{build_doc_permission, build_task_permission},
+use crate::persistence::repos::search::{build_doc_permission, build_task_permission};
+use atlas_acta_postgres::live_ancestors::{
+    board_chain_is_live_sql, folder_chain_is_live_sql, project_is_live_sql,
 };
 use atlas_postgres::db_err;
 

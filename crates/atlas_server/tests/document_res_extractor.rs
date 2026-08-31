@@ -10,6 +10,7 @@ use atlas_acta::entities::workspace_core::NewFolder;
 use atlas_acta::ids::DocumentId;
 use atlas_acta::ids::FolderId;
 use atlas_acta::permissions::ResourceRef;
+use atlas_acta_postgres::repos::documents::{DocumentRepo, PgDocumentRepo};
 use atlas_acta_postgres::repos::identity::{MembershipRepo, PgMembershipRepo};
 use atlas_core::principal::Principal;
 use atlas_server::authz::ResourceRole;
@@ -18,8 +19,7 @@ use atlas_server::{
     authz::authorized::{DocumentRes, DocumentSlugRes, FolderRes, ResolvedResource},
     error::ApiError,
     persistence::repos::{
-        DocumentRepo, FolderRepo, PermissionGrantRepo, PgDocumentRepo, PgFolderRepo,
-        PgPermissionGrantRepo, UserRepo,
+        FolderRepo, PermissionGrantRepo, PgFolderRepo, PgPermissionGrantRepo, UserRepo,
     },
 };
 

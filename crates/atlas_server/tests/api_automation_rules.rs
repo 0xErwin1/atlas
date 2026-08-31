@@ -92,7 +92,8 @@ async fn admin_creates_automation_rule_returns_201() {
     use atlas_acta::entities::workspace_core::NewProject;
     use atlas_acta::permissions::Visibility;
     use atlas_acta::permissions::VisibilityRole;
-    use atlas_server::persistence::repos::{BoardRepo, PgProjectRepo, ProjectRepo};
+    use atlas_acta_postgres::repos::boards_tasks::BoardRepo;
+    use atlas_server::persistence::repos::{PgProjectRepo, ProjectRepo};
 
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
@@ -405,7 +406,8 @@ async fn non_admin_rejected_on_automation_rule_endpoints() {
     use atlas_acta::entities::workspace_core::NewProject;
     use atlas_acta::permissions::Visibility;
     use atlas_acta::permissions::VisibilityRole;
-    use atlas_server::persistence::repos::{BoardRepo, PgProjectRepo, ProjectRepo};
+    use atlas_acta_postgres::repos::boards_tasks::BoardRepo;
+    use atlas_server::persistence::repos::{PgProjectRepo, ProjectRepo};
 
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;
@@ -536,7 +538,8 @@ async fn automation_rule_crud() {
     use atlas_acta::entities::workspace_core::NewProject;
     use atlas_acta::permissions::Visibility;
     use atlas_acta::permissions::VisibilityRole;
-    use atlas_server::persistence::repos::{BoardRepo, PgProjectRepo, ProjectRepo};
+    use atlas_acta_postgres::repos::boards_tasks::BoardRepo;
+    use atlas_server::persistence::repos::{PgProjectRepo, ProjectRepo};
 
     let db = support::TestDb::create().await.expect("TestDb");
     let server = support::TestServer::spawn(&db).await;

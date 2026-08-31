@@ -75,11 +75,8 @@ use crate::{
         resolve_folder_ancestry,
     },
     error::ApiError,
-    persistence::entities::documents::document,
-    persistence::entities::workspace_core::project,
     persistence::repos::{
-        AttachmentRepo, DocumentLinkRepo, DocumentRepo, PgAttachmentLifecycle, PgAttachmentRepo,
-        PgCommentLinkRepo, PgCommentRepo, PgDocumentLinkRepo, PgDocumentRepo,
+        AttachmentRepo, PgAttachmentLifecycle, PgAttachmentRepo, PgCommentLinkRepo,
     },
     routes::comments::{
         comment_to_dto, decode_feed_cursor, enrich_comment_entries, project_comment_feed,
@@ -87,6 +84,12 @@ use crate::{
     routes::validation::{validate_comment_body, validate_name, validate_upload},
     services::{CommentDraftService, DocumentService},
     state::AppState,
+};
+use atlas_acta_postgres::entities::documents::document;
+use atlas_acta_postgres::entities::workspace_core::project;
+use atlas_acta_postgres::repos::comments::PgCommentRepo;
+use atlas_acta_postgres::repos::documents::{
+    DocumentLinkRepo, DocumentRepo, PgDocumentLinkRepo, PgDocumentRepo,
 };
 
 #[derive(Deserialize)]

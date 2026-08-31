@@ -21,12 +21,10 @@ use atlas_acta::ids::DocumentId;
 use atlas_acta::permissions::Visibility;
 use atlas_acta::semantic_search::EmbeddingInput;
 use atlas_acta::semantic_search::EmbeddingProvider;
+use atlas_acta_postgres::repos::boards_tasks::{BoardRepo, PgBoardRepo};
 use atlas_core::error::DomainError;
 use atlas_server::{
-    persistence::repos::{
-        BoardRepo, PgBoardRepo, PgProjectRepo, PgSemanticIndexWriter, PgSemanticIndexer,
-        ProjectRepo,
-    },
+    persistence::repos::{PgProjectRepo, PgSemanticIndexWriter, PgSemanticIndexer, ProjectRepo},
     search_indexer::SearchIndexWorker,
     services::{CommentService, DocumentService, TaskService},
 };

@@ -3,13 +3,9 @@ mod attachment_store;
 #[allow(unreachable_pub)]
 mod automation_rule;
 #[allow(unreachable_pub)]
-mod boards_tasks;
-#[allow(unreachable_pub)]
 mod comment_attachment_drafts;
 #[allow(unreachable_pub)]
 mod comment_links;
-#[allow(unreachable_pub)]
-mod comments;
 #[allow(unreachable_pub)]
 mod documents;
 #[allow(unreachable_pub)]
@@ -20,8 +16,6 @@ mod identity;
 mod integration_config;
 #[allow(unreachable_pub)]
 mod lifecycle;
-#[allow(unreachable_pub)]
-pub(crate) mod outbox;
 mod permissions;
 #[allow(unreachable_pub)]
 mod s3_attachment_store;
@@ -52,27 +46,15 @@ pub use identity::{
 };
 
 pub use attachment_store::DiskAttachmentStore;
-pub use boards_tasks::{
-    BoardRepo, PgBoardRepo, PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo,
-    PgTaskReferenceRepo, PgTaskRepo, TaskActivityRepo, TaskAssigneeRepo, TaskChecklistRepo,
-    TaskReferenceRepo, TaskRepo, resequence_column,
-};
 pub use comment_attachment_drafts::PgCommentAttachmentDraftRepo;
 pub use comment_links::{CommentMutationFault, PgCommentLinkRepo};
-pub use comments::{CommentRepo, PgCommentRepo};
 pub use documents::{
-    AttachmentRepo, AttachmentWriteIntentRepo, DocumentLinkRepo, DocumentRepo,
-    PgAttachmentLifecycle, PgAttachmentRepo, PgAttachmentWriteIntentRepo, PgDocumentLinkRepo,
-    PgDocumentRepo, create_in as doc_create_in, edit_content_in as doc_edit_content_in,
-    move_to_in as doc_move_to_in, rename_in as doc_rename_in, soft_delete_in as doc_soft_delete_in,
-    update_content_in as doc_update_content_in,
+    AttachmentRepo, AttachmentWriteIntentRepo, PgAttachmentLifecycle, PgAttachmentRepo,
+    PgAttachmentWriteIntentRepo,
 };
 pub use s3_attachment_store::{S3AttachmentStore, S3Config};
 pub use workspace_attachments::PgWorkspaceAttachmentRepo;
-pub use workspace_core::{
-    FolderRepo, PgFolderRepo, PgProjectRepo, PgPropertyDefinitionRepo, ProjectRepo,
-    PropertyDefinitionRepo,
-};
+pub use workspace_core::{FolderRepo, PgFolderRepo, PgProjectRepo, ProjectRepo};
 
 pub use grant_diagnostics::count_orphaned_grants;
 pub use permissions::{PermissionGrantRepo, PgGrantHygiene, PgGroupRepo, PgPermissionGrantRepo};
@@ -83,7 +65,6 @@ pub use security_audit::{
 #[allow(unreachable_pub)]
 mod saved_searches;
 
-pub use outbox::PgOutboxRepo;
 pub use saved_searches::{PgSavedSearchRepo, SavedSearchRepo};
 pub use search::PgSearchRepo;
 pub use search_index_queue::{PgSearchIndexQueueRepo, QueuedResource, WorkspaceIndexPlan};

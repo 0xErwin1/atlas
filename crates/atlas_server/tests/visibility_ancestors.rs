@@ -41,12 +41,16 @@ use atlas_acta::semantic_search::SemanticSearchQuery;
 use atlas_acta::semantic_search::SemanticSearchRepo;
 use atlas_acta::semantic_search::SemanticSearchSource;
 use atlas_acta::semantic_search::SemanticSearchTypeFilter;
+use atlas_acta_postgres::repos::boards_tasks::{
+    BoardRepo, PgTaskActivityRepo, PgTaskReferenceRepo, TaskRepo,
+};
+use atlas_acta_postgres::repos::comments::{CommentRepo, PgCommentRepo};
+use atlas_acta_postgres::repos::documents::{DocumentRepo, PgDocumentLinkRepo};
 use atlas_core::error::DomainError;
 use atlas_core::principal::Principal;
 use atlas_server::persistence::repos::{
-    AttachmentRepo, BoardRepo, CommentRepo, DocumentRepo, FolderRepo, PgAttachmentRepo,
-    PgCommentRepo, PgDocumentLinkRepo, PgSearchRepo, PgSemanticIndexWriter, PgSemanticSearchRepo,
-    PgTaskActivityRepo, PgTaskReferenceRepo, ProjectRepo, TaskRepo,
+    AttachmentRepo, FolderRepo, PgAttachmentRepo, PgSearchRepo, PgSemanticIndexWriter,
+    PgSemanticSearchRepo, ProjectRepo,
 };
 use sea_orm::{ConnectionTrait, Statement};
 use std::sync::Arc;

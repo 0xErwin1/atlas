@@ -16,7 +16,8 @@ use atlas_acta::ids::ColumnId;
 use atlas_acta::ids::ProjectId;
 use atlas_acta::ids::TaskId;
 use atlas_acta::ids::WorkspaceId;
-use atlas_server::persistence::{entities::events_outbox::event_outbox, repos::PgOutboxRepo};
+use atlas_acta_postgres::entities::events_outbox::event_outbox;
+use atlas_acta_postgres::repos::outbox::PgOutboxRepo;
 use sea_orm::{EntityTrait, TransactionTrait};
 use uuid::Uuid;
 

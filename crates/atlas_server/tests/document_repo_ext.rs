@@ -8,8 +8,8 @@
 mod support;
 
 use atlas_acta::entities::documents::NewDocument;
+use atlas_acta_postgres::repos::documents::{DocumentRepo, PgDocumentRepo};
 use atlas_core::principal::Principal;
-use atlas_server::persistence::repos::{DocumentRepo, PgDocumentRepo};
 
 fn make_doc_repo(db: &support::TestDb) -> PgDocumentRepo {
     PgDocumentRepo::new(db.conn().clone(), 50)
@@ -665,11 +665,12 @@ async fn rename_cross_tenant_not_found() {
 
 use atlas_acta::entities::documents::NewDocument as NewDoc;
 use atlas_acta::ids::RevisionId;
-use atlas_core::error::DomainError;
-use atlas_server::persistence::repos::{
-    FolderRepo, PgFolderRepo, doc_create_in, doc_move_to_in, doc_rename_in, doc_soft_delete_in,
-    doc_update_content_in,
+use atlas_acta_postgres::repos::documents::{
+    create_in as doc_create_in, move_to_in as doc_move_to_in, rename_in as doc_rename_in,
+    soft_delete_in as doc_soft_delete_in, update_content_in as doc_update_content_in,
 };
+use atlas_core::error::DomainError;
+use atlas_server::persistence::repos::{FolderRepo, PgFolderRepo};
 use sea_orm::TransactionTrait;
 
 fn new_doc(title: &str, slug: &str) -> NewDoc {

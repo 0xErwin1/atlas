@@ -20,11 +20,11 @@ mod support;
 use atlas_acta::actor::Actor;
 use atlas_acta::actor::WorkspaceCtx;
 use atlas_acta::entities::documents::NewDocument;
+use atlas_acta_postgres::repos::documents::{DocumentRepo, PgDocumentRepo};
 use atlas_api::{
     dtos::search::SearchHitDto,
     pagination::{Page, SearchCursor, SortKey},
 };
-use atlas_server::persistence::repos::{DocumentRepo, PgDocumentRepo};
 use sea_orm::{ConnectionTrait, Statement};
 use std::collections::HashSet;
 use uuid::Uuid;

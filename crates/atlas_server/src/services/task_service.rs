@@ -44,15 +44,18 @@ use atlas_acta::entities::documents::ExtractedLink;
 use atlas_acta::entities::documents::LinkSource;
 use sea_orm::ConnectionTrait;
 
-use crate::persistence::entities::boards_tasks::{
+use crate::persistence::repos::PgSearchIndexQueueRepo;
+use atlas_acta_postgres::entities::boards_tasks::{
     board, board_column, task, task_checklist_item, task_checklist_item_from,
 };
-use crate::persistence::entities::comments::comment_attachment_draft;
-use crate::persistence::repos::{
-    CommentRepo as _, PgCommentRepo, PgDocumentLinkRepo, PgOutboxRepo, PgSearchIndexQueueRepo,
+use atlas_acta_postgres::entities::documents::comment_attachment_draft;
+use atlas_acta_postgres::repos::boards_tasks::{
     PgTaskActivityRepo, PgTaskAssigneeRepo, PgTaskChecklistRepo, PgTaskReferenceRepo, PgTaskRepo,
     TaskActivityRepo as _,
 };
+use atlas_acta_postgres::repos::comments::{CommentRepo as _, PgCommentRepo};
+use atlas_acta_postgres::repos::documents::PgDocumentLinkRepo;
+use atlas_acta_postgres::repos::outbox::PgOutboxRepo;
 use atlas_postgres::db_err;
 
 /// Result of a checklist item promotion: the three records committed atomically.
@@ -227,7 +230,7 @@ impl TaskService {
 
         if before.parent_task_id == Some(parent.id) {
             txn.rollback().await.map_err(db_err)?;
-            return Ok(crate::persistence::entities::boards_tasks::task_from(
+            return Ok(atlas_acta_postgres::entities::boards_tasks::task_from(
                 before,
             ));
         }
@@ -286,7 +289,7 @@ impl TaskService {
         }
 
         txn.commit().await.map_err(db_err)?;
-        Ok(crate::persistence::entities::boards_tasks::task_from(
+        Ok(atlas_acta_postgres::entities::boards_tasks::task_from(
             updated,
         ))
     }
@@ -313,7 +316,7 @@ impl TaskService {
             Some(p) => serde_json::Value::String(p.to_string()),
             None => {
                 txn.rollback().await.map_err(db_err)?;
-                return Ok(crate::persistence::entities::boards_tasks::task_from(
+                return Ok(atlas_acta_postgres::entities::boards_tasks::task_from(
                     before,
                 ));
             }
@@ -357,7 +360,7 @@ impl TaskService {
         }
 
         txn.commit().await.map_err(db_err)?;
-        Ok(crate::persistence::entities::boards_tasks::task_from(
+        Ok(atlas_acta_postgres::entities::boards_tasks::task_from(
             updated,
         ))
     }
@@ -382,7 +385,7 @@ impl TaskService {
                 entity: "task",
                 id: id.0,
             })
-            .map(crate::persistence::entities::boards_tasks::task_from)?;
+            .map(atlas_acta_postgres::entities::boards_tasks::task_from)?;
 
         let fields_changed: Vec<(String, serde_json::Value, serde_json::Value)> =
             collect_field_changes(&before, &patch);
@@ -463,7 +466,7 @@ impl TaskService {
                 entity: "task",
                 id: id.0,
             })
-            .map(crate::persistence::entities::boards_tasks::task_from)?;
+            .map(atlas_acta_postgres::entities::boards_tasks::task_from)?;
 
         // Clients send neighbour anchors as task ids; translate them to the
         // neighbours' fractional position keys before computing the new key.
@@ -720,7 +723,7 @@ impl TaskService {
         task_id: TaskId,
         reference_id: TaskReferenceId,
     ) -> Result<(), DomainError> {
-        use crate::persistence::entities::boards_tasks::{task_reference, task_reference_from};
+        use atlas_acta_postgres::entities::boards_tasks::{task_reference, task_reference_from};
 
         let txn = self.conn.begin().await.map_err(db_err)?;
 

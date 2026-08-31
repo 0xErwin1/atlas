@@ -459,7 +459,7 @@ async fn patch_is_active_toggles_and_gates_ingest() {
 
 #[tokio::test]
 async fn ingest_valid_signed_event_returns_200() {
-    use atlas_server::persistence::entities::events_outbox::event_outbox;
+    use atlas_acta_postgres::entities::events_outbox::event_outbox;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
     let db = support::TestDb::create().await.expect("TestDb");
@@ -705,7 +705,7 @@ async fn ingest_oversized_body_returns_413() {
 
 #[tokio::test]
 async fn ingest_duplicate_delivery_is_noop() {
-    use atlas_server::persistence::entities::events_outbox::event_outbox;
+    use atlas_acta_postgres::entities::events_outbox::event_outbox;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
     let db = support::TestDb::create().await.expect("TestDb");
@@ -773,10 +773,9 @@ async fn ingest_filter_match_creates_task() {
     use atlas_acta::entities::workspace_core::NewProject;
     use atlas_acta::permissions::Visibility;
     use atlas_acta::permissions::VisibilityRole;
-    use atlas_server::persistence::entities::boards_tasks::task;
-    use atlas_server::persistence::repos::{
-        BoardRepo, PgAutomationRuleRepo, PgProjectRepo, ProjectRepo,
-    };
+    use atlas_acta_postgres::entities::boards_tasks::task;
+    use atlas_acta_postgres::repos::boards_tasks::BoardRepo;
+    use atlas_server::persistence::repos::{PgAutomationRuleRepo, PgProjectRepo, ProjectRepo};
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
     let db = support::TestDb::create().await.expect("TestDb");
@@ -921,10 +920,9 @@ async fn ingest_filter_no_match_no_task() {
     use atlas_acta::entities::workspace_core::NewProject;
     use atlas_acta::permissions::Visibility;
     use atlas_acta::permissions::VisibilityRole;
-    use atlas_server::persistence::entities::boards_tasks::task;
-    use atlas_server::persistence::repos::{
-        BoardRepo, PgAutomationRuleRepo, PgProjectRepo, ProjectRepo,
-    };
+    use atlas_acta_postgres::entities::boards_tasks::task;
+    use atlas_acta_postgres::repos::boards_tasks::BoardRepo;
+    use atlas_server::persistence::repos::{PgAutomationRuleRepo, PgProjectRepo, ProjectRepo};
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
     let db = support::TestDb::create().await.expect("TestDb");

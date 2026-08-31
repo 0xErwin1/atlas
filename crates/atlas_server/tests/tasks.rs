@@ -8,9 +8,8 @@ use atlas_acta::entities::boards_tasks::PositionBetween;
 use atlas_acta::entities::workspace_core::NewProject;
 use atlas_acta::permissions::Visibility;
 use atlas_acta::permissions::VisibilityRole;
-use atlas_server::persistence::repos::{
-    BoardRepo, PgBoardRepo, PgProjectRepo, PgTaskRepo, ProjectRepo, TaskRepo,
-};
+use atlas_acta_postgres::repos::boards_tasks::{BoardRepo, PgBoardRepo, PgTaskRepo, TaskRepo};
+use atlas_server::persistence::repos::{PgProjectRepo, ProjectRepo};
 use sea_orm::TransactionTrait;
 
 fn make_board_repo(db: &support::TestDb) -> PgBoardRepo {

@@ -12,11 +12,11 @@ use atlas_acta::ids::DocumentId;
 use atlas_acta::ids::TaskId;
 use atlas_acta::permissions::Visibility;
 use atlas_acta::permissions::VisibilityRole;
-use atlas_core::error::DomainError;
-use atlas_server::persistence::repos::{
-    BoardRepo, PgBoardRepo, PgProjectRepo, PgTaskReferenceRepo, PgTaskRepo, ProjectRepo,
-    TaskReferenceRepo, TaskRepo,
+use atlas_acta_postgres::repos::boards_tasks::{
+    BoardRepo, PgBoardRepo, PgTaskReferenceRepo, PgTaskRepo, TaskReferenceRepo, TaskRepo,
 };
+use atlas_core::error::DomainError;
+use atlas_server::persistence::repos::{PgProjectRepo, ProjectRepo};
 
 async fn seed_project_board_task(
     db: &support::TestDb,

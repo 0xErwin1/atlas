@@ -5,12 +5,11 @@ mod support;
 use atlas_acta::actor::Actor;
 use atlas_acta::entities::documents::NewAttachment;
 use atlas_acta::entities::documents::NewDocument;
+use atlas_acta_postgres::repos::documents::{DocumentRepo, PgDocumentRepo};
 use atlas_core::principal::ApiKeyId;
 use atlas_core::principal::Principal;
 use atlas_custos_postgres::repos::identity::PgApiKeyRepo;
-use atlas_server::persistence::repos::{
-    ApiKeyRepo, AttachmentRepo, DocumentRepo, NewApiKey, PgAttachmentRepo, PgDocumentRepo,
-};
+use atlas_server::persistence::repos::{ApiKeyRepo, AttachmentRepo, NewApiKey, PgAttachmentRepo};
 use serde_json::json;
 
 fn make_doc_repo(db: &support::TestDb, anchor_interval: u32) -> PgDocumentRepo {

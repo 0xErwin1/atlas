@@ -16,12 +16,11 @@ use atlas_acta::entities::documents::NewDocument;
 use atlas_acta::entities::workspace_core::NewProject;
 use atlas_acta::permissions::Visibility;
 use atlas_acta::permissions::VisibilityRole;
+use atlas_acta_postgres::repos::boards_tasks::{BoardRepo, PgBoardRepo, PgTaskRepo, TaskRepo};
+use atlas_acta_postgres::repos::documents::{DocumentRepo, PgDocumentRepo};
 use atlas_api::dtos::search::{SearchHitDto, SearchKindDto};
 use atlas_api::pagination::{Page, SearchCursor, SortKey};
-use atlas_server::persistence::repos::{
-    BoardRepo, DocumentRepo, PgBoardRepo, PgDocumentRepo, PgProjectRepo, PgTaskRepo, ProjectRepo,
-    TaskRepo,
-};
+use atlas_server::persistence::repos::{PgProjectRepo, ProjectRepo};
 use serde_json::Value;
 use uuid::Uuid;
 

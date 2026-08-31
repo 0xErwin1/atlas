@@ -8,15 +8,15 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOr
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::persistence::entities::{
-    boards_tasks::{task, task_checklist_item},
-    comments::comment,
-    documents::{attachment, document},
-};
 use crate::persistence::repos::PgSemanticIndexWriter;
 use crate::semantic_indexer::{
     AttachmentText, ChecklistText, CommentText, DocumentIndexInput, SubtaskText, TaskIndexInput,
     aggregate_document_chunks, aggregate_task_chunks,
+};
+use atlas_acta_postgres::entities::{
+    boards_tasks::{task, task_checklist_item},
+    comments::comment,
+    documents::{attachment, document},
 };
 use atlas_postgres::db_err;
 

@@ -33,6 +33,8 @@ use atlas_acta::ports::search::SearchRepo;
 use atlas_acta::search::SearchQuery;
 use atlas_acta::search::SearchSort;
 use atlas_acta::search::TypeSet;
+use atlas_acta_postgres::repos::boards_tasks::{BoardRepo, PgBoardRepo, PgTaskRepo, TaskRepo};
+use atlas_acta_postgres::repos::documents::{DocumentRepo, PgDocumentRepo};
 use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_api::dtos::search::{SearchHitDto, SearchKindDto};
 use atlas_api::pagination::Page;
@@ -46,9 +48,8 @@ use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::{
     auth::tokens::{generate_api_key, hash_token},
     persistence::repos::{
-        ApiKeyRepo, BoardRepo, DocumentRepo, NewApiKey, NewUser, PermissionGrantRepo, PgBoardRepo,
-        PgDocumentRepo, PgPermissionGrantRepo, PgProjectRepo, PgSearchRepo, PgTaskRepo,
-        ProjectRepo, TaskRepo, UserRepo,
+        ApiKeyRepo, NewApiKey, NewUser, PermissionGrantRepo, PgPermissionGrantRepo, PgProjectRepo,
+        PgSearchRepo, ProjectRepo, UserRepo,
     },
 };
 use uuid::Uuid;
