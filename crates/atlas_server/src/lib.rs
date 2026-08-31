@@ -22,6 +22,7 @@ pub mod persistence;
 pub mod platform;
 pub mod presence;
 pub mod reg5;
+pub mod router_audit;
 pub mod routes;
 pub mod search_indexer;
 pub mod semantic_indexer;
