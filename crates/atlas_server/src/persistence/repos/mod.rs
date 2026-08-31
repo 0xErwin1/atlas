@@ -60,7 +60,7 @@ pub use boards_tasks::{
     TaskReferenceRepo, TaskRepo, resequence_column,
 };
 pub use comment_attachment_drafts::PgCommentAttachmentDraftRepo;
-pub use comment_links::PgCommentLinkRepo;
+pub use comment_links::{CommentMutationFault, PgCommentLinkRepo};
 pub use comments::{CommentRepo, PgCommentRepo};
 pub use documents::{
     AttachmentRepo, AttachmentWriteIntentRepo, DocumentLinkRepo, DocumentRepo,

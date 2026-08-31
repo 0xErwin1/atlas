@@ -1,7 +1,19 @@
+pub mod automation_rule;
 pub mod boards_tasks;
+pub mod comment_links;
 pub mod comments;
 pub mod documents;
 pub mod identity;
+pub mod lifecycle;
 pub mod outbox;
+pub mod saved_searches;
+pub mod search;
+pub mod search_index_queue;
+pub mod semantic_search;
+pub mod tags;
+pub mod task_views;
+pub mod webhook_delivery;
+pub mod webhook_subscription;
+pub mod workspace_core;
 
 pub use outbox::PgOutboxRepo;
