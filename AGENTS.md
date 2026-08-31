@@ -36,7 +36,11 @@ Atlas is not run locally: it is deployed as containers, with its runtime configu
 
 ## Workspace layout
 
-Ten crates (plus the `atlas_test_db`/`atlas_test_harness` test utilities). The dependency direction is strict and **compiler-enforced** — `atlas_core`, `atlas_custos`, and `atlas_acta` are pure and never import HTTP/SQL.
+13 workspace members (plus the `atlas_test_db`/`atlas_test_harness` test utilities), matching the
+root `Cargo.toml`'s `[workspace] members` exactly. `migration` is historical and byte-frozen: it
+carries the pre-split migration history and is not touched by product work. The dependency
+direction is strict and **compiler-enforced** — `atlas_core`, `atlas_custos`, and `atlas_acta` are
+pure and never import HTTP/SQL.
 
 | Crate | Role | May depend on |
 |-------|------|---------------|
@@ -44,14 +48,33 @@ Ten crates (plus the `atlas_test_db`/`atlas_test_harness` test utilities). The d
 | `atlas_postgres` | Neutral Postgres runtime: pool config (`PostgresConfig`) and connection construction — **no product repos, no entities** | atlas_core, sea-orm |
 | `atlas_custos` | Pure identity/auth types and **repository ports**: users, sessions, api keys, groups, security audit, capability scopes | serde, thiserror, uuid, chrono only — **no axum, no sea-orm, no tokio** |
 | `atlas_acta` | Pure workspace/content types and **repository ports**: workspaces, projects, folders, documents, boards/tasks, comments, permissions, wikilinks, revisions | atlas_core; serde, thiserror, uuid, chrono only — **no axum, no sea-orm, no tokio** |
+| `atlas_custos_postgres` | SeaORM entities + repository **adapters** for every `custos.*` table (identity, sessions, api keys, groups, security audit) | atlas_core, atlas_custos, atlas_postgres, sea-orm |
+| `atlas_acta_postgres` | SeaORM entities + repository **adapters** for every `acta.*` table (workspaces, projects, folders, documents, boards/tasks, comments, search, webhooks, automation) | atlas_core, atlas_acta, atlas_postgres, sea-orm |
 | `atlas_api` | Shared DTOs + OpenAPI schemas (the wire contract) | — |
 | `atlas_client` | Typed HTTP client speaking `atlas_api` types | atlas_api, reqwest |
-| `atlas_server` | axum binary; SeaORM **adapters** implementing the ports; auth, permissions, routing | everything |
+| `atlas_server` | axum binary; composition only — router/middleware wiring, auth, the `platform.*` schema (`ui_state`), and the glue between `atlas_custos_postgres`/`atlas_acta_postgres` adapters; no product entity/repo logic of its own | everything |
 | `atlas_cli` | clap CLI over `atlas_client` | atlas_client, atlas_core, atlas_acta, atlas_custos |
 | `atlas_mcp` | MCP server (rmcp) over `atlas_client`; one tool per verb, resources resolved through `catalog.rs` | atlas_client |
-| `migration` | sea-orm-migration tool crate (run via `cargo run -p migration -- <up\|fresh>`) | — |
+| `atlas_desktop` (`apps/desktop/src-tauri`) | Tauri desktop shell; embeds `atlas_server` behind a local gate for offline/local runs | atlas_client, atlas_server (gated), tauri |
+| `migration` | sea-orm-migration tool crate, historical/frozen (run via `cargo run -p migration -- <up\|fresh>`) | — |
 
-Persistence pattern: SeaORM entities live in `atlas_server/src/persistence/entities/`, adapters in `.../repos/`, and map to/from `atlas_acta`/`atlas_custos` types — SeaORM types never leak into those crates.
+Persistence pattern: SeaORM entities and repository adapters for `custos.*` and `acta.*` live in
+`atlas_custos_postgres`/`atlas_acta_postgres` respectively, mapping to/from `atlas_custos`/
+`atlas_acta` port types — SeaORM types never leak into those pure crates. `atlas_server/src/
+persistence/` after the V2-E2 facade retirement owns only the `platform.*` schema (`ui_state`,
+`PgUiStateRepo`) and composition-only glue that genuinely spans both Custos and Acta in one
+function (the security-audit-append helpers in `documents.rs`, `PgProjectRepo`/`PgFolderRepo` and
+attachment repos in `documents.rs`/`workspace_core.rs`, `PgIntegrationConfigRepo`'s Custos-key
+provisioning, and `PgSemanticIndexer`) — it holds no standalone re-export facade over either
+Postgres crate.
+
+Schema ownership:
+
+| Schema | Owning crate | Content |
+|--------|--------------|---------|
+| `custos.*` | `atlas_custos_postgres` | Identity/auth: users, sessions, api keys, groups, security audit log, and related tables (8 tables) |
+| `acta.*` | `atlas_acta_postgres` | Workspace/content: workspaces, projects, folders, documents + revisions, boards/tasks, comments, search, webhooks, automation, and related tables (36 tables) |
+| `platform.*` | `atlas_server` | Cross-cutting UI state (`ui_state`), owned directly by the composition layer, not by either product crate |
 
 ## Web frontend (`apps/web`)
 
