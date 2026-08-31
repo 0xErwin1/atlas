@@ -6,17 +6,16 @@ use atlas_custos::entities::security_audit::NewSecurityAuditEvent;
 use atlas_custos::entities::security_audit::SecurityAction;
 use atlas_custos::ids::SecurityAuditId;
 use atlas_custos_postgres::entities::security_audit::security_audit_log;
+use atlas_custos_postgres::repos::security_audit::PgSecurityAuditRepo;
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, ConnectionTrait};
 
-// R1 scaffolding: the core Custos audit-log repo (`PgSecurityAuditRepo`, its
-// `SecurityAuditRepo` trait impl, and `append_in`) now lives in
-// `atlas_custos_postgres`. These three functions compose a Custos audit
-// append with Acta context (`WorkspaceCtx`, `TrashKind`) and stay here: the
-// crate they'd otherwise move into must not depend on `atlas_acta`.
-pub use atlas_custos_postgres::repos::security_audit::{
-    PgSecurityAuditRepo, SecurityAuditRepoTrait,
-};
+// The core Custos audit-log repo (`PgSecurityAuditRepo`, its
+// `SecurityAuditRepo` trait impl, and `append_in`) lives in
+// `atlas_custos_postgres`; call sites import it directly. These three
+// functions compose a Custos audit append with Acta context (`WorkspaceCtx`,
+// `TrashKind`) and stay here: the crate they'd otherwise move into must not
+// depend on `atlas_acta`.
 
 /// Appends the safe, normalized audit row for a committed lifecycle tombstone.
 pub async fn append_resource_deleted_in<C: ConnectionTrait>(

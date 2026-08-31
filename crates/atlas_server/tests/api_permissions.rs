@@ -147,7 +147,7 @@ async fn agent_cannot_share_project() {
     use atlas_acta::ids::ProjectId;
     use atlas_core::principal::ApiKeyId;
     use atlas_server::authz::policy::NewPermissionGrant;
-    let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
+    let grant_repo = atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo {
         conn: db.conn().clone(),
     };
     grant_repo
@@ -283,7 +283,7 @@ async fn editor_cannot_grant_admin() {
     )
     .await;
 
-    let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
+    let grant_repo = atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo {
         conn: db.conn().clone(),
     };
     use atlas_server::authz::policy::NewPermissionGrant;
@@ -352,7 +352,7 @@ async fn viewer_cannot_update_project() {
     )
     .await;
 
-    let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
+    let grant_repo = atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo {
         conn: db.conn().clone(),
     };
     use atlas_server::authz::policy::NewPermissionGrant;
@@ -457,7 +457,7 @@ async fn agent_with_grant_sees_private_project_in_list() {
     use atlas_acta::ids::ProjectId;
     use atlas_core::principal::ApiKeyId;
     use atlas_server::authz::policy::NewPermissionGrant;
-    let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
+    let grant_repo = atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo {
         conn: db.conn().clone(),
     };
     grant_repo
@@ -611,7 +611,7 @@ async fn user_with_workspace_scoped_grant_sees_private_projects_in_list() {
     .await;
 
     use atlas_server::authz::policy::NewPermissionGrant;
-    let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
+    let grant_repo = atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo {
         conn: db.conn().clone(),
     };
     grant_repo
@@ -674,7 +674,7 @@ async fn share_denied_403_does_not_leak_variant_name() {
     use atlas_acta::ids::ProjectId;
     use atlas_core::principal::ApiKeyId;
     use atlas_server::authz::policy::NewPermissionGrant;
-    let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
+    let grant_repo = atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo {
         conn: db.conn().clone(),
     };
     grant_repo

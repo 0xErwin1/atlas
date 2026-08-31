@@ -20,9 +20,10 @@ use atlas_api::dtos::{
     boards_tasks::{CreateBoardRequest, CreateColumnRequest, CreateTaskRequest},
 };
 use atlas_client::ClientError;
+use atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo;
 use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::persistence::repos::{
-    ApiKeyRepo, NewApiKey, NewUser, PermissionGrantRepo, PgPermissionGrantRepo, UserRepo,
+    ApiKeyRepo, NewApiKey, NewUser, PermissionGrantRepo, UserRepo,
 };
 use sea_orm::ConnectionTrait;
 use support::{TestDb, TestServer, login_user_with_workspace};

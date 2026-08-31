@@ -25,11 +25,10 @@ use atlas_api::dtos::{
 use atlas_api::problem::ProblemDetails;
 use atlas_client::ClientError;
 use atlas_core::principal::UserId;
+use atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo;
 use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::NewPermissionGrant;
-use atlas_server::persistence::repos::{
-    NewUser, PermissionGrantRepo, PgPermissionGrantRepo, UserRepo,
-};
+use atlas_server::persistence::repos::{NewUser, PermissionGrantRepo, UserRepo};
 
 fn project_req(slug: &str, prefix: &str) -> CreateProjectRequest {
     CreateProjectRequest {

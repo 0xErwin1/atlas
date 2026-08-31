@@ -23,11 +23,10 @@ use atlas_acta::ports::workspace_core::ProjectRepo;
 use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_custos::entities::security_audit::AuditFilters;
 use atlas_custos::ports::security_audit::SecurityAuditRepo;
+use atlas_custos_postgres::repos::security_audit::PgSecurityAuditRepo;
 use atlas_server::routes::registry::ROUTE_REGISTRY;
 use atlas_server::{
-    persistence::repos::{
-        DiskAttachmentStore, NewUser, PgAttachmentRepo, PgSecurityAuditRepo, UserRepo,
-    },
+    persistence::repos::{DiskAttachmentStore, NewUser, PgAttachmentRepo, UserRepo},
     services::{CommentService, DocumentService, TrashService},
 };
 use bytes::Bytes;

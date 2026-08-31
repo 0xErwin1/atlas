@@ -18,7 +18,10 @@ use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_api::dtos::groups::{AddGroupMemberRequest, CreateGroupRequest};
 use atlas_client::ClientError;
 use atlas_custos::entities::security_audit::AuditFilters;
-use atlas_server::persistence::repos::{NewUser, PgSecurityAuditRepo, SecurityAuditRepo, UserRepo};
+use atlas_custos_postgres::repos::security_audit::{
+    PgSecurityAuditRepo, SecurityAuditRepoTrait as SecurityAuditRepo,
+};
+use atlas_server::persistence::repos::{NewUser, UserRepo};
 use support::{TestDb, TestServer, login_user_with_workspace};
 
 async fn add_workspace_member(

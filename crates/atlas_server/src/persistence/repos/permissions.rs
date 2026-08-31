@@ -1,13 +1,10 @@
-//! Facade over the Custos-owned grant and group repos.
+//! Domain-crate re-export for the permission-grant port.
 //!
-//! `PgGroupRepo` moved to `atlas_custos_postgres` in S3a (R1 scaffolding).
-//! `PermissionGrant`/`PermissionGrantRepo`/`PgPermissionGrantRepo` stayed
-//! parked at `atlas_server` composition through S3a/S3b/S3c because they
-//! named five Acta id fields; T6.9 unparked the whole cluster once
-//! `resource_ref`/`WorkspaceScope` removed the last Acta type from it. This
-//! file re-exports the moved types so every existing
-//! `crate::persistence::repos::{...}` import path keeps resolving unchanged.
+//! `PgGroupRepo`/`PgGrantHygiene`/`PgPermissionGrantRepo` moved to
+//! `atlas_custos_postgres` (S3a, then S5 PR4 retired this facade's re-export
+//! of them; call sites now import `atlas_custos_postgres` directly).
+//! `PermissionGrantRepo` is an `atlas_custos` domain-crate port, not a
+//! Postgres-owned type, so it stays re-exported here for
+//! `crate::persistence::repos::PermissionGrantRepo` call sites.
 
 pub use atlas_custos::ports::grant_repo::PermissionGrantRepo;
-pub use atlas_custos_postgres::repos::grant_hygiene::PgGrantHygiene;
-pub use atlas_custos_postgres::repos::permissions::{PgGroupRepo, PgPermissionGrantRepo};

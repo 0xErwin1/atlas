@@ -47,12 +47,12 @@ use crate::{
         policy::{NewPermissionGrant, PermissionGrant, PermissionGrantId},
     },
     error::ApiError,
-    persistence::repos::{
-        ApiKeyRepo, PermissionGrantRepo, PgGroupRepo, PgPermissionGrantRepo, PgSecurityAuditRepo,
-    },
+    persistence::repos::{ApiKeyRepo, PermissionGrantRepo},
     state::AppState,
 };
 use atlas_acta_postgres::repos::identity::MembershipRepo;
+use atlas_custos_postgres::repos::permissions::{PgGroupRepo, PgPermissionGrantRepo};
+use atlas_custos_postgres::repos::security_audit::PgSecurityAuditRepo;
 
 #[derive(Deserialize)]
 pub(crate) struct PaginationQuery {

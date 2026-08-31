@@ -35,11 +35,12 @@ use atlas_acta_postgres::repos::boards_tasks::{BoardRepo, PgBoardRepo, PgTaskRep
 use atlas_acta_postgres::repos::documents::{DocumentRepo, PgDocumentRepo};
 use atlas_core::principal::Principal;
 use atlas_core::principal::UserId;
+use atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo;
 use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::persistence::repos::{
-    FolderRepo, PermissionGrantRepo, PgFolderRepo, PgPermissionGrantRepo, PgProjectRepo,
-    PgSearchRepo, ProjectRepo, UserRepo,
+    FolderRepo, PermissionGrantRepo, PgFolderRepo, PgProjectRepo, PgSearchRepo, ProjectRepo,
+    UserRepo,
 };
 
 // ---------------------------------------------------------------------------

@@ -45,15 +45,13 @@ use atlas_custos::capability::CapabilityAction;
 use atlas_custos::capability::CapabilityFamily;
 use atlas_custos::entities::identity::ApiKeyType;
 use atlas_custos_postgres::repos::identity::PgApiKeyRepo;
+use atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo;
 use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::{
     auth::tokens::{generate_api_key, hash_token},
     live::LiveEvent,
-    persistence::repos::{
-        ApiKeyRepo, NewApiKey, PermissionGrantRepo, PgPermissionGrantRepo, PgProjectRepo,
-        ProjectRepo,
-    },
+    persistence::repos::{ApiKeyRepo, NewApiKey, PermissionGrantRepo, PgProjectRepo, ProjectRepo},
     state::AppState,
 };
 use tokio::sync::watch;

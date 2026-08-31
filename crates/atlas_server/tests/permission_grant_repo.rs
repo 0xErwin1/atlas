@@ -6,9 +6,10 @@ use atlas_acta::entities::workspace_core::NewProject;
 use atlas_acta::permissions::ResourceRef;
 use atlas_acta::permissions::Visibility;
 use atlas_acta::permissions::VisibilityRole;
+use atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo;
 use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::{NewPermissionGrant, ResolutionQuery};
-use atlas_server::persistence::repos::{PermissionGrantRepo, PgPermissionGrantRepo, ProjectRepo};
+use atlas_server::persistence::repos::{PermissionGrantRepo, ProjectRepo};
 
 #[tokio::test]
 async fn upsert_creates_and_updates_on_conflict() {

@@ -26,9 +26,11 @@ use atlas_api::dtos::{
 };
 use atlas_core::principal::UserId;
 use atlas_custos::entities::security_audit::AuditFilters;
+use atlas_custos_postgres::repos::security_audit::{
+    PgSecurityAuditRepo, SecurityAuditRepoTrait as SecurityAuditRepo,
+};
 use atlas_server::persistence::repos::{
-    ActivationTokenRepo, ApiKeyRepo, NewActivationToken, NewApiKey, NewUser, PgSecurityAuditRepo,
-    SecurityAuditRepo, UserRepo,
+    ActivationTokenRepo, ApiKeyRepo, NewActivationToken, NewApiKey, NewUser, UserRepo,
 };
 use support::{TestDb, TestServer, login_user_with_workspace};
 
