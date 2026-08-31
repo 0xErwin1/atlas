@@ -17,6 +17,20 @@ async fn main() -> Result<()> {
         .with_target(true)
         .init();
 
+    // Validate the REG-5 registry before any database connection or route is
+    // opened (SHELL-REG-3). An invalid registry — e.g. a duplicate
+    // `stable_id` reintroduced by a future change — must never get the
+    // chance to serve traffic; the process exits non-zero here instead.
+    let storage_backend =
+        atlas_server::reg5::storage_backend_from_env().map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    if let Some(exit_code) = atlas_server::startup::run_registry_gate(
+        atlas_server::reg5::reg5_component_entries(storage_backend),
+        &mut std::io::stderr(),
+    ) {
+        std::process::exit(exit_code);
+    }
+
     let cfg = atlas_server::config::ServerConfig::from_env().map_err(|e| anyhow::anyhow!("{e}"))?;
 
     info!("connecting to database");

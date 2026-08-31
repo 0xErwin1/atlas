@@ -1908,3 +1908,63 @@ pub fn reg5_component_entries(storage_backend: StorageBackend) -> Vec<ComponentE
         search_pgvector_embeddings_entry(),
     ]
 }
+
+/// Resolves the active `StorageBackend` from `ATLAS_ATTACHMENT_BACKEND`, the
+/// same environment variable `state::build_attachment_store` reads to
+/// construct the live attachment store, so the startup registry gate and the
+/// attachment store always agree on which backend is active.
+pub fn storage_backend_from_env() -> Result<StorageBackend, String> {
+    let value = crate::config::env_var_nonempty("ATLAS_ATTACHMENT_BACKEND");
+    storage_backend_from_value(value.as_deref())
+}
+
+/// Pure mapping from an `ATLAS_ATTACHMENT_BACKEND` value to a
+/// `StorageBackend`, split out from `storage_backend_from_env` so the
+/// mapping itself is testable without mutating process-global environment
+/// state. `None` (the variable unset) defaults to `disk`, mirroring
+/// `state::build_attachment_store`'s own default.
+fn storage_backend_from_value(value: Option<&str>) -> Result<StorageBackend, String> {
+    match value.unwrap_or("disk") {
+        "disk" => Ok(StorageBackend::Filesystem),
+        "s3" => Ok(StorageBackend::S3),
+        other => Err(format!(
+            "unknown ATLAS_ATTACHMENT_BACKEND '{other}'; expected 'disk' or 's3'"
+        )),
+    }
+}
+
+#[cfg(test)]
+mod storage_backend_from_value_tests {
+    use super::*;
+
+    #[test]
+    fn defaults_to_filesystem_when_unset() {
+        assert_eq!(
+            storage_backend_from_value(None),
+            Ok(StorageBackend::Filesystem)
+        );
+    }
+
+    #[test]
+    fn maps_disk_to_filesystem() {
+        assert_eq!(
+            storage_backend_from_value(Some("disk")),
+            Ok(StorageBackend::Filesystem)
+        );
+    }
+
+    #[test]
+    fn maps_s3_to_s3() {
+        assert_eq!(
+            storage_backend_from_value(Some("s3")),
+            Ok(StorageBackend::S3)
+        );
+    }
+
+    #[test]
+    fn rejects_an_unrecognised_value_without_defaulting_silently() {
+        let error =
+            storage_backend_from_value(Some("azure")).expect_err("azure is not a known backend");
+        assert!(error.contains("azure"));
+    }
+}
