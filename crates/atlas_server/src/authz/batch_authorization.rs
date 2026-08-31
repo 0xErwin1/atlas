@@ -369,7 +369,7 @@ WITH RECURSIVE requested AS (
 ), subject_targets AS (
     SELECT requested.ordinal, 'documents'::text AS family, documents.id AS document_id, NULL::uuid AS task_id
     FROM requested
-    JOIN documents ON requested.kind = 'document'
+    JOIN acta.documents ON requested.kind = 'document'
         AND documents.id = requested.id
         AND documents.workspace_id = $1::uuid
         AND documents.deleted_at IS NULL
@@ -383,18 +383,18 @@ WITH RECURSIVE requested AS (
     UNION ALL
     SELECT requested.ordinal, 'documents'::text, documents.id, NULL
     FROM requested
-    JOIN attachments ON requested.kind = 'attachment'
+    JOIN acta.attachments ON requested.kind = 'attachment'
         AND attachments.id = requested.id
         AND attachments.workspace_id = $1::uuid
         AND attachments.deleted_at IS NULL
         AND num_nonnulls(attachments.document_id, attachments.task_id, attachments.comment_id) = 1
-    JOIN documents ON documents.id = attachments.document_id
+    JOIN acta.documents ON documents.id = attachments.document_id
         AND documents.workspace_id = $1::uuid
         AND documents.deleted_at IS NULL
     UNION ALL
     SELECT requested.ordinal, 'tasks'::text, NULL, tasks.id
     FROM requested
-    JOIN attachments ON requested.kind = 'attachment'
+    JOIN acta.attachments ON requested.kind = 'attachment'
         AND attachments.id = requested.id
         AND attachments.workspace_id = $1::uuid
         AND attachments.deleted_at IS NULL
@@ -405,7 +405,7 @@ WITH RECURSIVE requested AS (
     UNION ALL
     SELECT requested.ordinal, 'documents'::text, documents.id, NULL
     FROM requested
-    JOIN attachments ON requested.kind = 'attachment'
+    JOIN acta.attachments ON requested.kind = 'attachment'
         AND attachments.id = requested.id
         AND attachments.workspace_id = $1::uuid
         AND attachments.deleted_at IS NULL
@@ -414,13 +414,13 @@ WITH RECURSIVE requested AS (
         AND comments.workspace_id = $1::uuid
         AND comments.deleted_at IS NULL
         AND num_nonnulls(comments.document_id, comments.task_id) = 1
-    JOIN documents ON documents.id = comments.document_id
+    JOIN acta.documents ON documents.id = comments.document_id
         AND documents.workspace_id = $1::uuid
         AND documents.deleted_at IS NULL
     UNION ALL
     SELECT requested.ordinal, 'tasks'::text, NULL, tasks.id
     FROM requested
-    JOIN attachments ON requested.kind = 'attachment'
+    JOIN acta.attachments ON requested.kind = 'attachment'
         AND attachments.id = requested.id
         AND attachments.workspace_id = $1::uuid
         AND attachments.deleted_at IS NULL
@@ -440,7 +440,7 @@ WITH RECURSIVE requested AS (
         AND comments.workspace_id = $1::uuid
         AND comments.deleted_at IS NULL
         AND num_nonnulls(comments.document_id, comments.task_id) = 1
-    JOIN documents ON documents.id = comments.document_id
+    JOIN acta.documents ON documents.id = comments.document_id
         AND documents.workspace_id = $1::uuid
         AND documents.deleted_at IS NULL
     UNION ALL
@@ -457,15 +457,15 @@ WITH RECURSIVE requested AS (
 ), folder_ancestry AS (
     SELECT subject_targets.ordinal, folders.id, folders.parent_folder_id, folders.project_id, 0 AS depth
     FROM subject_targets
-    JOIN documents ON documents.id = subject_targets.document_id
-    JOIN folders ON folders.id = documents.folder_id
+    JOIN acta.documents ON documents.id = subject_targets.document_id
+    JOIN acta.folders ON folders.id = documents.folder_id
         AND folders.workspace_id = $1::uuid
         AND folders.deleted_at IS NULL
     UNION ALL
     SELECT folder_ancestry.ordinal, folders.id, folders.parent_folder_id, folders.project_id,
            folder_ancestry.depth + 1
     FROM folder_ancestry
-    JOIN folders ON folders.id = folder_ancestry.parent_folder_id
+    JOIN acta.folders ON folders.id = folder_ancestry.parent_folder_id
         AND folders.workspace_id = $1::uuid
         AND folders.deleted_at IS NULL
     WHERE folder_ancestry.depth < 31
@@ -479,14 +479,14 @@ WITH RECURSIVE requested AS (
            )) END
            || jsonb_build_array(jsonb_build_object('resource', 'acta::workspace::' || $1::text, 'visibility', NULL)) AS chain
     FROM subject_targets
-    JOIN documents ON documents.id = subject_targets.document_id
+    JOIN acta.documents ON documents.id = subject_targets.document_id
     LEFT JOIN LATERAL (
         SELECT jsonb_agg(jsonb_build_object('resource', 'acta::folder::' || id::text, 'visibility', NULL) ORDER BY depth) AS folders,
                (array_agg(project_id ORDER BY depth DESC))[1] AS inherited_project_id
         FROM folder_ancestry
         WHERE folder_ancestry.ordinal = subject_targets.ordinal
     ) folder_rows ON true
-    LEFT JOIN projects ON projects.id = COALESCE(documents.project_id, folder_rows.inherited_project_id)
+    LEFT JOIN acta.projects ON projects.id = COALESCE(documents.project_id, folder_rows.inherited_project_id)
         AND projects.workspace_id = $1::uuid
         AND projects.deleted_at IS NULL
     WHERE subject_targets.document_id IS NOT NULL
@@ -500,7 +500,7 @@ WITH RECURSIVE requested AS (
            || jsonb_build_array(jsonb_build_object('resource', 'acta::workspace::' || $1::text, 'visibility', NULL)) AS chain
     FROM subject_targets
     JOIN tasks ON tasks.id = subject_targets.task_id
-    LEFT JOIN projects ON projects.id = tasks.project_id
+    LEFT JOIN acta.projects ON projects.id = tasks.project_id
         AND projects.workspace_id = $1::uuid
         AND projects.deleted_at IS NULL
     WHERE subject_targets.task_id IS NOT NULL

@@ -394,13 +394,13 @@ pub fn semantic_search_sql(query: &SemanticSearchQuery) -> String {
                       ranked.source_field AS source,
                       ranked.excerpt
                FROM ranked
-               JOIN documents d ON d.id = ranked.resource_id
+               JOIN acta.documents d ON d.id = ranked.resource_id
                    AND d.workspace_id = $1
                     AND d.deleted_at IS NULL
                     AND ({document_live_project})
                     AND ({document_live_folder})
                    AND ranked.resource_kind = 'document'
-               LEFT JOIN projects p ON p.id = d.project_id AND p.workspace_id = $1 AND p.deleted_at IS NULL
+               LEFT JOIN acta.projects p ON p.id = d.project_id AND p.workspace_id = $1 AND p.deleted_at IS NULL
                WHERE ranked.resource_rank = 1
                  {kind_cond}
                  {cursor_cond}
@@ -422,7 +422,7 @@ pub fn semantic_search_sql(query: &SemanticSearchQuery) -> String {
                     AND t.deleted_at IS NULL
                     AND ({task_live_board})
                    AND ranked.resource_kind = 'task'
-               LEFT JOIN projects p ON p.id = t.project_id AND p.workspace_id = $1 AND p.deleted_at IS NULL
+               LEFT JOIN acta.projects p ON p.id = t.project_id AND p.workspace_id = $1 AND p.deleted_at IS NULL
                LEFT JOIN board_columns bc ON bc.id = t.column_id AND bc.workspace_id = $1 AND bc.deleted_at IS NULL
                WHERE ranked.resource_rank = 1
                  {kind_cond}
@@ -571,13 +571,13 @@ fn build_doc_permission(
             WITH RECURSIVE ancestors AS (
                 SELECT f.id, f.parent_folder_id, f.project_id,
                        ARRAY[f.id] AS path, 1 AS depth
-                FROM folders f
+                FROM acta.folders f
                 WHERE f.id = d.folder_id
                   AND f.workspace_id = $1
                 UNION ALL
                 SELECT pf.id, pf.parent_folder_id, pf.project_id,
                        a.path || pf.id, a.depth + 1
-                FROM folders pf
+                FROM acta.folders pf
                 JOIN ancestors a ON pf.id = a.parent_folder_id
                 WHERE pf.workspace_id = $1
                   AND NOT pf.id = ANY(a.path)

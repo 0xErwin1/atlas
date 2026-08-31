@@ -63,7 +63,7 @@ async fn seed_workspace_and_project(db: &TestDb, slug: &str) -> (WorkspaceId, Uu
     sea_orm::ConnectionTrait::execute_unprepared(
         db.conn(),
         &format!(
-            "INSERT INTO projects \
+            "INSERT INTO acta.projects \
              (id, workspace_id, name, slug, task_prefix, next_task_number, visibility, \
               created_by_user_id, created_at, updated_at) \
              VALUES ('{project_id}', '{}', '{slug}', '{slug}', 'TSK', 1, 'workspace', \

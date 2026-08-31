@@ -139,7 +139,7 @@ async fn task_links(
         .query_all_raw(Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
             format!(
-                "SELECT target_title, target_document_id FROM document_links \
+                "SELECT target_title, target_document_id FROM acta.document_links \
                  WHERE source_task_id = '{task_id}' ORDER BY target_title"
             ),
         ))

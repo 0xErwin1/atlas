@@ -81,7 +81,7 @@ const ATTACHMENT_COLUMNS: &str = "
     a.updated_at";
 
 const ATTACHMENT_SOURCE: &str = "
-    FROM attachments a
+    FROM acta.attachments a
     LEFT JOIN comments c ON c.id = a.comment_id AND c.workspace_id = $1 AND c.deleted_at IS NULL";
 
 /// Attachments still hanging off an unpublished comment draft are private to
@@ -287,8 +287,8 @@ fn build_document_arm(perm: &str, filters: &Filters) -> String {
             NULL::text AS owner_task_readable_id,
             p.slug AS owner_project_slug
         {source}
-        JOIN documents d ON d.id = COALESCE(a.document_id, c.document_id) AND d.workspace_id = $1
-        LEFT JOIN projects p ON p.id = d.project_id AND p.workspace_id = $1 AND p.deleted_at IS NULL
+        JOIN acta.documents d ON d.id = COALESCE(a.document_id, c.document_id) AND d.workspace_id = $1
+        LEFT JOIN acta.projects p ON p.id = d.project_id AND p.workspace_id = $1 AND p.deleted_at IS NULL
         WHERE {base_where}
           AND d.deleted_at IS NULL
           AND ({live_project})
@@ -317,7 +317,7 @@ fn build_task_arm(perm: &str, filters: &Filters) -> String {
             p.slug AS owner_project_slug
         {source}
         JOIN tasks t ON t.id = COALESCE(a.task_id, c.task_id) AND t.workspace_id = $1
-        LEFT JOIN projects p ON p.id = t.project_id AND p.workspace_id = $1 AND p.deleted_at IS NULL
+        LEFT JOIN acta.projects p ON p.id = t.project_id AND p.workspace_id = $1 AND p.deleted_at IS NULL
         WHERE {base_where}
           AND t.deleted_at IS NULL
           AND ({live_board})

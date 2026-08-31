@@ -395,7 +395,7 @@ async fn list_visible_terminates_on_folder_cycle() {
     db.conn()
         .execute_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "UPDATE folders SET parent_folder_id = $1 WHERE id = $2",
+            "UPDATE acta.folders SET parent_folder_id = $1 WHERE id = $2",
             [folder_b.id.0.into(), folder_a.id.0.into()],
         ))
         .await

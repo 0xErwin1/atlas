@@ -3,9 +3,7 @@
 mod support;
 
 use atlas_acta::actor::{Actor, UserAttributionId, WorkspaceCtx};
-use atlas_acta::entities::documents::NewDocument;
 use atlas_acta::ids::WorkspaceId;
-use atlas_server::persistence::repos::{DocumentRepo, PgDocumentRepo};
 use migration::Migrator;
 use sea_orm::{ConnectionTrait, Statement};
 use sea_orm_migration::prelude::MigratorTrait;
@@ -67,6 +65,36 @@ async fn seed_pre_custos_schema_workspace(
     (ctx, workspace_id, user_id)
 }
 
+/// Seeds a minimal document row via raw SQL against the still-`public`
+/// schema, mirroring `seed_pre_custos_schema_workspace`'s rationale:
+/// `PgDocumentRepo`'s `document`/`document_revision` entities now hardcode
+/// `schema_name = "acta"` (S4 PR12), but at the migration steps these tests
+/// freeze at, `acta_new()`'s documents-group SET SCHEMA migration has not run
+/// yet, so `documents` still physically lives in `public` and the
+/// entity-based repo would look for a table that does not exist yet there.
+/// Only the returned id is used downstream, so a single-row insert (skipping
+/// the document-revision bookkeeping `PgDocumentRepo::create` would also do)
+/// is enough.
+async fn seed_pre_acta_schema_document(
+    db: &TestDb,
+    workspace_id: uuid::Uuid,
+    user_id: uuid::Uuid,
+) -> uuid::Uuid {
+    // schema-gate:off — pre-schema-move fixture, see the doc comment above.
+    let document_id = uuid::Uuid::now_v7();
+
+    db.conn()
+        .execute_unprepared(&format!(
+            "INSERT INTO documents (id, workspace_id, title, created_by_user_id, created_at, updated_at) \
+             VALUES ('{document_id}', '{workspace_id}', 'Comment attachment parent', '{user_id}', now(), now())"
+        ))
+        .await
+        .expect("seed pre-migration-shaped document row");
+    // schema-gate:on
+
+    document_id
+}
+
 async fn seed_live_comment_owned_records(
     conn: &sea_orm::DatabaseConnection,
     workspace_id: uuid::Uuid,
@@ -88,6 +116,10 @@ async fn seed_live_comment_owned_records(
     ))
     .await
     .expect("seed comment owner");
+    // schema-gate:off — `document_id` above is frozen at the same
+    // pre-`acta_new()`-documents-batch step (see
+    // `seed_pre_acta_schema_document`'s doc comment), so `attachments` and
+    // `attachment_write_intents` still physically live in `public` here too.
     conn.execute_raw(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
         "INSERT INTO attachments (id, workspace_id, comment_id, file_name, content_type, size_bytes, sha256, created_by_user_id, created_at, updated_at) \
@@ -102,6 +134,7 @@ async fn seed_live_comment_owned_records(
     ))
     .await
     .expect("seed live comment-owned attachment");
+    // schema-gate:on
     conn.execute_raw(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
         "INSERT INTO comment_links (id, workspace_id, comment_id, target_document_id, created_at) \
@@ -129,6 +162,7 @@ async fn seed_live_comment_owned_records(
     ))
     .await
     .expect("seed comment link event");
+    // schema-gate:off — same pre-move fixture as above.
     conn.execute_raw(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
         "INSERT INTO attachment_write_intents (id, digest, created_at) VALUES ($1, $2, now())",
@@ -136,6 +170,7 @@ async fn seed_live_comment_owned_records(
     ))
     .await
     .expect("seed attachment write intent");
+    // schema-gate:on
 
     (comment_id, attachment_id)
 }
@@ -145,29 +180,16 @@ async fn comment_freedom_down_rejects_live_comment_attachment_without_destructiv
     let db = TestDb::create_with_migration_steps(Some(COMMENT_FREEDOM_MIGRATION_STEPS))
         .await
         .expect("create database before comment freedom migration");
-    let (ctx, workspace_id, user_id) =
+    let (_ctx, workspace_id, user_id) =
         seed_pre_custos_schema_workspace(&db, "comment-freedom-down-blocked").await;
-    let document = PgDocumentRepo::new(db.conn().clone(), 10)
-        .create(
-            &ctx,
-            NewDocument {
-                title: "Comment attachment parent".into(),
-                slug: None,
-                content: String::new(),
-                folder_id: None,
-                project_id: None,
-                frontmatter: None,
-            },
-        )
-        .await
-        .expect("seed parent document before migration");
+    let document_id = seed_pre_acta_schema_document(&db, workspace_id, user_id).await;
 
     Migrator::up(db.conn(), Some(1))
         .await
         .expect("apply comment freedom migration");
 
     let (comment_id, attachment_id) =
-        seed_live_comment_owned_records(db.conn(), workspace_id, user_id, document.id.0).await;
+        seed_live_comment_owned_records(db.conn(), workspace_id, user_id, document_id).await;
 
     let error = Migrator::down(db.conn(), Some(1))
         .await
@@ -177,6 +199,9 @@ async fn comment_freedom_down_rejects_live_comment_attachment_without_destructiv
         "rollback must report its live comment attachment precondition: {error}"
     );
 
+    // schema-gate:off — same pre-`acta_new()`-documents-batch fixture as
+    // `seed_live_comment_owned_records`; `attachments`/`attachment_write_intents`
+    // still physically live in `public` here.
     let attachment_count = db
         .conn()
         .query_one_raw(Statement::from_sql_and_values(
@@ -189,6 +214,7 @@ async fn comment_freedom_down_rejects_live_comment_attachment_without_destructiv
         .expect("attachment count row")
         .try_get::<i64>("", "count")
         .expect("attachment count");
+    // schema-gate:on
     assert_eq!(
         attachment_count, 1,
         "failed rollback must preserve the attachment row"
@@ -210,6 +236,8 @@ async fn comment_freedom_down_rejects_live_comment_attachment_without_destructiv
         "failed rollback must not partially drop comment links"
     );
 
+    // schema-gate:off — `attachment_write_intents` is the same pre-move
+    // fixture; `comment_link_events` is not batched by this PR.
     for table in ["comment_link_events", "attachment_write_intents"] {
         let count = db
             .conn()
@@ -224,6 +252,7 @@ async fn comment_freedom_down_rejects_live_comment_attachment_without_destructiv
             .expect("ATL-80 data count");
         assert_eq!(count, 1, "failed rollback must not partially drop {table}");
     }
+    // schema-gate:on
 
     db.teardown().await;
 }
@@ -308,6 +337,9 @@ async fn comment_freedom_down_rejects_live_attachment_write_intent() {
     Migrator::up(db.conn(), Some(1))
         .await
         .expect("apply comment freedom migration");
+    // schema-gate:off — frozen at `COMMENT_FREEDOM_MIGRATION_STEPS` steps,
+    // before `acta_new()`'s documents-group SET SCHEMA migration has run, so
+    // `attachment_write_intents` still physically lives in `public` here.
     db.conn()
         .execute_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
@@ -316,6 +348,7 @@ async fn comment_freedom_down_rejects_live_attachment_write_intent() {
         ))
         .await
         .expect("seed live attachment write intent");
+    // schema-gate:on
 
     let error = Migrator::down(db.conn(), Some(1))
         .await
@@ -333,22 +366,9 @@ async fn comment_attachment_drafts_down_preserves_live_draft_ledger_and_digest_c
     let db = TestDb::create_with_migration_steps(Some(COMMENT_ATTACHMENT_DRAFT_MIGRATION_STEPS))
         .await
         .expect("create database before comment attachment drafts migration");
-    let (ctx, workspace_id, user_id) =
+    let (_ctx, workspace_id, user_id) =
         seed_pre_custos_schema_workspace(&db, "comment-draft-down-blocked").await;
-    let document = PgDocumentRepo::new(db.conn().clone(), 10)
-        .create(
-            &ctx,
-            NewDocument {
-                title: "Draft attachment parent".into(),
-                slug: None,
-                content: String::new(),
-                folder_id: None,
-                project_id: None,
-                frontmatter: None,
-            },
-        )
-        .await
-        .expect("seed parent document before migration");
+    let document_id = seed_pre_acta_schema_document(&db, workspace_id, user_id).await;
 
     Migrator::up(db.conn(), Some(1))
         .await
@@ -357,6 +377,12 @@ async fn comment_attachment_drafts_down_preserves_live_draft_ledger_and_digest_c
     let draft_id = uuid::Uuid::now_v7();
     let attachment_id = uuid::Uuid::now_v7();
     let digest = "draft-cleanup-digest";
+    // schema-gate:off — frozen at `COMMENT_ATTACHMENT_DRAFT_MIGRATION_STEPS`
+    // steps, before `acta_new()`'s documents-group SET SCHEMA migration has
+    // run, so `comment_attachment_drafts`, `attachments`,
+    // `comment_attachment_draft_uploads`, and `attachment_write_intents`
+    // still physically live in `public` here (see
+    // `seed_pre_acta_schema_document`'s doc comment).
     db.conn()
         .execute_unprepared(&format!(
             "INSERT INTO comment_attachment_drafts \
@@ -371,7 +397,7 @@ async fn comment_attachment_drafts_down_preserves_live_draft_ledger_and_digest_c
              INSERT INTO attachment_write_intents (id, digest, created_at) \
              VALUES ('{}', '{digest}', now())",
             workspace_id,
-            document.id.0,
+            document_id,
             user_id,
             "01".repeat(32),
             workspace_id,
@@ -382,6 +408,7 @@ async fn comment_attachment_drafts_down_preserves_live_draft_ledger_and_digest_c
         ))
         .await
         .expect("seed live draft attachment, replay ledger, and digest cleanup intent");
+    // schema-gate:on
 
     let error = Migrator::down(db.conn(), Some(1))
         .await
@@ -393,6 +420,7 @@ async fn comment_attachment_drafts_down_preserves_live_draft_ledger_and_digest_c
         "rollback must report the migration-41 lifecycle guard: {error}"
     );
 
+    // schema-gate:off — same pre-move fixture as above.
     let retained = db
         .conn()
         .query_one_raw(Statement::from_sql_and_values(
@@ -407,6 +435,7 @@ async fn comment_attachment_drafts_down_preserves_live_draft_ledger_and_digest_c
         .await
         .expect("query retained draft lifecycle")
         .expect("retained draft lifecycle row");
+    // schema-gate:on
 
     for column in ["drafts", "attachments", "uploads", "intents"] {
         assert_eq!(
@@ -418,6 +447,7 @@ async fn comment_attachment_drafts_down_preserves_live_draft_ledger_and_digest_c
         );
     }
 
+    // schema-gate:off — same pre-move fixture as above.
     db.conn()
         .execute_unprepared(&format!(
             "DELETE FROM comment_attachment_draft_uploads WHERE draft_id = '{draft_id}'; \
@@ -426,6 +456,7 @@ async fn comment_attachment_drafts_down_preserves_live_draft_ledger_and_digest_c
         ))
         .await
         .expect("drain migration-41 state");
+    // schema-gate:on
 
     Migrator::down(db.conn(), Some(1))
         .await

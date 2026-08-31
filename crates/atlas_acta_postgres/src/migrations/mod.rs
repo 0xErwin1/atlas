@@ -13,6 +13,7 @@
 
 mod m20260831_000052_acta_platform_ui_state;
 mod m20260901_000053_acta_identity_workspaces_set_schema;
+mod m20260902_000054_acta_documents_set_schema;
 
 use sea_orm_migration::prelude::MigrationTrait;
 
@@ -21,5 +22,6 @@ pub fn acta_new() -> Vec<Box<dyn MigrationTrait>> {
     vec![
         Box::new(m20260831_000052_acta_platform_ui_state::Migration),
         Box::new(m20260901_000053_acta_identity_workspaces_set_schema::Migration),
+        Box::new(m20260902_000054_acta_documents_set_schema::Migration),
     ]
 }

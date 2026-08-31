@@ -440,8 +440,8 @@ fn build_doc_arm(
             {score_expr} AS score,
             d.updated_at,
             NULL::text AS column_name
-        FROM documents d
-        LEFT JOIN projects p ON p.id = d.project_id AND p.workspace_id = $1 AND p.deleted_at IS NULL
+        FROM acta.documents d
+        LEFT JOIN acta.projects p ON p.id = d.project_id AND p.workspace_id = $1 AND p.deleted_at IS NULL
         WHERE d.workspace_id = $1
            AND d.deleted_at IS NULL
            AND ({live_project})
@@ -502,13 +502,13 @@ pub fn build_doc_permission(
             WITH RECURSIVE ancestors AS (
                 SELECT f.id, f.parent_folder_id, f.project_id,
                        ARRAY[f.id] AS path, 1 AS depth
-                FROM folders f
+                FROM acta.folders f
                 WHERE f.id = d.folder_id
                   AND f.workspace_id = $1
                 UNION ALL
                 SELECT pf.id, pf.parent_folder_id, pf.project_id,
                        a.path || pf.id, a.depth + 1
-                FROM folders pf
+                FROM acta.folders pf
                 JOIN ancestors a ON pf.id = a.parent_folder_id
                 WHERE pf.workspace_id = $1
                   AND NOT pf.id = ANY(a.path)
@@ -618,7 +618,7 @@ fn build_task_arm(
             t.updated_at,
             bc.name AS column_name
         FROM tasks t
-        LEFT JOIN projects p ON p.id = t.project_id AND p.workspace_id = $1 AND p.deleted_at IS NULL
+        LEFT JOIN acta.projects p ON p.id = t.project_id AND p.workspace_id = $1 AND p.deleted_at IS NULL
         LEFT JOIN board_columns bc ON bc.id = t.column_id AND bc.workspace_id = $1 AND bc.deleted_at IS NULL
         WHERE t.workspace_id = $1
            AND t.deleted_at IS NULL
@@ -771,7 +771,7 @@ fn build_project_filter_subquery(
         values.push(slug.to_string().into());
         let pn = values.len();
         parts.push(format!(
-            "SELECT id FROM projects
+            "SELECT id FROM acta.projects
              WHERE workspace_id = $1
                AND lower(slug) = lower(${pn})
                AND deleted_at IS NULL"

@@ -16,9 +16,14 @@
 //! (`m20260830_000051_custos_set_schema`) and grows by two more
 //! (`workspaces`, `workspace_memberships`) as of S4 PR11's
 //! `m20260901_000053_acta_identity_workspaces_set_schema` — the first of
-//! five Acta `SET SCHEMA` batches (design §D1). Each later batch (PR12–PR15)
-//! adds its own tables to this map as it lands; this is a single shared
-//! table→schema map rather than one gate per product (design §D5's
+//! five Acta `SET SCHEMA` batches (design §D1) — and by ten more
+//! (`property_definitions`, `projects`, `folders`, `documents`,
+//! `document_revisions`, `document_links`, `attachments`,
+//! `attachment_write_intents`, `comment_attachment_drafts`,
+//! `comment_attachment_draft_uploads`) as of S4 PR12's
+//! `m20260902_000054_acta_documents_set_schema`, batch 2. Each later batch
+//! (PR13–PR15) adds its own tables to this map as it lands; this is a single
+//! shared table→schema map rather than one gate per product (design §D5's
 //! rejected-alternative rationale: the tree-walk/exclusion logic is
 //! schema-agnostic, so a second copy would only duplicate it).
 //!
@@ -60,6 +65,16 @@ const TABLE_SCHEMA: &[(&str, &str)] = &[
     ("security_audit_log", "custos"),
     ("workspaces", "acta"),
     ("workspace_memberships", "acta"),
+    ("property_definitions", "acta"),
+    ("projects", "acta"),
+    ("folders", "acta"),
+    ("documents", "acta"),
+    ("document_revisions", "acta"),
+    ("document_links", "acta"),
+    ("attachments", "acta"),
+    ("attachment_write_intents", "acta"),
+    ("comment_attachment_drafts", "acta"),
+    ("comment_attachment_draft_uploads", "acta"),
 ];
 
 const SQL_KEYWORDS: &[&str] = &["FROM", "JOIN", "INTO", "UPDATE", "TABLE"];

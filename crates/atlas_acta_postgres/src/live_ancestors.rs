@@ -57,7 +57,7 @@ pub fn board_chain_is_live_sql(board_id: &str) -> String {
 pub fn document_chain_is_live_sql(document_id: &str) -> String {
     format!(
         "NOT EXISTS (\
-            SELECT 1 FROM documents live_document \
+            SELECT 1 FROM acta.documents live_document \
             WHERE live_document.id = {document_id} \
               AND (\
                     live_document.deleted_at IS NOT NULL \
@@ -116,7 +116,7 @@ pub fn comment_chain_is_live_sql(comment_id: &str) -> String {
 pub fn project_is_live_sql(project_id: &str) -> String {
     format!(
         "NOT EXISTS (\
-            SELECT 1 FROM projects live_project \
+            SELECT 1 FROM acta.projects live_project \
             WHERE live_project.id = {project_id} \
               AND live_project.deleted_at IS NOT NULL\
         )"
@@ -128,12 +128,12 @@ pub fn folder_chain_is_live_sql(folder_id: &str) -> String {
         "NOT EXISTS (\
             WITH RECURSIVE folder_ancestors AS (\
                 SELECT id, parent_folder_id, deleted_at, ARRAY[id] AS path \
-                FROM folders \
+                FROM acta.folders \
                 WHERE id = {folder_id} \
                 UNION ALL \
                 SELECT parent.id, parent.parent_folder_id, parent.deleted_at, \
                        ancestors.path || parent.id \
-                FROM folders parent \
+                FROM acta.folders parent \
                 JOIN folder_ancestors ancestors \
                   ON parent.id = ancestors.parent_folder_id \
                 WHERE NOT parent.id = ANY(ancestors.path)\

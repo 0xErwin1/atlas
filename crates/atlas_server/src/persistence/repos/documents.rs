@@ -494,7 +494,7 @@ impl PgAttachmentLifecycle {
         for digest in &digests {
             txn.execute_raw(Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
-                "INSERT INTO attachment_write_intents (id, digest, created_at) VALUES ($1, $2, now()) ON CONFLICT (digest) DO NOTHING",
+                "INSERT INTO acta.attachment_write_intents (id, digest, created_at) VALUES ($1, $2, now()) ON CONFLICT (digest) DO NOTHING",
                 [Uuid::now_v7().into(), digest.clone().into()],
             )).await.map_err(db_err)?;
         }
@@ -593,7 +593,7 @@ impl PgAttachmentLifecycle {
 
         txn.execute_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "INSERT INTO attachment_write_intents (id, digest, created_at) VALUES ($1, $2, now()) ON CONFLICT (digest) DO NOTHING",
+            "INSERT INTO acta.attachment_write_intents (id, digest, created_at) VALUES ($1, $2, now()) ON CONFLICT (digest) DO NOTHING",
             [Uuid::now_v7().into(), attachment.sha256.clone().into()],
         ))
         .await
@@ -902,7 +902,7 @@ impl PgAttachmentLifecycle {
         for digest in &digests {
             txn.execute_raw(Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
-                "INSERT INTO attachment_write_intents (id, digest, created_at) \
+                "INSERT INTO acta.attachment_write_intents (id, digest, created_at) \
                  VALUES ($1, $2, now()) ON CONFLICT (digest) DO NOTHING",
                 [Uuid::now_v7().into(), digest.clone().into()],
             ))
@@ -1335,11 +1335,11 @@ async fn digest_has_recoverable_reference(
     let row = Exists::find_by_statement(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
         "SELECT EXISTS (\
-            SELECT 1 FROM attachments WHERE sha256 = $1 \
+            SELECT 1 FROM acta.attachments WHERE sha256 = $1 \
             UNION ALL \
-            SELECT 1 FROM comment_attachment_draft_uploads u \
-            JOIN attachments a ON a.id = u.original_attachment_id \
-            JOIN comment_attachment_drafts d ON d.id = u.draft_id \
+            SELECT 1 FROM acta.comment_attachment_draft_uploads u \
+            JOIN acta.attachments a ON a.id = u.original_attachment_id \
+            JOIN acta.comment_attachment_drafts d ON d.id = u.draft_id \
             WHERE a.sha256 = $1 AND d.state IN ('active', 'finalized')\
         ) AS exists",
         [digest.into()],
@@ -1413,7 +1413,7 @@ impl PgAttachmentWriteIntentRepo {
         self.conn
             .execute_raw(Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
-                "INSERT INTO attachment_write_intents (id, digest, created_at) \
+                "INSERT INTO acta.attachment_write_intents (id, digest, created_at) \
                  VALUES ($1, $2, now()) ON CONFLICT (digest) DO NOTHING",
                 [Uuid::now_v7().into(), digest.into()],
             ))

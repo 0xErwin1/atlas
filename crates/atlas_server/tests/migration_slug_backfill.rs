@@ -2,7 +2,7 @@
 
 mod support;
 
-use sea_orm::{ConnectionTrait, FromQueryResult, Statement};
+use sea_orm::{ConnectionTrait, FromQueryResult, Statement, TransactionTrait};
 use uuid::Uuid;
 
 /// Inserts a live document row with a NULL slug, bypassing the application layer
@@ -18,7 +18,7 @@ async fn insert_doc_without_slug(
     db.conn()
         .execute_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            r#"INSERT INTO documents
+            r#"INSERT INTO acta.documents
                (id, workspace_id, title, content, slug, current_revision_seq,
                 created_by_user_id, created_at, updated_at)
                VALUES ($1, $2, $3, '', NULL, 0, $4, $5::timestamptz, $5::timestamptz)"#,
@@ -40,10 +40,30 @@ struct SlugRow {
     slug: Option<String>,
 }
 
+/// Runs `crates/migration`'s frozen `BACKFILL_SLUG_SQL` constant (S3d, byte
+/// unmodified) against a fully-migrated `TestDb`. That constant's `UPDATE
+/// documents ...` is unqualified by design — it is correct at its own
+/// historical point in the migration chain, before `acta_new()`'s
+/// documents-group `SET SCHEMA` migration (S4 PR12) ever runs, and
+/// `crates/migration` must stay byte-frozen (D5). Rather than touching the
+/// frozen SQL, sets `search_path` for one transaction so the unqualified
+/// `documents` reference resolves to `acta.documents` on this
+/// fully-migrated, post-move database.
+async fn run_backfill(db: &support::TestDb) {
+    let txn = db.conn().begin().await.expect("begin backfill transaction");
+    txn.execute_unprepared("SET LOCAL search_path TO acta, public")
+        .await
+        .expect("set search_path for the frozen backfill SQL");
+    txn.execute_unprepared(migration::m20260613_000006_document_slug::BACKFILL_SLUG_SQL)
+        .await
+        .expect("run backfill");
+    txn.commit().await.expect("commit backfill transaction");
+}
+
 async fn slug_of(db: &support::TestDb, id: Uuid) -> Option<String> {
     SlugRow::find_by_statement(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
-        "SELECT slug FROM documents WHERE id = $1",
+        "SELECT slug FROM acta.documents WHERE id = $1",
         [id.into()],
     ))
     .one(db.conn())
@@ -85,10 +105,7 @@ async fn backfill_dedupes_colliding_titles_and_coalesces_empty() {
     let symbols =
         insert_doc_without_slug(&db, ws.id.0, user.id.0, "!!!", "2026-01-04T00:00:00Z").await;
 
-    db.conn()
-        .execute_unprepared(migration::m20260613_000006_document_slug::BACKFILL_SLUG_SQL)
-        .await
-        .expect("run backfill");
+    run_backfill(&db).await;
 
     let s1 = slug_of(&db, first).await.expect("slug 1");
     let s2 = slug_of(&db, second).await.expect("slug 2");
@@ -137,10 +154,7 @@ async fn backfill_caps_slug_at_80_chars_without_trailing_hyphen() {
 
     let id = insert_doc_without_slug(&db, ws.id.0, user.id.0, &title, "2026-01-01T00:00:00Z").await;
 
-    db.conn()
-        .execute_unprepared(migration::m20260613_000006_document_slug::BACKFILL_SLUG_SQL)
-        .await
-        .expect("run backfill");
+    run_backfill(&db).await;
 
     let slug = slug_of(&db, id).await.expect("slug");
 
@@ -161,10 +175,7 @@ async fn backfill_caps_slug_at_80_chars_without_trailing_hyphen() {
 async fn backfill_is_safe_on_empty_table() {
     let db = support::TestDb::create().await.expect("TestDb::create");
 
-    db.conn()
-        .execute_unprepared(migration::m20260613_000006_document_slug::BACKFILL_SLUG_SQL)
-        .await
-        .expect("backfill on empty table must not error");
+    run_backfill(&db).await;
 
     db.teardown().await;
 }

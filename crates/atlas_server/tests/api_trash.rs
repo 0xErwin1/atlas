@@ -203,7 +203,7 @@ async fn attachment_is_deleted(db: &support::TestDb, attachment_id: uuid::Uuid) 
     db.conn()
         .query_one_raw(sea_orm::Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT deleted_at IS NOT NULL AS deleted FROM attachments WHERE id = $1",
+            "SELECT deleted_at IS NOT NULL AS deleted FROM acta.attachments WHERE id = $1",
             [attachment_id.into()],
         ))
         .await
@@ -217,7 +217,7 @@ async fn document_is_deleted(db: &support::TestDb, document_id: uuid::Uuid) -> b
     db.conn()
         .query_one_raw(sea_orm::Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT deleted_at IS NOT NULL AS deleted FROM documents WHERE id = $1",
+            "SELECT deleted_at IS NOT NULL AS deleted FROM acta.documents WHERE id = $1",
             [document_id.into()],
         ))
         .await
@@ -666,7 +666,7 @@ async fn trash_filters_and_tied_timestamp_pages_are_complete_without_duplicates(
     }
     db.conn()
         .execute_unprepared(
-            "UPDATE documents SET deleted_at = '2026-07-21T00:00:00Z' WHERE slug LIKE 'trash-page-%'",
+            "UPDATE acta.documents SET deleted_at = '2026-07-21T00:00:00Z' WHERE slug LIKE 'trash-page-%'",
         )
         .await
         .expect("tie deletion timestamps");
@@ -778,7 +778,12 @@ async fn trash_filters_and_tied_timestamp_pages_are_complete_without_duplicates(
         .soft_delete(&ctx_a, attachment.id)
         .await
         .expect("delete mixed page attachment");
-    for table in ["projects", "folders", "comments", "attachments"] {
+    for table in [
+        "acta.projects",
+        "acta.folders",
+        "comments",
+        "acta.attachments",
+    ] {
         db.conn()
             .execute_unprepared(&format!(
                 "UPDATE {table} SET deleted_at = '2026-07-21T00:00:00Z' WHERE deleted_at IS NOT NULL"
@@ -1468,14 +1473,14 @@ async fn confirmed_purge_removes_the_five_kinds_and_reuses_its_pending_operation
     }
 
     for (table, id) in [
-        ("projects", project.id.0),
-        ("folders", folder.id.0),
-        ("documents", document.id.0),
+        ("acta.projects", project.id.0),
+        ("acta.folders", folder.id.0),
+        ("acta.documents", document.id.0),
         ("comments", comment.id.0),
-        ("attachments", attachment.id.0),
-        ("folders", project_folder.id.0),
-        ("documents", project_document.id.0),
-        ("documents", folder_document.id.0),
+        ("acta.attachments", attachment.id.0),
+        ("acta.folders", project_folder.id.0),
+        ("acta.documents", project_document.id.0),
+        ("acta.documents", folder_document.id.0),
     ] {
         let row = db
             .conn()
@@ -1568,7 +1573,7 @@ async fn purge_removes_active_draft_dependencies_and_retains_all_closure_digests
         .conn()
         .query_one_raw(sea_orm::Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT sha256 FROM attachments WHERE id = $1",
+            "SELECT sha256 FROM acta.attachments WHERE id = $1",
             [draft_attachment_id.into()],
         ))
         .await
@@ -1580,7 +1585,7 @@ async fn purge_removes_active_draft_dependencies_and_retains_all_closure_digests
     db.conn()
         .execute_raw(sea_orm::Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "UPDATE documents SET deleted_at = now() WHERE id = $1",
+            "UPDATE acta.documents SET deleted_at = now() WHERE id = $1",
             [document.id.0.into()],
         ))
         .await
@@ -1613,9 +1618,9 @@ async fn purge_removes_active_draft_dependencies_and_retains_all_closure_digests
         .query_one_raw(sea_orm::Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT \
-                (SELECT count(*)::bigint FROM comment_attachment_drafts WHERE id = $1) AS drafts, \
-                (SELECT count(*)::bigint FROM attachments WHERE id = $2) AS attachments, \
-                (SELECT count(*)::bigint FROM comment_attachment_draft_uploads WHERE draft_id = $1) AS uploads, \
+                (SELECT count(*)::bigint FROM acta.comment_attachment_drafts WHERE id = $1) AS drafts, \
+                (SELECT count(*)::bigint FROM acta.attachments WHERE id = $2) AS attachments, \
+                (SELECT count(*)::bigint FROM acta.comment_attachment_draft_uploads WHERE draft_id = $1) AS uploads, \
                 (SELECT count(*)::bigint FROM purge_operation_digests WHERE operation_id = $3 AND digest = $4) AS digests",
             [
                 draft_id.parse::<uuid::Uuid>().expect("draft UUID").into(),
@@ -1852,20 +1857,20 @@ async fn project_purge_correlates_each_descendant_digest_once_and_removes_every_
     let finalized_attachment_id = uuid::Uuid::now_v7();
     db.conn()
         .execute_unprepared(&format!(
-            "INSERT INTO comment_attachment_drafts \
+            "INSERT INTO acta.comment_attachment_drafts \
              (id, workspace_id, document_id, created_by_user_id, create_token, create_digest, state, expires_at) \
              VALUES ('{active_draft_id}', '{}', '{}', '{}', '{active_draft_id}', '\\x{}', 'active', '2999-01-01T00:00:00Z'); \
-             INSERT INTO attachments (id, workspace_id, draft_id, file_name, content_type, size_bytes, sha256, created_by_user_id) \
+             INSERT INTO acta.attachments (id, workspace_id, draft_id, file_name, content_type, size_bytes, sha256, created_by_user_id) \
              VALUES ('{active_attachment_id}', '{}', '{active_draft_id}', 'active-draft.txt', 'text/plain', 1, '{active_draft_digest}', '{}'); \
-             INSERT INTO comment_attachment_draft_uploads \
+             INSERT INTO acta.comment_attachment_draft_uploads \
              (draft_id, upload_token, original_attachment_id, attachment_id, request_digest, payload_digest, file_name, content_type, size_bytes) \
              VALUES ('{active_draft_id}', 'active-upload', '{active_attachment_id}', '{active_attachment_id}', '\\x{}', '\\x{}', 'active-draft.txt', 'text/plain', 1); \
-             INSERT INTO comment_attachment_drafts \
+             INSERT INTO acta.comment_attachment_drafts \
              (id, workspace_id, task_id, created_by_user_id, create_token, create_digest, state, expires_at, finalized_comment_id, final_body_digest, final_request_digest) \
              VALUES ('{finalized_draft_id}', '{}', '{}', '{}', '{finalized_draft_id}', '\\x{}', 'finalized', '2999-01-01T00:00:00Z', '{}', '\\x{}', '\\x{}'); \
-             INSERT INTO attachments (id, workspace_id, draft_id, file_name, content_type, size_bytes, sha256, created_by_user_id) \
+             INSERT INTO acta.attachments (id, workspace_id, draft_id, file_name, content_type, size_bytes, sha256, created_by_user_id) \
              VALUES ('{finalized_attachment_id}', '{}', '{finalized_draft_id}', 'finalized-draft.txt', 'text/plain', 1, '{finalized_draft_digest}', '{}'); \
-             INSERT INTO comment_attachment_draft_uploads \
+             INSERT INTO acta.comment_attachment_draft_uploads \
              (draft_id, upload_token, original_attachment_id, attachment_id, request_digest, payload_digest, file_name, content_type, size_bytes) \
              VALUES ('{finalized_draft_id}', 'finalized-upload', '{finalized_attachment_id}', '{finalized_attachment_id}', '\\x{}', '\\x{}', 'finalized-draft.txt', 'text/plain', 1)",
             workspace.id.0,
@@ -1926,15 +1931,15 @@ async fn project_purge_correlates_each_descendant_digest_once_and_removes_every_
         .query_one_raw(sea_orm::Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT \
-                (SELECT count(*)::bigint FROM projects WHERE workspace_id = $1) AS projects, \
-                (SELECT count(*)::bigint FROM folders WHERE workspace_id = $1) AS folders, \
-                (SELECT count(*)::bigint FROM documents WHERE workspace_id = $1) AS documents, \
+                (SELECT count(*)::bigint FROM acta.projects WHERE workspace_id = $1) AS projects, \
+                (SELECT count(*)::bigint FROM acta.folders WHERE workspace_id = $1) AS folders, \
+                (SELECT count(*)::bigint FROM acta.documents WHERE workspace_id = $1) AS documents, \
                 (SELECT count(*)::bigint FROM boards WHERE workspace_id = $1) AS boards, \
                 (SELECT count(*)::bigint FROM tasks WHERE workspace_id = $1) AS tasks, \
                 (SELECT count(*)::bigint FROM comments WHERE workspace_id = $1) AS comments, \
-                (SELECT count(*)::bigint FROM attachments WHERE workspace_id = $1) AS attachments, \
-                (SELECT count(*)::bigint FROM comment_attachment_drafts WHERE workspace_id = $1) AS drafts, \
-                (SELECT count(*)::bigint FROM comment_attachment_draft_uploads WHERE draft_id IN ($2, $3)) AS uploads",
+                (SELECT count(*)::bigint FROM acta.attachments WHERE workspace_id = $1) AS attachments, \
+                (SELECT count(*)::bigint FROM acta.comment_attachment_drafts WHERE workspace_id = $1) AS drafts, \
+                (SELECT count(*)::bigint FROM acta.comment_attachment_draft_uploads WHERE draft_id IN ($2, $3)) AS uploads",
             [workspace.id.0.into(), active_draft_id.into(), finalized_draft_id.into()],
         ))
         .await

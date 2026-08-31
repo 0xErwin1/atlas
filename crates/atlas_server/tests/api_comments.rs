@@ -362,7 +362,7 @@ async fn document_backlinks_omit_comment_sources_with_deleted_parents() {
 
     db.conn()
         .execute_unprepared(&format!(
-            "INSERT INTO comment_links (id, workspace_id, comment_id, target_document_id, created_at) VALUES ('{}', '{}', '{}', '{}', now()); UPDATE documents SET deleted_at = now() WHERE id = '{}'",
+            "INSERT INTO comment_links (id, workspace_id, comment_id, target_document_id, created_at) VALUES ('{}', '{}', '{}', '{}', now()); UPDATE acta.documents SET deleted_at = now() WHERE id = '{}'",
             uuid::Uuid::now_v7(), ws.id.0, comment.id, target.id, source.id,
         ))
         .await
@@ -456,7 +456,7 @@ async fn document_backlinks_batch_authorize_many_comment_sources() {
     .await;
     db.conn()
         .execute_unprepared(
-            "UPDATE projects SET visibility = 'workspace', visibility_role = 'viewer' WHERE slug = 'document-backlink-target'; UPDATE projects SET visibility = 'private', visibility_role = NULL WHERE slug = 'document-backlink-private'",
+            "UPDATE acta.projects SET visibility = 'workspace', visibility_role = 'viewer' WHERE slug = 'document-backlink-target'; UPDATE acta.projects SET visibility = 'private', visibility_role = NULL WHERE slug = 'document-backlink-private'",
         )
         .await
         .expect("set source and target visibility");
@@ -475,7 +475,7 @@ async fn document_backlinks_batch_authorize_many_comment_sources() {
 
     db.conn()
         .execute_unprepared(
-            "UPDATE projects SET visibility = 'workspace', visibility_role = 'viewer' WHERE slug = 'document-backlink-private'",
+            "UPDATE acta.projects SET visibility = 'workspace', visibility_role = 'viewer' WHERE slug = 'document-backlink-private'",
         )
         .await
         .expect("make source project visible");
@@ -549,7 +549,7 @@ async fn task_backlinks_batch_authorize_many_comment_sources_without_source_leak
     .await;
     db.conn()
         .execute_unprepared(
-            "UPDATE projects SET visibility = 'workspace', visibility_role = 'viewer' WHERE slug = 'comment-backlink-target'; UPDATE projects SET visibility = 'private', visibility_role = NULL WHERE slug = 'comment-backlink-private'",
+            "UPDATE acta.projects SET visibility = 'workspace', visibility_role = 'viewer' WHERE slug = 'comment-backlink-target'; UPDATE acta.projects SET visibility = 'private', visibility_role = NULL WHERE slug = 'comment-backlink-private'",
         )
         .await
         .expect("make target project visible");
@@ -568,7 +568,7 @@ async fn task_backlinks_batch_authorize_many_comment_sources_without_source_leak
 
     db.conn()
         .execute_unprepared(
-            "UPDATE projects SET visibility = 'workspace', visibility_role = 'viewer' WHERE slug = 'comment-backlink-private'",
+            "UPDATE acta.projects SET visibility = 'workspace', visibility_role = 'viewer' WHERE slug = 'comment-backlink-private'",
         )
         .await
         .expect("make source project visible");
@@ -718,7 +718,7 @@ async fn document_backlinks_expose_comment_source_without_attachment_links() {
     let attachment_id = uuid::Uuid::now_v7();
     db.conn()
         .execute_unprepared(&format!(
-            "INSERT INTO attachments (id, workspace_id, task_id, file_name, content_type, size_bytes, sha256, created_by_user_id, created_at, updated_at) VALUES ('{attachment_id}', '{}', '{}', 'attachment.txt', 'text/plain', 1, '{}', '{}', now(), now()); INSERT INTO comment_links (id, workspace_id, comment_id, target_document_id, created_at) VALUES ('{}', '{}', '{}', '{}', now()); INSERT INTO comment_links (id, workspace_id, comment_id, target_attachment_id, created_at) VALUES ('{}', '{}', '{}', '{attachment_id}', now())",
+            "INSERT INTO acta.attachments (id, workspace_id, task_id, file_name, content_type, size_bytes, sha256, created_by_user_id, created_at, updated_at) VALUES ('{attachment_id}', '{}', '{}', 'attachment.txt', 'text/plain', 1, '{}', '{}', now(), now()); INSERT INTO comment_links (id, workspace_id, comment_id, target_document_id, created_at) VALUES ('{}', '{}', '{}', '{}', now()); INSERT INTO comment_links (id, workspace_id, comment_id, target_attachment_id, created_at) VALUES ('{}', '{}', '{}', '{attachment_id}', now())",
             ws.id.0,
             source_task.id,
             "c".repeat(64),
@@ -1088,7 +1088,7 @@ async fn full_feeds_redact_deleted_targets_for_human_and_api_key_viewers() {
             .unwrap_or_else(|| "NULL".into());
         db.conn()
             .execute_unprepared(&format!(
-                "INSERT INTO attachments (id, workspace_id, task_id, comment_id, file_name, content_type, size_bytes, sha256, created_by_user_id, created_at, updated_at) VALUES ('{attachment_id}', '{}', {task_owner}, {comment_owner}, 'target.txt', 'text/plain', 1, '{digest}', '{}', now(), now())",
+                "INSERT INTO acta.attachments (id, workspace_id, task_id, comment_id, file_name, content_type, size_bytes, sha256, created_by_user_id, created_at, updated_at) VALUES ('{attachment_id}', '{}', {task_owner}, {comment_owner}, 'target.txt', 'text/plain', 1, '{digest}', '{}', now(), now())",
                 ws.id.0, user.id.0,
             ))
             .await
@@ -1161,7 +1161,7 @@ async fn full_feeds_redact_deleted_targets_for_human_and_api_key_viewers() {
 
     db.conn()
         .execute_unprepared(&format!(
-            "UPDATE documents SET deleted_at = now() WHERE id = '{}'; UPDATE tasks SET deleted_at = now() WHERE id = '{}'; UPDATE attachments SET deleted_at = now() WHERE id IN ('{direct_attachment}', '{comment_attachment}')",
+            "UPDATE acta.documents SET deleted_at = now() WHERE id = '{}'; UPDATE tasks SET deleted_at = now() WHERE id = '{}'; UPDATE acta.attachments SET deleted_at = now() WHERE id IN ('{direct_attachment}', '{comment_attachment}')",
             target_document.id, target_task.id,
         ))
         .await
@@ -1455,7 +1455,7 @@ async fn full_feeds_recheck_target_access_after_the_link_is_written() {
     )
     .await;
     db.conn()
-        .execute_unprepared("UPDATE projects SET visibility = 'workspace', visibility_role = 'viewer' WHERE slug IN ('comment-feed-source', 'comment-feed-target')")
+        .execute_unprepared("UPDATE acta.projects SET visibility = 'workspace', visibility_role = 'viewer' WHERE slug IN ('comment-feed-source', 'comment-feed-target')")
         .await
         .expect("make projects visible");
 
@@ -1487,7 +1487,7 @@ async fn full_feeds_recheck_target_access_after_the_link_is_written() {
         );
     }
     db.conn()
-        .execute_unprepared("UPDATE projects SET visibility = 'private', visibility_role = NULL WHERE slug = 'comment-feed-target'")
+        .execute_unprepared("UPDATE acta.projects SET visibility = 'private', visibility_role = NULL WHERE slug = 'comment-feed-target'")
         .await
         .expect("revoke target visibility");
     for url in &urls {

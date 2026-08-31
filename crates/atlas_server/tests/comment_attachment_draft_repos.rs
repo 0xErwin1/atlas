@@ -106,7 +106,7 @@ async fn seed_draft_attachment(
     let attachment_id = AttachmentId::new();
     db.conn()
         .execute_unprepared(&format!(
-            "INSERT INTO attachments (id, workspace_id, draft_id, file_name, content_type, size_bytes, sha256, created_by_user_id) \
+            "INSERT INTO acta.attachments (id, workspace_id, draft_id, file_name, content_type, size_bytes, sha256, created_by_user_id) \
              VALUES ('{}', '{workspace_id}', '{draft_id}', 'report.pdf', 'application/pdf', 12, 'digest', '{user_id}')",
             attachment_id.0,
         ))
@@ -444,7 +444,7 @@ async fn migration_enforces_digest_sizes_and_allows_drained_rollback() {
     let live_upload_without_attachment = db
         .conn()
         .execute_unprepared(&format!(
-            "INSERT INTO comment_attachment_draft_uploads \
+            "INSERT INTO acta.comment_attachment_draft_uploads \
              (draft_id, upload_token, request_digest, payload_digest, file_name, content_type, size_bytes) \
               VALUES ('{}', 'upload-token', '\\x01', '\\x02', 'report.pdf', 'application/pdf', 12)",
             draft.id.0,
@@ -453,7 +453,7 @@ async fn migration_enforces_digest_sizes_and_allows_drained_rollback() {
     let attachment_with_two_owners = db
         .conn()
         .execute_unprepared(&format!(
-            "INSERT INTO attachments (id, workspace_id, document_id, draft_id, file_name, content_type, size_bytes, sha256, created_by_user_id) \
+            "INSERT INTO acta.attachments (id, workspace_id, document_id, draft_id, file_name, content_type, size_bytes, sha256, created_by_user_id) \
              VALUES ('{}', '{}', '{}', '{}', 'report.pdf', 'application/pdf', 12, 'digest', '{}')",
             uuid::Uuid::now_v7(),
             workspace.id.0,
@@ -465,7 +465,7 @@ async fn migration_enforces_digest_sizes_and_allows_drained_rollback() {
     let invalid_draft_digest = db
         .conn()
         .execute_unprepared(&format!(
-            "INSERT INTO comment_attachment_drafts \\
+            "INSERT INTO acta.comment_attachment_drafts \\
              (id, workspace_id, document_id, created_by_user_id, create_token, create_digest, state, expires_at) \\
              VALUES ('{}', '{}', '{}', '{}', 'short-digest', '\\x01', 'active', now() + interval '1 day')",
             uuid::Uuid::now_v7(), workspace.id.0, document.id.0, user.id.0,
@@ -476,7 +476,7 @@ async fn migration_enforces_digest_sizes_and_allows_drained_rollback() {
     let invalid_upload_digest = db
         .conn()
         .execute_unprepared(&format!(
-            "INSERT INTO comment_attachment_draft_uploads \\
+            "INSERT INTO acta.comment_attachment_draft_uploads \\
               (draft_id, upload_token, original_attachment_id, attachment_id, request_digest, payload_digest, file_name, content_type, size_bytes) \\
               VALUES ('{}', 'short-upload-digest', '{}', '{}', '\\x01', '\\x{}', 'report.pdf', 'application/pdf', 12)",
             draft.id.0,
@@ -503,7 +503,7 @@ async fn migration_enforces_digest_sizes_and_allows_drained_rollback() {
         .conn()
         .execute_unprepared(
             &format!(
-                "UPDATE comment_attachment_drafts SET finalized_comment_id = '{}' WHERE id = '{}'",
+                "UPDATE acta.comment_attachment_drafts SET finalized_comment_id = '{}' WHERE id = '{}'",
                 uuid::Uuid::now_v7(),
                 draft.id.0,
             )
@@ -513,13 +513,13 @@ async fn migration_enforces_digest_sizes_and_allows_drained_rollback() {
     let invalid_final_digest = db
         .conn()
         .execute_unprepared(&format!(
-            "UPDATE comment_attachment_drafts SET final_body_digest = '\\x01' WHERE id = '{}'",
+            "UPDATE acta.comment_attachment_drafts SET final_body_digest = '\\x01' WHERE id = '{}'",
             draft.id.0,
         ))
         .await;
     db.conn()
         .execute_unprepared(&format!(
-            "UPDATE comment_attachment_drafts \\
+            "UPDATE acta.comment_attachment_drafts \\
              SET finalized_comment_id = '{comment_id}', final_body_digest = '\\x{}', final_request_digest = '\\x{}' \\
              WHERE id = '{}'",
             "03".repeat(32),
@@ -537,7 +537,7 @@ async fn migration_enforces_digest_sizes_and_allows_drained_rollback() {
     let tombstone_without_attachment = db
         .conn()
         .execute_unprepared(&format!(
-            "INSERT INTO comment_attachment_draft_uploads \
+            "INSERT INTO acta.comment_attachment_draft_uploads \
               (draft_id, upload_token, original_attachment_id, request_digest, payload_digest, file_name, content_type, size_bytes, deleted_at) \
                VALUES ('{}', 'deleted-upload-token', '{}', '\\x{}', '\\x{}', 'report.pdf', 'application/pdf', 12, now())",
             draft.id.0,
@@ -587,6 +587,13 @@ async fn migration_enforces_digest_sizes_and_allows_drained_rollback() {
         "rollback must be guarded while drafts remain"
     );
 
+    // schema-gate:off — `guarded_rollback` above already reverted every
+    // `SET SCHEMA` migration registered after the comment-attachment-drafts
+    // one (including this PR's `m20260902_000054_acta_documents_set_schema`)
+    // before failing closed on that older migration's own guard, so
+    // `comment_attachment_draft_uploads`/`attachments`/`comment_attachment_drafts`
+    // are back in `public` at this point, not `acta` — see the comment above
+    // `drained_rollback` below.
     db.conn()
         .execute_unprepared(&format!(
             "DELETE FROM comment_attachment_draft_uploads WHERE draft_id = '{}'",
@@ -608,6 +615,7 @@ async fn migration_enforces_digest_sizes_and_allows_drained_rollback() {
         ))
         .await
         .expect("drain draft");
+    // schema-gate:on
     db.conn()
         .execute_unprepared(&format!("DELETE FROM comments WHERE id = '{comment_id}'",))
         .await
@@ -672,7 +680,7 @@ async fn upload_replays_identical_token_and_rejects_changed_request() {
     let provisional_survives = db
         .conn()
         .execute_unprepared(&format!(
-            "DELETE FROM attachments WHERE id IN ('{}', '{}')",
+            "DELETE FROM acta.attachments WHERE id IN ('{}', '{}')",
             provisional.0, conflicting_provisional.0,
         ))
         .await
@@ -777,7 +785,7 @@ async fn upload_tombstone_is_gone_and_other_principals_cannot_resolve_it() {
 
     db.conn()
         .execute_unprepared(&format!(
-            "UPDATE comment_attachment_drafts SET state = 'finalized' WHERE id = '{}'",
+            "UPDATE acta.comment_attachment_drafts SET state = 'finalized' WHERE id = '{}'",
             draft.id.0,
         ))
         .await
@@ -795,7 +803,7 @@ async fn upload_tombstone_is_gone_and_other_principals_cannot_resolve_it() {
     let duplicate_original = db
         .conn()
         .execute_unprepared(&format!(
-            "INSERT INTO comment_attachment_draft_uploads \
+            "INSERT INTO acta.comment_attachment_draft_uploads \
              (draft_id, upload_token, original_attachment_id, request_digest, payload_digest, file_name, content_type, size_bytes, deleted_at) \
              VALUES ('{}', 'duplicate-original', '{}', '\\x{}', '\\x{}', 'report.pdf', 'application/pdf', 12, now())",
             draft.id.0,
@@ -806,7 +814,7 @@ async fn upload_tombstone_is_gone_and_other_principals_cannot_resolve_it() {
         .await;
     db.conn()
         .execute_unprepared(&format!(
-            "DELETE FROM comment_attachment_draft_uploads WHERE draft_id = '{}' AND upload_token = 'upload-token'",
+            "DELETE FROM acta.comment_attachment_draft_uploads WHERE draft_id = '{}' AND upload_token = 'upload-token'",
             draft.id.0,
         ))
         .await
@@ -906,7 +914,7 @@ async fn concurrent_distinct_provisionals_replay_without_orphans() {
     let orphan = db
         .conn()
         .execute_unprepared(&format!(
-            "DELETE FROM attachments WHERE id = '{losing_attachment}'"
+            "DELETE FROM acta.attachments WHERE id = '{losing_attachment}'"
         ))
         .await
         .expect("check losing provisional cleanup");
@@ -964,7 +972,7 @@ async fn concurrent_conflicting_provisionals_leave_only_the_winning_attachment()
     let orphan = db
         .conn()
         .execute_unprepared(&format!(
-            "DELETE FROM attachments WHERE id = '{losing_attachment}'"
+            "DELETE FROM acta.attachments WHERE id = '{losing_attachment}'"
         ))
         .await
         .expect("check conflicting provisional cleanup");

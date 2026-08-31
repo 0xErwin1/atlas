@@ -142,7 +142,7 @@ impl PgSearchIndexQueueRepo {
     ) -> Result<u64, DomainError> {
         let mut enqueued: u64 = 0;
         for (kind, table) in [
-            (ResourceKind::Document, "documents"),
+            (ResourceKind::Document, "acta.documents"),
             (ResourceKind::Task, "tasks"),
         ] {
             let result = conn
@@ -188,7 +188,7 @@ impl PgSearchIndexQueueRepo {
                               FROM comments c
                               WHERE c.document_id = d.id AND c.deleted_at IS NULL
                           ), 0) AS characters
-                   FROM documents d
+                   FROM acta.documents d
                    WHERE d.workspace_id = $1 AND d.deleted_at IS NULL
                ), task_text AS (
                    SELECT char_length(coalesce(t.title, '')) + char_length(coalesce(t.description, ''))

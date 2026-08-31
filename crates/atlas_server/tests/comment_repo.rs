@@ -144,7 +144,7 @@ async fn seed_draft(
 
     db.conn()
         .execute_unprepared(&format!(
-            "INSERT INTO comment_attachment_drafts \
+            "INSERT INTO acta.comment_attachment_drafts \
              (id, workspace_id, task_id, created_by_user_id, create_token, create_digest, state, expires_at, terminal_at) \
              VALUES ('{id}', '{workspace_id}', '{task_id}', '{user_id}', '{id}', '\\x{}', '{state}', '{expires_at}'::timestamptz, {terminal_at})",
             "01".repeat(32),
@@ -445,7 +445,7 @@ async fn comment_freedom_schema_enforces_owner_and_link_constraints() {
     let invalid_attachment = db
         .conn()
         .execute_unprepared(&format!(
-            "INSERT INTO attachments (id, workspace_id, task_id, comment_id, file_name, content_type, size_bytes, sha256, created_by_user_id, created_at, updated_at) \
+            "INSERT INTO acta.attachments (id, workspace_id, task_id, comment_id, file_name, content_type, size_bytes, sha256, created_by_user_id, created_at, updated_at) \
              VALUES ('{}', '{}', '{}', '{}', 'invalid.txt', 'text/plain', 1, '{}', '{}', now(), now())",
             uuid::Uuid::now_v7(),
             ws.id.0,
@@ -1106,7 +1106,7 @@ async fn draft_reconciliation_expires_at_most_one_hundred_and_prunes_only_safe_t
     let retained_attachment = uuid::Uuid::now_v7();
     db.conn()
         .execute_unprepared(&format!(
-            "INSERT INTO attachments \
+            "INSERT INTO acta.attachments \
              (id, workspace_id, draft_id, file_name, content_type, size_bytes, sha256, created_by_user_id, deleted_at) \
              VALUES ('{retained_attachment}', '{}', '{}', 'retained.pdf', 'application/pdf', 1, 'retained-draft-intent', '{}', now())",
             workspace.id.0, retained.0, user.id.0,
@@ -1115,7 +1115,7 @@ async fn draft_reconciliation_expires_at_most_one_hundred_and_prunes_only_safe_t
         .expect("seed retained draft attachment tombstone");
     db.conn()
         .execute_unprepared(&format!(
-            "INSERT INTO comment_attachment_draft_uploads \
+            "INSERT INTO acta.comment_attachment_draft_uploads \
              (draft_id, upload_token, original_attachment_id, request_digest, payload_digest, file_name, content_type, size_bytes, deleted_at) \
              VALUES ('{}', 'retained-upload', '{retained_attachment}', '\\x{}', '\\x{}', 'retained.pdf', 'application/pdf', 1, now())",
             retained.0,
@@ -1126,7 +1126,7 @@ async fn draft_reconciliation_expires_at_most_one_hundred_and_prunes_only_safe_t
         .expect("seed retained upload tombstone");
     db.conn()
         .execute_unprepared(&format!(
-            "INSERT INTO attachment_write_intents (id, digest, created_at) VALUES ('{}', 'retained-draft-intent', now())",
+            "INSERT INTO acta.attachment_write_intents (id, digest, created_at) VALUES ('{}', 'retained-draft-intent', now())",
             uuid::Uuid::now_v7(),
         ))
         .await
@@ -1193,10 +1193,10 @@ async fn draft_expiry_keeps_cleanup_intent_after_failure_and_stale_retry_drains_
     let attachment_id = uuid::Uuid::now_v7();
     db.conn()
         .execute_unprepared(&format!(
-            "INSERT INTO attachments \
+            "INSERT INTO acta.attachments \
              (id, workspace_id, draft_id, file_name, content_type, size_bytes, sha256, created_by_user_id) \
              VALUES ('{attachment_id}', '{}', '{}', 'retry.txt', 'text/plain', {}, '{digest}', '{}'); \
-             INSERT INTO comment_attachment_draft_uploads \
+             INSERT INTO acta.comment_attachment_draft_uploads \
              (draft_id, upload_token, original_attachment_id, attachment_id, request_digest, payload_digest, file_name, content_type, size_bytes) \
              VALUES ('{}', 'expiry-retry', '{attachment_id}', '{attachment_id}', '\\x{}', '\\x{}', 'retry.txt', 'text/plain', {})",
             workspace.id.0,
@@ -1292,7 +1292,7 @@ async fn terminal_pruning_honors_the_seven_day_boundary_and_live_attachment_guar
     let attachment_id = uuid::Uuid::now_v7();
     db.conn()
         .execute_unprepared(&format!(
-            "INSERT INTO attachments \
+            "INSERT INTO acta.attachments \
              (id, workspace_id, draft_id, file_name, content_type, size_bytes, sha256, created_by_user_id) \
              VALUES ('{attachment_id}', '{}', '{}', 'live.txt', 'text/plain', 1, 'live-prune-guard', '{}')",
             workspace.id.0, guarded.0, user.id.0,
@@ -1421,10 +1421,10 @@ async fn reconciler_starts_with_draft_expiry_and_isolates_cleanup_failures_per_i
         let attachment_id = uuid::Uuid::now_v7();
         db.conn()
             .execute_unprepared(&format!(
-                "INSERT INTO attachments \
+                "INSERT INTO acta.attachments \
                  (id, workspace_id, draft_id, file_name, content_type, size_bytes, sha256, created_by_user_id) \
                  VALUES ('{attachment_id}', '{}', '{}', '{token}.txt', 'text/plain', 1, '{digest}', '{}'); \
-                 INSERT INTO comment_attachment_draft_uploads \
+                 INSERT INTO acta.comment_attachment_draft_uploads \
                  (draft_id, upload_token, original_attachment_id, attachment_id, request_digest, payload_digest, file_name, content_type, size_bytes) \
                  VALUES ('{}', '{token}', '{attachment_id}', '{attachment_id}', '\\x{}', '\\x{}', '{token}.txt', 'text/plain', 1)",
                 workspace.id.0,
@@ -1554,15 +1554,15 @@ async fn finalized_origin_individual_delete_rolls_back_its_tombstone_on_database
     let attachment_id = uuid::Uuid::now_v7();
     db.conn()
         .execute_unprepared(&format!(
-            "UPDATE comment_attachment_drafts SET finalized_comment_id = '{}' WHERE id = '{}'; \
-             INSERT INTO attachments (id, workspace_id, comment_id, file_name, content_type, size_bytes, sha256, created_by_user_id) \
+            "UPDATE acta.comment_attachment_drafts SET finalized_comment_id = '{}' WHERE id = '{}'; \
+             INSERT INTO acta.attachments (id, workspace_id, comment_id, file_name, content_type, size_bytes, sha256, created_by_user_id) \
              VALUES ('{attachment_id}', '{}', '{}', 'rollback.txt', 'text/plain', 1, 'rollback-digest', '{}'); \
-             INSERT INTO comment_attachment_draft_uploads \
+             INSERT INTO acta.comment_attachment_draft_uploads \
              (draft_id, upload_token, original_attachment_id, attachment_id, request_digest, payload_digest, file_name, content_type, size_bytes) \
              VALUES ('{}', 'rollback-upload', '{attachment_id}', '{attachment_id}', '\\x{}', '\\x{}', 'rollback.txt', 'text/plain', 1); \
              CREATE FUNCTION fail_finalized_attachment_delete() RETURNS trigger AS $$ \
              BEGIN RAISE EXCEPTION 'injected finalized attachment failure'; END; $$ LANGUAGE plpgsql; \
-             CREATE TRIGGER fail_finalized_attachment_delete BEFORE UPDATE OF deleted_at ON attachments \
+             CREATE TRIGGER fail_finalized_attachment_delete BEFORE UPDATE OF deleted_at ON acta.attachments \
              FOR EACH ROW WHEN (NEW.deleted_at IS NOT NULL) EXECUTE FUNCTION fail_finalized_attachment_delete()",
             comment.id.0,
             draft.0,
@@ -1587,7 +1587,7 @@ async fn finalized_origin_individual_delete_rolls_back_its_tombstone_on_database
         .conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT attachment_id, deleted_at FROM comment_attachment_draft_uploads WHERE draft_id = $1",
+            "SELECT attachment_id, deleted_at FROM acta.comment_attachment_draft_uploads WHERE draft_id = $1",
             [draft.0.into()],
         ))
         .await
@@ -1632,7 +1632,7 @@ async fn direct_attachment_restore_only_clears_the_matching_tombstone() {
 
     db.conn()
         .execute_unprepared(&format!(
-            "INSERT INTO attachments \
+            "INSERT INTO acta.attachments \
              (id, workspace_id, task_id, file_name, content_type, size_bytes, sha256, created_by_user_id, deleted_at) \
              VALUES ('{}', '{}', '{}', 'restore.txt', 'text/plain', 1, 'restore', '{}', '{}'), \
                     ('{}', '{}', '{}', 'independent.txt', 'text/plain', 1, 'independent', '{}', '{}')",
@@ -1654,7 +1654,7 @@ async fn direct_attachment_restore_only_clears_the_matching_tombstone() {
         .conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT deleted_at FROM attachments WHERE id = $1",
+            "SELECT deleted_at FROM acta.attachments WHERE id = $1",
             [attachment_id.0.into()],
         ))
         .await
@@ -1666,7 +1666,7 @@ async fn direct_attachment_restore_only_clears_the_matching_tombstone() {
         .conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT deleted_at FROM attachments WHERE id = $1",
+            "SELECT deleted_at FROM acta.attachments WHERE id = $1",
             [independent_attachment_id.0.into()],
         ))
         .await
@@ -1683,7 +1683,7 @@ async fn direct_attachment_restore_only_clears_the_matching_tombstone() {
         .conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT deleted_at FROM attachments WHERE id = $1",
+            "SELECT deleted_at FROM acta.attachments WHERE id = $1",
             [attachment_id.0.into()],
         ))
         .await
@@ -1695,7 +1695,7 @@ async fn direct_attachment_restore_only_clears_the_matching_tombstone() {
         .conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT deleted_at FROM attachments WHERE id = $1",
+            "SELECT deleted_at FROM acta.attachments WHERE id = $1",
             [independent_attachment_id.0.into()],
         ))
         .await
@@ -1743,10 +1743,10 @@ async fn deleting_a_finalized_comment_retains_its_replay_data_and_blob() {
 
     db.conn()
         .execute_unprepared(&format!(
-            "UPDATE comment_attachment_drafts SET finalized_comment_id = '{}', final_body_digest = '\\x{}', final_request_digest = '\\x{}' WHERE id = '{}'; \
-             INSERT INTO attachments (id, workspace_id, comment_id, file_name, content_type, size_bytes, sha256, created_by_user_id) \
+            "UPDATE acta.comment_attachment_drafts SET finalized_comment_id = '{}', final_body_digest = '\\x{}', final_request_digest = '\\x{}' WHERE id = '{}'; \
+             INSERT INTO acta.attachments (id, workspace_id, comment_id, file_name, content_type, size_bytes, sha256, created_by_user_id) \
              VALUES ('{attachment_id}', '{}', '{}', 'finalized.txt', 'text/plain', 1, '{digest}', '{}'); \
-             INSERT INTO comment_attachment_draft_uploads (draft_id, upload_token, original_attachment_id, attachment_id, request_digest, payload_digest, file_name, content_type, size_bytes) \
+             INSERT INTO acta.comment_attachment_draft_uploads (draft_id, upload_token, original_attachment_id, attachment_id, request_digest, payload_digest, file_name, content_type, size_bytes) \
              VALUES ('{}', 'finalized-upload', '{attachment_id}', '{attachment_id}', '\\x{}', '\\x{}', 'finalized.txt', 'text/plain', 1)",
             comment.id.0,
             "01".repeat(32),
@@ -1786,7 +1786,7 @@ async fn deleting_a_finalized_comment_retains_its_replay_data_and_blob() {
         .conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT attachment_id, deleted_at FROM comment_attachment_draft_uploads WHERE draft_id = $1",
+            "SELECT attachment_id, deleted_at FROM acta.comment_attachment_draft_uploads WHERE draft_id = $1",
             [draft_id.0.into()],
         ))
         .await
@@ -1796,7 +1796,7 @@ async fn deleting_a_finalized_comment_retains_its_replay_data_and_blob() {
         .conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT deleted_at FROM attachments WHERE id = $1",
+            "SELECT deleted_at FROM acta.attachments WHERE id = $1",
             [attachment_id.into()],
         ))
         .await
@@ -1852,10 +1852,10 @@ async fn deleting_a_finalized_comment_retains_its_replay_data_and_blob() {
     let independent_deleted_at = comment_deleted_at + Duration::microseconds(1);
     db.conn()
         .execute_unprepared(&format!(
-            "INSERT INTO attachments \
+            "INSERT INTO acta.attachments \
              (id, workspace_id, comment_id, file_name, content_type, size_bytes, sha256, created_by_user_id, deleted_at) \
              VALUES ('{matching_attachment_id}', '{}', '{}', 'matching.txt', 'text/plain', 1, 'matching', '{}', '{}'); \
-             UPDATE attachments SET deleted_at = '{}' WHERE id = '{}'",
+             UPDATE acta.attachments SET deleted_at = '{}' WHERE id = '{}'",
             workspace.id.0,
             comment.id.0,
             user.id.0,
@@ -1892,7 +1892,7 @@ async fn deleting_a_finalized_comment_retains_its_replay_data_and_blob() {
         .conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT deleted_at FROM attachments WHERE id = $1",
+            "SELECT deleted_at FROM acta.attachments WHERE id = $1",
             [matching_attachment_id.into()],
         ))
         .await
@@ -1904,7 +1904,7 @@ async fn deleting_a_finalized_comment_retains_its_replay_data_and_blob() {
         .conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT deleted_at FROM attachments WHERE id = $1",
+            "SELECT deleted_at FROM acta.attachments WHERE id = $1",
             [attachment_id.into()],
         ))
         .await
@@ -1955,10 +1955,10 @@ async fn terminal_pruning_hard_deletes_finalized_origin_attachment_rows_before_r
     let attachment_id = uuid::Uuid::now_v7();
     db.conn()
         .execute_unprepared(&format!(
-            "UPDATE comment_attachment_drafts SET finalized_comment_id = '{}' WHERE id = '{}'; \
-             INSERT INTO attachments (id, workspace_id, comment_id, file_name, content_type, size_bytes, sha256, created_by_user_id, deleted_at) \
+            "UPDATE acta.comment_attachment_drafts SET finalized_comment_id = '{}' WHERE id = '{}'; \
+             INSERT INTO acta.attachments (id, workspace_id, comment_id, file_name, content_type, size_bytes, sha256, created_by_user_id, deleted_at) \
              VALUES ('{attachment_id}', '{}', '{}', 'retained.txt', 'text/plain', 1, 'finalized-origin-prune', '{}', now()); \
-             INSERT INTO comment_attachment_draft_uploads \
+             INSERT INTO acta.comment_attachment_draft_uploads \
              (draft_id, upload_token, original_attachment_id, request_digest, payload_digest, file_name, content_type, size_bytes, deleted_at) \
              VALUES ('{}', 'finalized-prune', '{attachment_id}', '\\x{}', '\\x{}', 'retained.txt', 'text/plain', 1, now())",
             comment.id.0,
@@ -1984,7 +1984,7 @@ async fn terminal_pruning_hard_deletes_finalized_origin_attachment_rows_before_r
         .conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT id FROM attachments WHERE id = $1",
+            "SELECT id FROM acta.attachments WHERE id = $1",
             [attachment_id.into()],
         ))
         .await
@@ -2664,7 +2664,7 @@ impl AttachmentStore for IntentCheckingStore {
             .conn
             .query_one_raw(Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
-                "SELECT EXISTS(SELECT 1 FROM attachment_write_intents) AS has_intent",
+                "SELECT EXISTS(SELECT 1 FROM acta.attachment_write_intents) AS has_intent",
                 [],
             ))
             .await

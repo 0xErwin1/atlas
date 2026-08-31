@@ -12,9 +12,10 @@ use sea_orm_migration::prelude::MigratorTrait;
 const ACTA_IDENTITY_WORKSPACES_TABLES: &[&str] = &["workspaces", "workspace_memberships"];
 
 /// `workspaces` and `workspace_memberships` must live in the `acta` schema
-/// after the migration; every other batch's table (still unbatched in this
-/// PR) stays in `public`, and `purge_operations` (Acta lifecycle, batch 5)
-/// stays in `public` too.
+/// after the migration. `documents` (S4 PR12, batch 2) has since moved to
+/// `acta` too, so it is no longer part of this test's "stays public" list;
+/// `boards` (batch 3) and `purge_operations` (batch 5) remain unbatched as of
+/// this PR and stay in `public`.
 #[tokio::test]
 async fn identity_workspaces_tables_move_to_the_acta_schema() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -27,7 +28,7 @@ async fn identity_workspaces_tables_move_to_the_acta_schema() {
 
     let all_names: Vec<String> = ACTA_IDENTITY_WORKSPACES_TABLES
         .iter()
-        .chain(["documents", "boards", "purge_operations"].iter())
+        .chain(["boards", "purge_operations"].iter())
         .map(|t| format!("'{t}'"))
         .collect();
 
@@ -56,7 +57,7 @@ async fn identity_workspaces_tables_move_to_the_acta_schema() {
         assert_eq!(schema, "acta", "expected {table} to live in acta");
     }
 
-    for table in ["documents", "boards", "purge_operations"] {
+    for table in ["boards", "purge_operations"] {
         let schema = rows
             .iter()
             .find(|r| r.table_name == table)
@@ -76,10 +77,12 @@ async fn identity_workspaces_tables_move_to_the_acta_schema() {
 /// recreating it, so every inbound foreign key must survive unchanged and
 /// still resolve to the moved table. Picks three representative FKs:
 /// `workspace_memberships_workspace_id_fkey` (the batch's own internal FK,
-/// both sides moved together), `documents_workspace_id_fkey` (an
-/// Acta-owned table still in `public`, referencing the now-moved
-/// `acta.workspaces`), and `workspace_memberships_user_id_fkey` (the
-/// pre-existing, already-qualified inbound edge to `custos.users`, S3),
+/// both sides moved together), `documents_workspace_id_fkey` (originally an
+/// Acta-owned table still in `public` referencing the now-moved
+/// `acta.workspaces`; `documents` itself has since moved to `acta` too in S4
+/// PR12, so this now also proves the PR11 move survives a later batch's
+/// migration landing on top of it), and `workspace_memberships_user_id_fkey`
+/// (the pre-existing, already-qualified inbound edge to `custos.users`, S3),
 /// rather than re-asserting all 31 inbound FKs the live schema carries.
 #[tokio::test]
 async fn inbound_foreign_keys_survive_the_schema_move() {
@@ -88,19 +91,27 @@ async fn inbound_foreign_keys_survive_the_schema_move() {
     #[derive(Debug, FromQueryResult)]
     struct Row {
         conname: String,
+        table_schema: String,
         table_name: String,
         ref_schema: String,
         ref_table: String,
     }
 
+    // Schema and name come from explicit pg_class/pg_namespace joins on both
+    // sides: `regclass::text` omits any schema on the search_path, so its
+    // rendering flips between bare and qualified depending on connection
+    // settings and cannot back a stable expectation table.
     let rows = Row::find_by_statement(Statement::from_string(
         sea_orm::DatabaseBackend::Postgres,
         r#"
         SELECT conname,
-               conrelid::regclass::text AS table_name,
+               nt.nspname AS table_schema,
+               tc.relname AS table_name,
                nc.nspname AS ref_schema,
-               confrelid::regclass::text AS ref_table
+               rc.relname AS ref_table
         FROM pg_constraint
+        JOIN pg_class tc ON tc.oid = conrelid
+        JOIN pg_namespace nt ON nt.oid = tc.relnamespace
         JOIN pg_class rc ON rc.oid = confrelid
         JOIN pg_namespace nc ON nc.oid = rc.relnamespace
         WHERE contype = 'f'
@@ -119,32 +130,30 @@ async fn inbound_foreign_keys_survive_the_schema_move() {
     let expectations = [
         (
             "workspace_memberships_workspace_id_fkey",
-            "acta.workspace_memberships",
-            "acta",
-            "workspaces",
+            ("acta", "workspace_memberships"),
+            ("acta", "workspaces"),
         ),
         (
             "documents_workspace_id_fkey",
-            "documents",
-            "acta",
-            "workspaces",
+            ("acta", "documents"),
+            ("acta", "workspaces"),
         ),
         (
             "workspace_memberships_user_id_fkey",
-            "acta.workspace_memberships",
-            "custos",
-            "users",
+            ("acta", "workspace_memberships"),
+            ("custos", "users"),
         ),
     ];
 
-    for (conname, table_name, ref_schema, ref_table) in expectations {
+    for (conname, (table_schema, table_name), (ref_schema, ref_table)) in expectations {
         let row = rows
             .iter()
             .find(|r| r.conname == conname)
             .unwrap_or_else(|| panic!("constraint {conname} not found after the schema move"));
+        assert_eq!(row.table_schema, table_schema);
         assert_eq!(row.table_name, table_name);
         assert_eq!(row.ref_schema, ref_schema);
-        assert_eq!(row.ref_table, format!("{ref_schema}.{ref_table}"));
+        assert_eq!(row.ref_table, ref_table);
     }
 
     db.teardown().await;

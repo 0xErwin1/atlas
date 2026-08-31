@@ -1024,7 +1024,7 @@ async fn typed_reference_count(db: &support::TestDb) -> i64 {
 }
 
 async fn document_link_count(db: &support::TestDb) -> i64 {
-    table_count(db, "document_links").await
+    table_count(db, "acta.document_links").await
 }
 
 async fn table_count(db: &support::TestDb, table: &str) -> i64 {
@@ -1058,7 +1058,7 @@ async fn digest_has_cleanup_intent(db: &support::TestDb, digest: &str) -> bool {
     db.conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT EXISTS(SELECT 1 FROM attachment_write_intents WHERE digest = $1) AS exists",
+            "SELECT EXISTS(SELECT 1 FROM acta.attachment_write_intents WHERE digest = $1) AS exists",
             [digest.into()],
         ))
         .await
@@ -1076,7 +1076,7 @@ async fn attachment_is_tombstoned(
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT count(*) = 1 AND bool_and(deleted_at IS NOT NULL) AS deleted \
-             FROM attachments WHERE comment_id = $1",
+             FROM acta.attachments WHERE comment_id = $1",
             [comment_id.0.into()],
         ))
         .await
@@ -1093,7 +1093,7 @@ async fn comment_attachment_id(
     db.conn()
         .query_one_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "SELECT id FROM attachments WHERE comment_id = $1",
+            "SELECT id FROM acta.attachments WHERE comment_id = $1",
             [comment_id.0.into()],
         ))
         .await

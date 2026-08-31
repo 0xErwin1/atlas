@@ -1016,7 +1016,7 @@ impl PgTaskRepo {
 
     /// Creates a task inside an existing transaction.
     ///
-    /// The readable-id counter update (`UPDATE projects SET next_task_number`)
+    /// The readable-id counter update (`UPDATE acta.projects SET next_task_number`)
     /// and the task insert both run on `conn`, which may be a
     /// `DatabaseTransaction` provided by `TaskService`.
     pub async fn create_in(
@@ -1028,7 +1028,7 @@ impl PgTaskRepo {
         let row = conn
             .query_one_raw(Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
-                "UPDATE projects \
+                "UPDATE acta.projects \
                  SET next_task_number = next_task_number + 1 \
                  WHERE id = $1 AND workspace_id = $2 \
                  RETURNING next_task_number, task_prefix",

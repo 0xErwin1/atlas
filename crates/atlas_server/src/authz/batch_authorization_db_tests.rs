@@ -219,7 +219,7 @@ async fn query_a_omits_dead_projects_and_unavailable_subjects() {
 
     db.conn
         .execute_unprepared(&format!(
-            "UPDATE projects SET deleted_at = now() WHERE id = '{}'",
+            "UPDATE acta.projects SET deleted_at = now() WHERE id = '{}'",
             ids.project_id
         ))
         .await
@@ -258,7 +258,7 @@ async fn query_a_omits_dead_projects_and_unavailable_subjects() {
 
     db.conn
         .execute_unprepared(&format!(
-            "UPDATE documents SET deleted_at = now() WHERE id = '{}'; \
+            "UPDATE acta.documents SET deleted_at = now() WHERE id = '{}'; \
              UPDATE tasks SET deleted_at = now() WHERE id = '{}'",
             ids.document_id, ids.task_id
         ))
@@ -603,7 +603,7 @@ async fn visibility_contribution_flows_only_through_the_project_segment() {
     let document_id = Uuid::now_v7();
     db.conn
         .execute_unprepared(&format!(
-            "INSERT INTO documents (id, workspace_id, project_id, title, slug, content, frontmatter, current_revision_seq, created_by_user_id, created_at, updated_at) \
+            "INSERT INTO acta.documents (id, workspace_id, project_id, title, slug, content, frontmatter, current_revision_seq, created_by_user_id, created_at, updated_at) \
              VALUES ('{document_id}', '{workspace_id}', '{document_project_id}', 'Document', 'document-{document_id}', '', '{{}}', 1, '{user_id}', now(), now())"
         ))
         .await
@@ -1072,11 +1072,11 @@ struct ProjectionSubjects {
 
 async fn seed_projection_subjects(conn: &DatabaseConnection, ids: ProjectionSubjects) {
     conn.execute_unprepared(&format!(
-        "INSERT INTO projects (id, workspace_id, name, slug, task_prefix, next_task_number, visibility, created_by_user_id, created_at, updated_at) \
+        "INSERT INTO acta.projects (id, workspace_id, name, slug, task_prefix, next_task_number, visibility, created_by_user_id, created_at, updated_at) \
          VALUES ('{}', '{}', 'Project', 'project-{}', 'AT', 1, 'workspace', '{}', now(), now()); \
-         INSERT INTO folders (id, workspace_id, project_id, name, created_by_user_id, created_at, updated_at) \
+         INSERT INTO acta.folders (id, workspace_id, project_id, name, created_by_user_id, created_at, updated_at) \
          VALUES ('{}', '{}', '{}', 'Folder', '{}', now(), now()); \
-         INSERT INTO documents (id, workspace_id, project_id, folder_id, title, slug, content, frontmatter, current_revision_seq, created_by_user_id, created_at, updated_at) \
+         INSERT INTO acta.documents (id, workspace_id, project_id, folder_id, title, slug, content, frontmatter, current_revision_seq, created_by_user_id, created_at, updated_at) \
          VALUES ('{}', '{}', '{}', '{}', 'Document', 'document-{}', '', '{{}}', 1, '{}', now(), now()); \
          INSERT INTO boards (id, workspace_id, project_id, name, created_by_user_id, created_at, updated_at) \
          VALUES ('{}', '{}', '{}', 'Board', '{}', now(), now()); \
@@ -1084,11 +1084,11 @@ async fn seed_projection_subjects(conn: &DatabaseConnection, ids: ProjectionSubj
          VALUES ('{}', '{}', '{}', 'Todo', 'a0', '{}', now(), now()); \
          INSERT INTO tasks (id, workspace_id, project_id, board_id, column_id, readable_id, title, description, labels, position_key, created_by_user_id, created_at, updated_at) \
          VALUES ('{}', '{}', '{}', '{}', '{}', 'AT-1', 'Task', '', ARRAY[]::text[], 'a0', '{}', now(), now()); \
-         INSERT INTO attachments (id, workspace_id, document_id, file_name, content_type, size_bytes, sha256, created_by_user_id, created_at, updated_at) \
+         INSERT INTO acta.attachments (id, workspace_id, document_id, file_name, content_type, size_bytes, sha256, created_by_user_id, created_at, updated_at) \
          VALUES ('{}', '{}', '{}', 'document.txt', 'text/plain', 1, 'document-digest', '{}', now(), now()); \
          INSERT INTO comments (id, workspace_id, task_id, body, created_by_user_id, created_at, updated_at) \
          VALUES ('{}', '{}', '{}', 'comment', '{}', now(), now()); \
-         INSERT INTO attachments (id, workspace_id, comment_id, file_name, content_type, size_bytes, sha256, created_by_user_id, created_at, updated_at) \
+         INSERT INTO acta.attachments (id, workspace_id, comment_id, file_name, content_type, size_bytes, sha256, created_by_user_id, created_at, updated_at) \
          VALUES ('{}', '{}', '{}', 'comment.txt', 'text/plain', 1, 'comment-digest', '{}', now(), now())",
         ids.project_id,
         ids.workspace_id,
@@ -1142,7 +1142,7 @@ async fn seed_minimal_document(
     document_id: Uuid,
 ) {
     conn.execute_unprepared(&format!(
-        "INSERT INTO documents (id, workspace_id, title, slug, content, frontmatter, current_revision_seq, created_by_user_id, created_at, updated_at) \
+        "INSERT INTO acta.documents (id, workspace_id, title, slug, content, frontmatter, current_revision_seq, created_by_user_id, created_at, updated_at) \
          VALUES ('{document_id}', '{workspace_id}', 'Document', 'document-{document_id}', '', '{{}}', 1, '{user_id}', now(), now())"
     ))
     .await
@@ -1177,7 +1177,7 @@ async fn seed_project(
     let hex = project_id.simple().to_string();
     let task_prefix = format!("P{}", hex[hex.len() - 5..].to_uppercase());
     conn.execute_unprepared(&format!(
-        "INSERT INTO projects (id, workspace_id, name, slug, task_prefix, next_task_number, visibility, visibility_role, created_by_user_id, created_at, updated_at) \
+        "INSERT INTO acta.projects (id, workspace_id, name, slug, task_prefix, next_task_number, visibility, visibility_role, created_by_user_id, created_at, updated_at) \
          VALUES ('{project_id}', '{workspace_id}', 'Project', 'project-{project_id}', '{task_prefix}', 1, '{visibility}', '{visibility_role}', '{creator_id}', now(), now())"
     ))
     .await
@@ -1200,7 +1200,7 @@ async fn seed_folder(
         .map(|id| format!("'{id}'"))
         .unwrap_or_else(|| "NULL".to_string());
     conn.execute_unprepared(&format!(
-        "INSERT INTO folders (id, workspace_id, project_id, parent_folder_id, name, created_by_user_id, created_at, updated_at) \
+        "INSERT INTO acta.folders (id, workspace_id, project_id, parent_folder_id, name, created_by_user_id, created_at, updated_at) \
          VALUES ('{folder_id}', '{workspace_id}', {project_value}, {parent_value}, '{name}', '{creator_id}', now(), now())"
     ))
     .await
@@ -1215,7 +1215,7 @@ async fn seed_document_in_folder(
     creator_id: Uuid,
 ) {
     conn.execute_unprepared(&format!(
-        "INSERT INTO documents (id, workspace_id, folder_id, title, slug, content, frontmatter, current_revision_seq, created_by_user_id, created_at, updated_at) \
+        "INSERT INTO acta.documents (id, workspace_id, folder_id, title, slug, content, frontmatter, current_revision_seq, created_by_user_id, created_at, updated_at) \
          VALUES ('{document_id}', '{workspace_id}', '{folder_id}', 'Document', 'document-{document_id}', '', '{{}}', 1, '{creator_id}', now(), now())"
     ))
     .await
