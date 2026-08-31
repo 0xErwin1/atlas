@@ -20,14 +20,12 @@ use crate::persistence::{
 };
 use atlas_postgres::db_err;
 
-/// Internal test seam for proving comment mutations commit as one transaction.
-#[doc(hidden)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CommentMutationFault {
-    AfterBodyWrite,
-    AfterGraphReplace,
-    AfterEventAppend,
-}
+// Relocated to `atlas_acta_postgres::repos::comment_links` (S4 PR8): it is
+// threaded into `PgCommentLinkRepo::replace_for_comment_with_fault_in` as a
+// parameter, so it must live in that crate. Re-exported (not just imported)
+// here so `services::mod.rs`'s existing `pub use
+// comment_service::CommentMutationFault` keeps resolving unchanged.
+pub use crate::persistence::repos::CommentMutationFault;
 
 /// Coordinates comment bodies, their derived graph, and comment-owned blob cleanup.
 #[derive(Clone)]

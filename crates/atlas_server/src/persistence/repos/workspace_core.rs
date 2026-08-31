@@ -8,13 +8,10 @@ use atlas_acta::entities::lifecycle::TrashKind;
 use atlas_acta::entities::workspace_core::Folder;
 use atlas_acta::entities::workspace_core::NewFolder;
 use atlas_acta::entities::workspace_core::NewProject;
-use atlas_acta::entities::workspace_core::NewPropertyDefinition;
 use atlas_acta::entities::workspace_core::Project;
-use atlas_acta::entities::workspace_core::PropertyDefinition;
 use atlas_acta::entities::workspace_core::UpdateProject;
 use atlas_acta::ids::FolderId;
 use atlas_acta::ids::ProjectId;
-use atlas_acta::ids::PropertyDefinitionId;
 use atlas_acta::permissions::Visibility;
 use atlas_acta::permissions::VisibilityRole;
 use atlas_core::error::DomainError;
@@ -27,15 +24,16 @@ use sea_orm::{
 };
 
 use crate::persistence::entities::workspace_core::{
-    folder, folder_from, project, project_from, property_definition, property_definition_from,
-    visibility_from_cols,
+    folder, folder_from, project, project_from, visibility_from_cols,
 };
 use crate::persistence::live_ancestors::{live_folder_chain, live_project};
 use crate::persistence::repos::{PgOutboxRepo, append_resource_deleted_in};
 
 pub use atlas_acta::ports::workspace_core::FolderRepo;
 pub use atlas_acta::ports::workspace_core::ProjectRepo;
-pub use atlas_acta::ports::workspace_core::PropertyDefinitionRepo;
+pub use atlas_acta_postgres::repos::workspace_core::{
+    PgPropertyDefinitionRepo, PropertyDefinitionRepo,
+};
 
 fn visibility_to_str(v: &Visibility) -> (&'static str, Option<&'static str>) {
     match v {
@@ -52,91 +50,6 @@ fn visibility_to_str(v: &Visibility) -> (&'static str, Option<&'static str>) {
             };
             (vis_str, Some(role_str))
         }
-    }
-}
-
-pub struct PgPropertyDefinitionRepo {
-    pub conn: DatabaseConnection,
-}
-
-#[async_trait]
-impl PropertyDefinitionRepo for PgPropertyDefinitionRepo {
-    async fn create(
-        &self,
-        ctx: &WorkspaceCtx,
-        new: NewPropertyDefinition,
-    ) -> Result<PropertyDefinition, DomainError> {
-        let created_by_user_id = user_id_from_actor(&ctx.actor);
-        let model = property_definition::ActiveModel {
-            id: Set(PropertyDefinitionId::new().0),
-            workspace_id: Set(ctx.workspace_id.0),
-            key: Set(new.key),
-            name: Set(new.name),
-            kind: Set(new.kind.as_str().to_string()),
-            options: Set(new.options),
-            applies_to: Set(new.applies_to.as_str().to_string()),
-            created_by_user_id: Set(created_by_user_id),
-            created_by_api_key_id: Set(None),
-            created_at: Set(Utc::now()),
-            updated_at: Set(Utc::now()),
-            deleted_at: Set(None),
-        };
-        model
-            .insert(&self.conn)
-            .await
-            .map_err(db_err)
-            .and_then(|m| property_definition_from(m).map_err(internal_err))
-    }
-
-    async fn find(
-        &self,
-        ctx: &WorkspaceCtx,
-        id: PropertyDefinitionId,
-    ) -> Result<Option<PropertyDefinition>, DomainError> {
-        property_definition::Entity::find_by_id(id.0)
-            .filter(property_definition::Column::WorkspaceId.eq(ctx.workspace_id.0))
-            .filter(property_definition::Column::DeletedAt.is_null())
-            .one(&self.conn)
-            .await
-            .map_err(db_err)?
-            .map(property_definition_from)
-            .transpose()
-            .map_err(internal_err)
-    }
-
-    async fn list(&self, ctx: &WorkspaceCtx) -> Result<Vec<PropertyDefinition>, DomainError> {
-        let rows = property_definition::Entity::find()
-            .filter(property_definition::Column::WorkspaceId.eq(ctx.workspace_id.0))
-            .filter(property_definition::Column::DeletedAt.is_null())
-            .all(&self.conn)
-            .await
-            .map_err(db_err)?;
-
-        rows.into_iter()
-            .map(|m| property_definition_from(m).map_err(internal_err))
-            .collect()
-    }
-
-    async fn soft_delete(
-        &self,
-        ctx: &WorkspaceCtx,
-        id: PropertyDefinitionId,
-    ) -> Result<(), DomainError> {
-        let row = property_definition::Entity::find_by_id(id.0)
-            .filter(property_definition::Column::WorkspaceId.eq(ctx.workspace_id.0))
-            .filter(property_definition::Column::DeletedAt.is_null())
-            .one(&self.conn)
-            .await
-            .map_err(db_err)?
-            .ok_or(DomainError::NotFound {
-                entity: "property_definition",
-                id: id.0,
-            })?;
-
-        let mut active = row.into_active_model();
-        active.deleted_at = Set(Some(Utc::now()));
-        active.update(&self.conn).await.map_err(db_err)?;
-        Ok(())
     }
 }
 
@@ -692,8 +605,4 @@ fn db_err(e: sea_orm::DbErr) -> DomainError {
     }
 
     internal_db_err(e)
-}
-
-fn internal_err(msg: String) -> DomainError {
-    DomainError::Internal { message: msg }
 }
