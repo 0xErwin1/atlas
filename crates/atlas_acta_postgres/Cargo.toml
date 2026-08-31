@@ -20,6 +20,9 @@ tracing.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true
+atlas_custos.workspace = true
+atlas_custos_postgres.workspace = true
+atlas_test_db = { path = "../atlas_test_db" }
 
 [lints]
 workspace = true

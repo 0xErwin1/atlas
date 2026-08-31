@@ -13,3 +13,4 @@
 //! in `atlas_server` (design D2/D4).
 
 pub mod entities;
+pub mod repos;
