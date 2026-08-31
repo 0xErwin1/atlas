@@ -103,7 +103,7 @@ use crate::{
     error::ApiError,
     persistence::repos::{
         ApiKeyRepo, AttachmentRepo, PgAttachmentLifecycle, PgAttachmentRepo, PgCommentLinkRepo,
-        PgPermissionGrantRepo, PgProjectRepo, ProjectRepo, UserRepo,
+        PgProjectRepo, ProjectRepo, UserRepo,
     },
     routes::comment_attachment_markdown,
     routes::comments::{
@@ -132,6 +132,7 @@ use atlas_acta_postgres::repos::workspace_core::{
     PgPropertyDefinitionRepo, PropertyDefinitionRepo,
 };
 use atlas_custos_postgres::repos::identity::{PgApiKeyRepo, PgUserRepo};
+use atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo;
 
 // ---------------------------------------------------------------------------
 // Shared path structs

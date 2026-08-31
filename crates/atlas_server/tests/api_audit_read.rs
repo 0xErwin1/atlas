@@ -27,7 +27,8 @@ use atlas_core::principal::UserId;
 use atlas_custos::entities::identity::ApiKeyType;
 use atlas_custos::entities::security_audit::NewSecurityAuditEvent;
 use atlas_custos::entities::security_audit::SecurityAction;
-use atlas_server::persistence::repos::{ApiKeyRepo, NewApiKey, PgSecurityAuditRepo};
+use atlas_custos_postgres::repos::security_audit::PgSecurityAuditRepo;
+use atlas_server::persistence::repos::{ApiKeyRepo, NewApiKey};
 use support::{TestDb, TestServer, login_root_user, login_user_with_workspace};
 
 // ─── helpers ─────────────────────────────────────────────────────────────────

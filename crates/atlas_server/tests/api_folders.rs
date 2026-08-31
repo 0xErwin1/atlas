@@ -804,11 +804,10 @@ async fn move_folder_cross_workspace_destination_returns_404() {
 async fn move_folder_underprivileged_destination_returns_404() {
     use atlas_acta_postgres::repos::identity::MembershipRepo;
     use atlas_api::dtos::LoginRequest;
+    use atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo;
     use atlas_server::auth::password;
     use atlas_server::authz::policy::NewPermissionGrant;
-    use atlas_server::persistence::repos::{
-        NewUser, PermissionGrantRepo, PgPermissionGrantRepo, UserRepo,
-    };
+    use atlas_server::persistence::repos::{NewUser, PermissionGrantRepo, UserRepo};
 
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;

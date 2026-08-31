@@ -3304,7 +3304,7 @@ async fn member_client_with_document_grant(
         .add(&ctx, user.id, MemberRole::Member)
         .await
         .expect("add membership");
-    let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
+    let grant_repo = atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo {
         conn: db.conn().clone(),
     };
     grant_repo
@@ -3532,7 +3532,7 @@ async fn viewer_cannot_create_document() {
     use atlas_acta::ids::ProjectId;
     use atlas_server::authz::ResourceRole;
     use atlas_server::authz::policy::NewPermissionGrant;
-    let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
+    let grant_repo = atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo {
         conn: db.conn().clone(),
     };
     grant_repo
@@ -3617,7 +3617,7 @@ async fn api_key_actor_write_sets_actor_type_api_key() {
     use atlas_core::principal::ApiKeyId;
     use atlas_server::authz::ResourceRole;
     use atlas_server::authz::policy::NewPermissionGrant;
-    let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
+    let grant_repo = atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo {
         conn: db.conn().clone(),
     };
     grant_repo
@@ -3710,7 +3710,7 @@ async fn member_client_with_optional_project_grant(
         .expect("add membership");
 
     if let (Some(pid), Some(role)) = (project_id, role) {
-        let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
+        let grant_repo = atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo {
             conn: db.conn().clone(),
         };
         grant_repo

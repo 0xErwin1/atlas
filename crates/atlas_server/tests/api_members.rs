@@ -12,10 +12,11 @@ use atlas_acta::actor::WorkspaceCtx;
 use atlas_acta::entities::identity::MemberRole;
 use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_client::{AtlasClient, ClientError};
+use atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo;
 use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::NewPermissionGrant;
 use atlas_server::persistence::repos::{
-    ApiKeyRepo, NewApiKey, NewUser, PermissionGrantRepo, PgPermissionGrantRepo, UserRepo,
+    ApiKeyRepo, NewApiKey, NewUser, PermissionGrantRepo, UserRepo,
 };
 use support::{TestDb, TestServer, login_user_with_workspace};
 
@@ -205,7 +206,7 @@ async fn list_members_returns_role_for_user_members_and_no_role_for_api_key_prin
     let member = add_member(&db, ws.id, "members-role-member", MemberRole::Admin).await;
 
     let agent = add_agent(&db, ws.id, owner_user.id, "role-ci-bot").await;
-    let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
+    let grant_repo = PgPermissionGrantRepo {
         conn: db.conn().clone(),
     };
     use atlas_server::authz::ResourceRole;

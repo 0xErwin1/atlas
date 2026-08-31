@@ -18,11 +18,10 @@ use atlas_api::dtos::{
     CreateProjectRequest,
     boards_tasks::{CreateBoardRequest, CreateColumnRequest, CreateTaskRequest},
 };
+use atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo;
 use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::NewPermissionGrant;
-use atlas_server::persistence::repos::{
-    NewUser, PermissionGrantRepo, PgPermissionGrantRepo, UserRepo,
-};
+use atlas_server::persistence::repos::{NewUser, PermissionGrantRepo, UserRepo};
 
 // ---------------------------------------------------------------------------
 // Seed helpers

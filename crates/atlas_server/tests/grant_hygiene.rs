@@ -22,9 +22,10 @@ use atlas_acta::ports::boards_tasks::BoardRepo;
 use atlas_acta::ports::documents::DocumentRepo;
 use atlas_acta::ports::workspace_core::FolderRepo;
 use atlas_acta::ports::workspace_core::ProjectRepo;
+use atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo;
 use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::NewPermissionGrant;
-use atlas_server::persistence::repos::{PermissionGrantRepo, PgPermissionGrantRepo};
+use atlas_server::persistence::repos::PermissionGrantRepo;
 
 async fn grant_row_count(db: &support::TestDb, resource_ref: &str) -> i64 {
     use sea_orm::FromQueryResult;

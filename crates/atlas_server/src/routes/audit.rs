@@ -17,11 +17,14 @@ use atlas_custos::entities::security_audit::SecurityAuditEvent;
 use crate::{
     authz::{RequireUserAdmin, WorkspaceOwnerOrAdmin},
     error::ApiError,
-    persistence::repos::{ApiKeyRepo, PgSecurityAuditRepo, SecurityAuditRepo, UserRepo},
+    persistence::repos::{ApiKeyRepo, UserRepo},
     routes::account_status,
     state::AppState,
 };
 use atlas_custos_postgres::repos::identity::{PgApiKeyRepo, PgUserRepo};
+use atlas_custos_postgres::repos::security_audit::{
+    PgSecurityAuditRepo, SecurityAuditRepoTrait as SecurityAuditRepo,
+};
 
 /// Query parameters shared by both audit endpoints.
 #[derive(Deserialize)]

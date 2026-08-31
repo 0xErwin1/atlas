@@ -623,7 +623,7 @@ async fn agent_with_all_capabilities_and_editor_grant_cannot_create_project_gran
     use atlas_core::principal::ApiKeyId;
     use atlas_server::authz::policy::NewPermissionGrant;
     use atlas_server::persistence::repos::PermissionGrantRepo;
-    let grant_repo = atlas_server::persistence::repos::PgPermissionGrantRepo {
+    let grant_repo = atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo {
         conn: db.conn().clone(),
     };
     grant_repo

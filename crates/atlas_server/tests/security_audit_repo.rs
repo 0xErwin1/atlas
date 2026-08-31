@@ -12,9 +12,10 @@ use atlas_core::principal::UserId;
 use atlas_custos::entities::security_audit::AuditFilters;
 use atlas_custos::entities::security_audit::NewSecurityAuditEvent;
 use atlas_custos::entities::security_audit::SecurityAction;
-use atlas_server::persistence::repos::{
-    ApiKeyRepo, NewApiKey, NewUser, PgSecurityAuditRepo, SecurityAuditRepo, UserRepo,
+use atlas_custos_postgres::repos::security_audit::{
+    PgSecurityAuditRepo, SecurityAuditRepoTrait as SecurityAuditRepo,
 };
+use atlas_server::persistence::repos::{ApiKeyRepo, NewApiKey, NewUser, UserRepo};
 use sea_orm::{ConnectionTrait, TransactionTrait};
 
 // ─── helpers ────────────────────────────────────────────────────────────────

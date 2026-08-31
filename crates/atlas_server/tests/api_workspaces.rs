@@ -13,10 +13,9 @@ use atlas_api::dtos::{
     AdminUpdateWorkspaceRequest, CreateGrantRequest, GrantPrincipal, UpdateWorkspaceRequest,
 };
 use atlas_client::ClientError;
+use atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo;
 use atlas_server::authz::policy::NewPermissionGrant;
-use atlas_server::persistence::repos::{
-    ApiKeyRepo, NewApiKey, PermissionGrantRepo, PgPermissionGrantRepo, UserRepo,
-};
+use atlas_server::persistence::repos::{ApiKeyRepo, NewApiKey, PermissionGrantRepo, UserRepo};
 use support::{TestDb, TestServer, login_user_with_workspace};
 
 #[tokio::test]

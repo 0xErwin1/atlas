@@ -23,11 +23,10 @@ use atlas_api::dtos::{
 };
 use atlas_client::ClientError;
 use atlas_core::principal::ApiKeyId;
+use atlas_custos_postgres::repos::permissions::{PgGroupRepo, PgPermissionGrantRepo};
 use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::NewPermissionGrant;
-use atlas_server::persistence::repos::{
-    NewUser, PermissionGrantRepo, PgGroupRepo, PgPermissionGrantRepo, UserRepo,
-};
+use atlas_server::persistence::repos::{NewUser, PermissionGrantRepo, UserRepo};
 use support::{TestDb, TestServer, login_user_with_workspace};
 use uuid::Uuid;
 

@@ -50,14 +50,15 @@ use crate::{
     authz::policy::{NewPermissionGrant, PermissionGrant, PermissionGrantId},
     error::ApiError,
     persistence::repos::{
-        ApiKeyRepo, NewApiKey, PermissionGrantRepo, PgPermissionGrantRepo, PgProjectRepo,
-        PgSecurityAuditRepo, ProjectRepo, UserRepo,
+        ApiKeyRepo, NewApiKey, PermissionGrantRepo, PgProjectRepo, ProjectRepo, UserRepo,
     },
     state::AppState,
 };
 use atlas_acta_postgres::repos::boards_tasks::PgTaskAssigneeRepo;
 use atlas_acta_postgres::repos::identity::{PgWorkspaceRepo, WorkspaceRepo};
 use atlas_custos_postgres::repos::identity::{PgApiKeyRepo, PgUserRepo};
+use atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo;
+use atlas_custos_postgres::repos::security_audit::PgSecurityAuditRepo;
 
 #[derive(Deserialize)]
 pub(crate) struct PaginationQuery {

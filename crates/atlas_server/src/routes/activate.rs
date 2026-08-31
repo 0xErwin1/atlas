@@ -24,12 +24,13 @@ use crate::{
         tokens::{generate_session_token, hash_token},
     },
     error::ApiError,
-    persistence::repos::{ActivationTokenRepo, PgSecurityAuditRepo, UserRepo},
+    persistence::repos::{ActivationTokenRepo, UserRepo},
     routes::auth::{build_session_cookie, user_to_dto},
     routes::validation::validate_password_strength,
     state::AppState,
 };
 use atlas_custos_postgres::repos::identity::{PgActivationTokenRepo, PgUserRepo};
+use atlas_custos_postgres::repos::security_audit::PgSecurityAuditRepo;
 
 #[utoipa::path(
     get,

@@ -14,10 +14,8 @@ use atlas_acta::ports::workspace_core::FolderRepo;
 use atlas_acta::ports::workspace_core::ProjectRepo;
 use atlas_custos::entities::security_audit::AuditFilters;
 use atlas_custos::ports::security_audit::SecurityAuditRepo;
-use atlas_server::{
-    persistence::repos::{PgAttachmentRepo, PgSecurityAuditRepo},
-    services::DocumentService,
-};
+use atlas_custos_postgres::repos::security_audit::PgSecurityAuditRepo;
+use atlas_server::{persistence::repos::PgAttachmentRepo, services::DocumentService};
 use serde_json::json;
 
 #[tokio::test]

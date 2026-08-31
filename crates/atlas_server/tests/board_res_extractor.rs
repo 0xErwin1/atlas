@@ -18,13 +18,13 @@ use atlas_acta::permissions::Visibility;
 use atlas_acta_postgres::repos::boards_tasks::{BoardRepo, PgBoardRepo};
 use atlas_acta_postgres::repos::identity::{MembershipRepo, PgMembershipRepo};
 use atlas_core::principal::Principal;
+use atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo;
 use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::{NewPermissionGrant, ResolutionInput, ResolutionQuery, resolve};
 use atlas_server::{
     authz::authorized::{BoardRes, ResolvedResource},
     persistence::repos::{
-        FolderRepo, PermissionGrantRepo, PgFolderRepo, PgPermissionGrantRepo, PgProjectRepo,
-        ProjectRepo, UserRepo,
+        FolderRepo, PermissionGrantRepo, PgFolderRepo, PgProjectRepo, ProjectRepo, UserRepo,
     },
 };
 

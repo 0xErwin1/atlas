@@ -13,14 +13,13 @@ use atlas_acta::permissions::ResourceRef;
 use atlas_acta_postgres::repos::documents::{DocumentRepo, PgDocumentRepo};
 use atlas_acta_postgres::repos::identity::{MembershipRepo, PgMembershipRepo};
 use atlas_core::principal::Principal;
+use atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo;
 use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::{NewPermissionGrant, ResolutionInput, ResolutionQuery, resolve};
 use atlas_server::{
     authz::authorized::{DocumentRes, DocumentSlugRes, FolderRes, ResolvedResource},
     error::ApiError,
-    persistence::repos::{
-        FolderRepo, PermissionGrantRepo, PgFolderRepo, PgPermissionGrantRepo, UserRepo,
-    },
+    persistence::repos::{FolderRepo, PermissionGrantRepo, PgFolderRepo, UserRepo},
 };
 
 fn doc_params(id: DocumentId) -> HashMap<String, String> {

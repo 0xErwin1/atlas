@@ -233,9 +233,10 @@ async fn grant_to_api_key(
     project_id: Option<atlas_acta::ids::ProjectId>,
     folder_id: Option<atlas_acta::ids::FolderId>,
 ) {
+    use atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo;
     use atlas_server::authz::ResourceRole;
     use atlas_server::authz::policy::NewPermissionGrant;
-    use atlas_server::persistence::repos::{PermissionGrantRepo, PgPermissionGrantRepo};
+    use atlas_server::persistence::repos::PermissionGrantRepo;
     let repo = PgPermissionGrantRepo {
         conn: db.conn().clone(),
     };

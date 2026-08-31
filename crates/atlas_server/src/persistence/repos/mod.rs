@@ -57,10 +57,9 @@ pub use workspace_attachments::PgWorkspaceAttachmentRepo;
 pub use workspace_core::{FolderRepo, PgFolderRepo, PgProjectRepo, ProjectRepo};
 
 pub use grant_diagnostics::count_orphaned_grants;
-pub use permissions::{PermissionGrantRepo, PgGrantHygiene, PgGroupRepo, PgPermissionGrantRepo};
+pub use permissions::PermissionGrantRepo;
 pub use security_audit::{
-    PgSecurityAuditRepo, SecurityAuditRepoTrait as SecurityAuditRepo, append_resource_deleted_in,
-    append_resource_purge_committed_in, append_resource_restored_in,
+    append_resource_deleted_in, append_resource_purge_committed_in, append_resource_restored_in,
 };
 #[allow(unreachable_pub)]
 mod saved_searches;

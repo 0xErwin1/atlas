@@ -1,5 +1,5 @@
 use crate::authz::ResourceRole;
-use crate::persistence::repos::{PermissionGrantRepo, PgPermissionGrantRepo};
+use crate::persistence::repos::PermissionGrantRepo;
 use atlas_acta::entities::identity::MemberRole;
 use atlas_acta::ids::WorkspaceId;
 use atlas_acta::permissions::ResourceRef;
@@ -9,6 +9,7 @@ use atlas_core::principal::UserId;
 use atlas_custos::capability::Capability;
 use atlas_custos::capability::CapabilityAction;
 use atlas_custos::capability::CapabilityFamily;
+use atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo;
 use std::sync::{Arc, Mutex};
 
 use sea_orm::{ConnectionTrait, Database, DatabaseConnection};

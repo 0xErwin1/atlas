@@ -34,10 +34,7 @@ use super::policy::{ChainSegment, ResolutionInput, ResolutionQuery, ResourceChai
 use crate::{
     auth::middleware::Principal as MiddlewarePrincipal,
     error::ApiError,
-    persistence::repos::{
-        ApiKeyRepo, PermissionGrantRepo, PgPermissionGrantRepo, PgProjectRepo, ProjectRepo,
-        UserRepo,
-    },
+    persistence::repos::{ApiKeyRepo, PermissionGrantRepo, PgProjectRepo, ProjectRepo, UserRepo},
     state::AppState,
 };
 use atlas_acta_postgres::entities::{
@@ -50,6 +47,7 @@ use atlas_acta_postgres::repos::identity::{
     MembershipRepo, PgMembershipRepo, PgWorkspaceRepo, WorkspaceRepo,
 };
 use atlas_custos_postgres::repos::identity::{PgApiKeyRepo, PgUserRepo};
+use atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo;
 
 pub trait MinRole: Send + Sync {
     /// The minimum effective role a human (or group) principal must hold on the

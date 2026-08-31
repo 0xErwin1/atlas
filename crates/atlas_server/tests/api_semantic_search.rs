@@ -23,9 +23,10 @@ use atlas_api::{
 };
 use atlas_core::error::DomainError;
 use atlas_custos_postgres::repos::identity::PgApiKeyRepo;
+use atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo;
 use atlas_server::{
     embeddings::DeterministicEmbeddingProvider,
-    persistence::repos::{PermissionGrantRepo, PgPermissionGrantRepo, PgSemanticIndexWriter},
+    persistence::repos::{PermissionGrantRepo, PgSemanticIndexWriter},
 };
 use sea_orm::ConnectionTrait;
 use serde_json::Value;

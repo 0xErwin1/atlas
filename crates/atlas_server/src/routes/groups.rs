@@ -17,13 +17,10 @@ use atlas_custos::entities::security_audit::SecurityAction;
 
 use atlas_custos::ports::group_repo::GroupRepo;
 
-use crate::{
-    authz::WorkspaceOwnerOrAdmin,
-    error::ApiError,
-    persistence::repos::{PgGroupRepo, PgSecurityAuditRepo},
-    state::AppState,
-};
+use crate::{authz::WorkspaceOwnerOrAdmin, error::ApiError, state::AppState};
 use atlas_acta_postgres::repos::identity::{MembershipRepo, PgMembershipRepo};
+use atlas_custos_postgres::repos::permissions::PgGroupRepo;
+use atlas_custos_postgres::repos::security_audit::PgSecurityAuditRepo;
 
 #[utoipa::path(
     post,

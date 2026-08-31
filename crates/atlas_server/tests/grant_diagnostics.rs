@@ -11,11 +11,10 @@ use atlas_acta::permissions::Visibility;
 use atlas_acta::permissions::VisibilityRole;
 use atlas_acta::permissions::resource_ref_codec;
 use atlas_acta::ports::workspace_core::ProjectRepo;
+use atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo;
 use atlas_server::authz::ResourceRole;
 use atlas_server::authz::policy::NewPermissionGrant;
-use atlas_server::persistence::repos::{
-    PermissionGrantRepo, PgPermissionGrantRepo, count_orphaned_grants,
-};
+use atlas_server::persistence::repos::{PermissionGrantRepo, count_orphaned_grants};
 use sea_orm::ConnectionTrait;
 
 #[tokio::test]

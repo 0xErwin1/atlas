@@ -21,6 +21,7 @@ use atlas_acta_postgres::repos::identity::{
     MembershipRepo, PgMembershipRepo, PgWorkspaceRepo, Workspace, WorkspaceRepo,
 };
 use atlas_custos_postgres::repos::identity::{PgApiKeyRepo, PgUserRepo};
+use atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo;
 
 /// Proof that the request's principal is an authenticated, non-disabled workspace member.
 ///
@@ -196,7 +197,7 @@ impl FromRequestParts<AppState> for WorkspaceAccess {
             })?
             .ok_or(ApiError::NotFound)?;
 
-        let grant_repo = crate::persistence::repos::PgPermissionGrantRepo {
+        let grant_repo = PgPermissionGrantRepo {
             conn: (*state.db).clone(),
         };
 
