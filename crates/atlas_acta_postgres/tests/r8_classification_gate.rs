@@ -13,10 +13,14 @@
 //! something CI enforces rather than a claim in a design document.
 //!
 //! Zero SET SCHEMA migrations land in this PR: `CLASSIFIED_ACTA_TABLES`
-//! records the full D1 36-table inventory, but at this point in the
-//! migration history every one of those 36 tables still lives in `public`
-//! (PR11 onward moves them one batch at a time). The gate therefore accepts
-//! Acta-classified tables in either `public` or `acta`, while Custos- and
+//! records the full D1 36-table inventory. At the time this gate first
+//! landed (PR10), every one of those 36 tables still lived in `public`, so
+//! the gate temporarily accepted Acta-classified tables in either `public`
+//! or `acta`. PR11–PR15 have since moved all 36 tables into `acta` in five
+//! batches, so PR16 tightens `Disposition::Acta`'s expected schema down to
+//! `acta` only — the permissive `public` fallback is retired now that the
+//! move it accommodated is complete, matching the epic-level "no functional
+//! table outside an owned schema" success criterion. Custos- and
 //! platform-classified tables — already moved by S3 and PR9 respectively —
 //! must already live in their owning schema. `seaql_migrations` is the one
 //! `historical` table: sea-orm's own bookkeeping table, owned by no product.
@@ -28,8 +32,8 @@ use sea_orm::{ConnectionTrait, FromQueryResult, Statement};
 /// migration history.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Disposition {
-    /// Owned by Acta. Still `public` until its PR11–PR15 batch lands, then
-    /// `acta`.
+    /// Owned by Acta, moved into `acta` by the PR11–PR15 SET SCHEMA
+    /// batches.
     Acta,
     /// Owned by Custos, moved to `custos` by S3.
     Custos,
@@ -141,7 +145,7 @@ fn classify(table_name: &str) -> Option<Disposition> {
 
 fn expected_schemas(disposition: Disposition) -> &'static [&'static str] {
     match disposition {
-        Disposition::Acta => &["public", "acta"],
+        Disposition::Acta => &["acta"],
         Disposition::Custos => &["custos"],
         Disposition::Platform => &["platform"],
         Disposition::Historical => &["public"],
@@ -243,6 +247,37 @@ async fn an_unclassified_table_fails_the_gate() {
             .iter()
             .any(|violation| violation.contains("unclassified_probe_table")),
         "expected the gate to flag `unclassified_probe_table` as unclassified, got:\n{}",
+        violations.join("\n")
+    );
+
+    db.teardown().await.expect("teardown");
+}
+
+/// PR16: with `Disposition::Acta` tightened to `&["acta"]` only, an
+/// Acta-classified table that turns up in `public` — the schema the
+/// permissive pre-tightening gate used to accept — must now fail the gate.
+/// Proves the tightening actually narrows the accepted schema set rather
+/// than being a no-op comment change.
+#[tokio::test]
+async fn a_misplaced_acta_table_in_public_fails_the_tightened_gate() {
+    let db = TestDb::create().await.expect("TestDb::create");
+
+    // `workspaces` is already correctly classified and lives in `acta`; add
+    // a second, wrongly-placed table with the same name in `public` to
+    // simulate a regression that reintroduces an Acta table outside `acta`.
+    db.conn()
+        .execute_unprepared("CREATE TABLE public.workspaces (id INT)")
+        .await
+        .expect("create a misplaced public.workspaces table");
+
+    let rows = live_tables(&db).await;
+    let violations = classification_violations(&rows);
+
+    assert!(
+        violations
+            .iter()
+            .any(|violation| violation.starts_with("public.workspaces:")),
+        "expected the tightened gate to flag `public.workspaces` as misplaced, got:\n{}",
         violations.join("\n")
     );
 

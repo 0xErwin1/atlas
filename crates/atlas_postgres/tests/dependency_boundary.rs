@@ -22,6 +22,7 @@ use std::process::Command;
 /// transitively.
 const FORBIDDEN: &[&str] = &[
     "atlas_acta",
+    "atlas_acta_postgres",
     "atlas_custos",
     "atlas_api",
     "atlas_server",

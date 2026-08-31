@@ -25,7 +25,12 @@ use std::process::Command;
 
 /// Product/application crates `atlas_custos_postgres` must never reach,
 /// directly or transitively.
-const FORBIDDEN: &[&str] = &["atlas_acta", "atlas_api", "atlas_server"];
+const FORBIDDEN: &[&str] = &[
+    "atlas_acta",
+    "atlas_acta_postgres",
+    "atlas_api",
+    "atlas_server",
+];
 
 #[test]
 fn atlas_custos_postgres_dependency_closure_excludes_forbidden_crates() {
