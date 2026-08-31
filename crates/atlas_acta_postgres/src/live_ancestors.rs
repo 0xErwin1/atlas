@@ -41,7 +41,7 @@ pub fn live_comment_chain(comment_id: &str) -> SimpleExpr {
 pub fn board_chain_is_live_sql(board_id: &str) -> String {
     format!(
         "NOT EXISTS (\
-            SELECT 1 FROM boards live_board \
+            SELECT 1 FROM acta.boards live_board \
             WHERE live_board.id = {board_id} \
               AND (\
                     live_board.deleted_at IS NOT NULL \
@@ -73,7 +73,7 @@ pub fn document_chain_is_live_sql(document_id: &str) -> String {
 pub fn task_chain_is_live_sql(task_id: &str) -> String {
     format!(
         "NOT EXISTS (\
-            SELECT 1 FROM tasks live_task \
+            SELECT 1 FROM acta.tasks live_task \
             WHERE live_task.id = {task_id} \
               AND (\
                     live_task.deleted_at IS NOT NULL \
@@ -87,7 +87,7 @@ pub fn task_chain_is_live_sql(task_id: &str) -> String {
 pub fn task_ancestor_chain_is_live_sql(task_id: &str) -> String {
     format!(
         "NOT EXISTS (\
-            SELECT 1 FROM tasks live_task \
+            SELECT 1 FROM acta.tasks live_task \
             WHERE live_task.id = {task_id} \
               AND NOT ({board_live})\
         )",

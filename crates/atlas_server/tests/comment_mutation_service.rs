@@ -312,7 +312,7 @@ async fn task_comment_mutations_keep_markdown_verbatim_and_replace_only_derived_
         .query_one_raw(Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
             format!(
-                "SELECT count(*) AS count FROM task_references WHERE source_task_id = '{}'",
+                "SELECT count(*) AS count FROM acta.task_references WHERE source_task_id = '{}'",
                 parent.id.0
             ),
         ))
@@ -1020,7 +1020,7 @@ async fn comment_event_kinds(
 }
 
 async fn typed_reference_count(db: &support::TestDb) -> i64 {
-    table_count(db, "task_references").await
+    table_count(db, "acta.task_references").await
 }
 
 async fn document_link_count(db: &support::TestDb) -> i64 {

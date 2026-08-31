@@ -320,7 +320,7 @@ async fn add_column_recovers_after_resequence() {
         .execute_raw(Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
             format!(
-                "UPDATE board_columns SET position_key = '{collision}' WHERE id = '{}'",
+                "UPDATE acta.board_columns SET position_key = '{collision}' WHERE id = '{}'",
                 right.id.0
             ),
         ))

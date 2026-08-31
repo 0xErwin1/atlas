@@ -1934,8 +1934,8 @@ async fn project_purge_correlates_each_descendant_digest_once_and_removes_every_
                 (SELECT count(*)::bigint FROM acta.projects WHERE workspace_id = $1) AS projects, \
                 (SELECT count(*)::bigint FROM acta.folders WHERE workspace_id = $1) AS folders, \
                 (SELECT count(*)::bigint FROM acta.documents WHERE workspace_id = $1) AS documents, \
-                (SELECT count(*)::bigint FROM boards WHERE workspace_id = $1) AS boards, \
-                (SELECT count(*)::bigint FROM tasks WHERE workspace_id = $1) AS tasks, \
+                (SELECT count(*)::bigint FROM acta.boards WHERE workspace_id = $1) AS boards, \
+                (SELECT count(*)::bigint FROM acta.tasks WHERE workspace_id = $1) AS tasks, \
                 (SELECT count(*)::bigint FROM comments WHERE workspace_id = $1) AS comments, \
                 (SELECT count(*)::bigint FROM acta.attachments WHERE workspace_id = $1) AS attachments, \
                 (SELECT count(*)::bigint FROM acta.comment_attachment_drafts WHERE workspace_id = $1) AS drafts, \

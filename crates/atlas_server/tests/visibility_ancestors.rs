@@ -211,8 +211,8 @@ async fn assert_descendants_remain_live(
             "SELECT \
                 (SELECT deleted_at IS NULL FROM acta.folders WHERE id = $1) AS folder_live, \
                 (SELECT deleted_at IS NULL FROM acta.documents WHERE id = $2) AS document_live, \
-                (SELECT deleted_at IS NULL FROM boards WHERE id = $3) AS board_live, \
-                (SELECT deleted_at IS NULL FROM tasks WHERE id = $4) AS task_live",
+                (SELECT deleted_at IS NULL FROM acta.boards WHERE id = $3) AS board_live, \
+                (SELECT deleted_at IS NULL FROM acta.tasks WHERE id = $4) AS task_live",
             [
                 folder_id.into(),
                 document_id.into(),

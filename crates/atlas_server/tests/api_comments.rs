@@ -290,7 +290,7 @@ async fn task_backlinks_omit_comment_sources_with_deleted_parents() {
 
     db.conn()
         .execute_unprepared(&format!(
-            "INSERT INTO comment_links (id, workspace_id, comment_id, target_task_id, created_at) VALUES ('{}', '{}', '{}', '{}', now()); UPDATE tasks SET deleted_at = now() WHERE readable_id = '{}'",
+            "INSERT INTO comment_links (id, workspace_id, comment_id, target_task_id, created_at) VALUES ('{}', '{}', '{}', '{}', now()); UPDATE acta.tasks SET deleted_at = now() WHERE readable_id = '{}'",
             uuid::Uuid::now_v7(), ws.id.0, comment.id, target_task.id, source_readable_id,
         ))
         .await
@@ -1161,7 +1161,7 @@ async fn full_feeds_redact_deleted_targets_for_human_and_api_key_viewers() {
 
     db.conn()
         .execute_unprepared(&format!(
-            "UPDATE acta.documents SET deleted_at = now() WHERE id = '{}'; UPDATE tasks SET deleted_at = now() WHERE id = '{}'; UPDATE acta.attachments SET deleted_at = now() WHERE id IN ('{direct_attachment}', '{comment_attachment}')",
+            "UPDATE acta.documents SET deleted_at = now() WHERE id = '{}'; UPDATE acta.tasks SET deleted_at = now() WHERE id = '{}'; UPDATE acta.attachments SET deleted_at = now() WHERE id IN ('{direct_attachment}', '{comment_attachment}')",
             target_document.id, target_task.id,
         ))
         .await

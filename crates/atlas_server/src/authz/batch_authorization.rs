@@ -376,7 +376,7 @@ WITH RECURSIVE requested AS (
     UNION ALL
     SELECT requested.ordinal, 'tasks'::text, NULL, tasks.id
     FROM requested
-    JOIN tasks ON requested.kind = 'task'
+    JOIN acta.tasks ON requested.kind = 'task'
         AND tasks.id = requested.id
         AND tasks.workspace_id = $1::uuid
         AND tasks.deleted_at IS NULL
@@ -399,7 +399,7 @@ WITH RECURSIVE requested AS (
         AND attachments.workspace_id = $1::uuid
         AND attachments.deleted_at IS NULL
         AND num_nonnulls(attachments.document_id, attachments.task_id, attachments.comment_id) = 1
-    JOIN tasks ON tasks.id = attachments.task_id
+    JOIN acta.tasks ON tasks.id = attachments.task_id
         AND tasks.workspace_id = $1::uuid
         AND tasks.deleted_at IS NULL
     UNION ALL
@@ -429,7 +429,7 @@ WITH RECURSIVE requested AS (
         AND comments.workspace_id = $1::uuid
         AND comments.deleted_at IS NULL
         AND num_nonnulls(comments.document_id, comments.task_id) = 1
-    JOIN tasks ON tasks.id = comments.task_id
+    JOIN acta.tasks ON tasks.id = comments.task_id
         AND tasks.workspace_id = $1::uuid
         AND tasks.deleted_at IS NULL
     UNION ALL
@@ -451,7 +451,7 @@ WITH RECURSIVE requested AS (
         AND comments.workspace_id = $1::uuid
         AND comments.deleted_at IS NULL
         AND num_nonnulls(comments.document_id, comments.task_id) = 1
-    JOIN tasks ON tasks.id = comments.task_id
+    JOIN acta.tasks ON tasks.id = comments.task_id
         AND tasks.workspace_id = $1::uuid
         AND tasks.deleted_at IS NULL
 ), folder_ancestry AS (
@@ -499,7 +499,7 @@ WITH RECURSIVE requested AS (
            )) END
            || jsonb_build_array(jsonb_build_object('resource', 'acta::workspace::' || $1::text, 'visibility', NULL)) AS chain
     FROM subject_targets
-    JOIN tasks ON tasks.id = subject_targets.task_id
+    JOIN acta.tasks ON tasks.id = subject_targets.task_id
     LEFT JOIN acta.projects ON projects.id = tasks.project_id
         AND projects.workspace_id = $1::uuid
         AND projects.deleted_at IS NULL

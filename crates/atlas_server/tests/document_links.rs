@@ -310,7 +310,7 @@ async fn task_references_are_ordered_by_created_at_then_id() {
     db.conn()
         .execute_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "UPDATE task_references SET created_at = $1 WHERE id = $2",
+            "UPDATE acta.task_references SET created_at = $1 WHERE id = $2",
             [(now + TimeDelta::seconds(1)).into(), later.id.0.into()],
         ))
         .await
@@ -318,7 +318,7 @@ async fn task_references_are_ordered_by_created_at_then_id() {
     db.conn()
         .execute_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "UPDATE task_references SET created_at = $1 WHERE id = $2",
+            "UPDATE acta.task_references SET created_at = $1 WHERE id = $2",
             [now.into(), earlier.id.0.into()],
         ))
         .await

@@ -12,10 +12,10 @@ use sea_orm_migration::prelude::MigratorTrait;
 const ACTA_IDENTITY_WORKSPACES_TABLES: &[&str] = &["workspaces", "workspace_memberships"];
 
 /// `workspaces` and `workspace_memberships` must live in the `acta` schema
-/// after the migration. `documents` (S4 PR12, batch 2) has since moved to
-/// `acta` too, so it is no longer part of this test's "stays public" list;
-/// `boards` (batch 3) and `purge_operations` (batch 5) remain unbatched as of
-/// this PR and stay in `public`.
+/// after the migration. `documents` (S4 PR12, batch 2) and `boards` (S4 PR13,
+/// batch 3) have since moved to `acta` too, so neither is part of this
+/// test's "stays public" list anymore; `purge_operations` (batch 5) remains
+/// unbatched as of this PR and stays in `public`.
 #[tokio::test]
 async fn identity_workspaces_tables_move_to_the_acta_schema() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -28,7 +28,7 @@ async fn identity_workspaces_tables_move_to_the_acta_schema() {
 
     let all_names: Vec<String> = ACTA_IDENTITY_WORKSPACES_TABLES
         .iter()
-        .chain(["boards", "purge_operations"].iter())
+        .chain(["purge_operations"].iter())
         .map(|t| format!("'{t}'"))
         .collect();
 
@@ -57,18 +57,17 @@ async fn identity_workspaces_tables_move_to_the_acta_schema() {
         assert_eq!(schema, "acta", "expected {table} to live in acta");
     }
 
-    for table in ["boards", "purge_operations"] {
-        let schema = rows
-            .iter()
-            .find(|r| r.table_name == table)
-            .unwrap_or_else(|| panic!("table {table} not found"))
-            .table_schema
-            .clone();
-        assert_eq!(
-            schema, "public",
-            "expected {table} to stay in public until its own batch lands"
-        );
-    }
+    let table = "purge_operations";
+    let schema = rows
+        .iter()
+        .find(|r| r.table_name == table)
+        .unwrap_or_else(|| panic!("table {table} not found"))
+        .table_schema
+        .clone();
+    assert_eq!(
+        schema, "public",
+        "expected {table} to stay in public until its own batch lands"
+    );
 
     db.teardown().await;
 }

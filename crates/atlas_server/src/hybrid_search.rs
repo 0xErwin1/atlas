@@ -190,7 +190,7 @@ pub async fn load_updated_at(
         r#"SELECT 'document' AS kind, id, updated_at FROM acta.documents
            WHERE workspace_id = $1 AND id IN ({documents_in})
            UNION ALL
-           SELECT 'task' AS kind, id, updated_at FROM tasks
+           SELECT 'task' AS kind, id, updated_at FROM acta.tasks
            WHERE workspace_id = $1 AND id IN ({tasks_in})"#,
         documents_in = uuid_list(documents),
         tasks_in = uuid_list(tasks),

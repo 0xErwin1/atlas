@@ -316,7 +316,7 @@ fn build_task_arm(perm: &str, filters: &Filters) -> String {
             t.readable_id AS owner_task_readable_id,
             p.slug AS owner_project_slug
         {source}
-        JOIN tasks t ON t.id = COALESCE(a.task_id, c.task_id) AND t.workspace_id = $1
+        JOIN acta.tasks t ON t.id = COALESCE(a.task_id, c.task_id) AND t.workspace_id = $1
         LEFT JOIN acta.projects p ON p.id = t.project_id AND p.workspace_id = $1 AND p.deleted_at IS NULL
         WHERE {base_where}
           AND t.deleted_at IS NULL

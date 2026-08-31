@@ -45,7 +45,7 @@ pub async fn count_orphaned_grants(conn: &impl ConnectionTrait) -> Result<u64, D
                 ))
            OR (g.resource_ref LIKE 'acta::board::%'
                 AND NOT EXISTS (
-                    SELECT 1 FROM boards b
+                    SELECT 1 FROM acta.boards b
                     WHERE b.id = substring(g.resource_ref FROM 14)::uuid
                 ))
         "#,

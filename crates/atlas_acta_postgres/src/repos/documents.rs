@@ -1298,7 +1298,7 @@ impl DocumentLinkRepo for PgDocumentLinkRepo {
                   dl.target_document_id AS link_target_document_id, dl.target_task_id AS link_target_task_id, \
                   dl.target_attachment_id AS link_target_attachment_id, dl.target_title AS link_target_title, \
                   dl.created_at AS link_created_at \
-                  FROM tasks t \
+                  FROM acta.tasks t \
                   LEFT JOIN acta.document_links dl ON dl.workspace_id = t.workspace_id AND dl.source_task_id = t.id \
                   WHERE t.id = $1 AND t.workspace_id = $2 AND t.deleted_at IS NULL \
                     AND ({}) \

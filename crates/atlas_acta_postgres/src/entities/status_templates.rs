@@ -10,7 +10,7 @@ pub mod status_template {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "workspace_status_templates")]
+    #[sea_orm(schema_name = "acta", table_name = "workspace_status_templates")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
@@ -33,7 +33,7 @@ pub mod platform_status_template {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "platform_status_templates")]
+    #[sea_orm(schema_name = "acta", table_name = "platform_status_templates")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,

@@ -154,7 +154,7 @@ async fn task_assignee_row_count(db: &support::TestDb, key_id: ApiKeyId) -> i64 
 
     Row::find_by_statement(Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
-        "SELECT COUNT(*) AS count FROM task_assignees WHERE assignee_api_key_id = $1",
+        "SELECT COUNT(*) AS count FROM acta.task_assignees WHERE assignee_api_key_id = $1",
         [key_id.0.into()],
     ))
     .one(db.conn())
