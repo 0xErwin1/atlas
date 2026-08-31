@@ -316,13 +316,15 @@ async fn down_restores_target_columns_and_survives_a_forward_only_orphan() {
         .await
         .expect("seed post-migration grant rows, including one orphaned by a never-live target");
 
-    // Reverts two steps, not one: S3d appended `m20260830_000051_custos_set_schema`
-    // after this migration in `custos_new()`, so "the last applied migration" is
-    // now the schema move rather than the O1 migration under test here. Reverting
-    // two steps undoes the schema move first (moving the eight tables back to
-    // `public`) and then O1's own down(), landing on the same pre-O1,
-    // unqualified-table-name state this test asserted before S3d existed.
-    ComposedMigrator::down(db.conn(), Some(2))
+    // Reverts three steps, not one: S3d appended `m20260830_000051_custos_set_schema`
+    // and S4 PR9 appended `m20260831_000052_acta_platform_ui_state` after this
+    // migration in `custos_new()`/`acta_new()`, so "the last applied migration"
+    // is now the `platform.ui_state` move rather than the O1 migration under
+    // test here. Reverting three steps undoes the `platform.ui_state` move,
+    // then the Custos schema move (moving the eight tables back to `public`),
+    // then O1's own down(), landing on the same pre-O1, unqualified-table-name
+    // state this test asserted before S3d/S4 existed.
+    ComposedMigrator::down(db.conn(), Some(3))
         .await
         .expect("down survives an orphaned grant");
 

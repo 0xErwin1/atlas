@@ -9,9 +9,12 @@
 //! `atlas_server`.
 //!
 //! Entities, repos, and migrations move here incrementally across the S4
-//! slice's PR chain; `platform.*` (`user_ui_state`) is out of scope and stays
-//! in `atlas_server` (design D2/D4).
+//! slice's PR chain. `platform.*` (`user_ui_state`/`ui_state`) does not get
+//! its own crate: its entity and repo stay in `atlas_server` (design D2/D4),
+//! but its `SET SCHEMA`/rename migration is authored here (D3), composed
+//! into `acta_new()` ahead of every Acta `SET SCHEMA` batch.
 
 pub mod entities;
 pub mod live_ancestors;
+pub mod migrations;
 pub mod repos;

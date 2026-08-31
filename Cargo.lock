@@ -843,6 +843,7 @@ dependencies = [
 name = "atlas_test_db"
 version = "0.0.0"
 dependencies = [
+ "atlas_acta_postgres",
  "atlas_custos_postgres",
  "migration",
  "sea-orm",

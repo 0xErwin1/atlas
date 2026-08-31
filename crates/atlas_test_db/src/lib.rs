@@ -6,8 +6,9 @@ use std::net::IpAddr;
 use url::{Host, Url};
 use uuid::Uuid;
 
-/// Composes the historical migration block with Custos-owned migrations
-/// (D5), mirroring `atlas_server::persistence::migrator::ComposedMigrator`.
+/// Composes the historical migration block with Custos- and Acta-owned
+/// migrations (D5/S4 §D3), mirroring
+/// `atlas_server::persistence::migrator::ComposedMigrator`.
 ///
 /// Duplicated here rather than depending on `atlas_server` directly: `atlas_server`
 /// already dev-depends on this crate for its own test fixtures, and this crate is
@@ -21,6 +22,7 @@ impl MigratorTrait for ComposedTestMigrator {
     fn migrations() -> Vec<Box<dyn MigrationTrait>> {
         let mut migrations = migration::Migrator::migrations();
         migrations.extend(atlas_custos_postgres::migrations::custos_new());
+        migrations.extend(atlas_acta_postgres::migrations::acta_new());
         migrations
     }
 }
