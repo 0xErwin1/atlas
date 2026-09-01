@@ -94,32 +94,24 @@ async fn acta_protected_routes_reject_unauthenticated_requests() {
         );
     }
 
-    // The one public acta route (the GitHub ingest webhook): must not
-    // require authentication, and must be mounted (PATCH-405 probe, mirrors
-    // `api_custos_router_parity.rs`'s own mount check for its public routes).
+    // The one public acta route (the GitHub ingest webhook) sits outside
+    // `require_authn` but authenticates itself: the handler answers 401 for a
+    // missing or malformed `x-hub-signature-256` header by its own contract
+    // (`routes/integrations_ingest.rs`), so a 401 from an unsigned request is
+    // the handler speaking, not the middleware, and says nothing about the
+    // layer stack either way. Only the mount probe applies here (PATCH-405,
+    // mirrors `api_custos_router_parity.rs`'s mount check for its public
+    // routes).
     let public_routes = atlas_server::router_audit::acta_route_paths();
     assert_eq!(
         public_routes.len(),
         1,
         "acta has exactly one public route (the GitHub ingest webhook)"
     );
-    let (public_method, public_path_template) = *public_routes
+    let (_, public_path_template) = *public_routes
         .first()
         .expect("acta has exactly one public route");
     let public_path = substitute_placeholders(public_path_template);
-
-    let status = send(
-        &http,
-        axum_method(public_method),
-        server.base_url(),
-        &public_path,
-    )
-    .await;
-    assert_ne!(
-        status, 401,
-        "public route {public_method:?} {public_path_template} must not require authentication, \
-         got 401"
-    );
 
     let mount_status = send(
         &http,
