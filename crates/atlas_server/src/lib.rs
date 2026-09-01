@@ -134,18 +134,6 @@ use crate::state::AppState;
 
 /// Builds the full application router with all routes and the middleware stack.
 pub fn app(state: AppState) -> Router {
-    // burst_size(5) and per_second(1) are non-zero, so finish() always returns Some here.
-    #[allow(clippy::expect_used)]
-    let login_config = {
-        let mut b = GovernorConfigBuilder::default();
-        let cfg = b
-            .per_second(1)
-            .burst_size(5)
-            .finish()
-            .expect("governor config");
-        std::sync::Arc::new(cfg)
-    };
-
     // Total-body cap for the attachment upload route. The route previously used
     // `DefaultBodyLimit::disable()`, so the only guard was the per-chunk streaming
     // cap inside the handler's `file` part — any other multipart part streamed
@@ -161,53 +149,10 @@ pub fn app(state: AppState) -> Router {
     .unwrap_or(usize::MAX);
 
     let protected = Router::new()
-        .route(
-            "/api/auth/logout",
-            axum::routing::post(routes::auth::logout),
-        )
-        .route("/api/auth/me", get(routes::auth::me))
-        .route(
-            "/api/auth/change-password",
-            axum::routing::post(routes::auth::change_password),
-        )
-        // Self-service profile (any authenticated user)
-        .route(
-            "/api/users/me",
-            axum::routing::patch(routes::auth::update_me),
-        )
         .route("/api/admin/trash", get(routes::trash::list_trash))
         .route("/api/admin/trash/restore", axum::routing::post(routes::trash::restore_trash))
         .route("/api/admin/trash/purge", axum::routing::post(routes::trash::purge_trash))
         .route("/api/admin/trash/purges/{operation_id}", get(routes::trash::get_purge_status))
-        // Users (root-only)
-        .route(
-            "/api/users",
-            axum::routing::post(routes::users::create_user).get(routes::users::list_users),
-        )
-        .route(
-            "/api/users/{user_id}/disable",
-            axum::routing::post(routes::users::disable_user),
-        )
-        .route(
-            "/api/users/{user_id}/enable",
-            axum::routing::post(routes::users::enable_user),
-        )
-        .route(
-            "/api/users/{user_id}/reset-password",
-            axum::routing::post(routes::users::reset_password),
-        )
-        .route(
-            "/api/users/{user_id}/activation-link",
-            axum::routing::post(routes::users::regenerate_activation_link),
-        )
-        .route(
-            "/api/users/{user_id}/system-admin",
-            axum::routing::post(routes::users::set_system_admin),
-        )
-        .route(
-            "/api/users/{user_id}/memberships",
-            get(routes::users::list_user_memberships),
-        )
         // Workspace
         .route(
             "/api/workspaces",
@@ -228,8 +173,6 @@ pub fn app(state: AppState) -> Router {
             axum::routing::patch(routes::workspaces::admin_update_workspace)
                 .delete(routes::workspaces::admin_delete_workspace),
         )
-        // Admin security audit log (root/system_admin only)
-        .route("/api/admin/audit", get(routes::audit::list_platform_audit))
         // Atlas-wide default statuses (seed source for new workspaces)
         .route(
             "/api/admin/status-templates",
@@ -243,25 +186,6 @@ pub fn app(state: AppState) -> Router {
             )
             .delete(routes::platform_status_templates::delete_platform_status_template),
         )
-        // API keys — top-level (user-owned, workspace-independent)
-        .route(
-            "/api/api-keys",
-            axum::routing::post(routes::api_keys::create_user_api_key)
-                .get(routes::api_keys::list_user_api_keys),
-        )
-        .route(
-            "/api/api-keys/{key_id}",
-            axum::routing::delete(routes::api_keys::revoke_user_api_key)
-                .patch(routes::api_keys::update_user_api_key),
-        )
-        .route(
-            "/api/api-keys/{key_id}/grants",
-            axum::routing::get(routes::api_keys::list_api_key_grants),
-        )
-        .route(
-            "/api/api-keys/{key_id}/grants/{grant_id}",
-            axum::routing::delete(routes::api_keys::delete_api_key_grant),
-        )
         // Projects
         .route(
             "/api/workspaces/{ws}/projects",
@@ -273,26 +197,6 @@ pub fn app(state: AppState) -> Router {
             get(routes::projects::get_project)
                 .patch(routes::projects::update_project)
                 .delete(routes::projects::delete_project),
-        )
-        // Project grants
-        .route(
-            "/api/workspaces/{ws}/projects/{project_slug}/grants",
-            axum::routing::post(routes::grants::create_project_grant)
-                .get(routes::grants::list_project_grants),
-        )
-        .route(
-            "/api/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}",
-            axum::routing::delete(routes::grants::delete_project_grant),
-        )
-        // Workspace grants
-        .route(
-            "/api/workspaces/{ws}/grants",
-            axum::routing::post(routes::grants::create_workspace_grant)
-                .get(routes::grants::list_workspace_grants),
-        )
-        .route(
-            "/api/workspaces/{ws}/grants/{grant_id}",
-            axum::routing::delete(routes::grants::delete_workspace_grant),
         )
         // Workspace members (principals addressable by a grant)
         .route(
@@ -307,24 +211,6 @@ pub fn app(state: AppState) -> Router {
             "/api/workspaces/{ws}/members/{user_id}",
             axum::routing::patch(routes::members::update_member_role)
                 .delete(routes::members::remove_member),
-        )
-        // Groups (workspace principal groups)
-        .route(
-            "/api/workspaces/{ws}/groups",
-            axum::routing::post(routes::groups::create_group).get(routes::groups::list_groups),
-        )
-        .route(
-            "/api/workspaces/{ws}/groups/{group_id}",
-            axum::routing::delete(routes::groups::delete_group),
-        )
-        .route(
-            "/api/workspaces/{ws}/groups/{group_id}/members",
-            axum::routing::post(routes::groups::add_group_member)
-                .get(routes::groups::list_group_members),
-        )
-        .route(
-            "/api/workspaces/{ws}/groups/{group_id}/members/{user_id}",
-            axum::routing::delete(routes::groups::remove_group_member),
         )
         // Tags (workspace tag registry)
         .route(
@@ -564,11 +450,6 @@ pub fn app(state: AppState) -> Router {
             "/api/workspaces/{ws}/activity",
             axum::routing::get(routes::tasks::list_workspace_activity),
         )
-        // Workspace security audit log (owner/admin only)
-        .route(
-            "/api/workspaces/{ws}/audit",
-            axum::routing::get(routes::audit::list_workspace_audit),
-        )
         // Documents
         .route(
             "/api/workspaces/{ws}/projects/{project_slug}/documents",
@@ -765,20 +646,9 @@ pub fn app(state: AppState) -> Router {
         ))
         .with_state(state.clone());
 
-    // burst_size(5) and per_second(1) are non-zero, so finish() always returns Some here.
-    #[allow(clippy::expect_used)]
-    let activate_config = {
-        let mut b = GovernorConfigBuilder::default();
-        let cfg = b
-            .per_second(1)
-            .burst_size(5)
-            .finish()
-            .expect("governor config");
-        std::sync::Arc::new(cfg)
-    };
-
     // Per-IP governor for the public, unauthenticated integration-ingest route.
-    // Same construction as the login/activate limiters; the quota is a little
+    // Same construction as the login/activate limiters (now built inside
+    // `routes::custos::router`'s `public` sub-module); the quota is a little
     // higher because a single GitHub source IP fans out deliveries for many
     // repos/workspaces, and a rejected delivery is retried by GitHub.
     // burst_size and per_second are non-zero, so finish() always returns Some here.
@@ -794,16 +664,6 @@ pub fn app(state: AppState) -> Router {
     };
 
     let public = Router::new()
-        .route(
-            "/api/auth/login",
-            axum::routing::post(routes::auth::login).layer(GovernorLayer::new(login_config)),
-        )
-        .route(
-            "/api/activate/{token}",
-            get(routes::activate::get_activation_info)
-                .post(routes::activate::post_activate)
-                .layer(GovernorLayer::new(activate_config)),
-        )
         // External event ingestion (public; HMAC-verified by the extractor,
         // per-IP rate-limited to bound abuse of this unauthenticated route)
         .route(
@@ -815,14 +675,16 @@ pub fn app(state: AppState) -> Router {
         .merge(routes::openapi::scalar_router())
         .with_state(state.clone());
 
-    // `platform`'s six routes (health/ready/version/meta/ui-state) are
-    // assembled by `routes::platform::router`, which reproduces the exact
-    // public/protected split and layer stack they carried inline above
-    // (D6, `v2-e3-s2-router-audit` PR2) — merging an already-layered router
-    // is the same operation as merging two already-layered routers.
+    // `platform`'s six routes and `custos`'s 35 routes are assembled by
+    // `routes::platform::router` (PR2) and `routes::custos::router` (PR3),
+    // each of which reproduces the exact public/protected split and layer
+    // stack (including custos's login/activate route-specific governors)
+    // they carried inline above — merging an already-layered router is the
+    // same operation as merging two already-layered routers (D6).
     let router = public
         .merge(protected)
-        .merge(routes::platform::router(state));
+        .merge(routes::platform::router(state.clone()))
+        .merge(routes::custos::router(state));
     apply_layers(router)
 }
 
