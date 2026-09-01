@@ -1,3 +1,4 @@
+pub(crate) mod acta;
 pub(crate) mod activate;
 pub(crate) mod api_keys;
 pub(crate) mod attachments;

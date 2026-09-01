@@ -243,17 +243,32 @@ pub fn router(state: AppState) -> Router {
 }
 
 /// The union of both sub-routers' declared routes. Order-independent: the
-/// audits below compare sets, never sequences.
+/// audits below compare sets, never sequences. Only this module's own
+/// bidirectional/declare-and-verify audit tests call the full union today
+/// (T4.9's mount assertion deliberately uses the narrower
+/// `public_declared_routes()` below instead); PR5's T5.7 crate-wide sweep is
+/// this function's next production caller.
 #[allow(
     dead_code,
-    reason = "only this module's own audit tests call declared_routes() so far; a \
-              crate-wide audit spanning every component's declared_routes() is PR5's \
-              T5.7, not this PR"
+    reason = "only this module's own #[cfg(test)] audit tests call the full \
+              declared_routes() union outside a test build; PR5's T5.7 crate-wide \
+              sweep is its next production caller"
 )]
 pub(crate) fn declared_routes() -> Vec<AuditedRoute> {
     let mut routes = public::declared_routes();
     routes.extend(protected::declared_routes());
     routes
+}
+
+/// Just `login`/`activate` (`public`, above), read by
+/// `router_audit::custos_route_paths()` for T4.9's per-component mount
+/// assertion: unlike the full `declared_routes()` union, every route here is
+/// safe to probe with an unauthenticated request and a foreign method,
+/// since neither sits behind `require_authn` — a probe against a
+/// `protected` route would get 401 from that layer before ever reaching the
+/// method dispatch that would otherwise answer 405.
+pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
+    public::declared_routes()
 }
 
 #[cfg(test)]

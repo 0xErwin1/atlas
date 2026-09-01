@@ -281,6 +281,58 @@ macro_rules! component_routes {
     (@method options) => { ::atlas_core::registry::HttpMethod::Options };
 }
 
+/// Test-only surface for T4.9's per-component mount assertion
+/// (`tests/api_router_mount_assertion.rs`): each component's declared
+/// `(method, path)` set for its `public` (no-auth-layer) sub-router only —
+/// deliberately narrower than the component's full `declared_routes()`
+/// union, which also contains routes wrapped by `require_authn`. Probing an
+/// authenticated route with an unauthenticated, wrong-method request gets
+/// 401 from that layer before axum's own per-path method dispatch ever runs
+/// (`Router::layer` wraps each mounted path's whole `MethodRouter`,
+/// including its method-not-allowed fallback — confirmed against axum
+/// 0.8.9's `path_router.rs::PathRouter::layer`), so only a component's
+/// genuinely public routes are safe candidates for the mount probe's
+/// unauthenticated 405 proof.
+///
+/// Genuinely `pub`, unlike everything else in this module: integration
+/// tests under `tests/` compile as a separate crate that only sees this
+/// crate's public API, never `pub(crate)` items — `#[cfg(test)]` does not
+/// apply to them either, since Cargo builds the library normally (not with
+/// `--test`) when linking it into an integration test binary. `AuditedRoute`
+/// and `DeclaredScope` stay crate-private (D5's extraction machinery is not
+/// this test's concern); only the `(method, path)` pair is exposed, which is
+/// all a mount probe needs. Mirrors `routes::openapi::openapi()`'s existing
+/// precedent of a small `pub fn` carved out purely "for test assertions."
+pub fn platform_route_paths() -> Vec<(atlas_core::registry::HttpMethod, &'static str)> {
+    component_route_paths(&crate::routes::platform::public_declared_routes())
+}
+
+/// See [`platform_route_paths`].
+pub fn custos_route_paths() -> Vec<(atlas_core::registry::HttpMethod, &'static str)> {
+    component_route_paths(&crate::routes::custos::public_declared_routes())
+}
+
+/// See [`platform_route_paths`].
+pub fn acta_route_paths() -> Vec<(atlas_core::registry::HttpMethod, &'static str)> {
+    component_route_paths(&crate::routes::acta::public_declared_routes())
+}
+
+/// Test-only surface for `tests/api_acta_router_parity.rs`'s data-driven
+/// unauthenticated-401 proof: acta's declared `(method, path)` set for every
+/// route behind `require_authn` (`acta::protected_declared_routes()`) — the
+/// complement of [`acta_route_paths`], which only exposes acta's one public
+/// route. Same `pub fn`-for-tests precedent as [`platform_route_paths`].
+pub fn acta_protected_route_paths() -> Vec<(atlas_core::registry::HttpMethod, &'static str)> {
+    component_route_paths(&crate::routes::acta::protected_declared_routes())
+}
+
+fn component_route_paths(routes: &[AuditedRoute]) -> Vec<(HttpMethod, &'static str)> {
+    routes
+        .iter()
+        .map(|route| (route.method, route.path))
+        .collect()
+}
+
 /// Test-only support shared by every per-component audit test in this crate
 /// (this module's own scratch fixtures, plus `routes::platform`'s real
 /// audit in PR2 and its PR3/PR4 successors).
