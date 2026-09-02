@@ -101,6 +101,19 @@ pub enum CompleteOutcome {
     Superseded,
 }
 
+/// The outcome of [`PgIdempotencyRepo::release`]'s generation-guarded
+/// delete.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReleaseOutcome {
+    /// The `in_flight` row was deleted at the claimed `generation`; the
+    /// next attempt with the same key re-executes as `Fresh`.
+    Released,
+    /// No row matched `id` and `generation`: reclaimed or completed by a
+    /// later caller, which now owns the row. Never treat this as a signal
+    /// to retry the delete.
+    Superseded,
+}
+
 #[derive(Debug, FromQueryResult)]
 struct ExistingRow {
     state: String,
@@ -251,6 +264,40 @@ impl PgIdempotencyRepo {
             Ok(CompleteOutcome::Stored)
         } else {
             Ok(CompleteOutcome::Superseded)
+        }
+    }
+
+    /// Deletes an `in_flight` row after its handler returned a 5xx, for the
+    /// `component_routes!` `idempotent`-but-not-`one_shot` routes (D6 scoped
+    /// correction, `R4-5xx-release-duplicates-one-shot-jobs`): unlike
+    /// [`Self::complete`], which stores the response for replay, this
+    /// discards the row outright so an immediate retry with the same key
+    /// re-executes the handler as `Fresh` instead of replaying a stored
+    /// failure. Correct for an ordinary `create_*` route, whose duplicate a
+    /// domain uniqueness check already catches on that re-execution; wrong
+    /// for a one-shot side effect with no such check
+    /// (`router_audit::ONE_SHOT_IDEMPOTENT_ROUTES`, which stays on
+    /// [`Self::complete`] instead). Generation-guarded exactly like
+    /// [`Self::complete`]: a mismatch means a later caller already reclaimed
+    /// or completed the row, which this call must never disturb.
+    pub async fn release(&self, id: Uuid, generation: Uuid) -> Result<ReleaseOutcome, DomainError> {
+        let deleted = self
+            .conn
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                DELETE FROM platform.idempotency_keys
+                WHERE id = $1 AND state = 'in_flight' AND generation = $2
+                "#,
+                [id.into(), generation.into()],
+            ))
+            .await
+            .map_err(db_err)?;
+
+        if deleted.rows_affected() == 1 {
+            Ok(ReleaseOutcome::Released)
+        } else {
+            Ok(ReleaseOutcome::Superseded)
         }
     }
 

@@ -26,6 +26,9 @@ pub struct AppState {
     pub db: Arc<DatabaseConnection>,
     pub session_ttl_hours: i64,
     pub session_max_ttl_hours: i64,
+    /// Response-retention TTL for the `Idempotency-Key` store (D7, `v2-e3-s3`
+    /// PR4), alongside `session_ttl_hours`. Default 24h.
+    pub idempotency_retention_hours: i64,
     pub cookie_secure: bool,
     pub anchor_interval: u32,
     pub attachments: Arc<dyn AttachmentStore>,
@@ -51,6 +54,7 @@ impl AppState {
     pub async fn new(db: DatabaseConnection, cfg: &ServerConfig) -> Result<Self, anyhow::Error> {
         let session_ttl_hours = read_env_i64("ATLAS_SESSION_TTL_HOURS", 168);
         let session_max_ttl_hours = read_env_i64("ATLAS_SESSION_MAX_TTL_HOURS", 720);
+        let idempotency_retention_hours = read_env_i64("ATLAS_IDEMPOTENCY_RETENTION_HOURS", 24);
 
         let cookie_secure = std::env::var("ATLAS_COOKIE_SECURE")
             .map(|s| s != "false" && s != "0")
@@ -77,6 +81,7 @@ impl AppState {
             db: Arc::new(db),
             session_ttl_hours,
             session_max_ttl_hours,
+            idempotency_retention_hours,
             cookie_secure,
             anchor_interval,
             attachments,
@@ -116,6 +121,7 @@ impl AppState {
             db: Arc::new(db),
             session_ttl_hours: 24,
             session_max_ttl_hours: 72,
+            idempotency_retention_hours: 24,
             cookie_secure: false,
             anchor_interval,
             attachments: Arc::new(attachments),
