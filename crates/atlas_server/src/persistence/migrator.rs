@@ -58,4 +58,20 @@ mod tests {
             "the composed list must be exactly historical() ++ custos_new() ++ acta_new(), in order"
         );
     }
+
+    /// T3.1: `acta_new()` must carry the idempotency-keys migration as one
+    /// additional entry, without disturbing the historical/custos/acta
+    /// three-segment shape the previous test already pins.
+    #[test]
+    fn acta_new_contains_the_idempotency_keys_migration() {
+        let acta_names: Vec<_> = atlas_acta_postgres::migrations::acta_new()
+            .iter()
+            .map(|m| m.name().to_string())
+            .collect();
+
+        assert!(
+            acta_names.contains(&"m20260906_000058_acta_platform_idempotency_keys".to_string()),
+            "acta_new() must contain the idempotency-keys migration, got: {acta_names:?}"
+        );
+    }
 }
