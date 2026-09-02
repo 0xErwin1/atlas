@@ -73,8 +73,10 @@
 )]
 
 use axum::Router;
+use axum::routing::get;
 
 use crate::router_audit::AuditedRoute;
+use crate::routes::openapi;
 use crate::state::AppState;
 
 /// Unauthenticated routes (`lib.rs`'s `public` router, pre-PR4:
@@ -87,11 +89,10 @@ mod public {
 
     use atlas_core::registry::HttpMethod;
     use axum::Router;
-    use axum::routing::get;
     use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 
     use crate::router_audit::{AuditedRoute, DeclaredScope};
-    use crate::routes::{integrations_ingest, openapi};
+    use crate::routes::integrations_ingest;
     use crate::state::AppState;
 
     pub fn router(state: AppState) -> Router {
@@ -113,12 +114,10 @@ mod public {
 
         Router::new()
             .route(
-                "/api/workspaces/{ws}/integrations/{integration}/events",
+                "/workspaces/{ws}/integrations/{integration}/events",
                 axum::routing::post(integrations_ingest::ingest_github_event)
                     .layer(GovernorLayer::new(ingest_config)),
             )
-            .route("/openapi.json", get(openapi::openapi_json))
-            .merge(openapi::scalar_router())
             .with_state(state)
     }
 
@@ -134,7 +133,7 @@ mod public {
     pub(crate) fn declared_routes() -> Vec<AuditedRoute> {
         vec![AuditedRoute {
             method: HttpMethod::Post,
-            path: "/api/workspaces/{ws}/integrations/{integration}/events",
+            path: "/workspaces/{ws}/integrations/{integration}/events",
             scope: DeclaredScope::Unauthenticated,
             // D8: HMAC-verified, no Principal from require_authn — no
             // principal_id to scope dedup by.
@@ -167,91 +166,91 @@ mod workspace_admin {
 
     crate::component_routes! {
         state: AppState;
-        "/api/admin/trash" => [ get(trash::list_trash, exempt) ];
-        "/api/admin/trash/restore" => [ post(trash::restore_trash, exempt) ];
-        "/api/admin/trash/purge" => [ post(trash::purge_trash, exempt, idempotent, one_shot) ];
-        "/api/admin/trash/purges/{operation_id}" => [ get(trash::get_purge_status, exempt) ];
-        "/api/workspaces" => [
+        "/admin/trash" => [ get(trash::list_trash, exempt) ];
+        "/admin/trash/restore" => [ post(trash::restore_trash, exempt) ];
+        "/admin/trash/purge" => [ post(trash::purge_trash, exempt, idempotent, one_shot) ];
+        "/admin/trash/purges/{operation_id}" => [ get(trash::get_purge_status, exempt) ];
+        "/workspaces" => [
             post(workspaces::create_workspace, exempt, idempotent),
             get(workspaces::list_workspaces, exempt)
         ];
-        "/api/workspaces/{ws}" => [
+        "/workspaces/{ws}" => [
             get(workspaces::get_workspace, exempt),
             patch(workspaces::update_workspace, exempt)
         ];
-        "/api/admin/workspaces" => [ get(workspaces::admin_list_workspaces, exempt) ];
-        "/api/admin/workspaces/{ws}" => [
+        "/admin/workspaces" => [ get(workspaces::admin_list_workspaces, exempt) ];
+        "/admin/workspaces/{ws}" => [
             patch(workspaces::admin_update_workspace, exempt),
             delete(workspaces::admin_delete_workspace, exempt)
         ];
-        "/api/admin/status-templates" => [
+        "/admin/status-templates" => [
             get(platform_status_templates::list_platform_status_templates, exempt),
             post(platform_status_templates::create_platform_status_template, exempt, idempotent)
         ];
-        "/api/admin/status-templates/{template_id}" => [
+        "/admin/status-templates/{template_id}" => [
             patch(platform_status_templates::update_platform_status_template, exempt),
             delete(platform_status_templates::delete_platform_status_template, exempt)
         ];
-        "/api/workspaces/{ws}/projects" => [
+        "/workspaces/{ws}/projects" => [
             post(projects::create_project, idempotent),
             get(projects::list_projects, exempt)
         ];
-        "/api/workspaces/{ws}/projects/{project_slug}" => [
+        "/workspaces/{ws}/projects/{project_slug}" => [
             get(projects::get_project),
             patch(projects::update_project),
             delete(projects::delete_project)
         ];
-        "/api/workspaces/{ws}/members" => [
+        "/workspaces/{ws}/members" => [
             get(members::list_workspace_members, exempt),
             post(members::add_member, exempt, idempotent)
         ];
-        "/api/workspaces/{ws}/assignable-users" => [
+        "/workspaces/{ws}/assignable-users" => [
             get(members::list_assignable_users, exempt)
         ];
-        "/api/workspaces/{ws}/members/{user_id}" => [
+        "/workspaces/{ws}/members/{user_id}" => [
             patch(members::update_member_role, exempt),
             delete(members::remove_member, exempt)
         ];
-        "/api/workspaces/{ws}/tags" => [
+        "/workspaces/{ws}/tags" => [
             get(tags::list_tags),
             post(tags::create_tag, idempotent)
         ];
-        "/api/workspaces/{ws}/tags/used" => [ get(tags::list_used_labels) ];
-        "/api/workspaces/{ws}/tags/{tag_id}" => [
+        "/workspaces/{ws}/tags/used" => [ get(tags::list_used_labels) ];
+        "/workspaces/{ws}/tags/{tag_id}" => [
             patch(tags::patch_tag),
             delete(tags::delete_tag)
         ];
-        "/api/workspaces/{ws}/status-templates" => [
+        "/workspaces/{ws}/status-templates" => [
             get(status_templates::list_status_templates),
             post(status_templates::create_status_template, idempotent)
         ];
-        "/api/workspaces/{ws}/status-templates/{template_id}" => [
+        "/workspaces/{ws}/status-templates/{template_id}" => [
             patch(status_templates::update_status_template),
             delete(status_templates::delete_status_template)
         ];
-        "/api/workspaces/{ws}/boards/{board_id}/apply-status-templates" => [
+        "/workspaces/{ws}/boards/{board_id}/apply-status-templates" => [
             post(status_templates::apply_status_templates)
         ];
-        "/api/workspaces/{ws}/property-definitions" => [
+        "/workspaces/{ws}/property-definitions" => [
             get(property_definitions::list_property_definitions),
             post(property_definitions::create_property_definition, idempotent)
         ];
-        "/api/workspaces/{ws}/property-definitions/{property_definition_id}" => [
+        "/workspaces/{ws}/property-definitions/{property_definition_id}" => [
             delete(property_definitions::delete_property_definition)
         ];
-        "/api/workspaces/{ws}/saved-searches" => [
+        "/workspaces/{ws}/saved-searches" => [
             get(saved_searches::list_saved_searches, exempt),
             post(saved_searches::create_saved_search, exempt, idempotent)
         ];
-        "/api/workspaces/{ws}/saved-searches/{id}" => [
+        "/workspaces/{ws}/saved-searches/{id}" => [
             patch(saved_searches::rename_saved_search, exempt),
             delete(saved_searches::delete_saved_search, exempt)
         ];
-        "/api/workspaces/{ws}/task-views" => [
+        "/workspaces/{ws}/task-views" => [
             get(task_views::list_task_views, exempt),
             post(task_views::create_task_view, exempt, idempotent)
         ];
-        "/api/workspaces/{ws}/task-views/{id}" => [
+        "/workspaces/{ws}/task-views/{id}" => [
             get(task_views::get_task_view, exempt),
             patch(task_views::update_task_view, exempt),
             delete(task_views::delete_task_view, exempt)
@@ -271,107 +270,107 @@ mod boards_tasks {
 
     crate::component_routes! {
         state: AppState;
-        "/api/workspaces/{ws}/projects/{project_slug}/boards" => [
+        "/workspaces/{ws}/projects/{project_slug}/boards" => [
             post(boards::create_board, idempotent),
             get(boards::list_boards)
         ];
-        "/api/workspaces/{ws}/boards/{board_id}" => [
+        "/workspaces/{ws}/boards/{board_id}" => [
             get(boards::get_board),
             patch(boards::update_board),
             delete(boards::delete_board)
         ];
-        "/api/workspaces/{ws}/boards/{board_id}/move" => [ patch(boards::move_board) ];
-        "/api/workspaces/{ws}/boards/{board_id}/archive" => [ post(boards::archive_board) ];
-        "/api/workspaces/{ws}/boards/{board_id}/unarchive" => [ post(boards::unarchive_board) ];
-        "/api/workspaces/{ws}/boards/{board_id}/columns" => [
+        "/workspaces/{ws}/boards/{board_id}/move" => [ patch(boards::move_board) ];
+        "/workspaces/{ws}/boards/{board_id}/archive" => [ post(boards::archive_board) ];
+        "/workspaces/{ws}/boards/{board_id}/unarchive" => [ post(boards::unarchive_board) ];
+        "/workspaces/{ws}/boards/{board_id}/columns" => [
             post(boards::create_column, idempotent),
             get(boards::list_columns)
         ];
-        "/api/workspaces/{ws}/boards/{board_id}/columns/{column_id}" => [
+        "/workspaces/{ws}/boards/{board_id}/columns/{column_id}" => [
             patch(boards::update_column),
             delete(boards::delete_column)
         ];
-        "/api/workspaces/{ws}/boards/{board_id}/tasks" => [
+        "/workspaces/{ws}/boards/{board_id}/tasks" => [
             post(tasks::create_task, idempotent),
             get(tasks::list_tasks)
         ];
-        "/api/workspaces/{ws}/boards/{board_id}/presence" => [
+        "/workspaces/{ws}/boards/{board_id}/presence" => [
             post(presence::heartbeat),
             delete(presence::leave)
         ];
-        "/api/workspaces/{ws}/documents/{slug}/presence" => [
+        "/workspaces/{ws}/documents/{slug}/presence" => [
             post(presence::document_heartbeat),
             delete(presence::document_leave)
         ];
-        "/api/workspaces/{ws}/tasks" => [ get(tasks::list_workspace_tasks, exempt) ];
-        "/api/workspaces/{ws}/tasks/{readable_id}" => [
+        "/workspaces/{ws}/tasks" => [ get(tasks::list_workspace_tasks, exempt) ];
+        "/workspaces/{ws}/tasks/{readable_id}" => [
             get(tasks::get_task),
             patch(tasks::update_task),
             delete(tasks::delete_task)
         ];
-        "/api/workspaces/{ws}/tasks/{readable_id}/move" => [ post(tasks::move_task) ];
-        "/api/workspaces/{ws}/tasks/{readable_id}/assignees" => [
+        "/workspaces/{ws}/tasks/{readable_id}/move" => [ post(tasks::move_task) ];
+        "/workspaces/{ws}/tasks/{readable_id}/assignees" => [
             get(tasks::list_assignees),
             post(tasks::add_assignee, idempotent)
         ];
-        "/api/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}" => [
+        "/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}" => [
             delete(tasks::remove_assignee)
         ];
-        "/api/workspaces/{ws}/tasks/{readable_id}/references" => [
+        "/workspaces/{ws}/tasks/{readable_id}/references" => [
             get(tasks::list_references),
             post(tasks::create_reference, idempotent)
         ];
-        "/api/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}" => [
+        "/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}" => [
             delete(tasks::delete_reference)
         ];
-        "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content" => [
+        "/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content" => [
             get(tasks::download_attachment)
         ];
-        "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}" => [
+        "/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}" => [
             patch(tasks::rename_attachment),
             delete(tasks::delete_attachment)
         ];
-        "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts" => [
+        "/workspaces/{ws}/tasks/{readable_id}/comment-drafts" => [
             post(tasks::create_comment_draft, idempotent)
         ];
-        "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}" => [
+        "/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}" => [
             delete(tasks::cancel_comment_draft)
         ];
-        "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content" => [
+        "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content" => [
             get(tasks::download_comment_attachment)
         ];
-        "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}" => [
+        "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}" => [
             delete(tasks::delete_comment_attachment)
         ];
-        "/api/workspaces/{ws}/tasks/{readable_id}/backlinks" => [ get(tasks::list_backlinks) ];
-        "/api/workspaces/{ws}/tasks/{readable_id}/graph" => [ get(tasks::get_task_graph) ];
-        "/api/workspaces/{ws}/tasks/{readable_id}/checklist" => [
+        "/workspaces/{ws}/tasks/{readable_id}/backlinks" => [ get(tasks::list_backlinks) ];
+        "/workspaces/{ws}/tasks/{readable_id}/graph" => [ get(tasks::get_task_graph) ];
+        "/workspaces/{ws}/tasks/{readable_id}/checklist" => [
             get(tasks::list_checklist),
             post(tasks::create_checklist_item, idempotent)
         ];
-        "/api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}" => [
+        "/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}" => [
             patch(tasks::update_checklist_item),
             delete(tasks::delete_checklist_item)
         ];
-        "/api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote" => [
+        "/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote" => [
             post(tasks::promote_checklist_item, idempotent)
         ];
-        "/api/workspaces/{ws}/tasks/{readable_id}/subtasks" => [
+        "/workspaces/{ws}/tasks/{readable_id}/subtasks" => [
             get(tasks::list_subtasks),
             post(tasks::create_subtask, idempotent)
         ];
-        "/api/workspaces/{ws}/tasks/{readable_id}/promote" => [ post(tasks::promote_subtask, idempotent) ];
-        "/api/workspaces/{ws}/tasks/{readable_id}/parent" => [ post(tasks::set_task_parent) ];
-        "/api/workspaces/{ws}/tasks/{readable_id}/activity" => [ get(tasks::list_activity) ];
-        "/api/workspaces/{ws}/tasks/{readable_id}/comments" => [
+        "/workspaces/{ws}/tasks/{readable_id}/promote" => [ post(tasks::promote_subtask, idempotent) ];
+        "/workspaces/{ws}/tasks/{readable_id}/parent" => [ post(tasks::set_task_parent) ];
+        "/workspaces/{ws}/tasks/{readable_id}/activity" => [ get(tasks::list_activity) ];
+        "/workspaces/{ws}/tasks/{readable_id}/comments" => [
             get(tasks::list_comments),
             post(tasks::create_comment, idempotent)
         ];
-        "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}" => [
+        "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}" => [
             patch(tasks::update_comment),
             delete(tasks::delete_comment)
         ];
-        "/api/workspaces/{ws}/activity" => [ get(tasks::list_workspace_activity, exempt) ];
+        "/workspaces/{ws}/activity" => [ get(tasks::list_workspace_activity, exempt) ];
     }
 }
 
@@ -389,77 +388,77 @@ mod documents_folders {
 
     crate::component_routes! {
         state: AppState;
-        "/api/workspaces/{ws}/projects/{project_slug}/documents" => [
+        "/workspaces/{ws}/projects/{project_slug}/documents" => [
             post(documents::create_document, idempotent),
             get(documents::list_documents)
         ];
-        "/api/workspaces/{ws}/documents/{slug}" => [
+        "/workspaces/{ws}/documents/{slug}" => [
             get(documents::get_document),
             patch(documents::update_document),
             delete(documents::delete_document)
         ];
-        "/api/workspaces/{ws}/documents/{slug}/content" => [ put(documents::update_content) ];
-        "/api/workspaces/{ws}/documents/{slug}/compact" => [
+        "/workspaces/{ws}/documents/{slug}/content" => [ put(documents::update_content) ];
+        "/workspaces/{ws}/documents/{slug}/compact" => [
             get(documents::get_document_compact)
         ];
-        "/api/workspaces/{ws}/documents/{slug}/content/range" => [
+        "/workspaces/{ws}/documents/{slug}/content/range" => [
             get(documents::get_content_range),
             patch(documents::edit_content_range)
         ];
-        "/api/workspaces/{ws}/documents/{slug}/content/search" => [
+        "/workspaces/{ws}/documents/{slug}/content/search" => [
             post(documents::search_content)
         ];
-        "/api/workspaces/{ws}/documents/{slug}/history" => [ get(documents::list_history) ];
-        "/api/workspaces/{ws}/documents/{slug}/revisions/{seq}" => [
+        "/workspaces/{ws}/documents/{slug}/history" => [ get(documents::list_history) ];
+        "/workspaces/{ws}/documents/{slug}/revisions/{seq}" => [
             get(documents::get_revision_content)
         ];
-        "/api/workspaces/{ws}/documents/{slug}/backlinks" => [ get(documents::list_backlinks) ];
-        "/api/workspaces/{ws}/documents/{slug}/frontmatter" => [
+        "/workspaces/{ws}/documents/{slug}/backlinks" => [ get(documents::list_backlinks) ];
+        "/workspaces/{ws}/documents/{slug}/frontmatter" => [
             get(documents::get_frontmatter)
         ];
-        "/api/workspaces/{ws}/documents/{slug}/attachments" => [
+        "/workspaces/{ws}/documents/{slug}/attachments" => [
             post(documents::upload_attachment),
             get(documents::list_attachments)
         ];
-        "/api/workspaces/{ws}/attachments" => [
+        "/workspaces/{ws}/attachments" => [
             get(attachments::list_workspace_attachments, exempt)
         ];
-        "/api/workspaces/{ws}/attachments/{attachment_id}" => [
+        "/workspaces/{ws}/attachments/{attachment_id}" => [
             get(documents::download_attachment, exempt),
             patch(attachments::rename_attachment, exempt),
             delete(documents::delete_attachment, exempt)
         ];
-        "/api/workspaces/{ws}/documents/{slug}/comment-drafts" => [
+        "/workspaces/{ws}/documents/{slug}/comment-drafts" => [
             post(documents::create_comment_draft, idempotent)
         ];
-        "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}" => [
+        "/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}" => [
             delete(documents::cancel_comment_draft)
         ];
-        "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}" => [
+        "/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}" => [
             get(documents::download_comment_attachment),
             delete(documents::delete_comment_attachment)
         ];
-        "/api/workspaces/{ws}/documents/{slug}/move" => [ patch(documents::move_document) ];
-        "/api/workspaces/{ws}/documents/{slug}/copy" => [ post(documents::copy_document, idempotent) ];
-        "/api/workspaces/{ws}/documents/{slug}/comments" => [
+        "/workspaces/{ws}/documents/{slug}/move" => [ patch(documents::move_document) ];
+        "/workspaces/{ws}/documents/{slug}/copy" => [ post(documents::copy_document, idempotent) ];
+        "/workspaces/{ws}/documents/{slug}/comments" => [
             get(documents::list_comments),
             post(documents::create_comment, idempotent)
         ];
-        "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}" => [
+        "/workspaces/{ws}/documents/{slug}/comments/{comment_id}" => [
             patch(documents::update_comment),
             delete(documents::delete_comment)
         ];
-        "/api/workspaces/{ws}/projects/{project_slug}/folders" => [
+        "/workspaces/{ws}/projects/{project_slug}/folders" => [
             post(folders::create_folder, idempotent),
             get(folders::list_folders)
         ];
-        "/api/workspaces/{ws}/folders/{folder_id}" => [
+        "/workspaces/{ws}/folders/{folder_id}" => [
             get(folders::get_folder),
             patch(folders::rename_folder),
             delete(folders::delete_folder)
         ];
-        "/api/workspaces/{ws}/folders/{folder_id}/move" => [ patch(folders::move_folder) ];
-        "/api/workspaces/{ws}/folders/{folder_id}/copy" => [ post(folders::copy_folder, idempotent) ];
+        "/workspaces/{ws}/folders/{folder_id}/move" => [ patch(folders::move_folder) ];
+        "/workspaces/{ws}/folders/{folder_id}/copy" => [ post(folders::copy_folder, idempotent) ];
     }
 }
 
@@ -474,10 +473,10 @@ mod search_family {
 
     crate::component_routes! {
         state: AppState;
-        "/api/workspaces/{ws}/events" => [ get(events::stream_events, exempt) ];
-        "/api/workspaces/{ws}/search" => [ get(search::search, exempt) ];
-        "/api/workspaces/{ws}/semantic-search" => [ get(semantic_search::semantic_search, exempt) ];
-        "/api/workspaces/{ws}/semantic-search/reindex" => [
+        "/workspaces/{ws}/events" => [ get(events::stream_events, exempt) ];
+        "/workspaces/{ws}/search" => [ get(search::search, exempt) ];
+        "/workspaces/{ws}/semantic-search" => [ get(semantic_search::semantic_search, exempt) ];
+        "/workspaces/{ws}/semantic-search/reindex" => [
             get(semantic_search::semantic_reindex_plan),
             post(semantic_search::semantic_reindex_start, idempotent, one_shot)
         ];
@@ -493,32 +492,32 @@ mod webhooks_automations {
 
     crate::component_routes! {
         state: AppState;
-        "/api/workspaces/{ws}/webhooks" => [
+        "/workspaces/{ws}/webhooks" => [
             post(webhooks::create_webhook),
             get(webhooks::list_webhooks)
         ];
-        "/api/workspaces/{ws}/webhooks/{webhook_id}" => [
+        "/workspaces/{ws}/webhooks/{webhook_id}" => [
             get(webhooks::get_webhook),
             patch(webhooks::update_webhook),
             delete(webhooks::delete_webhook)
         ];
-        "/api/workspaces/{ws}/webhooks/{webhook_id}/deliveries" => [
+        "/workspaces/{ws}/webhooks/{webhook_id}/deliveries" => [
             get(webhooks::list_webhook_deliveries)
         ];
-        "/api/workspaces/{ws}/integration-configs" => [
+        "/workspaces/{ws}/integration-configs" => [
             post(integration_configs::create_integration_config),
             get(integration_configs::list_integration_configs)
         ];
-        "/api/workspaces/{ws}/integration-configs/{config_id}" => [
+        "/workspaces/{ws}/integration-configs/{config_id}" => [
             get(integration_configs::get_integration_config),
             patch(integration_configs::patch_integration_config),
             delete(integration_configs::delete_integration_config)
         ];
-        "/api/workspaces/{ws}/automation-rules" => [
+        "/workspaces/{ws}/automation-rules" => [
             post(automation_rules::create_automation_rule, idempotent),
             get(automation_rules::list_automation_rules)
         ];
-        "/api/workspaces/{ws}/automation-rules/{rule_id}" => [
+        "/workspaces/{ws}/automation-rules/{rule_id}" => [
             get(automation_rules::get_automation_rule),
             patch(automation_rules::patch_automation_rule),
             delete(automation_rules::delete_automation_rule)
@@ -588,41 +587,41 @@ mod layered {
 
         Router::new()
             .route(
-                "/api/workspaces/{ws}/tasks/{readable_id}/references/batch",
+                "/workspaces/{ws}/tasks/{readable_id}/references/batch",
                 axum::routing::post(tasks::create_references_batch)
                     .layer::<_, std::convert::Infallible>(idempotency.clone())
                     .layer(DefaultBodyLimit::max(1024 * 1024)),
             )
             .route(
-                "/api/workspaces/{ws}/tasks/{readable_id}/attachments",
+                "/workspaces/{ws}/tasks/{readable_id}/attachments",
                 axum::routing::post(tasks::upload_attachment)
                     .merge(axum::routing::get(tasks::list_attachments))
                     .layer(DefaultBodyLimit::max(attachment_body_limit)),
             )
             .route(
-                "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",
+                "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",
                 axum::routing::post(tasks::upload_comment_attachment)
                     .merge(axum::routing::get(tasks::list_comment_attachments))
                     .layer(DefaultBodyLimit::max(attachment_body_limit)),
             )
             .route(
-                "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments",
+                "/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments",
                 axum::routing::post(tasks::upload_comment_draft_attachment)
                     .layer(DefaultBodyLimit::max(attachment_body_limit)),
             )
             .route(
-                "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
+                "/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
                 axum::routing::post(documents::upload_comment_attachment)
                     .merge(axum::routing::get(documents::list_comment_attachments))
                     .layer(DefaultBodyLimit::max(attachment_body_limit)),
             )
             .route(
-                "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments",
+                "/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments",
                 axum::routing::post(documents::upload_comment_draft_attachment)
                     .layer(DefaultBodyLimit::max(attachment_body_limit)),
             )
             .route(
-                "/api/workspaces/{ws}/documents/moves/batch",
+                "/workspaces/{ws}/documents/moves/batch",
                 axum::routing::post(documents::move_documents_batch)
                     .layer(DefaultBodyLimit::max(1024 * 1024)),
             )
@@ -633,42 +632,42 @@ mod layered {
         vec![
             AuditedRoute {
                 method: HttpMethod::Post,
-                path: "/api/workspaces/{ws}/tasks/{readable_id}/references/batch",
+                path: "/workspaces/{ws}/tasks/{readable_id}/references/batch",
                 scope: DeclaredScope::Extracted(tasks::create_references_batch.declared_scope()),
                 idempotent: true,
                 one_shot: false,
             },
             AuditedRoute {
                 method: HttpMethod::Post,
-                path: "/api/workspaces/{ws}/tasks/{readable_id}/attachments",
+                path: "/workspaces/{ws}/tasks/{readable_id}/attachments",
                 scope: DeclaredScope::Extracted(tasks::upload_attachment.declared_scope()),
                 idempotent: false,
                 one_shot: false,
             },
             AuditedRoute {
                 method: HttpMethod::Get,
-                path: "/api/workspaces/{ws}/tasks/{readable_id}/attachments",
+                path: "/workspaces/{ws}/tasks/{readable_id}/attachments",
                 scope: DeclaredScope::Extracted(tasks::list_attachments.declared_scope()),
                 idempotent: false,
                 one_shot: false,
             },
             AuditedRoute {
                 method: HttpMethod::Post,
-                path: "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",
+                path: "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",
                 scope: DeclaredScope::Extracted(tasks::upload_comment_attachment.declared_scope()),
                 idempotent: false,
                 one_shot: false,
             },
             AuditedRoute {
                 method: HttpMethod::Get,
-                path: "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",
+                path: "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",
                 scope: DeclaredScope::Extracted(tasks::list_comment_attachments.declared_scope()),
                 idempotent: false,
                 one_shot: false,
             },
             AuditedRoute {
                 method: HttpMethod::Post,
-                path: "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments",
+                path: "/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments",
                 scope: DeclaredScope::Extracted(
                     tasks::upload_comment_draft_attachment.declared_scope(),
                 ),
@@ -677,7 +676,7 @@ mod layered {
             },
             AuditedRoute {
                 method: HttpMethod::Post,
-                path: "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
+                path: "/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
                 scope: DeclaredScope::Extracted(
                     documents::upload_comment_attachment.declared_scope(),
                 ),
@@ -686,7 +685,7 @@ mod layered {
             },
             AuditedRoute {
                 method: HttpMethod::Get,
-                path: "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
+                path: "/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
                 scope: DeclaredScope::Extracted(
                     documents::list_comment_attachments.declared_scope(),
                 ),
@@ -695,7 +694,7 @@ mod layered {
             },
             AuditedRoute {
                 method: HttpMethod::Post,
-                path: "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments",
+                path: "/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments",
                 scope: DeclaredScope::Extracted(
                     documents::upload_comment_draft_attachment.declared_scope(),
                 ),
@@ -704,7 +703,7 @@ mod layered {
             },
             AuditedRoute {
                 method: HttpMethod::Post,
-                path: "/api/workspaces/{ws}/documents/moves/batch",
+                path: "/workspaces/{ws}/documents/moves/batch",
                 scope: DeclaredScope::Extracted(documents::move_documents_batch.declared_scope()),
                 idempotent: false,
                 one_shot: false,
@@ -713,10 +712,23 @@ mod layered {
     }
 }
 
-/// Builds acta's router, reproducing today's exact public/protected split
-/// and layer stack (D6): no layer added, removed, or reordered — only the
-/// `.route()` call sites moved out of `lib.rs::app()` into this module
-/// (plus `/openapi.json`/`/scalar`, relocated here per the module doc).
+/// Acta's root-level router (`v2-e3-s4` PR4, D2): `/openapi.json` and
+/// `/scalar`, mounted at the composition root outside the `/api` nest,
+/// exactly as before this slice's literal rewrite — they never carried an
+/// `/api` prefix and must not gain one. Audited as `platform`'s per the
+/// registry's ownership assignment (see the module doc), not as `acta`'s,
+/// even though they are physically built here.
+pub fn root_router() -> Router {
+    Router::new()
+        .route("/openapi.json", get(openapi::openapi_json))
+        .merge(openapi::scalar_router())
+}
+
+/// Builds acta's under-`/api` router, reproducing today's exact
+/// public/protected split and layer stack (D6): no layer added, removed, or
+/// reordered — only the `.route()` call sites moved out of `lib.rs::app()`
+/// into this module. `/openapi.json`/`/scalar` are NOT part of this router
+/// as of PR4's `/api`-nest — see [`root_router`].
 pub fn router(state: AppState) -> Router {
     let public = public::router(state.clone());
     let protected = workspace_admin::router(state.clone())
@@ -724,18 +736,8 @@ pub fn router(state: AppState) -> Router {
         .merge(documents_folders::router(state.clone()))
         .merge(search_family::router(state.clone()))
         .merge(webhooks_automations::router(state.clone()))
-        .merge(layered::router(state.clone()))
-        .layer(axum::middleware::from_fn(
-            crate::auth::csrf::require_csrf_for_cookie_mutations,
-        ))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            crate::middleware::rate_limit::require_rate_limit,
-        ))
-        .layer(axum::middleware::from_fn_with_state(
-            state,
-            crate::auth::middleware::require_authn,
-        ));
+        .merge(layered::router(state.clone()));
+    let protected = super::protection::protect(protected, state);
 
     public.merge(protected)
 }
@@ -1232,31 +1234,25 @@ mod tests {
     /// which already carried the identical `Some(_)` value before this PR
     /// touched anything.
     const DECLARE_AND_VERIFY_EXEMPT: [(HttpMethod, &str); 14] = [
-        (HttpMethod::Patch, "/api/workspaces/{ws}"),
-        (HttpMethod::Get, "/api/workspaces/{ws}/projects"),
-        (HttpMethod::Get, "/api/workspaces/{ws}/tasks"),
-        (HttpMethod::Get, "/api/workspaces/{ws}/saved-searches"),
-        (HttpMethod::Post, "/api/workspaces/{ws}/saved-searches"),
-        (
-            HttpMethod::Patch,
-            "/api/workspaces/{ws}/saved-searches/{id}",
-        ),
-        (
-            HttpMethod::Delete,
-            "/api/workspaces/{ws}/saved-searches/{id}",
-        ),
-        (HttpMethod::Get, "/api/workspaces/{ws}/task-views"),
-        (HttpMethod::Post, "/api/workspaces/{ws}/task-views"),
-        (HttpMethod::Get, "/api/workspaces/{ws}/task-views/{id}"),
-        (HttpMethod::Patch, "/api/workspaces/{ws}/task-views/{id}"),
-        (HttpMethod::Delete, "/api/workspaces/{ws}/task-views/{id}"),
+        (HttpMethod::Patch, "/workspaces/{ws}"),
+        (HttpMethod::Get, "/workspaces/{ws}/projects"),
+        (HttpMethod::Get, "/workspaces/{ws}/tasks"),
+        (HttpMethod::Get, "/workspaces/{ws}/saved-searches"),
+        (HttpMethod::Post, "/workspaces/{ws}/saved-searches"),
+        (HttpMethod::Patch, "/workspaces/{ws}/saved-searches/{id}"),
+        (HttpMethod::Delete, "/workspaces/{ws}/saved-searches/{id}"),
+        (HttpMethod::Get, "/workspaces/{ws}/task-views"),
+        (HttpMethod::Post, "/workspaces/{ws}/task-views"),
+        (HttpMethod::Get, "/workspaces/{ws}/task-views/{id}"),
+        (HttpMethod::Patch, "/workspaces/{ws}/task-views/{id}"),
+        (HttpMethod::Delete, "/workspaces/{ws}/task-views/{id}"),
         (
             HttpMethod::Get,
-            "/api/workspaces/{ws}/attachments/{attachment_id}",
+            "/workspaces/{ws}/attachments/{attachment_id}",
         ),
         (
             HttpMethod::Delete,
-            "/api/workspaces/{ws}/attachments/{attachment_id}",
+            "/workspaces/{ws}/attachments/{attachment_id}",
         ),
     ];
 

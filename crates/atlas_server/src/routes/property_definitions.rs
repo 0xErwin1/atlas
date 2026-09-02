@@ -209,7 +209,7 @@ fn applies_to_matches(def: &AppliesTo, filter: &AppliesTo) -> bool {
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/property-definitions",
+    path = "/workspaces/{ws}/property-definitions",
     tag = "property-definitions",
     security(("bearer_auth" = [])),
     params(
@@ -257,7 +257,7 @@ pub(crate) async fn list_property_definitions(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/property-definitions",
+    path = "/workspaces/{ws}/property-definitions",
     tag = "property-definitions",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -321,7 +321,7 @@ pub(crate) async fn create_property_definition(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/property-definitions/{property_definition_id}",
+    path = "/workspaces/{ws}/property-definitions/{property_definition_id}",
     tag = "property-definitions",
     security(("bearer_auth" = [])),
     params(

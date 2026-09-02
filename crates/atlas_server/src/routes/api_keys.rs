@@ -236,7 +236,7 @@ fn key_to_dto(k: &atlas_custos::entities::identity::ApiKey) -> ApiKeyDto {
 
 #[utoipa::path(
     post,
-    path = "/api/api-keys",
+    path = "/api-keys",
     tag = "api-keys",
     security(("bearer_auth" = [])),
     request_body = CreateUserApiKeyRequest,
@@ -586,7 +586,7 @@ fn grant_to_api_key_grant_dto(
 
 #[utoipa::path(
     get,
-    path = "/api/api-keys/{key_id}/grants",
+    path = "/api-keys/{key_id}/grants",
     tag = "api-keys",
     security(("bearer_auth" = [])),
     params(("key_id" = uuid::Uuid, Path, description = "API key id")),
@@ -654,7 +654,7 @@ pub(crate) async fn list_api_key_grants(
 
 #[utoipa::path(
     delete,
-    path = "/api/api-keys/{key_id}/grants/{grant_id}",
+    path = "/api-keys/{key_id}/grants/{grant_id}",
     tag = "api-keys",
     security(("bearer_auth" = [])),
     params(
@@ -778,7 +778,7 @@ async fn create_initial_grant(
 
 #[utoipa::path(
     get,
-    path = "/api/api-keys",
+    path = "/api-keys",
     tag = "api-keys",
     security(("bearer_auth" = [])),
     params(
@@ -841,7 +841,7 @@ pub(crate) async fn list_user_api_keys(
 
 #[utoipa::path(
     delete,
-    path = "/api/api-keys/{key_id}",
+    path = "/api-keys/{key_id}",
     tag = "api-keys",
     security(("bearer_auth" = [])),
     params(("key_id" = uuid::Uuid, Path, description = "API key id")),
@@ -926,7 +926,7 @@ pub(crate) async fn revoke_user_api_key(
 /// escalation.
 #[utoipa::path(
     patch,
-    path = "/api/api-keys/{key_id}",
+    path = "/api-keys/{key_id}",
     tag = "api-keys",
     security(("bearer_auth" = [])),
     params(("key_id" = uuid::Uuid, Path, description = "API key id")),

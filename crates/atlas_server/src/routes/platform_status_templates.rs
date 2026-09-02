@@ -42,7 +42,7 @@ fn template_to_dto(t: PlatformStatusTemplate) -> PlatformStatusTemplateDto {
 
 #[utoipa::path(
     get,
-    path = "/api/admin/status-templates",
+    path = "/admin/status-templates",
     tag = "status-templates",
     security(("bearer_auth" = [])),
     responses(
@@ -70,7 +70,7 @@ pub(crate) async fn list_platform_status_templates(
 
 #[utoipa::path(
     post,
-    path = "/api/admin/status-templates",
+    path = "/admin/status-templates",
     tag = "status-templates",
     security(("bearer_auth" = [])),
     request_body = CreateStatusTemplateRequest,
@@ -120,7 +120,7 @@ pub(crate) async fn create_platform_status_template(
 
 #[utoipa::path(
     patch,
-    path = "/api/admin/status-templates/{template_id}",
+    path = "/admin/status-templates/{template_id}",
     tag = "status-templates",
     security(("bearer_auth" = [])),
     params(("template_id" = uuid::Uuid, Path, description = "Template ID")),
@@ -205,7 +205,7 @@ fn parse_color_patch(color: Option<serde_json::Value>) -> Result<Option<Option<S
 
 #[utoipa::path(
     delete,
-    path = "/api/admin/status-templates/{template_id}",
+    path = "/admin/status-templates/{template_id}",
     tag = "status-templates",
     security(("bearer_auth" = [])),
     params(("template_id" = uuid::Uuid, Path, description = "Template ID")),

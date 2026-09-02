@@ -43,7 +43,7 @@ pub(crate) struct AuditQuery {
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/audit",
+    path = "/workspaces/{ws}/audit",
     tag = "audit",
     security(("bearer_auth" = [])),
     params(
@@ -105,7 +105,7 @@ pub(crate) async fn list_workspace_audit(
 
 #[utoipa::path(
     get,
-    path = "/api/admin/audit",
+    path = "/admin/audit",
     tag = "audit",
     security(("bearer_auth" = [])),
     params(

@@ -104,7 +104,7 @@ fn column_to_dto(c: BoardColumn) -> ColumnDto {
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/projects/{project_slug}/boards",
+    path = "/workspaces/{ws}/projects/{project_slug}/boards",
     tag = "boards",
     security(("bearer_auth" = [])),
     params(
@@ -165,7 +165,7 @@ pub(crate) async fn create_board(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/projects/{project_slug}/boards",
+    path = "/workspaces/{ws}/projects/{project_slug}/boards",
     tag = "boards",
     security(("bearer_auth" = [])),
     params(
@@ -244,7 +244,7 @@ pub(crate) async fn list_boards(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/boards/{board_id}",
+    path = "/workspaces/{ws}/boards/{board_id}",
     tag = "boards",
     security(("bearer_auth" = [])),
     params(
@@ -270,7 +270,7 @@ pub(crate) async fn get_board(
 
 #[utoipa::path(
     patch,
-    path = "/api/workspaces/{ws}/boards/{board_id}",
+    path = "/workspaces/{ws}/boards/{board_id}",
     tag = "boards",
     security(("bearer_auth" = [])),
     params(
@@ -315,7 +315,7 @@ pub(crate) async fn update_board(
 
 #[utoipa::path(
     patch,
-    path = "/api/workspaces/{ws}/boards/{board_id}/move",
+    path = "/workspaces/{ws}/boards/{board_id}/move",
     tag = "boards",
     security(("bearer_auth" = [])),
     params(
@@ -368,7 +368,7 @@ pub(crate) async fn move_board(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/boards/{board_id}/archive",
+    path = "/workspaces/{ws}/boards/{board_id}/archive",
     tag = "boards",
     security(("bearer_auth" = [])),
     params(
@@ -398,7 +398,7 @@ pub(crate) async fn archive_board(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/boards/{board_id}/unarchive",
+    path = "/workspaces/{ws}/boards/{board_id}/unarchive",
     tag = "boards",
     security(("bearer_auth" = [])),
     params(
@@ -449,7 +449,7 @@ async fn set_archived(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/boards/{board_id}",
+    path = "/workspaces/{ws}/boards/{board_id}",
     tag = "boards",
     security(("bearer_auth" = [])),
     params(
@@ -484,7 +484,7 @@ pub(crate) async fn delete_board(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/boards/{board_id}/columns",
+    path = "/workspaces/{ws}/boards/{board_id}/columns",
     tag = "boards",
     security(("bearer_auth" = [])),
     params(
@@ -538,7 +538,7 @@ pub(crate) async fn create_column(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/boards/{board_id}/columns",
+    path = "/workspaces/{ws}/boards/{board_id}/columns",
     tag = "boards",
     security(("bearer_auth" = [])),
     params(
@@ -574,7 +574,7 @@ pub(crate) async fn list_columns(
 
 #[utoipa::path(
     patch,
-    path = "/api/workspaces/{ws}/boards/{board_id}/columns/{column_id}",
+    path = "/workspaces/{ws}/boards/{board_id}/columns/{column_id}",
     tag = "boards",
     security(("bearer_auth" = [])),
     params(
@@ -675,7 +675,7 @@ pub(crate) async fn update_column(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/boards/{board_id}/columns/{column_id}",
+    path = "/workspaces/{ws}/boards/{board_id}/columns/{column_id}",
     tag = "boards",
     security(("bearer_auth" = [])),
     params(

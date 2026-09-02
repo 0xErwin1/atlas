@@ -25,7 +25,7 @@ use atlas_custos_postgres::repos::security_audit::PgSecurityAuditRepo;
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/members",
+    path = "/workspaces/{ws}/members",
     tag = "members",
     security(("bearer_auth" = [])),
     params(
@@ -125,7 +125,7 @@ pub(crate) async fn list_workspace_members(
 /// 6. The membership insert and its audit row share one transaction.
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/members",
+    path = "/workspaces/{ws}/members",
     tag = "members",
     security(("bearer_auth" = [])),
     params(
@@ -257,7 +257,7 @@ pub(crate) async fn add_member(
 /// excluded by construction. Mirrors the `GET /api/users` shape (`Vec<UserDto>`).
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/assignable-users",
+    path = "/workspaces/{ws}/assignable-users",
     tag = "members",
     security(("bearer_auth" = [])),
     params(
@@ -325,7 +325,7 @@ pub(crate) async fn list_assignable_users(
 /// Steps 3 and 4 are independent and strictly ordered. Never collapse them.
 #[utoipa::path(
     patch,
-    path = "/api/workspaces/{ws}/members/{user_id}",
+    path = "/workspaces/{ws}/members/{user_id}",
     tag = "members",
     security(("bearer_auth" = [])),
     params(
@@ -459,7 +459,7 @@ pub(crate) async fn update_member_role(
 /// - Step 4: no one (including break-glass) can remove the last owner → 409.
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/members/{user_id}",
+    path = "/workspaces/{ws}/members/{user_id}",
     tag = "members",
     security(("bearer_auth" = [])),
     params(

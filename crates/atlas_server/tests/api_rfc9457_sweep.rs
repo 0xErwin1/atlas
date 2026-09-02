@@ -10,6 +10,7 @@ mod support;
 use std::collections::HashSet;
 
 use atlas_core::registry::HttpMethod;
+use atlas_server::router_audit::mounted_path;
 use support::route_matrix::route_matrix;
 
 /// See `tests/api_401_sweep.rs`'s identical helper. Exhaustive by
@@ -72,8 +73,8 @@ fn classify(method: HttpMethod, path: &str, is_public: bool) -> Provocation {
             reason: "unauthenticated GET, no path parameter, no request body — nothing in \
                          the request can be varied to provoke a 4xx/5xx",
         },
-        (HttpMethod::Post, "/api/auth/login") => Provocation::LoginBadCredentials401,
-        (_, p) if p.starts_with("/api/activate/") => Provocation::UnknownActivationToken404,
+        (HttpMethod::Post, "/auth/login") => Provocation::LoginBadCredentials401,
+        (_, p) if p.starts_with("/activate/") => Provocation::UnknownActivationToken404,
         (HttpMethod::Post, p) if p.ends_with("/integrations/{integration}/events") => {
             Provocation::MissingWebhookSignature401
         }
@@ -106,7 +107,7 @@ async fn every_declared_route_answers_with_a_conformant_problem_body() {
 
     for entry in &matrix {
         let path = entry.path_template.replace("{ws}", ws_slug);
-        let url = format!("{}{}", server.base_url(), path);
+        let url = format!("{}{}", server.base_url(), mounted_path("/api", &path));
 
         let provocation = classify(entry.method, &path, entry.is_public);
 

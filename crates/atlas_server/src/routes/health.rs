@@ -71,7 +71,7 @@ pub(crate) async fn version() -> impl IntoResponse {
 
 #[utoipa::path(
     get,
-    path = "/api/meta",
+    path = "/meta",
     tag = "meta",
     security(("bearer_auth" = [])),
     responses(

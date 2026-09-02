@@ -95,33 +95,32 @@ mod protected {
 
     crate::component_routes! {
         state: AppState;
-        "/api/me/ui-state" => [
+        "/me/ui-state" => [
             get(ui_state::get_ui_state, exempt),
             put(ui_state::set_ui_state, exempt)
         ];
-        "/api/meta" => [ get(health::meta, exempt) ];
+        "/meta" => [ get(health::meta, exempt) ];
     }
 }
 
-/// Builds platform's router, reproducing today's exact public/protected
-/// split and layer stack (D6): no layer added, removed, or reordered, only
-/// the `.route()` call sites moved out of `lib.rs::app()` into this module.
+/// Builds platform's under-`/api` router: `/me/ui-state` and `/meta`,
+/// reproducing today's exact protected layer stack (D6, no layer added,
+/// removed, or reordered). `/health`/`/ready`/`/version` are NOT part of
+/// this router as of `v2-e3-s4` PR4's `/api`-nest (D2): they carried no
+/// `/api` prefix before this slice's literal rewrite and must keep being
+/// served at their bare root-level path, so they are built by
+/// [`root_router`] instead and merged at the composition root, outside the
+/// `/api` nest — see `lib.rs::app()`.
 pub fn router(state: AppState) -> Router {
-    let public = public::router(state.clone());
-    let protected = protected::router(state.clone())
-        .layer(axum::middleware::from_fn(
-            crate::auth::csrf::require_csrf_for_cookie_mutations,
-        ))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            crate::middleware::rate_limit::require_rate_limit,
-        ))
-        .layer(axum::middleware::from_fn_with_state(
-            state,
-            crate::auth::middleware::require_authn,
-        ));
+    super::protection::protect(protected::router(state.clone()), state)
+}
 
-    public.merge(protected)
+/// Platform's root-level router (`v2-e3-s4` PR4, D2): `/health`, `/ready`,
+/// `/version`, no auth layer, mounted at the composition root outside the
+/// `/api` nest — the exact routes [`public`] declares, unaffected by this
+/// slice's literal rewrite since they never carried an `/api` prefix.
+pub fn root_router(state: AppState) -> Router {
+    public::router(state)
 }
 
 /// The union of both sub-routers' declared routes. Order-independent: the

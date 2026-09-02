@@ -362,9 +362,19 @@ async fn idempotency_middleware(
     };
 
     let method = request.method().to_string();
-    let path = request.uri().path().to_string();
-    let path_and_query = request
-        .uri()
+
+    // Component routers are nested under their namespace, and axum strips
+    // the nest prefix from `request.uri()` before a nested route's layers
+    // run. The store key and the fingerprint must carry the path the client
+    // sent, so both read `OriginalUri`, which the root router records before
+    // any nesting.
+    let original_uri = request
+        .extensions()
+        .get::<axum::extract::OriginalUri>()
+        .map(|original| original.0.clone())
+        .unwrap_or_else(|| request.uri().clone());
+    let path = original_uri.path().to_string();
+    let path_and_query = original_uri
         .path_and_query()
         .map(|value| value.as_str().to_string())
         .unwrap_or_else(|| path.clone());

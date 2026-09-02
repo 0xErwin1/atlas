@@ -3,6 +3,7 @@
 mod support;
 
 use atlas_core::registry::HttpMethod;
+use atlas_server::router_audit::mounted_path;
 
 /// `v2-e3-s2-router-audit` PR4 verify gap: proves acta's 169 routes keep
 /// their pre-refactor mount and authentication posture against the
@@ -84,7 +85,7 @@ async fn acta_protected_routes_reject_unauthenticated_requests() {
     );
 
     for (method, path_template) in protected_routes {
-        let path = substitute_placeholders(path_template);
+        let path = mounted_path("/api", &substitute_placeholders(path_template));
         let status = send(&http, axum_method(method), server.base_url(), &path).await;
 
         assert_eq!(
@@ -111,7 +112,7 @@ async fn acta_protected_routes_reject_unauthenticated_requests() {
     let (_, public_path_template) = *public_routes
         .first()
         .expect("acta has exactly one public route");
-    let public_path = substitute_placeholders(public_path_template);
+    let public_path = mounted_path("/api", &substitute_placeholders(public_path_template));
 
     let mount_status = send(
         &http,

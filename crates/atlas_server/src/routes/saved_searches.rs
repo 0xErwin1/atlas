@@ -78,7 +78,7 @@ fn saved_search_to_dto(ss: SavedSearch) -> SavedSearchDto {
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/saved-searches",
+    path = "/workspaces/{ws}/saved-searches",
     tag = "saved-searches",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -111,7 +111,7 @@ pub(crate) async fn list_saved_searches(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/saved-searches",
+    path = "/workspaces/{ws}/saved-searches",
     tag = "saved-searches",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -160,7 +160,7 @@ pub(crate) async fn create_saved_search(
 
 #[utoipa::path(
     patch,
-    path = "/api/workspaces/{ws}/saved-searches/{id}",
+    path = "/workspaces/{ws}/saved-searches/{id}",
     tag = "saved-searches",
     security(("bearer_auth" = [])),
     params(
@@ -206,7 +206,7 @@ pub(crate) async fn rename_saved_search(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/saved-searches/{id}",
+    path = "/workspaces/{ws}/saved-searches/{id}",
     tag = "saved-searches",
     security(("bearer_auth" = [])),
     params(

@@ -203,14 +203,14 @@ fn scan_routes_file(source: &str) -> Vec<(ClassifiedRoute, String, bool)> {
 const DSHAPE_EXCLUDED: &[(HttpMethod, &str, &str)] = &[
     (
         HttpMethod::Get,
-        "/api/workspaces/{ws}/tasks/{readable_id}/subtasks",
+        "/workspaces/{ws}/tasks/{readable_id}/subtasks",
         "list_subtasks returns Vec<TaskSummaryDto>, not Page<T>, unlike list_tasks \
          on the same DTO (tasks.rs:3946-3949 vs tasks.rs:1248-1252) — recorded \
          finding, deferred to S6/S7 per D-SHAPE, not fixed here.",
     ),
     (
         HttpMethod::Get,
-        "/api/api-keys/{key_id}/grants",
+        "/api-keys/{key_id}/grants",
         "API-key grants return Vec<ApiKeyGrantDto> where workspace/project grants \
          return Page<GrantDto> (api_keys.rs:600-604 vs grants.rs:198,473) — \
          recorded finding, deferred to S6/S7 per D-SHAPE, not fixed here.",
@@ -783,7 +783,7 @@ async fn list_workspace_tasks_cursor_is_opaque() {
 const MINIMAL_NONEMPTY_ROUTES: &[(HttpMethod, &str, usize, &str)] = &[
     (
         HttpMethod::Get,
-        "/api/workspaces/{ws}/documents/{slug}/history",
+        "/workspaces/{ws}/documents/{slug}/history",
         1,
         "creating a document unconditionally inserts its initial revision \
          (seq=1, documents.rs `create_in`) — a document's own history list \
@@ -791,7 +791,7 @@ const MINIMAL_NONEMPTY_ROUTES: &[(HttpMethod, &str, usize, &str)] = &[
     ),
     (
         HttpMethod::Get,
-        "/api/workspaces/{ws}/tasks/{readable_id}/activity",
+        "/workspaces/{ws}/tasks/{readable_id}/activity",
         1,
         "creating a task unconditionally appends an ActivityKind::Created \
          entry (task_service.rs `create_with_references_under`) — a task's \
@@ -799,7 +799,7 @@ const MINIMAL_NONEMPTY_ROUTES: &[(HttpMethod, &str, usize, &str)] = &[
     ),
     (
         HttpMethod::Get,
-        "/api/workspaces/{ws}/projects/{project_slug}/grants",
+        "/workspaces/{ws}/projects/{project_slug}/grants",
         1,
         "creating a project unconditionally upserts a permission grant for \
          the creator on ResourceRef::Project (projects.rs `create_project`), \
@@ -912,7 +912,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
             .map(|(_, _, n, _)| *n);
 
         match route.path.as_str() {
-            "/api/admin/audit" => {
+            "/admin/audit" => {
                 // Isolated database, not the shared `db`/`server`: unlike
                 // every other arm below, this route is a global collection,
                 // not scoped to one workspace. Confirmed from source that no
@@ -931,7 +931,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
                 admin_db.teardown().await;
             }
-            "/api/admin/trash" => {
+            "/admin/trash" => {
                 // Isolated database for the same reason as `/api/admin/audit`
                 // above: this is a global collection, and trash rows are only
                 // ever written by delete/restore/purge flows
@@ -946,13 +946,13 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
                 admin_db.teardown().await;
             }
-            "/api/api-keys" => {
+            "/api-keys" => {
                 let (client, _ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-apikeys").await;
                 let body = fetch_page_json(&client, "/api/api-keys").await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
-            "/api/workspaces/{ws}/activity" => {
+            "/workspaces/{ws}/activity" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-activity").await;
                 let body =
@@ -960,7 +960,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                         .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
-            "/api/workspaces/{ws}/attachments" => {
+            "/workspaces/{ws}/attachments" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-attachments")
                         .await;
@@ -969,14 +969,14 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                         .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
-            "/api/workspaces/{ws}/audit" => {
+            "/workspaces/{ws}/audit" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-audit").await;
                 let body =
                     fetch_page_json(&client, &format!("/api/workspaces/{}/audit", ws.slug)).await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
-            "/api/workspaces/{ws}/automation-rules" => {
+            "/workspaces/{ws}/automation-rules" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-automation")
                         .await;
@@ -987,7 +987,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
-            "/api/workspaces/{ws}/boards/{board_id}/tasks" => {
+            "/workspaces/{ws}/boards/{board_id}/tasks" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-boardtasks")
                         .await;
@@ -1022,7 +1022,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
-            "/api/workspaces/{ws}/documents/{slug}/attachments" => {
+            "/workspaces/{ws}/documents/{slug}/attachments" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-docattach")
                         .await;
@@ -1061,7 +1061,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
-            "/api/workspaces/{ws}/documents/{slug}/backlinks" => {
+            "/workspaces/{ws}/documents/{slug}/backlinks" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-docbacklinks")
                         .await;
@@ -1097,7 +1097,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
-            "/api/workspaces/{ws}/documents/{slug}/history" => {
+            "/workspaces/{ws}/documents/{slug}/history" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-dochistory")
                         .await;
@@ -1137,14 +1137,14 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     minimal_nonempty.expect("history is listed in MINIMAL_NONEMPTY_ROUTES"),
                 );
             }
-            "/api/workspaces/{ws}/grants" => {
+            "/workspaces/{ws}/grants" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-grants").await;
                 let body =
                     fetch_page_json(&client, &format!("/api/workspaces/{}/grants", ws.slug)).await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
-            "/api/workspaces/{ws}/projects" => {
+            "/workspaces/{ws}/projects" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-projects").await;
                 let body =
@@ -1152,7 +1152,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                         .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
-            "/api/workspaces/{ws}/projects/{project_slug}/boards" => {
+            "/workspaces/{ws}/projects/{project_slug}/boards" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-projboards")
                         .await;
@@ -1179,7 +1179,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
-            "/api/workspaces/{ws}/projects/{project_slug}/documents" => {
+            "/workspaces/{ws}/projects/{project_slug}/documents" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-projdocs").await;
                 let project = client
@@ -1205,7 +1205,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
-            "/api/workspaces/{ws}/projects/{project_slug}/folders" => {
+            "/workspaces/{ws}/projects/{project_slug}/folders" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-projfolders")
                         .await;
@@ -1232,7 +1232,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
-            "/api/workspaces/{ws}/projects/{project_slug}/grants" => {
+            "/workspaces/{ws}/projects/{project_slug}/grants" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-projgrants")
                         .await;
@@ -1263,7 +1263,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     minimal_nonempty.expect("project grants is listed in MINIMAL_NONEMPTY_ROUTES"),
                 );
             }
-            "/api/workspaces/{ws}/search" => {
+            "/workspaces/{ws}/search" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-search").await;
                 let body = fetch_page_json(
@@ -1276,7 +1276,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
-            "/api/workspaces/{ws}/semantic-search" => {
+            "/workspaces/{ws}/semantic-search" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-semsearch")
                         .await;
@@ -1290,14 +1290,14 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
-            "/api/workspaces/{ws}/tasks" => {
+            "/workspaces/{ws}/tasks" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-tasks").await;
                 let body =
                     fetch_page_json(&client, &format!("/api/workspaces/{}/tasks", ws.slug)).await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
-            "/api/workspaces/{ws}/tasks/{readable_id}/activity" => {
+            "/workspaces/{ws}/tasks/{readable_id}/activity" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-taskactivity")
                         .await;
@@ -1368,7 +1368,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     minimal_nonempty.expect("task activity is listed in MINIMAL_NONEMPTY_ROUTES"),
                 );
             }
-            "/api/workspaces/{ws}/tasks/{readable_id}/backlinks" => {
+            "/workspaces/{ws}/tasks/{readable_id}/backlinks" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-taskbacklinks")
                         .await;
@@ -1435,7 +1435,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
-            "/api/workspaces/{ws}/webhooks" => {
+            "/workspaces/{ws}/webhooks" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-webhooks").await;
                 let body =
@@ -1443,7 +1443,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                         .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
-            "/api/workspaces/{ws}/webhooks/{webhook_id}/deliveries" => {
+            "/workspaces/{ws}/webhooks/{webhook_id}/deliveries" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-webhookdeliv")
                         .await;

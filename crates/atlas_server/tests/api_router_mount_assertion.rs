@@ -86,8 +86,9 @@ async fn every_component_router_is_merged_into_app() {
         );
 
         let (path, probe_method) = pick_probe(component, &routes);
+        let mounted = atlas_server::router_audit::mounted_path("/api", path);
 
-        let status = send(&http, probe_method.clone(), server.base_url(), path).await;
+        let status = send(&http, probe_method.clone(), server.base_url(), &mounted).await;
 
         assert_eq!(
             status, 405,

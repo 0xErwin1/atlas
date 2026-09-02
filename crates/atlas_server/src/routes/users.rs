@@ -34,7 +34,7 @@ const ACTIVATION_TOKEN_TTL_DAYS: i64 = 7;
 
 #[utoipa::path(
     get,
-    path = "/api/users",
+    path = "/users",
     tag = "users",
     security(("bearer_auth" = [])),
     responses(
@@ -61,7 +61,7 @@ pub(crate) async fn list_users(
 
 #[utoipa::path(
     post,
-    path = "/api/users",
+    path = "/users",
     tag = "users",
     security(("bearer_auth" = [])),
     request_body = CreateUserRequest,
@@ -130,7 +130,7 @@ pub(crate) async fn create_user(
 
 #[utoipa::path(
     post,
-    path = "/api/users/{user_id}/activation-link",
+    path = "/users/{user_id}/activation-link",
     tag = "users",
     security(("bearer_auth" = [])),
     params(("user_id" = uuid::Uuid, Path, description = "User ID")),
@@ -230,7 +230,7 @@ pub(crate) async fn regenerate_activation_link(
 
 #[utoipa::path(
     post,
-    path = "/api/users/{user_id}/disable",
+    path = "/users/{user_id}/disable",
     tag = "users",
     security(("bearer_auth" = [])),
     params(("user_id" = uuid::Uuid, Path, description = "User ID")),
@@ -322,7 +322,7 @@ pub(crate) async fn disable_user(
 
 #[utoipa::path(
     post,
-    path = "/api/users/{user_id}/enable",
+    path = "/users/{user_id}/enable",
     tag = "users",
     security(("bearer_auth" = [])),
     params(("user_id" = uuid::Uuid, Path, description = "User ID")),
@@ -405,7 +405,7 @@ pub(crate) async fn enable_user(
 
 #[utoipa::path(
     post,
-    path = "/api/users/{user_id}/reset-password",
+    path = "/users/{user_id}/reset-password",
     tag = "users",
     security(("bearer_auth" = [])),
     params(("user_id" = uuid::Uuid, Path, description = "User ID")),
@@ -501,7 +501,7 @@ pub(crate) async fn reset_password(
 
 #[utoipa::path(
     post,
-    path = "/api/users/{user_id}/system-admin",
+    path = "/users/{user_id}/system-admin",
     tag = "users",
     security(("bearer_auth" = [])),
     params(("user_id" = uuid::Uuid, Path, description = "User ID")),
@@ -580,7 +580,7 @@ pub(crate) async fn set_system_admin(
 
 #[utoipa::path(
     get,
-    path = "/api/users/{user_id}/memberships",
+    path = "/users/{user_id}/memberships",
     tag = "users",
     security(("bearer_auth" = [])),
     params(("user_id" = uuid::Uuid, Path, description = "User ID")),

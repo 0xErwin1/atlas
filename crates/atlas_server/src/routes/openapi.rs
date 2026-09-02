@@ -61,17 +61,42 @@ fn operations_mut(
     .flatten()
 }
 
+/// Rewrites every path key in `doc.paths.paths` to the concrete path it is
+/// actually mounted at (`v2-e3-s4` D2/T4.X): each fragment's own
+/// `#[utoipa::path(path = "...")]` annotations were rewritten to
+/// namespace-relative form in the same script that rewrote the registry's
+/// literals, so the document must re-apply the mount prefix at composition
+/// time to keep serving the exact same V1 (`/api`-absolute) paths it served
+/// before that rewrite — [`crate::router_audit::mounted_path`] is the single
+/// place that decision is made, so a root-level route
+/// (`crate::router_audit::ROOT_LEVEL_PATHS`) never accidentally gains a
+/// prefix here.
+fn prefix_document_paths(
+    mut doc: utoipa::openapi::OpenApi,
+    namespace: &str,
+) -> utoipa::openapi::OpenApi {
+    let old_paths = std::mem::take(&mut doc.paths.paths);
+    for (path, item) in old_paths {
+        let mounted = crate::router_audit::mounted_path(namespace, &path);
+        doc.paths.paths.insert(mounted, item);
+    }
+    doc
+}
+
 /// Composes the full OpenAPI document from each component's own fragment
 /// (D4): `ApiDoc` contributes only `info(...)`, then `platform`'s,
 /// `custos`'s, and `acta`'s fragments are merged in, in this fixed order.
 /// No other component can structurally contribute — this function only
-/// ever calls these three named fragment constructors (T2.18).
+/// ever calls these three named fragment constructors (T2.18). The merged
+/// result's paths are then re-mounted under `/api` (`prefix_document_paths`,
+/// T4.X), since every fragment's own paths are namespace-relative as of
+/// this slice's literal rewrite.
 pub(crate) fn document() -> utoipa::openapi::OpenApi {
     let mut doc = ApiDoc::openapi();
     doc.merge(crate::routes::platform::openapi());
     doc.merge(crate::routes::custos::openapi());
     doc.merge(crate::routes::acta::openapi());
-    doc
+    prefix_document_paths(doc, "/api")
 }
 
 pub(crate) async fn openapi_json() -> impl IntoResponse {
@@ -383,7 +408,8 @@ mod tests {
                 .get(&component(component_id))
                 .unwrap_or_else(|| panic!("{component_id} must be a registered REG-5 component"));
             for route in &entry.api.routes {
-                owner_by_route.insert((route.method, route.path.as_str().to_string()), stable_id);
+                let mounted = crate::router_audit::mounted_path("/api", route.path.as_str());
+                owner_by_route.insert((route.method, mounted), stable_id);
             }
         }
 
