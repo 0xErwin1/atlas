@@ -630,6 +630,7 @@ version = "0.0.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
+ "regex",
  "serde",
  "serde_json",
  "utoipa",

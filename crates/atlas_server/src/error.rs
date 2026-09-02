@@ -213,13 +213,7 @@ fn domain_error_response(err: DomainError) -> Response {
                 c.current_seq,
                 c.base_to_current_patch,
             );
-            let bytes = serde_json::to_vec(&body).unwrap_or_else(|_| b"{}".to_vec());
-            let mut response = (StatusCode::CONFLICT, bytes).into_response();
-            response.headers_mut().insert(
-                header::CONTENT_TYPE,
-                HeaderValue::from_static("application/problem+json"),
-            );
-            return response;
+            return render_problem(StatusCode::CONFLICT, body);
         }
         DomainError::InvalidInput { message } => (
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -466,6 +460,101 @@ mod golden_body_tests {
         assert_eq!(
             body,
             r#"{"type":"urn:atlas:error:not-found","title":"Not Found","status":404,"hint":"Check the identifier — it may not exist or you may not have access."}"#
+        );
+    }
+
+    /// T2.X (`v2-e3-s3` PR2): `DomainError::Conflict` (`error.rs:210-223`)
+    /// hand-builds `serde_json::to_vec` bytes exactly like the two
+    /// `ApiError` variants PR1 folded, and was left out of that PR only
+    /// because it is a different enum (PR1's own verify report flagged it
+    /// as the same drift class). Captured verbatim, pre-fold, the same way
+    /// T1.1 captured `RevisionConflict`'s body — `DomainError::Conflict`
+    /// wraps the same `atlas_core::error::RevisionConflict` payload, built
+    /// through the same `ConflictProblemDto::new`, so its body is
+    /// byte-identical to `REVISION_CONFLICT_GOLDEN` above.
+    fn sample_domain_conflict() -> DomainError {
+        DomainError::Conflict(RevisionConflict {
+            resource_id: uuid::Uuid::nil(),
+            current_revision_id: uuid::Uuid::parse_str("0195f7b4-1234-7abc-8def-0123456789ab")
+                .expect("valid uuid literal"),
+            current_seq: 42,
+            base_to_current_patch: "--- a\n+++ b\n@@ -1 +1 @@\n-old\n+new\n".to_string(),
+        })
+    }
+
+    async fn render_domain_body(err: DomainError) -> (StatusCode, Option<String>, String) {
+        let response = domain_error_response(err);
+        let status = response.status();
+        let content_type = response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned);
+        let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .expect("response body must be readable");
+        let body = String::from_utf8(bytes.to_vec()).expect("response body must be valid utf-8");
+        (status, content_type, body)
+    }
+
+    #[tokio::test]
+    async fn domain_conflict_body_is_byte_identical_to_golden() {
+        let (status, content_type, body) = render_domain_body(sample_domain_conflict()).await;
+
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(content_type.as_deref(), Some("application/problem+json"));
+        assert_eq!(
+            body, REVISION_CONFLICT_GOLDEN,
+            "DomainError::Conflict's rendered body drifted from the pre-fold golden fixture"
+        );
+    }
+
+    /// T2.X's own RED proof, mirroring T1.1's: the golden comparison must be
+    /// capable of failing, not passing vacuously.
+    #[tokio::test]
+    async fn domain_conflict_golden_comparison_fails_when_a_field_is_renamed() {
+        let (_status, _content_type, body) = render_domain_body(sample_domain_conflict()).await;
+
+        let mutated_golden = REVISION_CONFLICT_GOLDEN.replacen(
+            "\"current_revision_id\"",
+            "\"current_revision_id_renamed\"",
+            1,
+        );
+        assert_ne!(
+            mutated_golden, REVISION_CONFLICT_GOLDEN,
+            "the mutation helper must actually change the fixture copy"
+        );
+        assert_ne!(
+            body, mutated_golden,
+            "a renamed field in the fixture must make the byte-identity check fail; \
+             it did not, so this test does not actually prove anything"
+        );
+    }
+
+    /// The dual of `domain_conflict_golden_comparison_fails_when_a_field_is_
+    /// renamed`: that test mutates a COPY of the golden fixture, proving the
+    /// comparison mechanism itself isn't vacuous, but never touches the
+    /// production render path — it would still pass unchanged even if
+    /// `domain_error_response` silently dropped `current_seq` from its
+    /// output. This test instead mutates the DOMAIN INPUT and renders it
+    /// through the real, unmodified `domain_error_response`, proving the
+    /// production path actually carries `current_seq` through to the wire
+    /// rather than rendering a constant body regardless of input.
+    #[tokio::test]
+    async fn domain_conflict_golden_comparison_fails_when_current_seq_is_off_by_one() {
+        let mut mutated_conflict = sample_domain_conflict();
+        let DomainError::Conflict(c) = &mut mutated_conflict else {
+            unreachable!("sample_domain_conflict always returns DomainError::Conflict");
+        };
+        c.current_seq += 1;
+
+        let (_status, _content_type, body) = render_domain_body(mutated_conflict).await;
+
+        assert_ne!(
+            body, REVISION_CONFLICT_GOLDEN,
+            "rendering DomainError::Conflict with current_seq off by one from the \
+             golden fixture must produce a different body; it did not, so \
+             `domain_error_response` is not actually rendering current_seq"
         );
     }
 }
