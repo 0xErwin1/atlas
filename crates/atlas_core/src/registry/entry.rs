@@ -114,6 +114,7 @@ mod tests {
                             .expect("valid action id"),
                     ),
                     idempotent: false,
+                    is_public: false,
                 }],
                 dto_owner: Some(ComponentId::new("acta").expect("valid component id")),
             },

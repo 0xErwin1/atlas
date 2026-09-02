@@ -156,6 +156,47 @@ pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
     routes
 }
 
+/// `platform`'s own OpenAPI fragment (D4): exactly the paths/schemas this
+/// component's own `router()` mounts, nothing else — the `platform`-owned
+/// subset of what used to be `openapi::ApiDoc`'s single 401-path list.
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(
+        crate::routes::health::health,
+        crate::routes::health::ready,
+        crate::routes::health::version,
+        crate::routes::health::meta,
+        crate::routes::ui_state::get_ui_state,
+        crate::routes::ui_state::set_ui_state,
+    ),
+    components(schemas(
+        atlas_api::dtos::ServerMetaDto,
+        atlas_api::dtos::UiStateDto,
+        atlas_api::dtos::UpdateUiStateRequest,
+    )),
+    tags(
+        (name = "meta", description = "Server metadata"),
+        (name = "ui-state", description = "Per-user UI state"),
+    )
+)]
+struct PlatformOpenApi;
+
+/// `platform`'s registry `stable_id` (matches `reg5.rs`'s
+/// `component("platform")`), read once here — every operation-tag/extension
+/// stamp this module produces goes through
+/// [`crate::routes::openapi::stamp_component_ownership`] with this single
+/// constant, never a second hand-typed `"platform"` literal (T2.33).
+pub(crate) const OPENAPI_STABLE_ID: &str = "platform";
+
+/// Builds `platform`'s OpenAPI fragment, tagged with component ownership
+/// (D4). Consumed only by `routes::openapi::document()`'s fixed merge order.
+pub(crate) fn openapi() -> utoipa::openapi::OpenApi {
+    crate::routes::openapi::stamp_component_ownership(
+        <PlatformOpenApi as utoipa::OpenApi>::openapi(),
+        OPENAPI_STABLE_ID,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;

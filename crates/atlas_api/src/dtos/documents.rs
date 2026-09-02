@@ -713,29 +713,22 @@ pub struct CommentDraftDto {
 
 /// RFC 9457 problem+json extension for CAS revision conflicts (status 409).
 ///
-/// Flattens `ProblemDetails` fields alongside conflict-specific fields so the
-/// client receives a single `application/problem+json` body.
+/// Embeds `ProblemDetails` (`#[serde(flatten)]`) alongside conflict-specific
+/// fields so the client receives a single `application/problem+json` body.
 //
-// The fields are mirrored by hand rather than embedded with `serde(flatten)`:
-// an embed keeps the wire bytes identical but turns the OpenAPI schema from a
-// flat object into an `allOf` composition, and the doc comment above is part
-// of that schema's description, so both stay as they were until the schema
-// is allowed to change. `problem_details_key_mirror_guard` keeps the mirror
-// in sync with `ProblemDetails`.
+// D6 (`v2-e3-s4`): the fields used to be mirrored by hand, guarded by
+// `problem_details_key_mirror_guard`, because an embed turns the OpenAPI
+// schema from a flat object into an `allOf` composition (a deliberate,
+// tracked change for this slice — see `openapi_conflict_problem_dto_schema_
+// is_all_of` in `crates/atlas_server`). Embedding makes a `ProblemDetails`
+// field added without updating this struct structurally impossible, so the
+// hand-mirror guard is retired: the invariant it checked is now
+// compiler-enforced.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ConflictProblemDto {
-    pub r#type: String,
-    pub title: String,
-    pub status: u16,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub detail: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub instance: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub request_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub hint: Option<String>,
+    #[serde(flatten)]
+    pub problem: crate::problem::ProblemDetails,
     /// The revision ID that is currently head (the client's token is stale).
     pub current_revision_id: uuid::Uuid,
     /// Sequence number of the current head revision.
@@ -751,74 +744,25 @@ impl ConflictProblemDto {
         base_to_current_patch: String,
     ) -> Self {
         Self {
-            r#type: "urn:atlas:error:revision-conflict".into(),
-            title: "Revision Conflict".into(),
-            status: 409,
-            detail: Some(
-                "The base_revision_id does not match the current revision. \
-                 Apply base_to_current_patch and retry."
-                    .into(),
-            ),
-            instance: None,
-            request_id: None,
-            hint: Some(
-                "Apply the provided patch to your local content, then retry with the new revision id."
-                    .into(),
-            ),
+            problem: crate::problem::ProblemDetails {
+                r#type: "urn:atlas:error:revision-conflict".into(),
+                title: "Revision Conflict".into(),
+                status: 409,
+                detail: Some(
+                    "The base_revision_id does not match the current revision. \
+                     Apply base_to_current_patch and retry."
+                        .into(),
+                ),
+                instance: None,
+                request_id: None,
+                hint: Some(
+                    "Apply the provided patch to your local content, then retry with the new revision id."
+                        .into(),
+                ),
+            },
             current_revision_id,
             current_seq,
             base_to_current_patch,
         }
-    }
-}
-
-#[cfg(test)]
-mod problem_mirror_tests {
-    use super::*;
-    use crate::problem::ProblemDetails;
-
-    fn json_keys(value: &serde_json::Value) -> std::collections::BTreeSet<String> {
-        value
-            .as_object()
-            .expect("value must serialize to a JSON object")
-            .keys()
-            .cloned()
-            .collect()
-    }
-
-    /// `ConflictProblemDto` mirrors `ProblemDetails`'s fields by hand rather
-    /// than embedding it, because embedding would turn the OpenAPI schema
-    /// for this body from a flat object into an `allOf` composition. This
-    /// guard fails the moment `ProblemDetails` gains a field that has not
-    /// been added here too, since a silent drift would otherwise only show
-    /// up as a missing key on the wire.
-    #[test]
-    fn problem_details_key_mirror_guard() {
-        // Built as a full struct literal (not via `ProblemDetails::new`) so
-        // that adding a field to `ProblemDetails` fails this file to
-        // compile until the new field is also listed here.
-        let problem = ProblemDetails {
-            r#type: "urn:atlas:error:example".into(),
-            title: "Example".into(),
-            status: 500,
-            detail: Some("detail".into()),
-            instance: Some("/example".into()),
-            request_id: Some("req-1".into()),
-            hint: Some("hint".into()),
-        };
-        let problem_keys =
-            json_keys(&serde_json::to_value(&problem).expect("problem must serialize"));
-
-        let mut conflict = ConflictProblemDto::new(uuid::Uuid::nil(), 1, "patch".into());
-        conflict.instance = Some("/example".into());
-        conflict.request_id = Some("req-1".into());
-        let conflict_keys =
-            json_keys(&serde_json::to_value(&conflict).expect("conflict dto must serialize"));
-
-        let missing: Vec<&String> = problem_keys.difference(&conflict_keys).collect();
-        assert!(
-            missing.is_empty(),
-            "ConflictProblemDto is missing ProblemDetails keys: {missing:?}"
-        );
     }
 }

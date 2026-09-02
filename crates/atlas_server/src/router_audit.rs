@@ -132,6 +132,22 @@ where
     }
 }
 
+/// The two mount prefixes every registry-declared route is reachable under
+/// (D1). `/api/v2`'s `Router::nest` does not exist until PR5, but `document()`'s
+/// zero-drift test (PR2, D5) already needs to reconstruct `/api/v2`-joined
+/// paths to compare against the composed OpenAPI document, whose paths are
+/// namespaced per D5's stated `/api/v2`-only scope — so this primitive lands
+/// here, ahead of the mount itself, rather than being duplicated later.
+pub const NAMESPACES: &[&str] = &["/api", "/api/v2"];
+
+/// Joins a mount `namespace` with a namespace-relative `relative_path` (D1).
+/// The single place every consumer in the proposal's blast-radius table
+/// builds a concrete V1/V2 path, so no caller ever hand-concatenates a
+/// literal `"/api"` a second time.
+pub fn joined(namespace: &str, relative_path: &str) -> String {
+    format!("{namespace}{relative_path}")
+}
+
 /// Translates a registry-declared `ActionId` (`<component>::<family>::<action>`)
 /// into the `Capability` its wire form (`family:action`) denotes, so the
 /// declare-and-verify audit compares the registry's declared action against
@@ -1206,39 +1222,26 @@ mod tests {
         );
     }
 
-    /// Pins the server-wide public (no-`require_authn`) route set against a
-    /// literal that is independent of `component_routes!`. Every other
-    /// check in this crate derives "public" from the SAME macro expansion
-    /// that builds each component's public sub-router
-    /// (`{platform,custos,acta}_route_paths()`, `tests/support/route_matrix.rs`,
-    /// `tests/api_acta_router_parity.rs`), so a route silently moved from a
-    /// protected sub-module into a public one would move router and
-    /// "expected" together and nothing would fail. This literal is stated
-    /// by hand, read off `routes::platform`, `routes::custos`, and
-    /// `routes::acta`'s `public` sub-modules directly, so adding a route to
-    /// any component's `public` sub-module without updating this list fails
-    /// `cargo test`, and removing a route from `public` without updating
-    /// this list fails it too.
+    /// T2.30 (`v2-e3-s4`, D7, R7's mitigation): the pre-D7 hand literal this
+    /// test used to compare against, run one more time BEFORE its deletion
+    /// (below), as the independent check that
+    /// `{platform,custos,acta}_route_paths()`'s union is currently correct.
+    /// Recorded in the PR description; this is not a new assertion, only a
+    /// paper trail that the union was verified once before `is_public`
+    /// started trusting it as ground truth.
     #[test]
-    fn public_route_set_matches_independent_literal() {
+    fn pre_d7_independent_literal_matches_the_route_paths_union() {
         const EXPECTED_PUBLIC_ROUTES: &[(HttpMethod, &str)] = &[
-            // routes/platform.rs `mod public` (`/health`, `/ready`, `/version`).
             (HttpMethod::Get, "/health"),
             (HttpMethod::Get, "/ready"),
             (HttpMethod::Get, "/version"),
-            // routes/custos.rs `mod public` (`login`, `activate`).
             (HttpMethod::Post, "/api/auth/login"),
             (HttpMethod::Get, "/api/activate/{token}"),
             (HttpMethod::Post, "/api/activate/{token}"),
-            // routes/acta.rs `mod public` (the GitHub webhook ingest).
             (
                 HttpMethod::Post,
                 "/api/workspaces/{ws}/integrations/{integration}/events",
             ),
-            // routes/platform.rs `openapi_document_declared_routes()`
-            // (`v2-e3-s4`, D3): `/openapi.json`/`/scalar`, physically
-            // mounted in `routes::acta::public::router` but audited as
-            // `platform`'s per the registry's ownership assignment.
             (HttpMethod::Get, "/openapi.json"),
             (HttpMethod::Get, "/scalar"),
         ];
@@ -1253,14 +1256,51 @@ mod tests {
 
         let diff = diff_route_sets(&expected, &actual);
         assert!(
+            diff.is_empty(),
+            "the pre-D7 independent literal no longer matches the route_paths() union — a \
+             latent discrepancy here would have been baked into is_public as ground truth: \
+             {diff:?}"
+        );
+    }
+
+    /// T2.31 (`v2-e3-s4`, D7): replaces the hand literal above with
+    /// `Registry::all_routes().filter(|r| r.is_public)` — both sides stay
+    /// independent of each other post-D7: this side reads `is_public` off
+    /// `reg5.rs`, the other reads the router-accessor union built from the
+    /// live `component_routes!` expansion.
+    #[test]
+    fn public_route_set_matches_route_paths_union() {
+        use atlas_core::registry::build;
+
+        let registry = build(crate::reg5::reg5_component_entries(
+            crate::reg5::StorageBackend::Filesystem,
+        ))
+        .expect("REG-5 entries must satisfy every registry::build() validator");
+
+        let declared_public: HashSet<(HttpMethod, String)> = registry
+            .entries()
+            .iter()
+            .flat_map(|entry| entry.api.routes.iter())
+            .filter(|route| route.is_public)
+            .map(|route| (route.method, route.path.as_str().to_string()))
+            .collect();
+
+        let mounted_public: HashSet<(HttpMethod, String)> = platform_route_paths()
+            .into_iter()
+            .chain(custos_route_paths())
+            .chain(acta_route_paths())
+            .map(|(method, path)| (method, path.to_string()))
+            .collect();
+
+        let diff = diff_route_sets(&declared_public, &mounted_public);
+        assert!(
             diff.left_only.is_empty(),
-            "expected as public but no longer served unauthenticated: {:?}",
+            "declared is_public: true but not actually mounted with no require_authn layer: {:?}",
             diff.left_only
         );
         assert!(
             diff.right_only.is_empty(),
-            "served unauthenticated but missing from the independent literal above \
-             (a route moved into a `public` sub-module without updating this list): {:?}",
+            "mounted with no require_authn layer but not declared is_public: true: {:?}",
             diff.right_only
         );
     }

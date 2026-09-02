@@ -280,6 +280,108 @@ pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
     public::declared_routes()
 }
 
+/// `custos`'s own OpenAPI fragment (D4): exactly the paths/schemas this
+/// component's own `router()` mounts, nothing else — the `custos`-owned
+/// subset of what used to be `openapi::ApiDoc`'s single 401-path list.
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(
+        crate::routes::activate::get_activation_info,
+        crate::routes::activate::post_activate,
+        crate::routes::auth::login,
+        crate::routes::auth::logout,
+        crate::routes::auth::me,
+        crate::routes::auth::change_password,
+        crate::routes::auth::update_me,
+        crate::routes::users::list_users,
+        crate::routes::users::create_user,
+        crate::routes::users::disable_user,
+        crate::routes::users::enable_user,
+        crate::routes::users::reset_password,
+        crate::routes::users::set_system_admin,
+        crate::routes::users::regenerate_activation_link,
+        crate::routes::users::list_user_memberships,
+        crate::routes::audit::list_workspace_audit,
+        crate::routes::audit::list_platform_audit,
+        crate::routes::api_keys::create_user_api_key,
+        crate::routes::api_keys::list_user_api_keys,
+        crate::routes::api_keys::revoke_user_api_key,
+        crate::routes::api_keys::update_user_api_key,
+        crate::routes::api_keys::list_api_key_grants,
+        crate::routes::api_keys::delete_api_key_grant,
+        crate::routes::grants::create_project_grant,
+        crate::routes::grants::list_project_grants,
+        crate::routes::grants::delete_project_grant,
+        crate::routes::grants::create_workspace_grant,
+        crate::routes::grants::list_workspace_grants,
+        crate::routes::grants::delete_workspace_grant,
+        crate::routes::groups::create_group,
+        crate::routes::groups::list_groups,
+        crate::routes::groups::delete_group,
+        crate::routes::groups::add_group_member,
+        crate::routes::groups::remove_group_member,
+        crate::routes::groups::list_group_members,
+    ),
+    components(schemas(
+        atlas_api::dtos::audit::AuditEntryDto,
+        atlas_api::dtos::groups::AddGroupMemberRequest,
+        atlas_api::dtos::groups::CreateGroupRequest,
+        atlas_api::dtos::groups::GroupDto,
+        atlas_api::dtos::groups::GroupMemberDto,
+        atlas_api::dtos::ActivatePasswordRequest,
+        atlas_api::dtos::ActivationInfoDto,
+        atlas_api::dtos::ActivationLinkResponse,
+        atlas_api::dtos::AgentIdentityDto,
+        atlas_api::dtos::ApiKeyCreated,
+        atlas_api::dtos::ApiKeyDto,
+        atlas_api::dtos::ApiKeyGrantDto,
+        atlas_api::dtos::ApiKeyScope,
+        atlas_api::dtos::ChangePasswordRequest,
+        atlas_api::dtos::CreateGrantRequest,
+        atlas_api::dtos::CreateUserApiKeyRequest,
+        atlas_api::dtos::CreateUserRequest,
+        atlas_api::dtos::CreateUserResponse,
+        atlas_api::dtos::GrantDto,
+        atlas_api::dtos::GrantPrincipal,
+        atlas_api::dtos::GrantedByDto,
+        atlas_api::dtos::InitialGrantRequest,
+        atlas_api::dtos::LoginRequest,
+        atlas_api::dtos::LoginResponse,
+        atlas_api::dtos::MeResponse,
+        atlas_api::dtos::ResetPasswordRequest,
+        atlas_api::dtos::SetSystemAdminRequest,
+        atlas_api::dtos::UpdateApiKeyRequest,
+        atlas_api::dtos::UpdateMeRequest,
+        atlas_api::dtos::UserDto,
+        atlas_api::dtos::UserMembershipDto,
+    )),
+    tags(
+        (name = "audit", description = "Security audit log"),
+        (name = "auth", description = "Authentication and session management"),
+        (name = "users", description = "User management (root-only)"),
+        (name = "api-keys", description = "Workspace API key management"),
+        (name = "grants", description = "Permission grant management"),
+        (name = "groups", description = "Workspace principal groups"),
+    )
+)]
+struct CustosOpenApi;
+
+/// `custos`'s registry `stable_id` (matches `reg5.rs`'s
+/// `component("custos")`), read once here — every operation-tag/extension
+/// stamp this module produces goes through
+/// [`crate::routes::openapi::stamp_component_ownership`] with this single
+/// constant, never a second hand-typed `"custos"` literal (T2.33).
+pub(crate) const OPENAPI_STABLE_ID: &str = "custos";
+
+/// Builds `custos`'s OpenAPI fragment, tagged with component ownership
+/// (D4). Consumed only by `routes::openapi::document()`'s fixed merge order.
+pub(crate) fn openapi() -> utoipa::openapi::OpenApi {
+    crate::routes::openapi::stamp_component_ownership(
+        <CustosOpenApi as utoipa::OpenApi>::openapi(),
+        OPENAPI_STABLE_ID,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;

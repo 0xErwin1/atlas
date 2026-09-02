@@ -2,494 +2,522 @@ use axum::{Json, response::IntoResponse};
 use utoipa::OpenApi;
 use utoipa_scalar::{Scalar, Servable as _};
 
-use atlas_api::{
-    dtos::{
-        ActivatePasswordRequest, ActivationInfoDto, ActivationLinkResponse, AddMemberRequest,
-        AdminUpdateWorkspaceRequest, AgentIdentityDto, ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto,
-        ApiKeyScope, ChangePasswordRequest, CreateGrantRequest, CreateProjectRequest,
-        CreateUserApiKeyRequest, CreateUserRequest, CreateUserResponse, CreateWorkspaceRequest,
-        GrantDto, GrantPrincipal, GrantedByDto, InitialGrantRequest, LoginRequest, LoginResponse,
-        MeResponse, PrincipalDto, ProjectDto, ResetPasswordRequest, ServerMetaDto,
-        SetSystemAdminRequest, UiStateDto, UpdateApiKeyRequest, UpdateMeRequest,
-        UpdateMemberRoleRequest, UpdateProjectRequest, UpdateUiStateRequest,
-        UpdateWorkspaceRequest, UserDto, UserMembershipDto, WorkspaceDto,
-        audit::AuditEntryDto,
-        automation_rules::{
-            AutomationRuleDto, CreateAutomationRuleRequest, PatchAutomationRuleRequest,
-        },
-        boards_tasks::{
-            ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardPresenceResponse,
-            BoardSummaryDto, ChecklistItemDto, ColumnDto, CommentDto, CreateBoardRequest,
-            CreateChecklistItemRequest, CreateColumnRequest, CreateCommentRequest,
-            CreateReferenceRequest, CreateSubtaskRequest, CreateTaskRequest,
-            DocumentBacklinkSourceDto, MoveBoardRequest, MoveTaskRequest,
-            PromoteChecklistItemRequest, PromotionDto, ReferenceDto, ReferenceOriginDto,
-            RenameTaskAttachmentRequest, SetTaskParentRequest, TaskAttachmentDto, TaskBacklinkDto,
-            TaskDto, TaskGraphDto, TaskGraphEdgeDto, TaskGraphNodeDto, TaskPropertiesDto,
-            TaskSummaryDto, UnifiedReferenceDto, UpdateBoardRequest, UpdateChecklistItemRequest,
-            UpdateColumnRequest, UpdateCommentRequest, UpdateTaskRequest,
-        },
-        documents::{
-            ActorDto, AttachmentDto, AttachmentOwnerDto, BacklinkDto, CommentAttachmentDto,
-            CommentDraftDto, ConflictProblemDto, CopyDocumentRequest, CreateDocumentRequest,
-            DocumentCompactDto, DocumentContentRangeDto, DocumentContentRangeQuery,
-            DocumentContentSearchDto, DocumentContentSearchRequest, DocumentDto, DocumentLineDto,
-            DocumentMoveBatchItemRequest, DocumentMoveBatchRequest, DocumentMoveBatchResultDto,
-            DocumentPresenceResponse, DocumentSearchMatchDto, DocumentSearchMode,
-            DocumentSummaryDto, FrontmatterDto, MoveDocumentRequest, RenameAttachmentRequest,
-            RevisionContentDto, RevisionMetaDto, UpdateContentRequest, UpdateDocumentRequest,
-            WorkspaceAttachmentDto,
-        },
-        folders::{
-            CopyFolderRequest, CreateFolderRequest, FolderDto, MoveFolderRequest,
-            RenameFolderRequest,
-        },
-        groups::{AddGroupMemberRequest, CreateGroupRequest, GroupDto, GroupMemberDto},
-        integrations::{
-            CreateIntegrationConfigRequest, IntegrationConfigCreatedDto, IntegrationConfigDto,
-            UpdateIntegrationConfigRequest,
-        },
-        property_definitions::{CreatePropertyDefinitionRequest, PropertyDefinitionDto},
-        saved_searches::{CreateSavedSearchRequest, RenameSavedSearchRequest, SavedSearchDto},
-        search::{SearchHitDto, SearchKindDto},
-        semantic_search::{
-            SemanticReindexPlanDto, SemanticReindexStartedDto, SemanticSearchHitDto,
-            SemanticSearchKindDto, SemanticSearchSourceDto,
-        },
-        status_templates::{
-            CreateStatusTemplateRequest, PlatformStatusTemplateDto, StatusTemplateDto,
-            UpdateStatusTemplateRequest,
-        },
-        tags::{CreateTagRequest, TagDto, UpdateTagRequest},
-        task_views::{
-            CreateTaskViewRequest, TaskViewDto, TaskViewFiltersDto, UpdateTaskViewRequest,
-        },
-        webhooks::{
-            CreateWebhookRequest, UpdateWebhookRequest, WebhookCreatedDto, WebhookDeliveryDto,
-            WebhookDto,
-        },
-    },
-    problem::ProblemDetails,
-};
-
+/// Carries only `info(...)`: zero `paths`/`schemas` of its own, so merging
+/// the three component fragments onto it (`document()`) never duplicates
+/// anything and `info` is set exactly once (D4).
 #[derive(OpenApi)]
-#[openapi(
-    info(
-        title = "Atlas API",
-        version = env!("CARGO_PKG_VERSION"),
-        description = "Atlas knowledge and project-management platform REST API"
-    ),
-    paths(
-        crate::routes::health::health,
-        crate::routes::health::ready,
-        crate::routes::health::version,
-        crate::routes::health::meta,
-        crate::routes::activate::get_activation_info,
-        crate::routes::activate::post_activate,
-        crate::routes::auth::login,
-        crate::routes::auth::logout,
-        crate::routes::auth::me,
-        crate::routes::auth::change_password,
-        crate::routes::auth::update_me,
-        crate::routes::ui_state::get_ui_state,
-        crate::routes::ui_state::set_ui_state,
-        crate::routes::users::list_users,
-        crate::routes::users::create_user,
-        crate::routes::users::disable_user,
-        crate::routes::users::enable_user,
-        crate::routes::users::reset_password,
-        crate::routes::users::set_system_admin,
-        crate::routes::users::regenerate_activation_link,
-        crate::routes::users::list_user_memberships,
-        crate::routes::workspaces::create_workspace,
-        crate::routes::workspaces::list_workspaces,
-        crate::routes::workspaces::get_workspace,
-        crate::routes::workspaces::update_workspace,
-        crate::routes::workspaces::admin_list_workspaces,
-        crate::routes::workspaces::admin_update_workspace,
-        crate::routes::workspaces::admin_delete_workspace,
-        crate::routes::audit::list_workspace_audit,
-        crate::routes::audit::list_platform_audit,
-        crate::routes::trash::list_trash,
-        crate::routes::trash::restore_trash,
-        crate::routes::trash::purge_trash,
-        crate::routes::trash::get_purge_status,
-        crate::routes::api_keys::create_user_api_key,
-        crate::routes::api_keys::list_user_api_keys,
-        crate::routes::api_keys::revoke_user_api_key,
-        crate::routes::api_keys::update_user_api_key,
-        crate::routes::api_keys::list_api_key_grants,
-        crate::routes::api_keys::delete_api_key_grant,
-        crate::routes::projects::create_project,
-        crate::routes::projects::list_projects,
-        crate::routes::projects::get_project,
-        crate::routes::projects::update_project,
-        crate::routes::projects::delete_project,
-        crate::routes::grants::create_project_grant,
-        crate::routes::grants::list_project_grants,
-        crate::routes::grants::delete_project_grant,
-        crate::routes::grants::create_workspace_grant,
-        crate::routes::grants::list_workspace_grants,
-        crate::routes::grants::delete_workspace_grant,
-        crate::routes::members::list_workspace_members,
-        crate::routes::members::add_member,
-        crate::routes::members::list_assignable_users,
-        crate::routes::members::update_member_role,
-        crate::routes::members::remove_member,
-        crate::routes::groups::create_group,
-        crate::routes::groups::list_groups,
-        crate::routes::groups::delete_group,
-        crate::routes::groups::add_group_member,
-        crate::routes::groups::remove_group_member,
-        crate::routes::groups::list_group_members,
-        crate::routes::boards::create_board,
-        crate::routes::boards::list_boards,
-        crate::routes::boards::get_board,
-        crate::routes::boards::update_board,
-        crate::routes::boards::move_board,
-        crate::routes::boards::archive_board,
-        crate::routes::boards::unarchive_board,
-        crate::routes::boards::delete_board,
-        crate::routes::boards::create_column,
-        crate::routes::boards::list_columns,
-        crate::routes::boards::update_column,
-        crate::routes::boards::delete_column,
-        crate::routes::tasks::create_task,
-        crate::routes::tasks::list_tasks,
-        crate::routes::presence::heartbeat,
-        crate::routes::presence::leave,
-        crate::routes::presence::document_heartbeat,
-        crate::routes::presence::document_leave,
-        crate::routes::tasks::list_workspace_tasks,
-        crate::routes::tasks::get_task,
-        crate::routes::tasks::update_task,
-        crate::routes::tasks::delete_task,
-        crate::routes::tasks::move_task,
-        crate::routes::tasks::list_assignees,
-        crate::routes::tasks::add_assignee,
-        crate::routes::tasks::remove_assignee,
-        crate::routes::tasks::list_references,
-        crate::routes::tasks::create_reference,
-        crate::routes::tasks::create_references_batch,
-        crate::routes::tasks::delete_reference,
-        crate::routes::tasks::upload_attachment,
-        crate::routes::tasks::list_attachments,
-        crate::routes::tasks::download_attachment,
-        crate::routes::tasks::rename_attachment,
-        crate::routes::tasks::delete_attachment,
-        crate::routes::tasks::list_backlinks,
-        crate::routes::tasks::get_task_graph,
-        crate::routes::tasks::list_checklist,
-        crate::routes::tasks::create_checklist_item,
-        crate::routes::tasks::update_checklist_item,
-        crate::routes::tasks::delete_checklist_item,
-        crate::routes::tasks::promote_checklist_item,
-        crate::routes::tasks::list_subtasks,
-        crate::routes::tasks::create_subtask,
-        crate::routes::tasks::promote_subtask,
-        crate::routes::tasks::set_task_parent,
-        crate::routes::tasks::list_activity,
-        crate::routes::tasks::list_comments,
-        crate::routes::tasks::create_comment,
-        crate::routes::tasks::update_comment,
-        crate::routes::tasks::delete_comment,
-        crate::routes::tasks::create_comment_draft,
-        crate::routes::tasks::cancel_comment_draft,
-        crate::routes::tasks::upload_comment_attachment,
-        crate::routes::tasks::upload_comment_draft_attachment,
-        crate::routes::tasks::list_comment_attachments,
-        crate::routes::tasks::download_comment_attachment,
-        crate::routes::tasks::delete_comment_attachment,
-        crate::routes::tasks::list_workspace_activity,
-        crate::routes::documents::create_document,
-        crate::routes::documents::list_documents,
-        crate::routes::documents::get_document,
-        crate::routes::documents::get_document_compact,
-        crate::routes::documents::get_content_range,
-        crate::routes::documents::edit_content_range,
-        crate::routes::documents::search_content,
-        crate::routes::documents::update_document,
-        crate::routes::documents::delete_document,
-        crate::routes::documents::update_content,
-        crate::routes::documents::list_history,
-        crate::routes::documents::list_backlinks,
-        crate::routes::documents::get_frontmatter,
-        crate::routes::documents::upload_attachment,
-        crate::routes::documents::list_attachments,
-        crate::routes::documents::get_revision_content,
-        crate::routes::documents::download_attachment,
-        crate::routes::attachments::list_workspace_attachments,
-        crate::routes::attachments::rename_attachment,
-        crate::routes::documents::delete_attachment,
-        crate::routes::documents::move_document,
-        crate::routes::documents::move_documents_batch,
-        crate::routes::documents::copy_document,
-        crate::routes::documents::list_comments,
-        crate::routes::documents::create_comment,
-        crate::routes::documents::update_comment,
-        crate::routes::documents::delete_comment,
-        crate::routes::documents::create_comment_draft,
-        crate::routes::documents::upload_comment_attachment,
-        crate::routes::documents::list_comment_attachments,
-        crate::routes::documents::download_comment_attachment,
-        crate::routes::documents::delete_comment_attachment,
-        crate::routes::documents::cancel_comment_draft,
-        crate::routes::documents::upload_comment_draft_attachment,
-        crate::routes::folders::create_folder,
-        crate::routes::folders::list_folders,
-        crate::routes::folders::get_folder,
-        crate::routes::folders::rename_folder,
-        crate::routes::folders::move_folder,
-        crate::routes::folders::copy_folder,
-        crate::routes::folders::delete_folder,
-        crate::routes::search::search,
-        crate::routes::semantic_search::semantic_search,
-        crate::routes::semantic_search::semantic_reindex_plan,
-        crate::routes::semantic_search::semantic_reindex_start,
-        crate::routes::tags::list_tags,
-        crate::routes::tags::create_tag,
-        crate::routes::tags::list_used_labels,
-        crate::routes::tags::patch_tag,
-        crate::routes::tags::delete_tag,
-        crate::routes::status_templates::list_status_templates,
-        crate::routes::status_templates::create_status_template,
-        crate::routes::status_templates::update_status_template,
-        crate::routes::status_templates::delete_status_template,
-        crate::routes::status_templates::apply_status_templates,
-        crate::routes::platform_status_templates::list_platform_status_templates,
-        crate::routes::platform_status_templates::create_platform_status_template,
-        crate::routes::platform_status_templates::update_platform_status_template,
-        crate::routes::platform_status_templates::delete_platform_status_template,
-        crate::routes::property_definitions::list_property_definitions,
-        crate::routes::property_definitions::create_property_definition,
-        crate::routes::property_definitions::delete_property_definition,
-        crate::routes::saved_searches::list_saved_searches,
-        crate::routes::saved_searches::create_saved_search,
-        crate::routes::saved_searches::rename_saved_search,
-        crate::routes::saved_searches::delete_saved_search,
-        crate::routes::task_views::list_task_views,
-        crate::routes::task_views::create_task_view,
-        crate::routes::task_views::get_task_view,
-        crate::routes::task_views::update_task_view,
-        crate::routes::task_views::delete_task_view,
-        crate::routes::webhooks::create_webhook,
-        crate::routes::webhooks::list_webhooks,
-        crate::routes::webhooks::get_webhook,
-        crate::routes::webhooks::update_webhook,
-        crate::routes::webhooks::delete_webhook,
-        crate::routes::webhooks::list_webhook_deliveries,
-        crate::routes::integration_configs::create_integration_config,
-        crate::routes::integration_configs::list_integration_configs,
-        crate::routes::integration_configs::get_integration_config,
-        crate::routes::integration_configs::patch_integration_config,
-        crate::routes::integration_configs::delete_integration_config,
-        crate::routes::automation_rules::create_automation_rule,
-        crate::routes::automation_rules::list_automation_rules,
-        crate::routes::automation_rules::get_automation_rule,
-        crate::routes::automation_rules::patch_automation_rule,
-        crate::routes::automation_rules::delete_automation_rule,
-        crate::routes::integrations_ingest::ingest_github_event,
-    ),
-    components(schemas(
-        LoginRequest,
-        LoginResponse,
-        MeResponse,
-        AgentIdentityDto,
-        ServerMetaDto,
-        UiStateDto,
-        UpdateUiStateRequest,
-        ChangePasswordRequest,
-        UpdateMeRequest,
-        ResetPasswordRequest,
-        SetSystemAdminRequest,
-        UserMembershipDto,
-        CreateUserRequest,
-        CreateUserResponse,
-        ActivationLinkResponse,
-        ActivationInfoDto,
-        ActivatePasswordRequest,
-        UserDto,
-        CreateUserApiKeyRequest,
-        InitialGrantRequest,
-        ApiKeyCreated,
-        ApiKeyDto,
-        ApiKeyScope,
-        ApiKeyGrantDto,
-        GrantedByDto,
-        UpdateApiKeyRequest,
-        CreateProjectRequest,
-        UpdateProjectRequest,
-        ProjectDto,
-        CreateGrantRequest,
-        GrantPrincipal,
-        GrantDto,
-        PrincipalDto,
-        UpdateMemberRoleRequest,
-        AddMemberRequest,
-        CreateGroupRequest,
-        GroupDto,
-        GroupMemberDto,
-        AddGroupMemberRequest,
-        CreateWorkspaceRequest,
-        UpdateWorkspaceRequest,
-        AdminUpdateWorkspaceRequest,
-        WorkspaceDto,
-        ProblemDetails,
-        CreateDocumentRequest,
-        UpdateDocumentRequest,
-        UpdateContentRequest,
-        MoveDocumentRequest,
-        DocumentMoveBatchRequest,
-        DocumentMoveBatchItemRequest,
-        DocumentMoveBatchResultDto,
-        CopyDocumentRequest,
-        DocumentDto,
-        DocumentCompactDto,
-        DocumentContentRangeQuery,
-        DocumentContentRangeDto,
-        DocumentContentSearchRequest,
-        DocumentContentSearchDto,
-        DocumentSearchMatchDto,
-        DocumentSearchMode,
-        DocumentLineDto,
-        DocumentSummaryDto,
-        RevisionMetaDto,
-        RevisionContentDto,
-        BacklinkDto,
-        FrontmatterDto,
-        AttachmentDto,
-        AttachmentOwnerDto,
-        WorkspaceAttachmentDto,
-        RenameAttachmentRequest,
-        CommentAttachmentDto,
-        CommentDraftDto,
-        ActorDto,
-        ConflictProblemDto,
-        BoardDto,
-        BoardSummaryDto,
-        BoardPresenceResponse,
-        DocumentPresenceResponse,
-        ColumnDto,
-        CreateBoardRequest,
-        UpdateBoardRequest,
-        MoveBoardRequest,
-        CreateColumnRequest,
-        UpdateColumnRequest,
-        TaskDto,
-        TaskSummaryDto,
-        TaskPropertiesDto,
-        CreateTaskRequest,
-        UpdateTaskRequest,
-        MoveTaskRequest,
-        AssigneeDto,
-        AddAssigneeRequest,
-        ReferenceDto,
-        ReferenceOriginDto,
-        UnifiedReferenceDto,
-        TaskAttachmentDto,
-        RenameTaskAttachmentRequest,
-        TaskBacklinkDto,
-        DocumentBacklinkSourceDto,
-        TaskGraphDto,
-        TaskGraphNodeDto,
-        TaskGraphEdgeDto,
-        CreateReferenceRequest,
-        ChecklistItemDto,
-        CreateChecklistItemRequest,
-        CreateSubtaskRequest,
-        SetTaskParentRequest,
-        UpdateChecklistItemRequest,
-        PromotionDto,
-        PromoteChecklistItemRequest,
-        ActivityEntryDto,
-        CommentDto,
-        CreateCommentRequest,
-        UpdateCommentRequest,
-        AuditEntryDto,
-        SearchHitDto,
-        SearchKindDto,
-        SemanticReindexPlanDto,
-        SemanticReindexStartedDto,
-        SemanticSearchHitDto,
-        SemanticSearchKindDto,
-        SemanticSearchSourceDto,
-        CreateFolderRequest,
-        RenameFolderRequest,
-        MoveFolderRequest,
-        CopyFolderRequest,
-        FolderDto,
-        TagDto,
-        CreateTagRequest,
-        UpdateTagRequest,
-        StatusTemplateDto,
-        PlatformStatusTemplateDto,
-        CreateStatusTemplateRequest,
-        UpdateStatusTemplateRequest,
-        PropertyDefinitionDto,
-        CreatePropertyDefinitionRequest,
-        SavedSearchDto,
-        CreateSavedSearchRequest,
-        RenameSavedSearchRequest,
-        TaskViewDto,
-        TaskViewFiltersDto,
-        CreateTaskViewRequest,
-        UpdateTaskViewRequest,
-        WebhookDto,
-        WebhookCreatedDto,
-        CreateWebhookRequest,
-        UpdateWebhookRequest,
-        WebhookDeliveryDto,
-        CreateIntegrationConfigRequest,
-        UpdateIntegrationConfigRequest,
-        IntegrationConfigDto,
-        IntegrationConfigCreatedDto,
-        CreateAutomationRuleRequest,
-        PatchAutomationRuleRequest,
-        AutomationRuleDto,
-    )),
-    tags(
-        (name = "audit", description = "Security audit log"),
-        (name = "auth", description = "Authentication and session management"),
-        (name = "users", description = "User management (root-only)"),
-        (name = "meta", description = "Server metadata"),
-        (name = "ui-state", description = "Per-user UI state"),
-        (name = "api-keys", description = "Workspace API key management"),
-        (name = "projects", description = "Project CRUD"),
-        (name = "grants", description = "Permission grant management"),
-        (name = "groups", description = "Workspace principal groups"),
-        (name = "workspaces", description = "Workspace metadata"),
-        (name = "documents", description = "Document management"),
-        (name = "boards", description = "Board and column management"),
-        (name = "tasks", description = "Task management"),
-        (name = "presence", description = "Board and document presence (live awareness)"),
-        (name = "folders", description = "Folder management"),
-        (name = "search", description = "Unified full-text search"),
-        (name = "tags", description = "Workspace tag registry"),
-        (name = "status-templates", description = "Workspace default status templates"),
-        (name = "property-definitions", description = "Workspace custom-field registry"),
-        (name = "saved-searches", description = "Per-owner saved search registry"),
-        (name = "task-views", description = "Per-owner task filter views"),
-        (name = "webhooks", description = "Outgoing webhook subscription management (admin-only)"),
-        (name = "integrations", description = "External integration config management and event ingestion (admin-only)"),
-        (name = "automation-rules", description = "Automation rule CRUD (admin-only)"),
-        (name = "attachments", description = "Workspace-wide attachment listing and rename"),
-        (name = "trash", description = "Root/system-admin human Trash lifecycle administration"),
-    )
-)]
-pub(crate) struct ApiDoc;
+#[openapi(info(
+    title = "Atlas API",
+    version = env!("CARGO_PKG_VERSION"),
+    description = "Atlas knowledge and project-management platform REST API"
+))]
+struct ApiDoc;
+
+/// Adds `tag = <stable_id>` and a matching `x-atlas-component` extension to
+/// every operation in `doc` (D4/T2.6). Called exactly once per fragment
+/// module, from that module's own `openapi()` function, with that module's
+/// single `stable_id` constant — never a per-operation hand-typed literal.
+pub(crate) fn stamp_component_ownership(
+    mut doc: utoipa::openapi::OpenApi,
+    stable_id: &str,
+) -> utoipa::openapi::OpenApi {
+    for path_item in doc.paths.paths.values_mut() {
+        for operation in operations_mut(path_item) {
+            operation
+                .tags
+                .get_or_insert_with(Vec::new)
+                .push(stable_id.to_string());
+
+            let extensions = operation
+                .extensions
+                .get_or_insert_with(utoipa::openapi::extensions::Extensions::default);
+            extensions.insert(
+                "x-atlas-component".to_string(),
+                serde_json::Value::String(stable_id.to_string()),
+            );
+        }
+    }
+    doc
+}
+
+/// Every [`utoipa::openapi::path::Operation`] present on a
+/// [`utoipa::openapi::path::PathItem`], across all eight HTTP methods utoipa
+/// models as discrete optional fields — there is no method-keyed map to
+/// iterate directly.
+fn operations_mut(
+    path_item: &mut utoipa::openapi::path::PathItem,
+) -> impl Iterator<Item = &mut utoipa::openapi::path::Operation> {
+    [
+        path_item.get.as_mut(),
+        path_item.put.as_mut(),
+        path_item.post.as_mut(),
+        path_item.delete.as_mut(),
+        path_item.options.as_mut(),
+        path_item.head.as_mut(),
+        path_item.patch.as_mut(),
+        path_item.trace.as_mut(),
+    ]
+    .into_iter()
+    .flatten()
+}
+
+/// Composes the full OpenAPI document from each component's own fragment
+/// (D4): `ApiDoc` contributes only `info(...)`, then `platform`'s,
+/// `custos`'s, and `acta`'s fragments are merged in, in this fixed order.
+/// No other component can structurally contribute — this function only
+/// ever calls these three named fragment constructors (T2.18).
+pub(crate) fn document() -> utoipa::openapi::OpenApi {
+    let mut doc = ApiDoc::openapi();
+    doc.merge(crate::routes::platform::openapi());
+    doc.merge(crate::routes::custos::openapi());
+    doc.merge(crate::routes::acta::openapi());
+    doc
+}
 
 pub(crate) async fn openapi_json() -> impl IntoResponse {
-    Json(ApiDoc::openapi())
+    Json(document())
 }
 
 pub(crate) fn scalar_router<S>() -> axum::Router<S>
 where
     S: Clone + Send + Sync + 'static,
 {
-    axum::Router::from(Scalar::with_url("/scalar", ApiDoc::openapi()))
+    axum::Router::from(Scalar::with_url("/scalar", document()))
 }
 
 /// Expose the assembled `OpenApi` document for test assertions.
 pub fn openapi() -> utoipa::openapi::OpenApi {
-    ApiDoc::openapi()
+    document()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use atlas_core::registry::{ComponentId, build};
+
+    use super::*;
+    use crate::reg5::{StorageBackend, reg5_component_entries};
+
+    fn component(value: &str) -> ComponentId {
+        ComponentId::new(value).expect("valid component id")
+    }
+
+    fn fragment_schemas(
+        doc: &utoipa::openapi::OpenApi,
+    ) -> std::collections::BTreeMap<String, utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>>
+    {
+        doc.components
+            .as_ref()
+            .map(|components| components.schemas.clone())
+            .unwrap_or_default()
+    }
+
+    type SchemaMap =
+        std::collections::BTreeMap<String, utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>>;
+
+    /// Every schema name shared between two of the given `(fragment_name,
+    /// schemas)` pairs whose SHAPE disagrees — the exact hazard
+    /// `OpenApi::merge`'s first-write-wins dedup would otherwise silently
+    /// paper over (D4's own grounding). Both the real detector
+    /// (`shared_schema_names_never_disagree_on_shape`) and its adversarial
+    /// teeth test (`shape_mismatch_detection_has_teeth`) call this exact
+    /// function, so a bug in its comparison loop cannot hide behind either
+    /// caller.
+    fn shape_mismatches(fragments: &[(&str, &SchemaMap)]) -> Vec<(String, (String, String))> {
+        let mut mismatches = Vec::new();
+        for i in 0..fragments.len() {
+            for j in (i + 1)..fragments.len() {
+                let (left_name, left) = *fragments.get(i).expect("i is within the fragment list");
+                let (right_name, right) = *fragments.get(j).expect("j is within the fragment list");
+                for (name, left_schema) in left.iter() {
+                    if let Some(right_schema) = right.get(name)
+                        && left_schema != right_schema
+                    {
+                        mismatches.push((
+                            name.clone(),
+                            (left_name.to_string(), right_name.to_string()),
+                        ));
+                    }
+                }
+            }
+        }
+        mismatches
+    }
+
+    /// T2.1/T2.3 (D4, schema-collision): the three fragments' own
+    /// `components.schemas` maps, built independently before merge, never
+    /// disagree about the SHAPE of a shared name. A name legitimately
+    /// appears in more than one fragment's built map when a schema owned by
+    /// one component (e.g. `acta`'s `ActorDto`) is embedded as a field of a
+    /// schema owned by another (`custos`'s `AuditEntryDto`) — utoipa
+    /// transitively re-discovers the embedded type inside every fragment
+    /// that references it, which is not a collision as long as both
+    /// fragments describe the exact same shape for it (the same canonical
+    /// Rust type, referenced from two call sites). A REAL collision — two
+    /// different types sharing one schema name — is the case this test
+    /// exists to catch: it would silently lose one type's shape to
+    /// `OpenApi::merge`'s first-write-wins dedup (D4's own grounding).
+    #[test]
+    fn shared_schema_names_never_disagree_on_shape() {
+        let platform = fragment_schemas(&crate::routes::platform::openapi());
+        let custos = fragment_schemas(&crate::routes::custos::openapi());
+        let acta = fragment_schemas(&crate::routes::acta::openapi());
+
+        let mismatches = shape_mismatches(&[
+            ("platform", &platform),
+            ("custos", &custos),
+            ("acta", &acta),
+        ]);
+
+        assert!(
+            mismatches.is_empty(),
+            "schema name(s) shared between fragments with DIFFERING shapes — a genuine \
+             collision, not a legitimate shared reference: {mismatches:?}"
+        );
+    }
+
+    /// T2.4 (adversarial proof): `shape_mismatches` must actually flag a
+    /// genuine cross-fragment collision — a same-name schema with two
+    /// different shapes fabricated across two stand-in fragments — not just
+    /// prove that `RefOr<Schema>`'s `PartialEq` distinguishes two values in
+    /// isolation.
+    #[test]
+    fn shape_mismatch_detection_has_teeth() {
+        use utoipa::openapi::schema::{Object, Schema, Type};
+
+        let mut left: SchemaMap = std::collections::BTreeMap::new();
+        left.insert(
+            "SharedName".to_string(),
+            utoipa::openapi::RefOr::T(Schema::Object(
+                Object::builder().schema_type(Type::String).build(),
+            )),
+        );
+
+        let mut right: SchemaMap = std::collections::BTreeMap::new();
+        right.insert(
+            "SharedName".to_string(),
+            utoipa::openapi::RefOr::T(Schema::Object(
+                Object::builder().schema_type(Type::Integer).build(),
+            )),
+        );
+
+        let mismatches = shape_mismatches(&[("left-fragment", &left), ("right-fragment", &right)]);
+
+        assert_eq!(
+            mismatches,
+            vec![(
+                "SharedName".to_string(),
+                ("left-fragment".to_string(), "right-fragment".to_string())
+            )],
+            "shape_mismatches must flag a genuine same-name/different-shape collision, naming it"
+        );
+    }
+
+    /// T2.14/T2.15 (D5, schema-presence): every schema name in `document()`'s
+    /// `components.schemas` traces back to at least one fragment's own set,
+    /// and every fragment-declared schema survives into the merged document
+    /// — both directions. "Exactly one" owner does not hold in general (see
+    /// the collision test's doc comment on legitimate cross-fragment
+    /// references), so this only asserts reachability, not exclusivity.
+    #[test]
+    fn every_document_schema_traces_back_to_a_fragment_and_vice_versa() {
+        let platform: HashSet<String> = fragment_schemas(&crate::routes::platform::openapi())
+            .into_keys()
+            .collect();
+        let custos: HashSet<String> = fragment_schemas(&crate::routes::custos::openapi())
+            .into_keys()
+            .collect();
+        let acta: HashSet<String> = fragment_schemas(&crate::routes::acta::openapi())
+            .into_keys()
+            .collect();
+        let fragment_union: HashSet<String> = platform
+            .union(&custos)
+            .cloned()
+            .collect::<HashSet<_>>()
+            .union(&acta)
+            .cloned()
+            .collect();
+
+        let document_schemas: HashSet<String> = fragment_schemas(&document()).into_keys().collect();
+
+        let not_owned: Vec<_> = document_schemas.difference(&fragment_union).collect();
+        assert!(
+            not_owned.is_empty(),
+            "document schemas with no owning fragment: {not_owned:?}"
+        );
+
+        let orphaned: Vec<_> = fragment_union.difference(&document_schemas).collect();
+        assert!(
+            orphaned.is_empty(),
+            "fragment-owned schemas absent from the merged document: {orphaned:?}"
+        );
+    }
+
+    /// Every `(method, path, operation)` present in `document`'s
+    /// `paths`, method-aware — the same eight-field enumeration
+    /// [`operations`]/[`operations_mut`] flatten, but keeping the concrete
+    /// [`atlas_core::registry::HttpMethod`] so it can be compared against a
+    /// registry-declared route.
+    fn document_operations_by_route(
+        document: &utoipa::openapi::OpenApi,
+    ) -> Vec<(
+        atlas_core::registry::HttpMethod,
+        String,
+        &utoipa::openapi::path::Operation,
+    )> {
+        use atlas_core::registry::HttpMethod as Method;
+
+        let mut out = Vec::new();
+        for (path, item) in &document.paths.paths {
+            for (method, operation) in [
+                (Method::Get, item.get.as_ref()),
+                (Method::Put, item.put.as_ref()),
+                (Method::Post, item.post.as_ref()),
+                (Method::Delete, item.delete.as_ref()),
+                (Method::Options, item.options.as_ref()),
+                (Method::Head, item.head.as_ref()),
+                (Method::Patch, item.patch.as_ref()),
+            ] {
+                if let Some(operation) = operation {
+                    out.push((method, path.clone(), operation));
+                }
+            }
+        }
+        out
+    }
+
+    /// The result of comparing `document`'s stamped operations against
+    /// `owner_by_route` — the registry's own, independently-declared
+    /// per-component route membership, never the tag/extension an
+    /// operation's own fragment just stamped onto it. Both the real
+    /// ownership test (`every_operation_is_tagged_with_its_owning_component`)
+    /// and its adversarial teeth test
+    /// (`ownership_diff_detects_a_mis_owned_route`) call this exact
+    /// function, so a bug in its comparison cannot hide behind either
+    /// caller.
+    #[derive(Debug, Default)]
+    struct OwnershipDiff {
+        /// A registry-declared route with no matching document operation.
+        missing_from_document: Vec<(atlas_core::registry::HttpMethod, String)>,
+        /// A document operation stamped with a different `stable_id` than
+        /// the registry says actually owns its `(method, path)`, as
+        /// `(method, path, expected_owner, actual_owner)`.
+        wrong_owner: Vec<(atlas_core::registry::HttpMethod, String, String, String)>,
+        /// A document operation whose `(method, path)` has no
+        /// registry-declared owner at all.
+        unowned_in_document: Vec<(atlas_core::registry::HttpMethod, String)>,
+    }
+
+    fn ownership_diff(
+        document: &utoipa::openapi::OpenApi,
+        owner_by_route: &std::collections::HashMap<
+            (atlas_core::registry::HttpMethod, String),
+            &str,
+        >,
+    ) -> OwnershipDiff {
+        let document_operations = document_operations_by_route(document);
+        let document_routes: HashSet<(atlas_core::registry::HttpMethod, String)> =
+            document_operations
+                .iter()
+                .map(|(method, path, _)| (*method, path.clone()))
+                .collect();
+
+        let mut diff = OwnershipDiff {
+            missing_from_document: owner_by_route
+                .keys()
+                .filter(|route| !document_routes.contains(route))
+                .cloned()
+                .collect(),
+            ..Default::default()
+        };
+
+        for (method, path, operation) in document_operations {
+            let Some(&expected_owner) = owner_by_route.get(&(method, path.clone())) else {
+                diff.unowned_in_document.push((method, path));
+                continue;
+            };
+
+            let tag_matches = operation
+                .tags
+                .as_ref()
+                .is_some_and(|tags| tags.iter().any(|tag| tag == expected_owner));
+            let extension_owner = operation
+                .extensions
+                .as_ref()
+                .and_then(|extensions| extensions.get("x-atlas-component"))
+                .and_then(|value| value.as_str());
+
+            if !tag_matches || extension_owner != Some(expected_owner) {
+                diff.wrong_owner.push((
+                    method,
+                    path,
+                    expected_owner.to_string(),
+                    extension_owner.unwrap_or("<none>").to_string(),
+                ));
+            }
+        }
+
+        diff
+    }
+
+    /// T2.7/T2.8 (D4/T2.6, INV-SET at per-route granularity): every
+    /// composed-document operation's `(method, path)` is looked up in the
+    /// live registry (`reg5_component_entries` → the `ComponentEntry` whose
+    /// `api.routes` contains that pair), never against the `stable_id` its
+    /// own fragment just stamped onto it — a route mechanically
+    /// miscategorized into the wrong fragment's `paths(...)` list would
+    /// have failed this test before it could ever pass by construction.
+    #[test]
+    fn every_operation_is_tagged_with_its_owning_component() {
+        let registry = build(reg5_component_entries(StorageBackend::Filesystem))
+            .expect("REG-5 entries must satisfy every registry::build() validator");
+
+        let mut owner_by_route = std::collections::HashMap::new();
+        for (component_id, stable_id) in [
+            ("platform", crate::routes::platform::OPENAPI_STABLE_ID),
+            ("custos", crate::routes::custos::OPENAPI_STABLE_ID),
+            ("acta", crate::routes::acta::OPENAPI_STABLE_ID),
+        ] {
+            let entry = registry
+                .get(&component(component_id))
+                .unwrap_or_else(|| panic!("{component_id} must be a registered REG-5 component"));
+            for route in &entry.api.routes {
+                owner_by_route.insert((route.method, route.path.as_str().to_string()), stable_id);
+            }
+        }
+
+        // Routes with no `#[utoipa::path]` annotation of their own (mirrors
+        // `openapi_zero_drift.rs`'s `UNANNOTATED_ROUTES`): they never
+        // produce a document operation, so ownership cannot be checked
+        // against them here — their presence is `openapi_zero_drift.rs`'s
+        // concern, not this test's.
+        for (method, path) in [
+            (atlas_core::registry::HttpMethod::Get, "/openapi.json"),
+            (atlas_core::registry::HttpMethod::Get, "/scalar"),
+            (
+                atlas_core::registry::HttpMethod::Get,
+                "/api/workspaces/{ws}/events",
+            ),
+        ] {
+            owner_by_route.remove(&(method, path.to_string()));
+        }
+
+        let diff = ownership_diff(&document(), &owner_by_route);
+
+        assert!(
+            diff.missing_from_document.is_empty(),
+            "registry-declared routes with no composed-document operation: {:?}",
+            diff.missing_from_document
+        );
+        assert!(
+            diff.wrong_owner.is_empty(),
+            "operations stamped with the wrong owning component (method, path, expected, \
+             actual): {:?}",
+            diff.wrong_owner
+        );
+        assert!(
+            diff.unowned_in_document.is_empty(),
+            "stamped operations with no registry-declared owner: {:?}",
+            diff.unowned_in_document
+        );
+    }
+
+    /// T2.8 adversarial proof: `ownership_diff` must actually catch a route
+    /// mechanically miscategorized into the wrong fragment's `paths(...)`
+    /// list. Builds a single fabricated operation, stamps it as
+    /// `custos`-owned via the real [`stamp_component_ownership`], but tells
+    /// `ownership_diff` the registry says `acta` actually owns it — the
+    /// exact failure mode `every_operation_is_tagged_with_its_owning_component`
+    /// exists to catch and its former circular version could not.
+    #[test]
+    fn ownership_diff_detects_a_mis_owned_route() {
+        use utoipa::openapi::path::{HttpMethod as UtoipaMethod, Operation, PathItem};
+        use utoipa::openapi::{Info, OpenApi, Paths};
+
+        let mut paths = Paths::new();
+        paths.paths.insert(
+            "/acta/only/mine".to_string(),
+            PathItem::new(UtoipaMethod::Get, Operation::new()),
+        );
+        let fabricated =
+            stamp_component_ownership(OpenApi::new(Info::new("fixture", "0.0.0"), paths), "custos");
+
+        let mut owner_by_route = std::collections::HashMap::new();
+        owner_by_route.insert(
+            (
+                atlas_core::registry::HttpMethod::Get,
+                "/acta/only/mine".to_string(),
+            ),
+            "acta",
+        );
+
+        let diff = ownership_diff(&fabricated, &owner_by_route);
+
+        assert!(diff.missing_from_document.is_empty());
+        assert!(diff.unowned_in_document.is_empty());
+        assert_eq!(
+            diff.wrong_owner,
+            vec![(
+                atlas_core::registry::HttpMethod::Get,
+                "/acta/only/mine".to_string(),
+                "acta".to_string(),
+                "custos".to_string(),
+            )],
+            "ownership_diff must name the mis-owned (method, path) and its expected/actual owner"
+        );
+    }
+
+    /// T2.33: confirms each fragment module's single `OPENAPI_STABLE_ID`
+    /// literal actually matches the registry's own `stable_id` for that
+    /// component — the one hand-typed literal per module is checked against
+    /// ground truth, not merely trusted by construction.
+    #[test]
+    fn fragment_stable_id_constants_match_the_registry() {
+        let registry = build(reg5_component_entries(StorageBackend::Filesystem))
+            .expect("REG-5 entries must satisfy every registry::build() validator");
+
+        for (module_stable_id, component_id) in [
+            (crate::routes::platform::OPENAPI_STABLE_ID, "platform"),
+            (crate::routes::custos::OPENAPI_STABLE_ID, "custos"),
+            (crate::routes::acta::OPENAPI_STABLE_ID, "acta"),
+        ] {
+            let entry = registry
+                .get(&component(component_id))
+                .unwrap_or_else(|| panic!("{component_id} must be a registered REG-5 component"));
+            assert_eq!(module_stable_id, entry.identity.stable_id.as_str());
+        }
+    }
+
+    /// T2.24/T2.25 (D6): `ConflictProblemDto`'s schema in the composed
+    /// document is `allOf: [ProblemDetails, <extra fields>]`, not a flat
+    /// object — the one deliberate schema-shape change in this slice.
+    #[test]
+    fn conflict_problem_dto_schema_is_all_of() {
+        let doc = serde_json::to_value(document()).expect("serialize OpenAPI document");
+        let schema = doc
+            .pointer("/components/schemas/ConflictProblemDto")
+            .expect("ConflictProblemDto must be a documented schema");
+
+        let all_of = schema
+            .get("allOf")
+            .and_then(|value| value.as_array())
+            .unwrap_or_else(|| {
+                panic!("ConflictProblemDto must be an allOf composition, got: {schema}")
+            });
+
+        assert_eq!(
+            all_of.len(),
+            2,
+            "ConflictProblemDto's allOf must have exactly two members: ProblemDetails and its \
+             own extra fields, got: {all_of:?}"
+        );
+        assert_eq!(
+            all_of.first().and_then(|member| member.get("$ref")),
+            Some(&serde_json::Value::String(
+                "#/components/schemas/ProblemDetails".to_string()
+            )),
+            "ConflictProblemDto's allOf must reference ProblemDetails first (the flattened field)"
+        );
+    }
 }
