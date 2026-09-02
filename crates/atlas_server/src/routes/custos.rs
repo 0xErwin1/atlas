@@ -123,16 +123,25 @@ mod public {
                 method: HttpMethod::Post,
                 path: "/api/auth/login",
                 scope: DeclaredScope::Unauthenticated,
+                // D8: no Principal exists before login succeeds — the
+                // mechanism has no principal_id to scope dedup by.
+                idempotent: false,
+                one_shot: false,
             },
             AuditedRoute {
                 method: HttpMethod::Get,
                 path: "/api/activate/{token}",
                 scope: DeclaredScope::Unauthenticated,
+                idempotent: false,
+                one_shot: false,
             },
             AuditedRoute {
                 method: HttpMethod::Post,
                 path: "/api/activate/{token}",
                 scope: DeclaredScope::Unauthenticated,
+                // D8: token-in-path auth, not a Principal from require_authn.
+                idempotent: false,
+                one_shot: false,
             },
         ]
     }
@@ -192,24 +201,24 @@ mod protected {
             delete(api_keys::delete_api_key_grant, exempt)
         ];
         "/api/workspaces/{ws}/projects/{project_slug}/grants" => [
-            post(grants::create_project_grant),
+            post(grants::create_project_grant, idempotent),
             get(grants::list_project_grants)
         ];
         "/api/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}" => [
             delete(grants::delete_project_grant)
         ];
         "/api/workspaces/{ws}/grants" => [
-            post(grants::create_workspace_grant),
+            post(grants::create_workspace_grant, idempotent),
             get(grants::list_workspace_grants)
         ];
         "/api/workspaces/{ws}/grants/{grant_id}" => [ delete(grants::delete_workspace_grant) ];
         "/api/workspaces/{ws}/groups" => [
-            post(groups::create_group, exempt),
+            post(groups::create_group, exempt, idempotent),
             get(groups::list_groups, exempt)
         ];
         "/api/workspaces/{ws}/groups/{group_id}" => [ delete(groups::delete_group, exempt) ];
         "/api/workspaces/{ws}/groups/{group_id}/members" => [
-            post(groups::add_group_member, exempt),
+            post(groups::add_group_member, exempt, idempotent),
             get(groups::list_group_members, exempt)
         ];
         "/api/workspaces/{ws}/groups/{group_id}/members/{user_id}" => [

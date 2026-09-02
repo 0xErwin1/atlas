@@ -31,7 +31,7 @@ pub use identity::{
 
 pub use idempotency::{
     CLEANUP_BATCH_LIMIT, CompleteOutcome, IN_FLIGHT_TTL, IdempotencyScope, InsertOutcome,
-    PgIdempotencyRepo, StoredResponse,
+    PgIdempotencyRepo, ReleaseOutcome, StoredResponse,
 };
 
 pub use attachment_store::DiskAttachmentStore;

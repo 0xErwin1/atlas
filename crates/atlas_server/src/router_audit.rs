@@ -52,6 +52,27 @@ pub(crate) struct AuditedRoute {
     pub method: HttpMethod,
     pub path: &'static str,
     pub scope: DeclaredScope,
+    /// Whether `component_routes!`'s `idempotent` modifier applied the
+    /// `Idempotency-Key` middleware layer to this route (`v2-e3-s3` D6). Set
+    /// from the same macro expansion/token that wires the layer, so a route
+    /// cannot be layered without this being `true` and cannot claim `true`
+    /// without being layered — the same "one macro expansion, one fact"
+    /// property `scope` already has for capability extraction. Hand-declared
+    /// routes outside the macro (`routes::custos::public`,
+    /// `routes::acta::{public,layered}`) set this by hand at their own
+    /// `AuditedRoute` literal, mirroring how they hand-declare `scope`.
+    pub idempotent: bool,
+    /// Whether `component_routes!`'s `one_shot` modifier (valid only
+    /// alongside `idempotent`, `v2-e3-s3` PR4 scoped correction) wired this
+    /// route's layer to `idempotency_middleware_store_briefly` rather than
+    /// the default `idempotency_middleware_release` (D6). Set from the same
+    /// macro token that picks the layer, so a route cannot claim `true` here
+    /// without actually being layered with the `StoreBriefly` policy — the
+    /// same "one macro expansion, one fact" property `idempotent` already
+    /// has. Hand-declared routes outside the macro set this by hand, like
+    /// `idempotent`; today none of them are `true`
+    /// ([`ONE_SHOT_IDEMPOTENT_ROUTES`] names only two macro-wired routes).
+    pub one_shot: bool,
 }
 
 /// The result of comparing two `(method, path)` sets in both directions
@@ -67,8 +88,12 @@ pub(crate) struct AuditedRoute {
 /// — the same set-equality comparison, just over a different (still
 /// `Eq + Hash`) path type on each side, unified by the caller before calling
 /// this function.
+/// `pub`, unlike this module's other data types (see
+/// [`platform_route_paths`]'s doc for why): `tests/idempotency_declare_and_verify_audit.rs`
+/// (`v2-e3-s3` PR4) is an integration test, compiled as a separate crate,
+/// and reuses this exact comparison rather than reimplementing it.
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct RouteSetDiff<P> {
+pub struct RouteSetDiff<P> {
     pub left_only: Vec<(HttpMethod, P)>,
     pub right_only: Vec<(HttpMethod, P)>,
 }
@@ -83,7 +108,7 @@ impl<P> Default for RouteSetDiff<P> {
 }
 
 impl<P> RouteSetDiff<P> {
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.left_only.is_empty() && self.right_only.is_empty()
     }
 }
@@ -94,7 +119,7 @@ impl<P> RouteSetDiff<P> {
 /// true across every scenario (matched, router-only, declared-only, or
 /// both at once) — PR2–PR4 call this same function with `declared_routes()`
 /// on one side and `ComponentEntry.api.routes` on the other.
-pub(crate) fn diff_route_sets<P>(
+pub fn diff_route_sets<P>(
     left: &HashSet<(HttpMethod, P)>,
     right: &HashSet<(HttpMethod, P)>,
 ) -> RouteSetDiff<P>
@@ -222,13 +247,43 @@ pub(crate) fn diff_declared_and_enforced(
 /// this PR's scratch fixtures can exercise the mechanism without any
 /// production state or database dependency; real components (PR2–PR4)
 /// invoke this with `state: AppState`.
+/// Trailing modifiers accepted after a handler expression: `exempt` (D5,
+/// unchanged from before this slice), `idempotent` (D6, `v2-e3-s3`), and
+/// `one_shot` (D6 scoped correction, `v2-e3-s3` PR4), independent of each
+/// other except that `one_shot` is only valid alongside `idempotent` —
+/// `post(h, one_shot)` alone has no matching macro arm and fails to compile.
+/// Always write modifiers in this fixed order when more than one applies:
+/// `exempt`, then `idempotent`, then `one_shot` (`post(h, idempotent)`,
+/// `post(h, exempt, idempotent)`, `post(h, idempotent, one_shot)`,
+/// `post(h, exempt, idempotent, one_shot)`) — the macro's modifier-list arms
+/// below match that fixed order.
+///
+/// `idempotent` applies the `Idempotency-Key` middleware layer to THIS
+/// method's `MethodRouter` only, before it merges into the path's chained
+/// router — so a path with two methods (e.g. `get(..)`/`post(.., idempotent)`)
+/// can layer just the one method that needs it, matching D8's per-`(method,
+/// path)` granularity. The layer's 5xx policy is carried structurally by
+/// WHICH middleware function the token picks (D6 scoped correction, never
+/// read from the registry at request time): plain `idempotent` wires
+/// `middleware::idempotency::idempotency_middleware_release`
+/// (`IdempotencyPolicy { on_server_error: OnServerError::Release }` — an
+/// ordinary create, whose duplicate a domain check already catches once a
+/// 5xx retry re-executes); `idempotent, one_shot` wires
+/// `idempotency_middleware_store_briefly`
+/// (`on_server_error: OnServerError::StoreBriefly` — a one-shot side effect
+/// with no domain uniqueness check, so a 5xx retry replays the stored
+/// outcome briefly instead of re-executing it). The same tokens also set
+/// `AuditedRoute.idempotent`/`AuditedRoute.one_shot`, so a route cannot be
+/// layered without the audit seeing it and cannot claim either flag in the
+/// audit without being layered accordingly (D6's "one macro expansion, one
+/// fact," extended from `scope` to these two fields).
 #[macro_export]
 macro_rules! component_routes {
     (
         state: $state_ty:ty;
         $(
             $path:literal => [
-                $( $method:ident($handler:expr $(, $exempt:ident)?) ),+ $(,)?
+                $( $method:ident($handler:expr $(, $modifier:ident)*) ),+ $(,)?
             ]
         );+ $(;)?
     ) => {
@@ -237,7 +292,9 @@ macro_rules! component_routes {
                 $(
                     .route(
                         $path,
-                        $crate::component_routes!(@method_router $( $method($handler) ),+)
+                        $crate::component_routes!(
+                            @method_router state; $( $method($handler, [$($modifier),*]) ),+
+                        )
                     )
                 )+
                 .with_state(state)
@@ -247,7 +304,7 @@ macro_rules! component_routes {
             ::std::vec![
                 $(
                     $(
-                        $crate::component_routes!(@entry $method, $path, $handler $(, $exempt)?)
+                        $crate::component_routes!(@entry $method, $path, $handler, [$($modifier),*])
                     ),+
                 ),+
             ]
@@ -255,27 +312,109 @@ macro_rules! component_routes {
     };
 
     // Folds every method on one path into a single chained/merged
-    // `MethodRouter`, e.g. `get(h1).merge(post(h2)).merge(delete(h3))`.
-    (@method_router $first_m:ident($first_h:expr) $(, $rest_m:ident($rest_h:expr))* $(,)?) => {
-        ::axum::routing::$first_m($first_h)
-        $( .merge(::axum::routing::$rest_m($rest_h)) )*
+    // `MethodRouter`, e.g. `get(h1).merge(post(h2)).merge(delete(h3))`,
+    // applying each method's own modifier-derived layer BEFORE the merge
+    // (`@layered_method`), so a per-method `idempotent` layer never leaks
+    // onto a sibling method sharing the same path.
+    (@method_router $state:ident; $first_m:ident($first_h:expr, [$($first_mod:ident),*]) $(, $rest_m:ident($rest_h:expr, [$($rest_mod:ident),*]))* $(,)?) => {
+        $crate::component_routes!(@layered_method $state, $first_m, $first_h, [$($first_mod),*])
+        $( .merge($crate::component_routes!(@layered_method $state, $rest_m, $rest_h, [$($rest_mod),*])) )*
     };
 
-    (@entry $method:ident, $path:expr, $handler:expr) => {{
+    (@layered_method $state:ident, $method:ident, $handler:expr, [idempotent]) => {
+        ::axum::routing::$method($handler).layer(::axum::middleware::from_fn_with_state(
+            $state.clone(),
+            $crate::middleware::idempotency::idempotency_middleware_release,
+        ))
+    };
+    (@layered_method $state:ident, $method:ident, $handler:expr, [exempt, idempotent]) => {
+        ::axum::routing::$method($handler).layer(::axum::middleware::from_fn_with_state(
+            $state.clone(),
+            $crate::middleware::idempotency::idempotency_middleware_release,
+        ))
+    };
+    (@layered_method $state:ident, $method:ident, $handler:expr, [idempotent, one_shot]) => {
+        ::axum::routing::$method($handler).layer(::axum::middleware::from_fn_with_state(
+            $state.clone(),
+            $crate::middleware::idempotency::idempotency_middleware_store_briefly,
+        ))
+    };
+    (@layered_method $state:ident, $method:ident, $handler:expr, [exempt, idempotent, one_shot]) => {
+        ::axum::routing::$method($handler).layer(::axum::middleware::from_fn_with_state(
+            $state.clone(),
+            $crate::middleware::idempotency::idempotency_middleware_store_briefly,
+        ))
+    };
+    (@layered_method $state:ident, $method:ident, $handler:expr, [exempt]) => {
+        ::axum::routing::$method($handler)
+    };
+    (@layered_method $state:ident, $method:ident, $handler:expr, []) => {
+        ::axum::routing::$method($handler)
+    };
+
+    (@entry $method:ident, $path:expr, $handler:expr, []) => {{
         #[allow(unused_imports, reason = "brought into scope only for the method-call below")]
         use $crate::authz::ExtractScope;
         $crate::router_audit::AuditedRoute {
             method: $crate::component_routes!(@method $method),
             path: $path,
             scope: $crate::router_audit::DeclaredScope::Extracted($handler.declared_scope()),
+            idempotent: false,
+            one_shot: false,
         }
     }};
 
-    (@entry $method:ident, $path:expr, $handler:expr, exempt) => {
+    (@entry $method:ident, $path:expr, $handler:expr, [idempotent]) => {{
+        #[allow(unused_imports, reason = "brought into scope only for the method-call below")]
+        use $crate::authz::ExtractScope;
+        $crate::router_audit::AuditedRoute {
+            method: $crate::component_routes!(@method $method),
+            path: $path,
+            scope: $crate::router_audit::DeclaredScope::Extracted($handler.declared_scope()),
+            idempotent: true,
+            one_shot: false,
+        }
+    }};
+
+    (@entry $method:ident, $path:expr, $handler:expr, [idempotent, one_shot]) => {{
+        #[allow(unused_imports, reason = "brought into scope only for the method-call below")]
+        use $crate::authz::ExtractScope;
+        $crate::router_audit::AuditedRoute {
+            method: $crate::component_routes!(@method $method),
+            path: $path,
+            scope: $crate::router_audit::DeclaredScope::Extracted($handler.declared_scope()),
+            idempotent: true,
+            one_shot: true,
+        }
+    }};
+
+    (@entry $method:ident, $path:expr, $handler:expr, [exempt]) => {
         $crate::router_audit::AuditedRoute {
             method: $crate::component_routes!(@method $method),
             path: $path,
             scope: $crate::router_audit::DeclaredScope::Unauthenticated,
+            idempotent: false,
+            one_shot: false,
+        }
+    };
+
+    (@entry $method:ident, $path:expr, $handler:expr, [exempt, idempotent]) => {
+        $crate::router_audit::AuditedRoute {
+            method: $crate::component_routes!(@method $method),
+            path: $path,
+            scope: $crate::router_audit::DeclaredScope::Unauthenticated,
+            idempotent: true,
+            one_shot: false,
+        }
+    };
+
+    (@entry $method:ident, $path:expr, $handler:expr, [exempt, idempotent, one_shot]) => {
+        $crate::router_audit::AuditedRoute {
+            method: $crate::component_routes!(@method $method),
+            path: $path,
+            scope: $crate::router_audit::DeclaredScope::Unauthenticated,
+            idempotent: true,
+            one_shot: true,
         }
     };
 
@@ -332,6 +471,94 @@ pub fn acta_route_paths() -> Vec<(atlas_core::registry::HttpMethod, &'static str
 pub fn acta_protected_route_paths() -> Vec<(atlas_core::registry::HttpMethod, &'static str)> {
     component_route_paths(&crate::routes::acta::protected_declared_routes())
 }
+
+/// Test-only surface for the `v2-e3-s3` PR4 idempotency declare-and-verify
+/// audit (`tests/idempotency_declare_and_verify_audit.rs`): the `(method,
+/// path)` set of routes `component_routes!`'s `idempotent` modifier (or a
+/// hand-declared `AuditedRoute` literal) actually wired to the
+/// `Idempotency-Key` middleware for `platform`. Compared against the
+/// registry's `RouteDeclaration.idempotent: true` set (INV-SET,
+/// bidirectional) — same "one macro expansion, one fact" property
+/// [`platform_route_paths`] already proves for capability extraction,
+/// extended to this new field.
+pub fn platform_idempotent_route_paths() -> Vec<(atlas_core::registry::HttpMethod, &'static str)> {
+    idempotent_route_paths(&crate::routes::platform::declared_routes())
+}
+
+/// See [`platform_idempotent_route_paths`].
+pub fn custos_idempotent_route_paths() -> Vec<(atlas_core::registry::HttpMethod, &'static str)> {
+    idempotent_route_paths(&crate::routes::custos::declared_routes())
+}
+
+/// See [`platform_idempotent_route_paths`].
+pub fn acta_idempotent_route_paths() -> Vec<(atlas_core::registry::HttpMethod, &'static str)> {
+    idempotent_route_paths(&crate::routes::acta::declared_routes())
+}
+
+fn idempotent_route_paths(routes: &[AuditedRoute]) -> Vec<(HttpMethod, &'static str)> {
+    routes
+        .iter()
+        .filter(|route| route.idempotent)
+        .map(|route| (route.method, route.path))
+        .collect()
+}
+
+/// Test-only surface for the `v2-e3-s3` PR4 scoped correction's declare-and-
+/// verify audit (`tests/idempotency_declare_and_verify_audit.rs`): the
+/// `(method, path)` set of routes `component_routes!`'s `one_shot` modifier
+/// actually wired to `idempotency_middleware_store_briefly` for `acta` — the
+/// only component with any `one_shot` route today. Compared against
+/// [`ONE_SHOT_IDEMPOTENT_ROUTES`] (INV-SET, bidirectional), same "one macro
+/// expansion, one fact" property [`platform_idempotent_route_paths`] already
+/// proves for `idempotent` itself, extended to this new field.
+pub fn acta_one_shot_route_paths() -> Vec<(atlas_core::registry::HttpMethod, &'static str)> {
+    one_shot_route_paths(&crate::routes::acta::declared_routes())
+}
+
+fn one_shot_route_paths(routes: &[AuditedRoute]) -> Vec<(HttpMethod, &'static str)> {
+    routes
+        .iter()
+        .filter(|route| route.one_shot)
+        .map(|route| (route.method, route.path))
+        .collect()
+}
+
+/// The `idempotent: true` routes whose 5xx policy is
+/// `middleware::idempotency::OnServerError::StoreBriefly` rather than the
+/// default `Release` (ORCHESTRATOR DECISION, 2026-09-02, scoped correction
+/// to `R4-5xx-release-duplicates-one-shot-jobs`, D6): each enqueues a
+/// one-shot background job with no domain uniqueness check to catch a
+/// duplicate, unlike an ordinary `create_*` route (a duplicate-slug 409 or a
+/// unique-constraint violation once the retry re-executes). Releasing the
+/// row on a 5xx here would let an immediate retry silently enqueue a second
+/// job, so `component_routes!`'s `one_shot` modifier wires these two to a
+/// short-lived stored replay instead
+/// (`middleware::idempotency::idempotency_middleware_store_briefly`). Every
+/// other `idempotent: true` route uses `Release`
+/// (`idempotency_middleware_release`): `PgIdempotencyRepo::release` deletes
+/// the row on a 5xx so the retry re-executes and the handler's own domain
+/// check catches a genuine duplicate.
+///
+/// `tests/idempotency_declare_and_verify_audit.rs` proves this set equals,
+/// in both directions (INV-SET), [`acta_one_shot_route_paths`] — same "one
+/// macro expansion, one fact" property already proven for `idempotent`
+/// itself. See `docs/reg5-idempotent-judgment.md`'s "5xx policy" section for
+/// the reasoning behind exactly these two.
+pub const ONE_SHOT_IDEMPOTENT_ROUTES: &[(HttpMethod, &str, &str)] = &[
+    (
+        HttpMethod::Post,
+        "/api/admin/trash/purge",
+        "purge_trash enqueues an async, tracked purge job with no domain \
+         uniqueness check; a lost row would let a 5xx retry enqueue a \
+         second purge job.",
+    ),
+    (
+        HttpMethod::Post,
+        "/api/workspaces/{ws}/semantic-search/reindex",
+        "semantic_reindex_start enqueues an async reindex job with no domain \
+         uniqueness check; same reasoning as purge_trash.",
+    ),
+];
 
 /// D4's route-set exclusion list (`v2-e3-s2` PR5, spec "Explicit, justified
 /// route exclusion list" requirement, acceptance gate 3): routes the live
@@ -587,6 +814,8 @@ mod tests {
             method: HttpMethod::Get,
             path: "/scratch/never-mounted",
             scope: DeclaredScope::Unauthenticated,
+            idempotent: false,
+            one_shot: false,
         });
 
         let declared = declared_set(&declared_routes);
@@ -624,6 +853,8 @@ mod tests {
             method: HttpMethod::Get,
             path: "/scratch/never-mounted",
             scope: DeclaredScope::Unauthenticated,
+            idempotent: false,
+            one_shot: false,
         });
 
         let router_with_bypass =

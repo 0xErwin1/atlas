@@ -69,6 +69,21 @@ pub enum ApiError {
     TooManyRequests {
         retry_after_secs: u64,
     },
+    /// An `Idempotency-Key` was reused by the same principal against a
+    /// different request (a different method, path, or body) than the one
+    /// that first claimed it (`v2-e3-s3` D1). Distinct from
+    /// `IdempotencyKeyInFlight`: this is a *completed* row with a mismatched
+    /// fingerprint, never reusing `revision-conflict`'s problem `type` (a
+    /// client-side CAS-merge UI pattern-matches on that exact string).
+    IdempotencyKeyConflict {
+        existing_fingerprint_hint: String,
+    },
+    /// A second request presented the same `Idempotency-Key` while the first
+    /// request for it is still executing (`v2-e3-s3` D2). Distinct from
+    /// `IdempotencyKeyConflict`: same 409 status, different problem `type`,
+    /// so a client can tell "retry later" from "you sent a different
+    /// request under this key."
+    IdempotencyKeyInFlight,
     Internal {
         message: String,
     },
@@ -162,6 +177,41 @@ impl IntoResponse for ApiError {
 
                 let mut response = render_problem(StatusCode::TOO_MANY_REQUESTS, problem);
                 if let Ok(value) = HeaderValue::from_str(&retry_after_secs.to_string()) {
+                    response.headers_mut().insert(header::RETRY_AFTER, value);
+                }
+                return response;
+            }
+            ApiError::IdempotencyKeyConflict {
+                existing_fingerprint_hint,
+            } => (
+                StatusCode::CONFLICT,
+                ProblemDetails::new(
+                    "urn:atlas:error:idempotency-key-conflict",
+                    "Idempotency Key Conflict",
+                    409,
+                )
+                .with_detail(format!(
+                    "This Idempotency-Key was already used for a different request \
+                     (existing fingerprint: {existing_fingerprint_hint})."
+                ))
+                .with_hint(
+                    "Use a new Idempotency-Key for a different request, or resend the exact \
+                     same request to replay its stored response.",
+                ),
+            ),
+            ApiError::IdempotencyKeyInFlight => {
+                let problem = ProblemDetails::new(
+                    "urn:atlas:error:idempotency-key-in-flight",
+                    "Idempotency Key In Flight",
+                    409,
+                )
+                .with_hint(
+                    "A request with this Idempotency-Key is still executing. Wait for it to \
+                     complete before retrying.",
+                );
+
+                let mut response = render_problem(StatusCode::CONFLICT, problem);
+                if let Ok(value) = HeaderValue::from_str("1") {
                     response.headers_mut().insert(header::RETRY_AFTER, value);
                 }
                 return response;
