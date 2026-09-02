@@ -95,12 +95,15 @@ impl RoutePath {
             return Err(RoutePathError::TrailingSlash);
         }
 
-        for segment in value.split('/').skip(1) {
+        let mut segments = value.split('/').skip(1).peekable();
+
+        while let Some(segment) = segments.next() {
             if segment.is_empty() {
                 return Err(RoutePathError::EmptySegment);
             }
 
-            validate_segment_braces(segment)?;
+            let is_last_segment = segments.peek().is_none();
+            validate_segment_braces(segment, is_last_segment)?;
         }
 
         Ok(Self(value.to_string()))
@@ -111,11 +114,21 @@ impl RoutePath {
     }
 }
 
-fn validate_segment_braces(segment: &str) -> Result<(), RoutePathError> {
+/// Validates one path segment's character set and brace balance.
+///
+/// `is_last_segment` gates the one dot-acceptance rule this function knows
+/// (`v2-e3-s4`, D3): a `.` is legal only in the last segment of the path,
+/// at most once, and never as that segment's first or last character. Every
+/// earlier segment, and every character inside a `{param}` marker
+/// regardless of segment position, keeps the original character set
+/// (alphanumeric, `-`, `_`).
+fn validate_segment_braces(segment: &str, is_last_segment: bool) -> Result<(), RoutePathError> {
     let mut depth = 0u8;
     let mut param_len = 0usize;
+    let mut dot_seen = false;
+    let last_char_index = segment.chars().count().saturating_sub(1);
 
-    for ch in segment.chars() {
+    for (index, ch) in segment.chars().enumerate() {
         match ch {
             '{' => {
                 if depth == 1 {
@@ -138,6 +151,12 @@ fn validate_segment_braces(segment: &str) -> Result<(), RoutePathError> {
                 if !ch.is_ascii_alphanumeric() && ch != '_' {
                     return Err(RoutePathError::IllegalCharacter { ch });
                 }
+            }
+            '.' if is_last_segment => {
+                if dot_seen || index == 0 || index == last_char_index {
+                    return Err(RoutePathError::IllegalCharacter { ch: '.' });
+                }
+                dot_seen = true;
             }
             ch if !ch.is_ascii_alphanumeric() && ch != '-' && ch != '_' => {
                 return Err(RoutePathError::IllegalCharacter { ch });
@@ -283,6 +302,46 @@ mod tests {
 
         for (value, expected) in cases {
             assert_eq!(RoutePath::new(value), Err(expected));
+        }
+    }
+
+    /// `v2-e3-s4` D3: accepted shapes under the widened validator.
+    #[test]
+    fn route_path_accepts_one_interior_dot_in_the_final_segment() {
+        let cases = [
+            "/openapi.json",
+            "/scalar",
+            "/api/v2/openapi.json",
+            "/documents/export.json",
+        ];
+
+        for value in cases {
+            assert_eq!(
+                RoutePath::new(value).map(|path| path.as_str().to_string()),
+                Ok(value.to_string()),
+                "{value} must be accepted by the widened validator"
+            );
+        }
+    }
+
+    /// `v2-e3-s4` D3: every shape the widening must keep rejecting, still via
+    /// `IllegalCharacter { ch: '.' }` (no new error variant, T1.4).
+    #[test]
+    fn route_path_rejects_every_dot_shape_outside_the_widened_rule() {
+        let cases = [
+            "/.json",
+            "/openapi.",
+            "/open.api.json",
+            "/open.api/json",
+            "/{id.ext}",
+        ];
+
+        for value in cases {
+            assert_eq!(
+                RoutePath::new(value),
+                Err(RoutePathError::IllegalCharacter { ch: '.' }),
+                "{value} must still be rejected after the widening"
+            );
         }
     }
 }

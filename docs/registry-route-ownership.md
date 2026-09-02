@@ -76,8 +76,10 @@ reading Rust.
 
 `meta` and `/health`/`/ready`/`/version` are served by the `health` module
 (`platform`); `/openapi.json` and `/scalar` are served by the `openapi`
-module (`platform`), but neither is representable as a `RouteDeclaration`
-(see findings 3–4 below) and so neither appears in `api.routes`.
+module (`platform`). Both are now ordinary `RouteDeclaration`s as of
+`v2-e3-s4` PR1 (see the update on findings 3–4 below); at the time this
+table was first written (S1/S2), neither was representable, and so neither
+appeared in `api.routes`.
 
 ## Genuinely resolved tensions (kept explicit, not silently absorbed)
 
@@ -108,27 +110,31 @@ module (`platform`), but neither is representable as a `RouteDeclaration`
    fix (S2 deletes `ROUTE_REGISTRY`). Its `action` is declared `None` here by
    consistency with its three sibling routes in the same resource (all
    `capability: None`, admin-only/agent-unreachable), not by silent omission.
-3. **`/openapi.json` cannot be declared as a `RouteDeclaration` at all.**
-   `RoutePath::new` rejects any segment containing `.` (`IllegalCharacter`),
-   and `/openapi.json`'s only segment is literally `openapi.json` — confirmed
-   by running the workspace test against it (`IllegalCharacter { ch: '.' }`).
-   It also has no `ROUTE_REGISTRY` entry (that V1 audit tool deliberately
-   excludes the OpenAPI document endpoint itself). It is therefore excluded
-   from `api.routes` for the same reason as `/scalar` below, dropping the
-   enumerated total this PR's `api.routes` can actually hold to **210**. The
-   workspace test in this PR
-   (`declared_route_count_matches_the_live_router_enumeration`) asserts this
-   verified **210** (211 live pairs minus the undeclarable `/openapi.json`), not a count derived from "139". Making
-   `/openapi.json` representable (e.g. relaxing `RoutePath` or special-casing
-   the extension) is a `RoutePath`/router-derivation design decision this
-   slice does not have standing to make; S2/S3 own it once the OpenAPI
-   document is actually derived from the registry.
-4. **`/scalar`** (the Scalar docs UI) is excluded from `api.routes`
-   entirely: it is mounted via `.merge(routes::openapi::scalar_router())`,
-   not a `.route()` call, so it falls outside the "139/138 manual `.route()`
-   calls" enumeration this slice's Requirement and T1.11 count-check are
-   scoped to. It carries no operation contract (no DTOs, no operation_id) to
-   declare as a `RouteDeclaration` either.
+3. **`/openapi.json` could not be declared as a `RouteDeclaration` at S1/S2
+   time.** `RoutePath::new` rejected any segment containing `.`
+   (`IllegalCharacter`), and `/openapi.json`'s only segment is literally
+   `openapi.json` — confirmed by running the workspace test against it
+   (`IllegalCharacter { ch: '.' }`). It also had no `ROUTE_REGISTRY` entry
+   (that V1 audit tool deliberately excluded the OpenAPI document endpoint
+   itself). It was therefore excluded from `api.routes` for the same reason
+   as `/scalar` below, dropping the enumerated total this PR's `api.routes`
+   could actually hold to **210**. **Update (`v2-e3-s4` PR1, D3)**:
+   `RoutePath` was widened to accept exactly one interior `.` in a path's
+   final segment, making `/openapi.json` representable; it is now an
+   ordinary `platform`-owned `RouteDeclaration` (raising the total to
+   **212**), and `ROUTE_SET_EXCLUSIONS`'s two former entries are both
+   retired to an empty list.
+4. **`/scalar`** (the Scalar docs UI) was excluded from `api.routes` at
+   S1/S2 time: it is mounted via `.merge(routes::openapi::scalar_router())`,
+   not a `.route()` call, so it fell outside the "139/138 manual `.route()`
+   calls" enumeration this slice's Requirement and T1.11 count-check were
+   scoped to, and it carries no operation contract (no DTOs, no
+   operation_id) to declare as a `RouteDeclaration`'s method/path pair
+   alone required. **Update (`v2-e3-s4` PR1, D3)**: declared anyway, as an
+   ordinary `platform`-owned `RouteDeclaration` with `operation_id: "scalar"`
+   — a `RouteDeclaration` needs no real utoipa operation contract, only a
+   `(method, path)` pair and an `operation_id` string, which `/scalar` can
+   supply trivially even though it has no OpenAPI document entry of its own.
 5. **`storage.filesystem` and `storage.s3` cannot both be mandatory
    `storage.blob` providers in the same `registry::build()` call.** Both
    Module entries exist in `reg5.rs` (T1.8), but `reg5_component_entries()`
@@ -171,9 +177,9 @@ vs. `tasks::create_comment`, both flattened into one OpenAPI document today).
 Each override was verified against the source line it annotates, not assumed
 from the override string alone.
 
-## Full route → component table (210 declarations)
+## Full route → component table (212 declarations)
 
-### platform (6 routes)
+### platform (8 routes)
 
 | Method | Path | operation_id | action | idempotent |
 |---|---|---|---|---|
@@ -183,6 +189,8 @@ from the override string alone.
 | GET | `/health` | `health` | `—` | true |
 | GET | `/ready` | `ready` | `—` | true |
 | GET | `/version` | `version` | `—` | true |
+| GET | `/openapi.json` | `openapi_json` | `—` | false |
+| GET | `/scalar` | `scalar` | `—` | false |
 
 ### custos (35 routes)
 

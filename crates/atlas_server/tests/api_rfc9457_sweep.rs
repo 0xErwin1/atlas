@@ -46,10 +46,14 @@ fn reqwest_method(method: HttpMethod) -> reqwest::Method {
 ///   ingest webhook answers its own 401 when `x-hub-signature-256` is
 ///   absent (`routes/integrations_ingest.rs:65-66`), by its own contract
 ///   rather than the `require_authn` layer (it is public, INV-LIVE-PROOF).
-/// - `Excluded` — `GET /health`, `/ready`, `/version`: no auth requirement,
-///   no path parameter, no request body. Nothing about the request can be
-///   varied to provoke a 4xx/5xx, so these three are recorded here rather
-///   than silently skipped (T1.8).
+/// - `Excluded` — `GET /health`, `/ready`, `/version`, and (`v2-e3-s4` D3)
+///   `/openapi.json`, `/scalar`: no auth requirement, no path parameter, no
+///   request body. Nothing about the request can be varied to provoke a
+///   4xx/5xx, so these five are recorded here rather than silently skipped
+///   (T1.8). `/openapi.json`/`/scalar` only became visible to `route_matrix()`
+///   once `RoutePath` was widened to accept their `.` and they were
+///   registered as ordinary `platform` routes — before that they were
+///   entirely absent from the registry, not merely unclassified.
 enum Provocation {
     Unauthenticated401,
     LoginBadCredentials401,
@@ -62,7 +66,9 @@ fn classify(method: HttpMethod, path: &str, is_public: bool) -> Provocation {
     match (method, path) {
         (HttpMethod::Get, "/health")
         | (HttpMethod::Get, "/ready")
-        | (HttpMethod::Get, "/version") => Provocation::Excluded {
+        | (HttpMethod::Get, "/version")
+        | (HttpMethod::Get, "/openapi.json")
+        | (HttpMethod::Get, "/scalar") => Provocation::Excluded {
             reason: "unauthenticated GET, no path parameter, no request body — nothing in \
                          the request can be varied to provoke a 4xx/5xx",
         },
@@ -232,8 +238,18 @@ async fn every_declared_route_answers_with_a_conformant_problem_body() {
                 "/version".to_string(),
                 "unauthenticated GET, no path parameter, no request body — nothing in the request can be varied to provoke a 4xx/5xx"
             ),
+            (
+                HttpMethod::Get,
+                "/openapi.json".to_string(),
+                "unauthenticated GET, no path parameter, no request body — nothing in the request can be varied to provoke a 4xx/5xx"
+            ),
+            (
+                HttpMethod::Get,
+                "/scalar".to_string(),
+                "unauthenticated GET, no path parameter, no request body — nothing in the request can be varied to provoke a 4xx/5xx"
+            ),
         ],
-        "the excluded-route set drifted from the expected, hand-justified three — a new \
+        "the excluded-route set drifted from the expected, hand-justified five — a new \
          exclusion must be justified here, not silently added"
     );
     // INV-SET: never a `.len()` comparison — assert set equality in both

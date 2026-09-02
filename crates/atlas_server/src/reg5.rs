@@ -151,6 +151,26 @@ fn platform_entry() -> ComponentEntry {
                     action: None,
                     idempotent: false,
                 },
+                // `v2-e3-s4` D3: representable now that `RoutePath` accepts
+                // one interior dot in the final segment. Mount location is
+                // unaffected (`routes::acta::public::router`, unchanged) —
+                // only the registry ownership entry follows
+                // `docs/registry-route-ownership.md`'s existing conceptual
+                // assignment to `platform`.
+                RouteDeclaration {
+                    method: HttpMethod::Get,
+                    path: route_path("/openapi.json"),
+                    operation_id: "openapi_json".to_string(),
+                    action: None,
+                    idempotent: false,
+                },
+                RouteDeclaration {
+                    method: HttpMethod::Get,
+                    path: route_path("/scalar"),
+                    operation_id: "scalar".to_string(),
+                    action: None,
+                    idempotent: false,
+                },
             ],
             dto_owner: Some(component("platform")),
         },

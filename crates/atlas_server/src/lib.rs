@@ -133,7 +133,7 @@ use crate::state::AppState;
 
 /// Builds the full application router with all routes and the middleware stack.
 pub fn app(state: AppState) -> Router {
-    // `platform`'s six routes, `custos`'s 35 routes, and `acta`'s 169 routes
+    // `platform`'s eight routes, `custos`'s 35 routes, and `acta`'s 169 routes
     // are each assembled by `routes::platform::router` (PR2),
     // `routes::custos::router` (PR3), and `routes::acta::router` (PR4),
     // every one of which reproduces the exact public/protected split and
