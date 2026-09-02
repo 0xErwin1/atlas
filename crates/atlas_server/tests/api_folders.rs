@@ -996,48 +996,17 @@ async fn move_folder_owner_to_any_dest_returns_200() {
     db.teardown().await;
 }
 
-// ---- REQ-F1 (registry): all folder routes declared in ROUTE_REGISTRY -----------
-
-#[test]
-fn folder_routes_wired_in_registry_and_router() {
-    use atlas_server::routes::registry::ROUTE_REGISTRY;
-
-    let expected_openapi_paths = [
-        "/api/workspaces/{ws}/projects/{project_slug}/folders",
-        "/api/workspaces/{ws}/folders/{folder_id}",
-        "/api/workspaces/{ws}/folders/{folder_id}/move",
-    ];
-
-    for path in &expected_openapi_paths {
-        let found = ROUTE_REGISTRY.iter().any(|e| e.openapi_path == Some(path));
-        assert!(
-            found,
-            "folder OpenAPI path {path} missing from ROUTE_REGISTRY"
-        );
-    }
-
-    let expected_methods = [
-        (
-            "POST",
-            "/api/workspaces/{ws}/projects/{project_slug}/folders",
-        ),
-        (
-            "GET",
-            "/api/workspaces/{ws}/projects/{project_slug}/folders",
-        ),
-        ("GET", "/api/workspaces/{ws}/folders/{folder_id}"),
-        ("PATCH", "/api/workspaces/{ws}/folders/{folder_id}"),
-        ("DELETE", "/api/workspaces/{ws}/folders/{folder_id}"),
-        ("PATCH", "/api/workspaces/{ws}/folders/{folder_id}/move"),
-    ];
-
-    for (method, openapi_path) in &expected_methods {
-        let found = ROUTE_REGISTRY
-            .iter()
-            .any(|e| e.method == *method && e.openapi_path == Some(openapi_path));
-        assert!(found, "registry missing {method} {openapi_path}");
-    }
-}
+// ---- REQ-F1 (registry): folder routes wired in the live registry and router ----
+//
+// `folder_routes_wired_in_registry_and_router` previously asserted that the
+// old hand-maintained route registry (retired in `v2-e3-s2` PR5) contained these
+// entries — a self-check against a static list, not against real router or
+// registry state. That invariant is now proven, for every one of acta's 169
+// routes including these folder routes, by
+// `acta_router_and_registry_route_sets_match_exactly` in
+// `crates/atlas_server/src/routes/acta.rs`, which compares the live router's
+// declared routes against the live REG-5 registry bidirectionally (spec
+// acceptance gates 1-2). No replacement test is needed here.
 
 // ---- Boards in folders ----------------------------------------------------------
 

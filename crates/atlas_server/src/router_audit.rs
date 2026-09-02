@@ -123,6 +123,13 @@ where
 /// runtime condition callers should recover from, and every current caller
 /// only invokes this on `ActionId`s already vetted by `reg5.rs`'s own
 /// `reg5_registry_build.rs` workspace test.
+///
+/// `pub`, unlike this module's other audit internals (see
+/// [`platform_route_paths`]'s doc for why): PR5's migrated
+/// `api_capability_sweep.rs` is an integration test, compiled as a separate
+/// crate, and needs this exact translation to read `RouteDeclaration.action`
+/// off the live registry instead of the retired route registry's
+/// `capability: Option<&str>` field.
 #[allow(
     clippy::panic,
     reason = "an ActionId with no matching Capability is a registry-authoring bug \
@@ -130,7 +137,7 @@ where
               every current caller only invokes this on ActionIds already vetted by \
               reg5.rs's own reg5_registry_build.rs workspace test"
 )]
-pub(crate) fn capability_from_action_id(action: &ActionId) -> Capability {
+pub fn capability_from_action_id(action: &ActionId) -> Capability {
     let wire = format!("{}:{}", action.kind(), action.action());
     wire.parse().unwrap_or_else(|_| {
         panic!("registry action `{action}` has no matching Capability (wire form `{wire}`)")
@@ -325,6 +332,49 @@ pub fn acta_route_paths() -> Vec<(atlas_core::registry::HttpMethod, &'static str
 pub fn acta_protected_route_paths() -> Vec<(atlas_core::registry::HttpMethod, &'static str)> {
     component_route_paths(&crate::routes::acta::protected_declared_routes())
 }
+
+/// D4's route-set exclusion list (`v2-e3-s2` PR5, spec "Explicit, justified
+/// route exclusion list" requirement, acceptance gate 3): routes the live
+/// router serves that cannot be declared as a `RouteDeclaration` today, each
+/// with its own justification. This is the ONLY list of its kind in the
+/// codebase — distinct from D5's per-component `DECLARE_AND_VERIFY_EXEMPT`
+/// constants (`routes::acta`), which exempt a route from the
+/// declared-vs-enforced capability comparison while the route itself stays
+/// in the router↔registry SET audit.
+///
+/// Exhaustiveness is proven in both directions, never assumed:
+/// - `route_set_exclusions_are_not_declared_anywhere` (this module's test
+///   suite) proves no entry here is secretly a real, already-declared route
+///   (a "dead exclusion" that would silently absorb drift, D4's own stated
+///   risk).
+/// - `tests/api_route_exclusion_list.rs` spawns the real `atlas_server::app()`
+///   and proves each entry is actually served, with a foreign-method probe
+///   expecting 405 (neither route sits behind `require_authn`, so this
+///   works exactly like the T4.9 mount probe).
+///
+/// What this list does NOT prove, and cannot: that no OTHER route exists
+/// which is neither declared by any component nor named here. axum 0.8
+/// exposes no router introspection, so there is no way to enumerate "every
+/// path this live router actually serves" from outside it — only to ask
+/// "is this specific candidate path served?" The inside of that gap is
+/// covered structurally instead: SH10 (this module's own regression test)
+/// proves a route added to a component's router without a matching
+/// `declared_routes()` entry fails `cargo test`, so any route bypassing a
+/// component's `component_routes!` macro is caught at the SOURCE it would
+/// have to be added through, not by an external enumeration this list could
+/// never provide.
+pub const ROUTE_SET_EXCLUSIONS: &[(atlas_core::registry::HttpMethod, &str)] = &[
+    // `RoutePath::new` rejects `.` (`IllegalCharacter { ch: '.' }`), so the
+    // literal segment `openapi.json` cannot be expressed as a
+    // `RouteDeclaration` today (spec's accepted recommendation: defer
+    // widening `RoutePath` to S4). Mounted in `routes::acta::public::router`
+    // via `get(openapi::openapi_json)`.
+    (atlas_core::registry::HttpMethod::Get, "/openapi.json"),
+    // Mounted via `.merge(openapi::scalar_router())`, not a `.route(...)`
+    // call, and carries no operation contract to declare an action for.
+    // Mounted in `routes::acta::public::router` alongside `/openapi.json`.
+    (atlas_core::registry::HttpMethod::Get, "/scalar"),
+];
 
 fn component_route_paths(routes: &[AuditedRoute]) -> Vec<(HttpMethod, &'static str)> {
     routes
@@ -879,5 +929,87 @@ mod tests {
         let mismatch = mismatches.first().unwrap();
         assert_eq!(mismatch.path, "/scratch/health");
         assert_eq!(mismatch.enforced, None);
+    }
+
+    /// T5.8, direction (a): no [`ROUTE_SET_EXCLUSIONS`] entry is secretly a
+    /// real, already-declared route. If one were, it would be a "dead
+    /// exclusion" (D4's own named risk) that silently absorbs a route
+    /// drifting out of its owning component's declarations instead of
+    /// failing the bidirectional audit — this test would then need to be the
+    /// one to catch it, since the per-component set-equality audits never
+    /// see `ROUTE_SET_EXCLUSIONS` at all (neither side of their comparison —
+    /// `declared_routes()` nor the registry's `api.routes` — can express
+    /// `/openapi.json` or `/scalar` in the first place).
+    #[test]
+    fn route_set_exclusions_are_not_declared_anywhere() {
+        let declared: HashSet<(HttpMethod, &'static str)> =
+            crate::routes::platform::declared_routes()
+                .into_iter()
+                .chain(crate::routes::custos::declared_routes())
+                .chain(crate::routes::acta::declared_routes())
+                .map(|route| (route.method, route.path))
+                .collect();
+
+        for &(method, path) in ROUTE_SET_EXCLUSIONS {
+            assert!(
+                !declared.contains(&(method, path)),
+                "{method:?} {path} is in ROUTE_SET_EXCLUSIONS but is ALSO declared by a \
+                 component — remove it from the exclusion list, it no longer needs one"
+            );
+        }
+    }
+
+    /// Pins the server-wide public (no-`require_authn`) route set against a
+    /// literal that is independent of `component_routes!`. Every other
+    /// check in this crate derives "public" from the SAME macro expansion
+    /// that builds each component's public sub-router
+    /// (`{platform,custos,acta}_route_paths()`, `tests/support/route_matrix.rs`,
+    /// `tests/api_acta_router_parity.rs`), so a route silently moved from a
+    /// protected sub-module into a public one would move router and
+    /// "expected" together and nothing would fail. This literal is stated
+    /// by hand, read off `routes::platform`, `routes::custos`, and
+    /// `routes::acta`'s `public` sub-modules directly, so adding a route to
+    /// any component's `public` sub-module without updating this list fails
+    /// `cargo test`, and removing a route from `public` without updating
+    /// this list fails it too.
+    #[test]
+    fn public_route_set_matches_independent_literal() {
+        const EXPECTED_PUBLIC_ROUTES: &[(HttpMethod, &str)] = &[
+            // routes/platform.rs `mod public` (`/health`, `/ready`, `/version`).
+            (HttpMethod::Get, "/health"),
+            (HttpMethod::Get, "/ready"),
+            (HttpMethod::Get, "/version"),
+            // routes/custos.rs `mod public` (`login`, `activate`).
+            (HttpMethod::Post, "/api/auth/login"),
+            (HttpMethod::Get, "/api/activate/{token}"),
+            (HttpMethod::Post, "/api/activate/{token}"),
+            // routes/acta.rs `mod public` (the GitHub webhook ingest;
+            // `/openapi.json` and `/scalar` are D4-excluded, never declared).
+            (
+                HttpMethod::Post,
+                "/api/workspaces/{ws}/integrations/{integration}/events",
+            ),
+        ];
+
+        let expected: HashSet<(HttpMethod, &'static str)> =
+            EXPECTED_PUBLIC_ROUTES.iter().copied().collect();
+        let actual: HashSet<(HttpMethod, &'static str)> = platform_route_paths()
+            .into_iter()
+            .chain(custos_route_paths())
+            .chain(acta_route_paths())
+            .collect();
+
+        let diff = diff_route_sets(&expected, &actual);
+        assert!(
+            diff.left_only.is_empty(),
+            "expected as public but no longer served unauthenticated: {:?}",
+            diff.left_only
+        );
+        assert!(
+            diff.right_only.is_empty(),
+            "served unauthenticated but missing from the independent literal above \
+             (a route moved into a `public` sub-module without updating this list): {:?}",
+            diff.right_only
+        );
     }
 }

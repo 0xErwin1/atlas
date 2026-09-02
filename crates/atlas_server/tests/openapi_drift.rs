@@ -1,7 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use atlas_server::routes::openapi::openapi;
-use atlas_server::routes::registry::ROUTE_REGISTRY;
 use serde_json::Value;
 
 /// All schema component names that must be present in the generated OpenAPI document.
@@ -199,6 +198,152 @@ const EXPECTED_SCHEMAS: &[&str] = &[
     "PurgeStatusDtoResponse",
 ];
 
+/// Every unique OpenAPI path this server declares, extracted from the old
+/// hand-maintained route registry (`v2-e3-s2` PR5 deleted it; this literal
+/// list is its openapi_path values, frozen, since `RouteDeclaration` carries no
+/// OpenAPI-path field and deriving the OpenAPI document from the REG-5
+/// registry is out of scope for this slice, deferred to S4 — see the spec's
+/// Non-Goals). This test's drift coverage is unchanged: it still fails when
+/// a route's OpenAPI annotation and this list disagree.
+const EXPECTED_OPENAPI_PATHS: &[&str] = &[
+    "/api/activate/{token}",
+    "/api/admin/audit",
+    "/api/admin/status-templates",
+    "/api/admin/status-templates/{template_id}",
+    "/api/admin/trash",
+    "/api/admin/trash/purge",
+    "/api/admin/trash/purges/{operation_id}",
+    "/api/admin/trash/restore",
+    "/api/admin/workspaces",
+    "/api/admin/workspaces/{ws}",
+    "/api/api-keys",
+    "/api/api-keys/{key_id}",
+    "/api/api-keys/{key_id}/grants",
+    "/api/api-keys/{key_id}/grants/{grant_id}",
+    "/api/auth/change-password",
+    "/api/auth/login",
+    "/api/auth/logout",
+    "/api/auth/me",
+    "/api/meta",
+    "/api/me/ui-state",
+    "/api/users",
+    "/api/users/me",
+    "/api/users/{user_id}/activation-link",
+    "/api/users/{user_id}/disable",
+    "/api/users/{user_id}/enable",
+    "/api/users/{user_id}/memberships",
+    "/api/users/{user_id}/reset-password",
+    "/api/users/{user_id}/system-admin",
+    "/api/workspaces",
+    "/api/workspaces/{ws}",
+    "/api/workspaces/{ws}/activity",
+    "/api/workspaces/{ws}/assignable-users",
+    "/api/workspaces/{ws}/attachments",
+    "/api/workspaces/{ws}/attachments/{attachment_id}",
+    "/api/workspaces/{ws}/audit",
+    "/api/workspaces/{ws}/automation-rules",
+    "/api/workspaces/{ws}/automation-rules/{rule_id}",
+    "/api/workspaces/{ws}/boards/{board_id}",
+    "/api/workspaces/{ws}/boards/{board_id}/apply-status-templates",
+    "/api/workspaces/{ws}/boards/{board_id}/archive",
+    "/api/workspaces/{ws}/boards/{board_id}/columns",
+    "/api/workspaces/{ws}/boards/{board_id}/columns/{column_id}",
+    "/api/workspaces/{ws}/boards/{board_id}/move",
+    "/api/workspaces/{ws}/boards/{board_id}/presence",
+    "/api/workspaces/{ws}/boards/{board_id}/tasks",
+    "/api/workspaces/{ws}/boards/{board_id}/unarchive",
+    "/api/workspaces/{ws}/documents/moves/batch",
+    "/api/workspaces/{ws}/documents/{slug}",
+    "/api/workspaces/{ws}/documents/{slug}/attachments",
+    "/api/workspaces/{ws}/documents/{slug}/backlinks",
+    "/api/workspaces/{ws}/documents/{slug}/comment-drafts",
+    "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}",
+    "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments",
+    "/api/workspaces/{ws}/documents/{slug}/comments",
+    "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}",
+    "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
+    "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
+    "/api/workspaces/{ws}/documents/{slug}/compact",
+    "/api/workspaces/{ws}/documents/{slug}/content",
+    "/api/workspaces/{ws}/documents/{slug}/content/range",
+    "/api/workspaces/{ws}/documents/{slug}/content/search",
+    "/api/workspaces/{ws}/documents/{slug}/copy",
+    "/api/workspaces/{ws}/documents/{slug}/frontmatter",
+    "/api/workspaces/{ws}/documents/{slug}/history",
+    "/api/workspaces/{ws}/documents/{slug}/move",
+    "/api/workspaces/{ws}/documents/{slug}/presence",
+    "/api/workspaces/{ws}/documents/{slug}/revisions/{seq}",
+    "/api/workspaces/{ws}/folders/{folder_id}",
+    "/api/workspaces/{ws}/folders/{folder_id}/copy",
+    "/api/workspaces/{ws}/folders/{folder_id}/move",
+    "/api/workspaces/{ws}/grants",
+    "/api/workspaces/{ws}/grants/{grant_id}",
+    "/api/workspaces/{ws}/groups",
+    "/api/workspaces/{ws}/groups/{group_id}",
+    "/api/workspaces/{ws}/groups/{group_id}/members",
+    "/api/workspaces/{ws}/groups/{group_id}/members/{user_id}",
+    "/api/workspaces/{ws}/integration-configs",
+    "/api/workspaces/{ws}/integration-configs/{config_id}",
+    "/api/workspaces/{ws}/integrations/{integration}/events",
+    "/api/workspaces/{ws}/members",
+    "/api/workspaces/{ws}/members/{user_id}",
+    "/api/workspaces/{ws}/projects",
+    "/api/workspaces/{ws}/projects/{project_slug}",
+    "/api/workspaces/{ws}/projects/{project_slug}/boards",
+    "/api/workspaces/{ws}/projects/{project_slug}/documents",
+    "/api/workspaces/{ws}/projects/{project_slug}/folders",
+    "/api/workspaces/{ws}/projects/{project_slug}/grants",
+    "/api/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}",
+    "/api/workspaces/{ws}/property-definitions",
+    "/api/workspaces/{ws}/property-definitions/{property_definition_id}",
+    "/api/workspaces/{ws}/saved-searches",
+    "/api/workspaces/{ws}/saved-searches/{id}",
+    "/api/workspaces/{ws}/search",
+    "/api/workspaces/{ws}/semantic-search",
+    "/api/workspaces/{ws}/semantic-search/reindex",
+    "/api/workspaces/{ws}/status-templates",
+    "/api/workspaces/{ws}/status-templates/{template_id}",
+    "/api/workspaces/{ws}/tags",
+    "/api/workspaces/{ws}/tags/{tag_id}",
+    "/api/workspaces/{ws}/tags/used",
+    "/api/workspaces/{ws}/tasks",
+    "/api/workspaces/{ws}/tasks/{readable_id}",
+    "/api/workspaces/{ws}/tasks/{readable_id}/activity",
+    "/api/workspaces/{ws}/tasks/{readable_id}/assignees",
+    "/api/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}",
+    "/api/workspaces/{ws}/tasks/{readable_id}/attachments",
+    "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}",
+    "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content",
+    "/api/workspaces/{ws}/tasks/{readable_id}/backlinks",
+    "/api/workspaces/{ws}/tasks/{readable_id}/checklist",
+    "/api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}",
+    "/api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote",
+    "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts",
+    "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}",
+    "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments",
+    "/api/workspaces/{ws}/tasks/{readable_id}/comments",
+    "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}",
+    "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",
+    "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}",
+    "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content",
+    "/api/workspaces/{ws}/tasks/{readable_id}/graph",
+    "/api/workspaces/{ws}/tasks/{readable_id}/move",
+    "/api/workspaces/{ws}/tasks/{readable_id}/parent",
+    "/api/workspaces/{ws}/tasks/{readable_id}/promote",
+    "/api/workspaces/{ws}/tasks/{readable_id}/references",
+    "/api/workspaces/{ws}/tasks/{readable_id}/references/batch",
+    "/api/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}",
+    "/api/workspaces/{ws}/tasks/{readable_id}/subtasks",
+    "/api/workspaces/{ws}/task-views",
+    "/api/workspaces/{ws}/task-views/{id}",
+    "/api/workspaces/{ws}/webhooks",
+    "/api/workspaces/{ws}/webhooks/{webhook_id}",
+    "/api/workspaces/{ws}/webhooks/{webhook_id}/deliveries",
+    "/health",
+    "/ready",
+    "/version",
+];
+
 #[test]
 fn openapi_document_contains_required_schemas() {
     let doc = openapi();
@@ -227,30 +372,33 @@ fn openapi_document_contains_required_schemas() {
     );
 }
 
-/// Every route that declares an `openapi_path` in ROUTE_REGISTRY must appear in
-/// the OpenAPI document. The set of unique OpenAPI paths in ROUTE_REGISTRY must
-/// exactly match the set of paths in the generated document.
+/// Every path in `EXPECTED_OPENAPI_PATHS` must appear in the OpenAPI
+/// document, and the set of unique paths in that list must exactly match the
+/// set of paths in the generated document.
 ///
-/// Coverage: ROUTE_REGISTRY → router is enforced by `all_registry_entries_are_wired_in_router`.
-/// ROUTE_REGISTRY → OpenAPI doc is enforced here. The reverse direction (a route or
-/// annotation added without a ROUTE_REGISTRY entry) is not automatically caught —
-/// ROUTE_REGISTRY is the authoritative list developers must update when adding routes.
+/// This test's data source used to be the old hand-maintained route registry,
+/// retired in `v2-e3-s2` PR5; see `EXPECTED_OPENAPI_PATHS`'s doc for why it
+/// is now a frozen literal instead. The reverse direction (a route or
+/// annotation added without an `EXPECTED_OPENAPI_PATHS` entry) is not
+/// automatically caught — this list is what developers must update when
+/// adding or removing routes with an OpenAPI-documented path.
 #[test]
 fn openapi_document_paths_match_router() {
     let doc = openapi();
     let doc_paths = &doc.paths.paths;
 
-    let mut expected: std::collections::BTreeSet<&'static str> = std::collections::BTreeSet::new();
-    for entry in ROUTE_REGISTRY {
-        if let Some(p) = entry.openapi_path {
-            expected.insert(p);
-        }
-    }
+    let expected: std::collections::BTreeSet<&'static str> =
+        EXPECTED_OPENAPI_PATHS.iter().copied().collect();
+    assert_eq!(
+        expected.len(),
+        EXPECTED_OPENAPI_PATHS.len(),
+        "EXPECTED_OPENAPI_PATHS must not contain duplicate paths"
+    );
 
     for path in &expected {
         assert!(
             doc_paths.contains_key(*path),
-            "route '{path}' is in ROUTE_REGISTRY but missing from the OpenAPI document; \
+            "route '{path}' is in EXPECTED_OPENAPI_PATHS but missing from the OpenAPI document; \
              add a #[utoipa::path] annotation and register it in ApiDoc paths()"
         );
     }
@@ -258,8 +406,8 @@ fn openapi_document_paths_match_router() {
     assert_eq!(
         doc_paths.len(),
         expected.len(),
-        "OpenAPI path count mismatch: registry declares {} unique paths, document has {}. \
-         Update ROUTE_REGISTRY in src/routes/registry.rs when adding or removing routes.",
+        "OpenAPI path count mismatch: expected {} unique paths, document has {}. \
+         Update EXPECTED_OPENAPI_PATHS in openapi_drift.rs when adding or removing routes.",
         expected.len(),
         doc_paths.len()
     );

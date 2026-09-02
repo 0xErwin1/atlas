@@ -24,7 +24,6 @@ use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_custos::entities::security_audit::AuditFilters;
 use atlas_custos::ports::security_audit::SecurityAuditRepo;
 use atlas_custos_postgres::repos::security_audit::PgSecurityAuditRepo;
-use atlas_server::routes::registry::ROUTE_REGISTRY;
 use atlas_server::{
     persistence::repos::{DiskAttachmentStore, NewUser, PgAttachmentRepo, UserRepo},
     services::{CommentService, DocumentService, TrashService},
@@ -67,24 +66,15 @@ impl AttachmentStore for FailOnceDeleteStore {
     }
 }
 
-#[test]
-fn trash_routes_are_registered_for_openapi_and_protection_sweeps() {
-    assert!(
-        ROUTE_REGISTRY.iter().any(|entry| {
-            entry.method == "GET" && entry.openapi_path == Some("/api/admin/trash")
-        })
-    );
-    assert!(ROUTE_REGISTRY.iter().any(|entry| {
-        entry.method == "POST" && entry.openapi_path == Some("/api/admin/trash/restore")
-    }));
-    assert!(ROUTE_REGISTRY.iter().any(|entry| {
-        entry.method == "POST" && entry.openapi_path == Some("/api/admin/trash/purge")
-    }));
-    assert!(ROUTE_REGISTRY.iter().any(|entry| {
-        entry.method == "GET"
-            && entry.openapi_path == Some("/api/admin/trash/purges/{operation_id}")
-    }));
-}
+// `trash_routes_are_registered_for_openapi_and_protection_sweeps` previously
+// asserted that the old hand-maintained route registry (retired in `v2-e3-s2`
+// PR5) contained these entries — a self-check against a static list, not
+// against real router or registry state. That invariant is now proven, for
+// every one of acta's 169 routes including these trash routes, by
+// `acta_router_and_registry_route_sets_match_exactly` in
+// `crates/atlas_server/src/routes/acta.rs`, which compares the live router's
+// declared routes against the live REG-5 registry bidirectionally (spec
+// acceptance gates 1-2). No replacement test is needed here.
 
 async fn restore(
     client: &atlas_client::AtlasClient,

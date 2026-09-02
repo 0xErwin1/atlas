@@ -839,9 +839,10 @@ mod tests {
     /// handler, which `ExtractScope`'s compile-time, `Authorized<...>`-only
     /// extraction cannot see. Nulling the registry's `action` to make this
     /// mechanism agree would misrepresent a real, deliberate enforcement
-    /// fact — confirmed against `routes/registry.rs`'s pre-existing
-    /// `RouteEntry.capability` for the same routes, which already carried
-    /// the identical `Some(_)` value before this PR touched anything.
+    /// fact — confirmed against the old hand-maintained route registry's
+    /// pre-existing `capability: Option<&str>` field for the same routes,
+    /// which already carried the identical `Some(_)` value before this PR
+    /// touched anything.
     const DECLARE_AND_VERIFY_EXEMPT: [(HttpMethod, &str); 14] = [
         (HttpMethod::Patch, "/api/workspaces/{ws}"),
         (HttpMethod::Get, "/api/workspaces/{ws}/projects"),

@@ -23,7 +23,6 @@ pub(crate) mod platform_status_templates;
 pub(crate) mod presence;
 pub(crate) mod projects;
 pub(crate) mod property_definitions;
-pub mod registry;
 pub(crate) mod saved_searches;
 pub(crate) mod search;
 pub(crate) mod semantic_search;
