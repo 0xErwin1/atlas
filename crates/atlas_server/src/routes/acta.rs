@@ -46,26 +46,24 @@
 //! ## `/openapi.json` and `/scalar`
 //!
 //! Both are owned by `platform` in `docs/registry-route-ownership.md` (line
-//! 57: "baseline (explicit)") and excluded from every per-component audit
-//! entirely (D4: `RoutePath::new` rejects `/openapi.json`'s literal `.`;
-//! `/scalar` is a `.merge()`, never a `.route()`, with no operation
-//! contract) — so neither ever gets a `declared_routes()` entry on ANY
-//! component, and no audit in this slice can tell which component's router
-//! module physically mounts them. PR2 left both inline in `lib.rs` rather
-//! than moving them into `platform::router()`, since they were not among
-//! platform's six audited routes.
+//! 57: "baseline (explicit)"). Before `v2-e3-s4` D3, `RoutePath::new`
+//! rejected `/openapi.json`'s literal `.` and `/scalar` was a `.merge()`,
+//! never a `.route()`, with no operation contract — so neither had a
+//! `declared_routes()` entry on any component, and the two were tracked only
+//! by `router_audit::ROUTE_SET_EXCLUSIONS`. `v2-e3-s4` widened `RoutePath` to
+//! accept the dot and hand-declared both as ordinary
+//! `platform::declared_routes()` members (`routes::platform`'s
+//! `openapi_document_declared_routes()`), emptying that exclusion list; they
+//! are audited as platform's now, even though this is a placement-only
+//! choice below — they were relocated here (not `platform::router()`) by
+//! PR4 of `v2-e3-s2-router-audit` to satisfy that PR's own gate (zero inline
+//! `.route()`/`.merge()` calls left in `lib.rs::app()`) without touching
+//! `platform.rs` in a PR scoped to acta, and this slice does not move the
+//! mount to keep matching its ownership declaration.
 //!
-//! This PR's own gate (design D6, restated by the orchestrator for PR4)
-//! requires `lib.rs::app()` to contain zero inline `.route()`/`.merge()`
-//! calls once acta's conversion lands, which forces relocating these two.
 //! They are mounted in `acta::router()`'s `public` sub-module below —
 //! alongside `ingest_github_event`, exactly where they already lived
-//! together in `lib.rs`'s own `public` router (pre-PR4: `lib.rs:666-676`) —
-//! rather than in `platform::router()`, to avoid touching `platform.rs` in a
-//! PR scoped to acta. This is a placement choice only: neither route is
-//! declared, audited, or capability-checked as an "acta route" by doing so,
-//! since D4 already excludes both from every audit regardless of which
-//! module mounts them.
+//! together in `lib.rs`'s own `public` router (pre-PR4: `lib.rs:666-676`).
 #![allow(
     unreachable_pub,
     reason = "component_routes! always emits `pub fn router` to match the real \
@@ -82,8 +80,8 @@ use crate::state::AppState;
 /// Unauthenticated routes (`lib.rs`'s `public` router, pre-PR4:
 /// `lib.rs:649-676`): the GitHub webhook ingest (A8, carrying its own
 /// per-IP governor) plus `/openapi.json` and `/scalar` (platform-owned,
-/// D4-excluded from every audit — see the module doc for why they live
-/// here).
+/// audited via `routes::platform` since `v2-e3-s4` — see the module doc for
+/// why they physically live here).
 mod public {
     use std::sync::Arc;
 
@@ -128,7 +126,11 @@ mod public {
     /// `Authorized<...>` extractor at all (HMAC-verified by its own
     /// extractor instead), so it is capability-extraction exempt (D5),
     /// matching the registry's `action: None`. `/openapi.json` and
-    /// `/scalar` carry no entry at all — see the module doc for why.
+    /// `/scalar` carry no entry HERE despite being mounted by this same
+    /// `router()` above — they are audited as `platform`'s, per the
+    /// registry's ownership assignment, not as `acta`'s (see the module doc
+    /// for the mount/ownership split and `routes::platform`'s
+    /// `openapi_document_declared_routes()` for their actual audit entry).
     pub(crate) fn declared_routes() -> Vec<AuditedRoute> {
         vec![AuditedRoute {
             method: HttpMethod::Post,

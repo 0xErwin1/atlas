@@ -6,19 +6,19 @@
 )]
 
 //! T4.9/T4.14 (`v2-e3-s3` PR4, D8): exhaustive rule-conformance test for
-//! `RouteDeclaration.idempotent`'s re-derivation. Every one of the 210
+//! `RouteDeclaration.idempotent`'s re-derivation. Every one of the 212
 //! `reg5.rs` entries is checked against the written rule
 //! (`crates/atlas_core/src/registry/route.rs`'s `idempotent` doc comment),
 //! not a sample — a mismatch names the exact offending `(method, path)`
 //! (INV-SET-style, never a count comparison).
 //!
-//! `EXPECTED_IDEMPOTENT` below encodes the same 210 decisions as the
+//! `EXPECTED_IDEMPOTENT` below encodes the same 212 decisions as the
 //! judgment file (`docs/reg5-idempotent-judgment.md`):
 //! every non-`POST` entry is `false` (T4.10, mechanical); every `POST`
 //! entry's value is either a mechanical `create_*` name match or one of the
 //! 39 judged decisions the judgment file explains (including the six
 //! streamed-upload routes, F4). This table
-//! is cross-checked for completeness against `reg5.rs`'s own 210-entry
+//! is cross-checked for completeness against `reg5.rs`'s own 212-entry
 //! enumeration below (`table_is_exhaustive_over_reg5`), the same
 //! "one source, checked exhaustively" shape D4's exclusion-list
 //! completeness check uses.
@@ -33,6 +33,8 @@ const EXPECTED_IDEMPOTENT: &[(HttpMethod, &str, bool)] = &[
     (HttpMethod::Get, "/health", false),
     (HttpMethod::Get, "/ready", false),
     (HttpMethod::Get, "/version", false),
+    (HttpMethod::Get, "/openapi.json", false),
+    (HttpMethod::Get, "/scalar", false),
     (HttpMethod::Post, "/api/auth/logout", false),
     (HttpMethod::Get, "/api/auth/me", false),
     (HttpMethod::Post, "/api/auth/change-password", false),
@@ -869,13 +871,13 @@ fn table_is_exhaustive_over_reg5() {
     let live = all_declared_routes();
     assert_eq!(
         live.len(),
-        210,
-        "reg5.rs must declare exactly 210 routes; the classification table below assumes this"
+        212,
+        "reg5.rs must declare exactly 212 routes; the classification table below assumes this"
     );
     assert_eq!(
         EXPECTED_IDEMPOTENT.len(),
-        210,
-        "EXPECTED_IDEMPOTENT must cover all 210 reg5.rs entries, not a sample"
+        212,
+        "EXPECTED_IDEMPOTENT must cover all 212 reg5.rs entries, not a sample"
     );
 
     let live_keys: std::collections::HashSet<(HttpMethod, &str)> = live
@@ -969,9 +971,12 @@ fn true_and_false_counts_match_the_pr4_grounding() {
     let true_count = live.iter().filter(|(_, _, idempotent)| *idempotent).count();
     let false_count = live.len() - true_count;
 
+    // `v2-e3-s4` D3 added two more `idempotent: false` entries
+    // (`/openapi.json`, `/scalar`), so the pre-S4 176 grew to 178; the
+    // `true` count (34) is unaffected — neither new route is a POST.
     assert_eq!(true_count, 34, "expected exactly 34 idempotent:true routes");
     assert_eq!(
-        false_count, 176,
-        "expected exactly 176 idempotent:false routes"
+        false_count, 178,
+        "expected exactly 178 idempotent:false routes"
     );
 }

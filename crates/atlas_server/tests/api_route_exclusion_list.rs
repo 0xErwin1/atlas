@@ -17,13 +17,19 @@ use atlas_core::registry::HttpMethod;
 /// enumeration), and why the declarative audits plus SH10 cover that gap
 /// structurally instead.
 ///
+/// **Currently a zero-iteration loop** (`v2-e3-s4`, D3): `ROUTE_SET_EXCLUSIONS`
+/// is empty as of this slice (`/openapi.json` and `/scalar`, its only two
+/// former entries, are now ordinary `platform` `RouteDeclaration`s). Kept,
+/// not deleted, as a live, checked escape hatch for a future genuinely-
+/// inexpressible route — a `#[test]` that runs zero assertions and passes is
+/// a known-empty state, not a silently-vacuous one, since
+/// `router_audit::tests::route_set_exclusions_is_empty` asserts the
+/// emptiness explicitly.
+///
 /// Mount proof never uses "not 404" (see `api_router_mount_assertion.rs`'s
 /// doc for why): each excluded path is hit with a method it does not
-/// register. Neither `/openapi.json` nor `/scalar` sits behind
-/// `require_authn` (both are mounted in `routes::acta::public::router`), so
-/// an unmounted path would answer 404 for every method while a mounted one
-/// answers 405 for a foreign method regardless of what its real method
-/// returns — the exact mechanism T4.9 already established.
+/// register. This mirrors T4.9's mechanism, kept here for whatever entries
+/// this list holds in the future.
 #[tokio::test]
 async fn every_route_set_exclusion_is_actually_served() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -55,11 +61,11 @@ async fn every_route_set_exclusion_is_actually_served() {
 }
 
 /// Any method other than the excluded entry's own declared method works as
-/// the foreign probe; `POST` is never one of `ROUTE_SET_EXCLUSIONS`'s own
-/// methods (both current entries are `GET`), so it is used unconditionally
-/// rather than building a full candidate-order search like
-/// `api_router_mount_assertion.rs::pick_probe` needs for routes with several
-/// declared methods on the same path.
+/// the foreign probe. `POST` is used unconditionally rather than building a
+/// full candidate-order search like `api_router_mount_assertion.rs::pick_probe`
+/// needs for routes with several declared methods on the same path; this
+/// function never runs today (the list is empty, `v2-e3-s4` D3), and the
+/// assertion below keeps it honest for whatever entry it holds next.
 fn foreign_method_for(declared: HttpMethod) -> reqwest::Method {
     assert_eq!(
         declared,

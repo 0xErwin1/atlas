@@ -590,18 +590,18 @@ pub const ONE_SHOT_IDEMPOTENT_ROUTES: &[(HttpMethod, &str, &str)] = &[
 /// component's `component_routes!` macro is caught at the SOURCE it would
 /// have to be added through, not by an external enumeration this list could
 /// never provide.
-pub const ROUTE_SET_EXCLUSIONS: &[(atlas_core::registry::HttpMethod, &str)] = &[
-    // `RoutePath::new` rejects `.` (`IllegalCharacter { ch: '.' }`), so the
-    // literal segment `openapi.json` cannot be expressed as a
-    // `RouteDeclaration` today (spec's accepted recommendation: defer
-    // widening `RoutePath` to S4). Mounted in `routes::acta::public::router`
-    // via `get(openapi::openapi_json)`.
-    (atlas_core::registry::HttpMethod::Get, "/openapi.json"),
-    // Mounted via `.merge(openapi::scalar_router())`, not a `.route(...)`
-    // call, and carries no operation contract to declare an action for.
-    // Mounted in `routes::acta::public::router` alongside `/openapi.json`.
-    (atlas_core::registry::HttpMethod::Get, "/scalar"),
-];
+///
+/// **Currently empty** (`v2-e3-s4`, D3): `RoutePath` now accepts one
+/// interior dot in a path's final segment, so `/openapi.json` and `/scalar`
+/// — the only two entries this list ever held — are ordinary
+/// `RouteDeclaration`s under `platform` (`reg5.rs`) as of this slice. The
+/// list and its two completeness tests
+/// (`route_set_exclusions_are_not_declared_anywhere` below,
+/// `tests/api_route_exclusion_list.rs`) are kept, not deleted, as a live,
+/// checked escape hatch for the next route `RoutePath` genuinely cannot
+/// express — see `route_set_exclusions_is_empty` for the explicit,
+/// checkable claim over this empty state.
+pub const ROUTE_SET_EXCLUSIONS: &[(atlas_core::registry::HttpMethod, &str)] = &[];
 
 fn component_route_paths(routes: &[AuditedRoute]) -> Vec<(HttpMethod, &'static str)> {
     routes
@@ -1190,6 +1190,22 @@ mod tests {
         }
     }
 
+    /// T1.8/T1.9 (`v2-e3-s4`, D3): a real, checkable claim over the list's
+    /// current state, not an implicit pass-by-vacuity of the loop above (a
+    /// loop over an empty slice passes trivially regardless of whether the
+    /// list was ever meant to be empty). If a future PR reintroduces an
+    /// exclusion without updating this assertion, this test fails and names
+    /// why.
+    #[test]
+    fn route_set_exclusions_is_empty() {
+        assert!(
+            ROUTE_SET_EXCLUSIONS.is_empty(),
+            "ROUTE_SET_EXCLUSIONS must be empty as of v2-e3-s4 D3 — every route it used to \
+             hold is now an ordinary RouteDeclaration; update this assertion deliberately if a \
+             future route genuinely needs the escape hatch"
+        );
+    }
+
     /// Pins the server-wide public (no-`require_authn`) route set against a
     /// literal that is independent of `component_routes!`. Every other
     /// check in this crate derives "public" from the SAME macro expansion
@@ -1214,12 +1230,17 @@ mod tests {
             (HttpMethod::Post, "/api/auth/login"),
             (HttpMethod::Get, "/api/activate/{token}"),
             (HttpMethod::Post, "/api/activate/{token}"),
-            // routes/acta.rs `mod public` (the GitHub webhook ingest;
-            // `/openapi.json` and `/scalar` are D4-excluded, never declared).
+            // routes/acta.rs `mod public` (the GitHub webhook ingest).
             (
                 HttpMethod::Post,
                 "/api/workspaces/{ws}/integrations/{integration}/events",
             ),
+            // routes/platform.rs `openapi_document_declared_routes()`
+            // (`v2-e3-s4`, D3): `/openapi.json`/`/scalar`, physically
+            // mounted in `routes::acta::public::router` but audited as
+            // `platform`'s per the registry's ownership assignment.
+            (HttpMethod::Get, "/openapi.json"),
+            (HttpMethod::Get, "/scalar"),
         ];
 
         let expected: HashSet<(HttpMethod, &'static str)> =

@@ -1,22 +1,26 @@
 //! `platform` component router (design D1/D5/D6, `v2-e3-s2-router-audit`
 //! PR2, the pilot conversion).
 //!
-//! Platform's six routes sit in two of today's `lib.rs` route trees exactly
-//! as they do today: `/health`, `/ready`, `/version` carry no auth layer
-//! (`lib.rs`'s `public` router); `/api/me/ui-state` and `/api/meta` sit in
-//! `lib.rs`'s `protected` router, behind `require_authn` →
+//! Platform's original six routes sit in two of today's `lib.rs` route trees
+//! exactly as they do today: `/health`, `/ready`, `/version` carry no auth
+//! layer (`lib.rs`'s `public` router); `/api/me/ui-state` and `/api/meta` sit
+//! in `lib.rs`'s `protected` router, behind `require_authn` →
 //! `require_rate_limit` → CSRF-for-cookie-mutations. `router()` below
 //! reproduces that split internally via two private sub-modules (D6), so the
 //! layering after this conversion is provably identical to before it — same
-//! layers, same order — not just "close enough."
+//! layers, same order — not just "close enough." `GET /openapi.json` and
+//! `GET /scalar` (`v2-e3-s4`, D3) are two more platform-owned routes added
+//! to the registry in this slice; they are hand-declared for audit purposes
+//! (`openapi_document_declared_routes()` below) but stay physically mounted
+//! in `routes::acta::public::router()`, unaffected by this slice.
 //!
-//! None of the six routes take an `Authorized<R, M, S>` extractor at all:
+//! None of the eight routes take an `Authorized<R, M, S>` extractor at all:
 //! `health`/`ready`/`version` take no parameters or `State<AppState>` only,
-//! `meta` takes `State<AppState>` only, and `get_ui_state`/`set_ui_state`
-//! take `Extension<Principal>` (an authenticated-human check, not a
-//! capability gate). All six are therefore on the capability-extraction
-//! exemption list (D5); the registry declares `action: None` for every one,
-//! matching.
+//! `meta` takes `State<AppState>` only, `get_ui_state`/`set_ui_state` take
+//! `Extension<Principal>` (an authenticated-human check, not a capability
+//! gate), and `openapi_json`/`scalar_router` take no principal at all. All
+//! eight are therefore on the capability-extraction exemption list (D5); the
+//! registry declares `action: None` for every one, matching.
 //!
 //! Resolving the open question (design §5): `/api/meta`'s handler
 //! (`routes::health::meta`) is genuinely unauthenticated at the
@@ -35,8 +39,39 @@
 
 use axum::Router;
 
-use crate::router_audit::AuditedRoute;
+use crate::router_audit::{AuditedRoute, DeclaredScope};
 use crate::state::AppState;
+
+/// `GET /openapi.json` and `GET /scalar` (`v2-e3-s4`, D3): owned by
+/// `platform` per `docs/registry-route-ownership.md`, but physically mounted
+/// in `routes::acta::public::router()` (unaffected by this slice — see that
+/// module's own doc for why). Hand-declared here, not built by
+/// `component_routes!`, because `router()` below does not construct these
+/// two routes itself — mirroring how `routes::custos` and `routes::acta`
+/// hand-declare a route their own `router()` mounts outside the macro.
+/// Declaring them here (rather than leaving them undeclared, as
+/// `ROUTE_SET_EXCLUSIONS` did before this slice) is what lets platform's
+/// bidirectional registry audit see them as ordinary members instead of a
+/// carve-out. Neither takes an `Authorized<...>` extractor, matching every
+/// other platform route's exemption (D5).
+fn openapi_document_declared_routes() -> Vec<AuditedRoute> {
+    vec![
+        AuditedRoute {
+            method: atlas_core::registry::HttpMethod::Get,
+            path: "/openapi.json",
+            scope: DeclaredScope::Unauthenticated,
+            idempotent: false,
+            one_shot: false,
+        },
+        AuditedRoute {
+            method: atlas_core::registry::HttpMethod::Get,
+            path: "/scalar",
+            scope: DeclaredScope::Unauthenticated,
+            idempotent: false,
+            one_shot: false,
+        },
+    ]
+}
 
 /// Routes with no auth layer today (`lib.rs`'s `public` router, pre-PR2:
 /// `lib.rs:803-806`).
@@ -104,6 +139,7 @@ pub fn router(state: AppState) -> Router {
 pub(crate) fn declared_routes() -> Vec<AuditedRoute> {
     let mut routes = public::declared_routes();
     routes.extend(protected::declared_routes());
+    routes.extend(openapi_document_declared_routes());
     routes
 }
 
@@ -115,7 +151,9 @@ pub(crate) fn declared_routes() -> Vec<AuditedRoute> {
 /// `protected` route would get 401 from that layer before ever reaching the
 /// method dispatch that would otherwise answer 405.
 pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
-    public::declared_routes()
+    let mut routes = public::declared_routes();
+    routes.extend(openapi_document_declared_routes());
+    routes
 }
 
 #[cfg(test)]
