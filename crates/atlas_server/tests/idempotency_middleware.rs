@@ -695,6 +695,14 @@ async fn a_request_that_fails_authn_leaves_no_row_in_the_store() {
 /// succeeded — a valid-shaped `user_id` that simply does not exist fails
 /// ONLY this post-execution check, unlike a 401/403/429 or a malformed-body
 /// rejection, both of which never reach `next.run(request)` at all.
+///
+/// `problem_stamp` runs OUTSIDE this middleware (it wraps the whole router,
+/// while the idempotency layer wraps only the route), so it stores the RAW,
+/// unstamped problem body and stamps `request_id` fresh on every response —
+/// first response and replay alike, each from its own `x-request-id`. That
+/// is correct: `request_id` identifies the request, not the stored outcome.
+/// The two problem bodies are therefore compared field-by-field, excluding
+/// `request_id`.
 #[tokio::test]
 async fn a_post_execution_404_is_stored_and_replayed_like_any_completed_response() {
     let db = TestDb::create().await.expect("TestDb::create");
@@ -728,6 +736,12 @@ async fn a_post_execution_404_is_stored_and_replayed_like_any_completed_response
         first.headers().get("idempotent-replayed").is_none(),
         "the ORIGINAL response must never carry Idempotent-Replayed"
     );
+    let request_id1 = first
+        .headers()
+        .get("x-request-id")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string)
+        .expect("first response must carry x-request-id");
     let body1 = first.bytes().await.expect("read first response body");
 
     let second = send_request().await.expect("second request must complete");
@@ -737,6 +751,12 @@ async fn a_post_execution_404_is_stored_and_replayed_like_any_completed_response
         .get("idempotent-replayed")
         .and_then(|v| v.to_str().ok())
         .map(str::to_string);
+    let request_id2 = second
+        .headers()
+        .get("x-request-id")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string)
+        .expect("second response must carry x-request-id");
     let body2 = second.bytes().await.expect("read second response body");
 
     assert_eq!(
@@ -744,9 +764,45 @@ async fn a_post_execution_404_is_stored_and_replayed_like_any_completed_response
         reqwest::StatusCode::NOT_FOUND,
         "the replay must carry the SAME 404 status as the first response"
     );
+
+    let mut problem1: serde_json::Value =
+        serde_json::from_slice(&body1).expect("first response body must be JSON");
+    let mut problem2: serde_json::Value =
+        serde_json::from_slice(&body2).expect("replay body must be JSON");
+    let stamped_request_id1 = problem1
+        .get("request_id")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let stamped_request_id2 = problem2
+        .get("request_id")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
     assert_eq!(
-        body2, body1,
-        "the replay body must be byte-identical to the first response's body"
+        stamped_request_id1.as_deref(),
+        Some(request_id1.as_str()),
+        "problem_stamp must stamp the first response's OWN x-request-id"
+    );
+    assert_eq!(
+        stamped_request_id2.as_deref(),
+        Some(request_id2.as_str()),
+        "problem_stamp must stamp the replay's OWN x-request-id, not the first response's"
+    );
+    assert_ne!(
+        stamped_request_id1, stamped_request_id2,
+        "each response's request_id identifies THAT request, never the stored outcome — \
+         a replay is still stamped with ITS OWN request_id, so a replayed problem body \
+         is never byte-identical to the first response's"
+    );
+    if let Some(map1) = problem1.as_object_mut() {
+        map1.remove("request_id");
+    }
+    if let Some(map2) = problem2.as_object_mut() {
+        map2.remove("request_id");
+    }
+    assert_eq!(
+        problem2, problem1,
+        "the replay's problem body must be identical to the first response's, \
+         aside from each response's own stamped request_id"
     );
     assert_eq!(
         replayed.as_deref(),

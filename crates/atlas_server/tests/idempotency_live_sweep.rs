@@ -310,21 +310,27 @@ fn declared_false_set() -> HashSet<Route> {
 /// T4.19's self-checking sample: a named list with a reason, asserted (in
 /// the test below) to be a subset of the real declared-`idempotent: false`
 /// set — never a curated list that could silently drift from the registry.
-/// Chosen to span six distinct shapes: a no-body action (`logout`), two
-/// state-transition toggles (`archive_board`/`unarchive_board`), a
-/// read/search-shaped POST (`search_content`), a periodic ping
-/// (`heartbeat`), and one hand-declared route from `acta.rs`'s `layered`
-/// module (`move_documents_batch`) — the five judgment categories D8's rule
-/// names for `false`, per `docs/reg5-idempotent-judgment.md`, plus the one
-/// shape the macro-driven routes above cannot exercise: a `.route()` call
-/// where the `idempotency` layer is hand-applied only to a sibling
-/// `MethodRouter` before `.merge()`, not by the macro's `[idempotent]`
-/// token.
+/// Chosen to span six distinct shapes: a no-body action
+/// (`apply_status_templates`), two state-transition toggles
+/// (`archive_board`/`unarchive_board`), a read/search-shaped POST
+/// (`search_content`), a periodic ping (`heartbeat`), and one hand-declared
+/// route from `acta.rs`'s `layered` module (`move_documents_batch`) — the
+/// five judgment categories D8's rule names for `false`, per
+/// `docs/reg5-idempotent-judgment.md`, plus the one shape the macro-driven
+/// routes above cannot exercise: a `.route()` call where the `idempotency`
+/// layer is hand-applied only to a sibling `MethodRouter` before `.merge()`,
+/// not by the macro's `[idempotent]` token.
+///
+/// `logout` is deliberately NOT sampled here: it consumes the session, so a
+/// retried request under the SAME session is unauthenticated rather than
+/// "successfully ignoring the header" — it cannot prove T4.19's property
+/// (a false route accepts a retried key and does not reject it) at all.
 const DECLARED_FALSE_SAMPLE: &[(HttpMethod, &str, &str)] = &[
     (
         HttpMethod::Post,
-        "/api/auth/logout",
-        "no-body action, ends a session",
+        "/api/workspaces/{ws}/boards/{board_id}/apply-status-templates",
+        "no-body action, re-applying status templates skips columns that \
+         already exist by name and is a no-op on retry",
     ),
     (
         HttpMethod::Post,
@@ -456,6 +462,10 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                     .await
                     .expect("create project");
                 let second_user_id = second_platform_user(&db, "sweep-projgrant-2").await;
+                client
+                    .add_member(&ws.slug, second_user_id, "member")
+                    .await
+                    .expect("add second user to workspace so it is a valid grant target");
                 let path = format!(
                     "/api/workspaces/{}/projects/{}/grants",
                     ws.slug, project.slug
@@ -476,6 +486,10 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                 let (client, ws, _user) =
                     login_user_with_workspace(&server, &db, "sweep-wsgrant").await;
                 let second_user_id = second_platform_user(&db, "sweep-wsgrant-2").await;
+                client
+                    .add_member(&ws.slug, second_user_id, "member")
+                    .await
+                    .expect("add second user to workspace so it is a valid grant target");
                 let path = format!("/api/workspaces/{}/grants", ws.slug);
                 let body = ReqBody::Json(
                     serde_json::to_value(CreateGrantRequest {
@@ -509,6 +523,10 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                     .await
                     .expect("create group");
                 let second_user_id = second_platform_user(&db, "sweep-groupmember-2").await;
+                client
+                    .add_member(&ws.slug, second_user_id, "member")
+                    .await
+                    .expect("add second user to workspace so it is a valid group-member target");
                 let path = format!("/api/workspaces/{}/groups/{}/members", ws.slug, group.id);
                 let body = ReqBody::Json(serde_json::json!({ "user_id": second_user_id }));
                 assert_idempotent_true(&client, &path, &[], body).await;
@@ -1103,21 +1121,8 @@ async fn declared_idempotent_false_sample_ignores_the_header() {
     let db = TestDb::create().await.expect("TestDb::create");
     let server = TestServer::spawn(&db).await;
 
-    // logout
-    {
-        let (client, _ws, user) =
-            login_user_with_workspace(&server, &db, "sweep-false-logout").await;
-        assert_idempotent_false(
-            &db,
-            &client,
-            user.id.0,
-            "/api/auth/logout",
-            ReqBody::Json(serde_json::json!({})),
-        )
-        .await;
-    }
-
-    // archive_board / unarchive_board / heartbeat (share one board)
+    // apply_status_templates / archive_board / unarchive_board / heartbeat
+    // (share one board)
     {
         let (client, ws, board_id, _column_id) =
             provision_board(&server, &db, "sweep-false-board").await;
@@ -1127,6 +1132,19 @@ async fn declared_idempotent_false_sample_ignores_the_header() {
             .expect("fetch self")
             .id
             .expect("authenticated human user has an id");
+
+        let apply_templates_path = format!(
+            "/api/workspaces/{}/boards/{}/apply-status-templates",
+            ws.slug, board_id
+        );
+        assert_idempotent_false(
+            &db,
+            &client,
+            self_id,
+            &apply_templates_path,
+            ReqBody::Json(serde_json::json!({})),
+        )
+        .await;
 
         let archive_path = format!("/api/workspaces/{}/boards/{}/archive", ws.slug, board_id);
         assert_idempotent_false(
