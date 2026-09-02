@@ -16,7 +16,8 @@
     "/api/activate/{token}": {
       "get": {
         "tags": [
-          "auth"
+          "auth",
+          "custos"
         ],
         "operationId": "get_activation_info",
         "parameters": [
@@ -47,11 +48,13 @@
           "429": {
             "description": "Rate limit exceeded"
           }
-        }
+        },
+        "x-atlas-component": "custos"
       },
       "post": {
         "tags": [
-          "auth"
+          "auth",
+          "custos"
         ],
         "summary": "Completes account activation in a single DB transaction.",
         "description": "Atomicity invariant: the row lock (`FOR UPDATE` on the token SELECT) combined\nwith the guarded consume (`AND consumed_at IS NULL` on the UPDATE plus a\nrows-affected check) guarantee that exactly one activation succeeds per token\neven under concurrent POST requests. Under READ COMMITTED, two racers that\nreach the SELECT simultaneously will serialize at the lock: the loser blocks\nuntil the winner commits, at which point the loser's `FOR UPDATE` re-read\nsees the now-consumed row, the guarded UPDATE matches 0 rows, and the\ntransaction is rolled back with a 404 — no double-activation, no\ndouble-session.\n\nSteps inside the transaction:\n1. Re-validate and lock the token row (`FOR UPDATE`).\n2. Consume the token (`AND consumed_at IS NULL`); abort if already consumed.\n3. Set the user's `password_hash` and `activated_at`.\n4. Create a new session for the newly activated user.\n\nAny failure rolls back the entire transaction: the user stays pending,\nthe token stays unconsumed, and no session is issued.",
@@ -97,13 +100,15 @@
           "429": {
             "description": "Rate limit exceeded"
           }
-        }
+        },
+        "x-atlas-component": "custos"
       }
     },
     "/api/admin/audit": {
       "get": {
         "tags": [
-          "audit"
+          "audit",
+          "custos"
         ],
         "operationId": "list_platform_audit",
         "parameters": [
@@ -189,13 +194,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       }
     },
     "/api/admin/status-templates": {
       "get": {
         "tags": [
-          "status-templates"
+          "status-templates",
+          "acta"
         ],
         "summary": "Lists the Atlas-wide default statuses new workspaces are seeded from.",
         "operationId": "list_platform_status_templates",
@@ -224,11 +231,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "status-templates"
+          "status-templates",
+          "acta"
         ],
         "summary": "Appends an Atlas-wide default status after the current last one.",
         "description": "The `before`/`after` anchors of the shared request body are ignored here:\ncreation always appends, and reordering is a PATCH.",
@@ -268,13 +277,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/admin/status-templates/{template_id}": {
       "delete": {
         "tags": [
-          "status-templates"
+          "status-templates",
+          "acta"
         ],
         "summary": "Soft-deletes one Atlas-wide default status. Existing workspaces keep the\nstatus templates they were seeded with.",
         "operationId": "delete_platform_status_template",
@@ -308,11 +319,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "patch": {
         "tags": [
-          "status-templates"
+          "status-templates",
+          "acta"
         ],
         "summary": "Renames, recolors, and/or reorders one Atlas-wide default status.",
         "operationId": "update_platform_status_template",
@@ -366,13 +379,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/admin/trash": {
       "get": {
         "tags": [
-          "trash"
+          "trash",
+          "acta"
         ],
         "operationId": "list_trash",
         "parameters": [
@@ -437,13 +452,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/admin/trash/purge": {
       "post": {
         "tags": [
-          "trash"
+          "trash",
+          "acta"
         ],
         "operationId": "purge_trash",
         "requestBody": {
@@ -487,13 +504,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/admin/trash/purges/{operation_id}": {
       "get": {
         "tags": [
-          "trash"
+          "trash",
+          "acta"
         ],
         "operationId": "get_purge_status",
         "parameters": [
@@ -532,13 +551,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/admin/trash/restore": {
       "post": {
         "tags": [
-          "trash"
+          "trash",
+          "acta"
         ],
         "operationId": "restore_trash",
         "requestBody": {
@@ -572,13 +593,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/admin/workspaces": {
       "get": {
         "tags": [
-          "workspaces"
+          "workspaces",
+          "acta"
         ],
         "summary": "Returns every workspace in the system, ordered by creation date.\nRestricted to root users via `RequireUserAdmin`.",
         "operationId": "admin_list_workspaces",
@@ -607,13 +630,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/admin/workspaces/{ws}": {
       "delete": {
         "tags": [
-          "workspaces"
+          "workspaces",
+          "acta"
         ],
         "summary": "Soft-deletes a workspace, hiding it and its content from every lookup while\npreserving the underlying rows. Restricted to root/system-admin via\n`RequireUserAdmin`. Deleting an unknown or already-deleted workspace is a 404.",
         "operationId": "admin_delete_workspace",
@@ -646,11 +671,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "patch": {
         "tags": [
-          "workspaces"
+          "workspaces",
+          "acta"
         ],
         "summary": "Updates a workspace's `name` and/or `slug` on behalf of a platform admin.",
         "description": "Unlike the member-facing `update_workspace`, this admin path may re-slug a\nworkspace. The new slug is format-validated and checked for collisions against\nevery existing slug (a soft-deleted workspace still reserves its slug). Both\nfields are optional; omitting both is a no-op that returns the current state.\nRestricted to root/system-admin via `RequireUserAdmin`.",
@@ -704,13 +731,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/api-keys": {
       "get": {
         "tags": [
-          "api-keys"
+          "api-keys",
+          "custos"
         ],
         "operationId": "list_user_api_keys",
         "parameters": [
@@ -757,11 +786,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       },
       "post": {
         "tags": [
-          "api-keys"
+          "api-keys",
+          "custos"
         ],
         "operationId": "create_user_api_key",
         "requestBody": {
@@ -802,13 +833,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       }
     },
     "/api/api-keys/{key_id}": {
       "delete": {
         "tags": [
-          "api-keys"
+          "api-keys",
+          "custos"
         ],
         "operationId": "revoke_user_api_key",
         "parameters": [
@@ -841,11 +874,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       },
       "patch": {
         "tags": [
-          "api-keys"
+          "api-keys",
+          "custos"
         ],
         "summary": "Updates a user-owned API key. `is_global` and `scopes` are each PATCH-partial:\nomitting a field leaves it unchanged; both may be set in the same request.",
         "description": "Any owner of the key may toggle global reach or replace its scope set; the\nagent never gains more than its creator can reach (and stays capped at\neditor) nor more capabilities than the closed catalog allows, so this is\nbounded by the owner's own permissions rather than being a privilege\nescalation.",
@@ -903,13 +938,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       }
     },
     "/api/api-keys/{key_id}/grants": {
       "get": {
         "tags": [
-          "api-keys"
+          "api-keys",
+          "custos"
         ],
         "operationId": "list_api_key_grants",
         "parameters": [
@@ -952,13 +989,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       }
     },
     "/api/api-keys/{key_id}/grants/{grant_id}": {
       "delete": {
         "tags": [
-          "api-keys"
+          "api-keys",
+          "custos"
         ],
         "operationId": "delete_api_key_grant",
         "parameters": [
@@ -1001,13 +1040,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       }
     },
     "/api/auth/change-password": {
       "post": {
         "tags": [
-          "auth"
+          "auth",
+          "custos"
         ],
         "operationId": "change_password",
         "requestBody": {
@@ -1038,13 +1079,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       }
     },
     "/api/auth/login": {
       "post": {
         "tags": [
-          "auth"
+          "auth",
+          "custos"
         ],
         "operationId": "login",
         "requestBody": {
@@ -1074,13 +1117,15 @@
           "429": {
             "description": "Rate limit exceeded"
           }
-        }
+        },
+        "x-atlas-component": "custos"
       }
     },
     "/api/auth/logout": {
       "post": {
         "tags": [
-          "auth"
+          "auth",
+          "custos"
         ],
         "operationId": "logout",
         "responses": {
@@ -1095,13 +1140,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       }
     },
     "/api/auth/me": {
       "get": {
         "tags": [
-          "auth"
+          "auth",
+          "custos"
         ],
         "operationId": "me",
         "responses": {
@@ -1123,13 +1170,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       }
     },
     "/api/me/ui-state": {
       "get": {
         "tags": [
-          "ui-state"
+          "ui-state",
+          "platform"
         ],
         "summary": "Returns the authenticated human user's stored UI state.",
         "description": "The state is an opaque JSON object owned by the client. When the user has no\nrow yet, an empty object `{}` is returned. API keys (agents) are rejected\nwith 403: agents have no UI.",
@@ -1156,11 +1205,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "platform"
       },
       "put": {
         "tags": [
-          "ui-state"
+          "ui-state",
+          "platform"
         ],
         "summary": "Inserts or replaces the authenticated human user's UI state.",
         "description": "The `state` JSON object is stored verbatim; the server does not validate its\ninner shape. The stored value is echoed back. API keys (agents) are rejected\nwith 403: agents have no UI.",
@@ -1197,13 +1248,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "platform"
       }
     },
     "/api/meta": {
       "get": {
         "tags": [
-          "meta"
+          "meta",
+          "platform"
         ],
         "operationId": "meta",
         "responses": {
@@ -1225,13 +1278,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "platform"
       }
     },
     "/api/users": {
       "get": {
         "tags": [
-          "users"
+          "users",
+          "custos"
         ],
         "operationId": "list_users",
         "responses": {
@@ -1259,11 +1314,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       },
       "post": {
         "tags": [
-          "users"
+          "users",
+          "custos"
         ],
         "operationId": "create_user",
         "requestBody": {
@@ -1301,13 +1358,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       }
     },
     "/api/users/me": {
       "patch": {
         "tags": [
-          "users"
+          "users",
+          "custos"
         ],
         "operationId": "update_me",
         "requestBody": {
@@ -1345,13 +1404,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       }
     },
     "/api/users/{user_id}/activation-link": {
       "post": {
         "tags": [
-          "users"
+          "users",
+          "custos"
         ],
         "operationId": "regenerate_activation_link",
         "parameters": [
@@ -1391,13 +1452,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       }
     },
     "/api/users/{user_id}/disable": {
       "post": {
         "tags": [
-          "users"
+          "users",
+          "custos"
         ],
         "operationId": "disable_user",
         "parameters": [
@@ -1427,13 +1490,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       }
     },
     "/api/users/{user_id}/enable": {
       "post": {
         "tags": [
-          "users"
+          "users",
+          "custos"
         ],
         "operationId": "enable_user",
         "parameters": [
@@ -1463,13 +1528,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       }
     },
     "/api/users/{user_id}/memberships": {
       "get": {
         "tags": [
-          "users"
+          "users",
+          "custos"
         ],
         "operationId": "list_user_memberships",
         "parameters": [
@@ -1512,13 +1579,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       }
     },
     "/api/users/{user_id}/reset-password": {
       "post": {
         "tags": [
-          "users"
+          "users",
+          "custos"
         ],
         "operationId": "reset_password",
         "parameters": [
@@ -1561,13 +1630,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       }
     },
     "/api/users/{user_id}/system-admin": {
       "post": {
         "tags": [
-          "users"
+          "users",
+          "custos"
         ],
         "operationId": "set_system_admin",
         "parameters": [
@@ -1617,13 +1688,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       }
     },
     "/api/workspaces": {
       "get": {
         "tags": [
-          "workspaces"
+          "workspaces",
+          "acta"
         ],
         "summary": "Returns the workspaces the authenticated principal can access.",
         "description": "For users: their member workspaces (or all workspaces for root/system_admin).\nFor api_keys: a global key mirrors its creator's reach (so it does NOT need\nper-workspace grants); a non-global key lists the workspaces where it holds at\nleast one grant.",
@@ -1650,11 +1723,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "workspaces"
+          "workspaces",
+          "acta"
         ],
         "summary": "Creates a new workspace owned by the authenticated human user.",
         "description": "The slug is derived from the name and de-duplicated against existing\nworkspace slugs. The creating user is added as `Owner`, so the workspace\nimmediately appears in `GET /api/workspaces`. API keys (agents) are rejected\nwith 403: agents are workspace-scoped and must not create workspaces.",
@@ -1691,13 +1766,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}": {
       "get": {
         "tags": [
-          "workspaces"
+          "workspaces",
+          "acta"
         ],
         "operationId": "get_workspace",
         "parameters": [
@@ -1733,11 +1810,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "patch": {
         "tags": [
-          "workspaces"
+          "workspaces",
+          "acta"
         ],
         "summary": "Renames the workspace display name. The slug is never re-derived; only\n`name` and `updated_at` change. Requires workspace membership.",
         "description": "A human member passes unchanged; an API-key principal is additionally\nrequired to hold `config:update`, so a scoped agent cannot rename the\nworkspace without that capability. `member.api_key_id` is `Some` exactly for\nthose callers.",
@@ -1788,13 +1867,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/activity": {
       "get": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "list_workspace_activity",
         "parameters": [
@@ -1880,13 +1961,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/assignable-users": {
       "get": {
         "tags": [
-          "members"
+          "members",
+          "acta"
         ],
         "summary": "Lists users who can be added to the workspace.",
         "description": "Returns the active (non-disabled) users that are NOT already members of this\nworkspace. The `users` table holds only human accounts, so api keys are\nexcluded by construction. Mirrors the `GET /api/users` shape (`Vec<UserDto>`).",
@@ -1930,13 +2013,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/attachments": {
       "get": {
         "tags": [
-          "attachments"
+          "attachments",
+          "acta"
         ],
         "summary": "Lists every attachment in the workspace the principal may see.",
         "description": "Rows are permission-filtered in SQL against the resource that owns them, so\nthe page limit applies only to visible rows. Attachments still held by an\nunpublished comment draft are never listed.",
@@ -2102,13 +2187,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/attachments/{attachment_id}": {
       "get": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "download_attachment",
         "parameters": [
@@ -2149,11 +2236,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "delete": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "delete_attachment",
         "parameters": [
@@ -2194,11 +2283,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "patch": {
         "tags": [
-          "attachments"
+          "attachments",
+          "acta"
         ],
         "summary": "Renames an attachment and rewrites every reference that addressed it by name.",
         "description": "A `[[file:…]]` wikilink is the only name-bound way to reference an\nattachment — embedded images and links carry the attachment id — so the\nrewrite is confined to the owner's own body, and it goes through the normal\ncontent-save path so the note keeps its revision history and its link rows.",
@@ -2261,13 +2352,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/audit": {
       "get": {
         "tags": [
-          "audit"
+          "audit",
+          "custos"
         ],
         "operationId": "list_workspace_audit",
         "parameters": [
@@ -2365,13 +2458,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       }
     },
     "/api/workspaces/{ws}/automation-rules": {
       "get": {
         "tags": [
-          "automation-rules"
+          "automation-rules",
+          "acta"
         ],
         "operationId": "list_automation_rules",
         "parameters": [
@@ -2427,11 +2522,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "automation-rules"
+          "automation-rules",
+          "acta"
         ],
         "operationId": "create_automation_rule",
         "parameters": [
@@ -2480,13 +2577,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/automation-rules/{rule_id}": {
       "get": {
         "tags": [
-          "automation-rules"
+          "automation-rules",
+          "acta"
         ],
         "operationId": "get_automation_rule",
         "parameters": [
@@ -2532,11 +2631,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "delete": {
         "tags": [
-          "automation-rules"
+          "automation-rules",
+          "acta"
         ],
         "operationId": "delete_automation_rule",
         "parameters": [
@@ -2575,11 +2676,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "patch": {
         "tags": [
-          "automation-rules"
+          "automation-rules",
+          "acta"
         ],
         "operationId": "patch_automation_rule",
         "parameters": [
@@ -2638,13 +2741,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/boards/{board_id}": {
       "get": {
         "tags": [
-          "boards"
+          "boards",
+          "acta"
         ],
         "operationId": "get_board",
         "parameters": [
@@ -2692,11 +2797,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "delete": {
         "tags": [
-          "boards"
+          "boards",
+          "acta"
         ],
         "operationId": "delete_board",
         "parameters": [
@@ -2737,11 +2844,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "patch": {
         "tags": [
-          "boards"
+          "boards",
+          "acta"
         ],
         "operationId": "update_board",
         "parameters": [
@@ -2799,13 +2908,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/boards/{board_id}/apply-status-templates": {
       "post": {
         "tags": [
-          "status-templates"
+          "status-templates",
+          "acta"
         ],
         "operationId": "apply_status_templates",
         "parameters": [
@@ -2857,13 +2968,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/boards/{board_id}/archive": {
       "post": {
         "tags": [
-          "boards"
+          "boards",
+          "acta"
         ],
         "operationId": "archive_board",
         "parameters": [
@@ -2911,13 +3024,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/boards/{board_id}/columns": {
       "get": {
         "tags": [
-          "boards"
+          "boards",
+          "acta"
         ],
         "operationId": "list_columns",
         "parameters": [
@@ -2968,11 +3083,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "boards"
+          "boards",
+          "acta"
         ],
         "operationId": "create_column",
         "parameters": [
@@ -3033,13 +3150,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/boards/{board_id}/columns/{column_id}": {
       "delete": {
         "tags": [
-          "boards"
+          "boards",
+          "acta"
         ],
         "operationId": "delete_column",
         "parameters": [
@@ -3089,11 +3208,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "patch": {
         "tags": [
-          "boards"
+          "boards",
+          "acta"
         ],
         "operationId": "update_column",
         "parameters": [
@@ -3163,13 +3284,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/boards/{board_id}/move": {
       "patch": {
         "tags": [
-          "boards"
+          "boards",
+          "acta"
         ],
         "operationId": "move_board",
         "parameters": [
@@ -3230,13 +3353,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/boards/{board_id}/presence": {
       "post": {
         "tags": [
-          "presence"
+          "presence",
+          "acta"
         ],
         "operationId": "heartbeat",
         "parameters": [
@@ -3284,11 +3409,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "delete": {
         "tags": [
-          "presence"
+          "presence",
+          "acta"
         ],
         "operationId": "leave",
         "parameters": [
@@ -3329,13 +3456,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/boards/{board_id}/tasks": {
       "get": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "list_tasks",
         "parameters": [
@@ -3403,11 +3532,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "create_task",
         "parameters": [
@@ -3468,13 +3599,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/boards/{board_id}/unarchive": {
       "post": {
         "tags": [
-          "boards"
+          "boards",
+          "acta"
         ],
         "operationId": "unarchive_board",
         "parameters": [
@@ -3522,13 +3655,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/documents/moves/batch": {
       "post": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "move_documents_batch",
         "requestBody": {
@@ -3566,13 +3701,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/documents/{slug}": {
       "get": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "get_document",
         "parameters": [
@@ -3623,11 +3760,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "delete": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "delete_document",
         "parameters": [
@@ -3668,11 +3807,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "patch": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "update_document",
         "parameters": [
@@ -3730,13 +3871,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/documents/{slug}/attachments": {
       "get": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "list_attachments",
         "parameters": [
@@ -3791,11 +3934,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "upload_attachment",
         "parameters": [
@@ -3843,13 +3988,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/documents/{slug}/backlinks": {
       "get": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "list_backlinks",
         "parameters": [
@@ -3911,13 +4058,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/documents/{slug}/comment-drafts": {
       "post": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "create_document_comment_draft",
         "parameters": [
@@ -3985,13 +4134,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}": {
       "delete": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "cancel_document_comment_draft",
         "parameters": [
@@ -4038,13 +4189,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments": {
       "post": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "upload_document_comment_draft_attachment",
         "parameters": [
@@ -4147,13 +4300,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/documents/{slug}/comments": {
       "get": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "list_document_comments",
         "parameters": [
@@ -4230,11 +4385,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "create_document_comment",
         "parameters": [
@@ -4311,13 +4468,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}": {
       "delete": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "delete_document_comment",
         "parameters": [
@@ -4367,11 +4526,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "patch": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "update_document_comment",
         "parameters": [
@@ -4441,13 +4602,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments": {
       "get": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "list_document_comment_attachments",
         "parameters": [
@@ -4501,11 +4664,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "upload_document_comment_attachment",
         "parameters": [
@@ -4583,13 +4748,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}": {
       "get": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "download_document_comment_attachment",
         "parameters": [
@@ -4664,11 +4831,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "delete": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "delete_document_comment_attachment",
         "parameters": [
@@ -4720,13 +4889,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/documents/{slug}/compact": {
       "get": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "get_document_compact",
         "parameters": [
@@ -4772,13 +4943,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/documents/{slug}/content": {
       "put": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "update_content",
         "parameters": [
@@ -4839,13 +5012,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/documents/{slug}/content/range": {
       "get": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "get_content_range",
         "parameters": [
@@ -4948,11 +5123,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "patch": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "edit_content_range",
         "parameters": [
@@ -5014,13 +5191,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/documents/{slug}/content/search": {
       "post": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "search_content",
         "parameters": [
@@ -5085,13 +5264,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/documents/{slug}/copy": {
       "post": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "copy_document",
         "parameters": [
@@ -5149,13 +5330,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/documents/{slug}/frontmatter": {
       "get": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "get_frontmatter",
         "parameters": [
@@ -5197,13 +5380,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/documents/{slug}/history": {
       "get": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "list_history",
         "parameters": [
@@ -5258,13 +5443,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/documents/{slug}/move": {
       "patch": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "move_document",
         "parameters": [
@@ -5322,13 +5509,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/documents/{slug}/presence": {
       "post": {
         "tags": [
-          "presence"
+          "presence",
+          "acta"
         ],
         "operationId": "document_heartbeat",
         "parameters": [
@@ -5376,11 +5565,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "delete": {
         "tags": [
-          "presence"
+          "presence",
+          "acta"
         ],
         "operationId": "document_leave",
         "parameters": [
@@ -5421,13 +5612,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/documents/{slug}/revisions/{seq}": {
       "get": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "get_revision_content",
         "parameters": [
@@ -5479,13 +5672,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/folders/{folder_id}": {
       "get": {
         "tags": [
-          "folders"
+          "folders",
+          "acta"
         ],
         "operationId": "get_folder",
         "parameters": [
@@ -5534,11 +5729,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "delete": {
         "tags": [
-          "folders"
+          "folders",
+          "acta"
         ],
         "operationId": "delete_folder",
         "parameters": [
@@ -5580,11 +5777,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "patch": {
         "tags": [
-          "folders"
+          "folders",
+          "acta"
         ],
         "operationId": "rename_folder",
         "parameters": [
@@ -5643,13 +5842,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/folders/{folder_id}/copy": {
       "post": {
         "tags": [
-          "folders"
+          "folders",
+          "acta"
         ],
         "operationId": "copy_folder",
         "parameters": [
@@ -5708,13 +5909,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/folders/{folder_id}/move": {
       "patch": {
         "tags": [
-          "folders"
+          "folders",
+          "acta"
         ],
         "operationId": "move_folder",
         "parameters": [
@@ -5773,13 +5976,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/grants": {
       "get": {
         "tags": [
-          "grants"
+          "grants",
+          "custos"
         ],
         "operationId": "list_workspace_grants",
         "parameters": [
@@ -5835,11 +6040,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       },
       "post": {
         "tags": [
-          "grants"
+          "grants",
+          "custos"
         ],
         "operationId": "create_workspace_grant",
         "parameters": [
@@ -5885,13 +6092,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       }
     },
     "/api/workspaces/{ws}/grants/{grant_id}": {
       "delete": {
         "tags": [
-          "grants"
+          "grants",
+          "custos"
         ],
         "operationId": "delete_workspace_grant",
         "parameters": [
@@ -5933,13 +6142,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       }
     },
     "/api/workspaces/{ws}/groups": {
       "get": {
         "tags": [
-          "groups"
+          "groups",
+          "custos"
         ],
         "operationId": "list_groups",
         "parameters": [
@@ -5978,11 +6189,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       },
       "post": {
         "tags": [
-          "groups"
+          "groups",
+          "custos"
         ],
         "operationId": "create_group",
         "parameters": [
@@ -6037,13 +6250,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       }
     },
     "/api/workspaces/{ws}/groups/{group_id}": {
       "delete": {
         "tags": [
-          "groups"
+          "groups",
+          "custos"
         ],
         "operationId": "delete_group",
         "parameters": [
@@ -6085,13 +6300,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       }
     },
     "/api/workspaces/{ws}/groups/{group_id}/members": {
       "get": {
         "tags": [
-          "groups"
+          "groups",
+          "custos"
         ],
         "operationId": "list_group_members",
         "parameters": [
@@ -6143,11 +6360,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       },
       "post": {
         "tags": [
-          "groups"
+          "groups",
+          "custos"
         ],
         "operationId": "add_group_member",
         "parameters": [
@@ -6209,13 +6428,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       }
     },
     "/api/workspaces/{ws}/groups/{group_id}/members/{user_id}": {
       "delete": {
         "tags": [
-          "groups"
+          "groups",
+          "custos"
         ],
         "operationId": "remove_group_member",
         "parameters": [
@@ -6267,13 +6488,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       }
     },
     "/api/workspaces/{ws}/integration-configs": {
       "get": {
         "tags": [
-          "integrations"
+          "integrations",
+          "acta"
         ],
         "operationId": "list_integration_configs",
         "parameters": [
@@ -6312,11 +6535,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "integrations"
+          "integrations",
+          "acta"
         ],
         "operationId": "create_integration_config",
         "parameters": [
@@ -6365,13 +6590,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/integration-configs/{config_id}": {
       "get": {
         "tags": [
-          "integrations"
+          "integrations",
+          "acta"
         ],
         "operationId": "get_integration_config",
         "parameters": [
@@ -6417,11 +6644,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "delete": {
         "tags": [
-          "integrations"
+          "integrations",
+          "acta"
         ],
         "operationId": "delete_integration_config",
         "parameters": [
@@ -6460,11 +6689,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "patch": {
         "tags": [
-          "integrations"
+          "integrations",
+          "acta"
         ],
         "operationId": "patch_integration_config",
         "parameters": [
@@ -6523,13 +6754,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/integrations/{integration}/events": {
       "post": {
         "tags": [
-          "integrations"
+          "integrations",
+          "acta"
         ],
         "summary": "Receives a signed GitHub delivery, verifies it via the `VerifiedIntegrationEvent`\nextractor, and hands it off to `AutomationService` for dedup, outbox storage,\nand rule evaluation.",
         "description": "Returns 200 regardless of whether the delivery was new or a duplicate so\nthat GitHub does not retry on idempotent re-deliveries.",
@@ -6567,13 +6800,15 @@
           "413": {
             "description": "Request body exceeds 1 MiB"
           }
-        }
+        },
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/members": {
       "get": {
         "tags": [
-          "members"
+          "members",
+          "acta"
         ],
         "operationId": "list_workspace_members",
         "parameters": [
@@ -6612,11 +6847,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "members"
+          "members",
+          "acta"
         ],
         "summary": "Adds an existing user to the workspace at the requested role.",
         "description": "Mirrors the authorization discipline of `update_member_role`:\n1. `WorkspaceOwnerOrAdmin` gates structural access (resolves caller class).\n2. Role string is parsed; an unknown value → 422.\n3. Role-grant matrix: an admin may add `member` or `admin`, never `owner`;\n   only an owner (or break-glass) may add an `owner`.\n4. The target user must exist (404) and must not be disabled (422 — a\n   deactivated account cannot be assigned).\n5. The user must not already be a member → 409 Conflict.\n6. The membership insert and its audit row share one transaction.",
@@ -6673,13 +6910,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/members/{user_id}": {
       "delete": {
         "tags": [
-          "members"
+          "members",
+          "acta"
         ],
         "summary": "Removes a member from the workspace.",
         "description": "Enforces the same ordered authorization checks as `update_member_role`, adapted for\nDELETE:\n- Step 3: admin cannot remove an owner.\n- Step 4: no one (including break-glass) can remove the last owner → 409.",
@@ -6726,11 +6965,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "patch": {
         "tags": [
-          "members"
+          "members",
+          "acta"
         ],
         "summary": "Changes a workspace member's role.",
         "description": "Enforces strictly ordered authorization checks:\n1. `WorkspaceOwnerOrAdmin` extractor gates structural access (resolves caller class).\n2. Target membership is loaded; 404 if the target is not a member.\n3. Role-permission matrix: admins cannot touch owners or promote to owner; others\n   are allowed subject to step 4.\n4. Last-owner-lockout (independent of step 3, applies to break-glass too): demoting\n   the sole remaining owner → 409. This is a data-integrity invariant, not a\n   permission — break-glass is NOT exempt.\n5. Apply `update_role`. Idempotent: same-role PATCH validates the full matrix first.\n\nSteps 3 and 4 are independent and strictly ordered. Never collapse them.",
@@ -6800,13 +7041,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/projects": {
       "get": {
         "tags": [
-          "projects"
+          "projects",
+          "acta"
         ],
         "operationId": "list_projects",
         "parameters": [
@@ -6859,11 +7102,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "projects"
+          "projects",
+          "acta"
         ],
         "operationId": "create_project",
         "parameters": [
@@ -6909,13 +7154,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/projects/{project_slug}": {
       "get": {
         "tags": [
-          "projects"
+          "projects",
+          "acta"
         ],
         "operationId": "get_project",
         "parameters": [
@@ -6963,11 +7210,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "delete": {
         "tags": [
-          "projects"
+          "projects",
+          "acta"
         ],
         "operationId": "delete_project",
         "parameters": [
@@ -7008,11 +7257,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "patch": {
         "tags": [
-          "projects"
+          "projects",
+          "acta"
         ],
         "operationId": "update_project",
         "parameters": [
@@ -7070,13 +7321,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/projects/{project_slug}/boards": {
       "get": {
         "tags": [
-          "boards"
+          "boards",
+          "acta"
         ],
         "operationId": "list_boards",
         "parameters": [
@@ -7141,11 +7394,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "boards"
+          "boards",
+          "acta"
         ],
         "operationId": "create_board",
         "parameters": [
@@ -7203,13 +7458,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/projects/{project_slug}/documents": {
       "get": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "list_documents",
         "parameters": [
@@ -7292,11 +7549,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "documents"
+          "documents",
+          "acta"
         ],
         "operationId": "create_document",
         "parameters": [
@@ -7351,13 +7610,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/projects/{project_slug}/folders": {
       "get": {
         "tags": [
-          "folders"
+          "folders",
+          "acta"
         ],
         "operationId": "list_folders",
         "parameters": [
@@ -7422,11 +7683,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "folders"
+          "folders",
+          "acta"
         ],
         "operationId": "create_folder",
         "parameters": [
@@ -7484,13 +7747,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/projects/{project_slug}/grants": {
       "get": {
         "tags": [
-          "grants"
+          "grants",
+          "custos"
         ],
         "operationId": "list_project_grants",
         "parameters": [
@@ -7555,11 +7820,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       },
       "post": {
         "tags": [
-          "grants"
+          "grants",
+          "custos"
         ],
         "operationId": "create_project_grant",
         "parameters": [
@@ -7614,13 +7881,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       }
     },
     "/api/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}": {
       "delete": {
         "tags": [
-          "grants"
+          "grants",
+          "custos"
         ],
         "operationId": "delete_project_grant",
         "parameters": [
@@ -7671,13 +7940,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "custos"
       }
     },
     "/api/workspaces/{ws}/property-definitions": {
       "get": {
         "tags": [
-          "property-definitions"
+          "property-definitions",
+          "acta"
         ],
         "operationId": "list_property_definitions",
         "parameters": [
@@ -7728,11 +7999,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "property-definitions"
+          "property-definitions",
+          "acta"
         ],
         "operationId": "create_property_definition",
         "parameters": [
@@ -7784,13 +8057,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/property-definitions/{property_definition_id}": {
       "delete": {
         "tags": [
-          "property-definitions"
+          "property-definitions",
+          "acta"
         ],
         "operationId": "delete_property_definition",
         "parameters": [
@@ -7832,13 +8107,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/saved-searches": {
       "get": {
         "tags": [
-          "saved-searches"
+          "saved-searches",
+          "acta"
         ],
         "operationId": "list_saved_searches",
         "parameters": [
@@ -7877,11 +8154,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "saved-searches"
+          "saved-searches",
+          "acta"
         ],
         "operationId": "create_saved_search",
         "parameters": [
@@ -7933,13 +8212,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/saved-searches/{id}": {
       "delete": {
         "tags": [
-          "saved-searches"
+          "saved-searches",
+          "acta"
         ],
         "operationId": "delete_saved_search",
         "parameters": [
@@ -7978,11 +8259,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "patch": {
         "tags": [
-          "saved-searches"
+          "saved-searches",
+          "acta"
         ],
         "operationId": "rename_saved_search",
         "parameters": [
@@ -8044,13 +8327,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/search": {
       "get": {
         "tags": [
-          "search"
+          "search",
+          "acta"
         ],
         "operationId": "search",
         "parameters": [
@@ -8242,13 +8527,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/semantic-search": {
       "get": {
         "tags": [
-          "search"
+          "search",
+          "acta"
         ],
         "operationId": "semantic_search",
         "parameters": [
@@ -8405,13 +8692,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/semantic-search/reindex": {
       "get": {
         "tags": [
-          "search"
+          "search",
+          "acta"
         ],
         "operationId": "semantic_reindex_plan",
         "parameters": [
@@ -8450,11 +8739,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "search"
+          "search",
+          "acta"
         ],
         "operationId": "semantic_reindex_start",
         "parameters": [
@@ -8496,13 +8787,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/status-templates": {
       "get": {
         "tags": [
-          "status-templates"
+          "status-templates",
+          "acta"
         ],
         "operationId": "list_status_templates",
         "parameters": [
@@ -8541,11 +8834,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "status-templates"
+          "status-templates",
+          "acta"
         ],
         "operationId": "create_status_template",
         "parameters": [
@@ -8594,13 +8889,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/status-templates/{template_id}": {
       "delete": {
         "tags": [
-          "status-templates"
+          "status-templates",
+          "acta"
         ],
         "operationId": "delete_status_template",
         "parameters": [
@@ -8642,11 +8939,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "patch": {
         "tags": [
-          "status-templates"
+          "status-templates",
+          "acta"
         ],
         "operationId": "update_status_template",
         "parameters": [
@@ -8708,13 +9007,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tags": {
       "get": {
         "tags": [
-          "tags"
+          "tags",
+          "acta"
         ],
         "operationId": "list_tags",
         "parameters": [
@@ -8753,11 +9054,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "tags"
+          "tags",
+          "acta"
         ],
         "operationId": "create_tag",
         "parameters": [
@@ -8813,13 +9116,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tags/used": {
       "get": {
         "tags": [
-          "tags"
+          "tags",
+          "acta"
         ],
         "operationId": "list_used_labels",
         "parameters": [
@@ -8858,13 +9163,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tags/{tag_id}": {
       "delete": {
         "tags": [
-          "tags"
+          "tags",
+          "acta"
         ],
         "operationId": "delete_tag",
         "parameters": [
@@ -8906,11 +9213,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "patch": {
         "tags": [
-          "tags"
+          "tags",
+          "acta"
         ],
         "operationId": "patch_tag",
         "parameters": [
@@ -8975,13 +9284,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/task-views": {
       "get": {
         "tags": [
-          "task-views"
+          "task-views",
+          "acta"
         ],
         "operationId": "list_task_views",
         "parameters": [
@@ -9020,11 +9331,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "task-views"
+          "task-views",
+          "acta"
         ],
         "operationId": "create_task_view",
         "parameters": [
@@ -9076,13 +9389,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/task-views/{id}": {
       "get": {
         "tags": [
-          "task-views"
+          "task-views",
+          "acta"
         ],
         "operationId": "get_task_view",
         "parameters": [
@@ -9128,11 +9443,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "delete": {
         "tags": [
-          "task-views"
+          "task-views",
+          "acta"
         ],
         "operationId": "delete_task_view",
         "parameters": [
@@ -9171,11 +9488,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "patch": {
         "tags": [
-          "task-views"
+          "task-views",
+          "acta"
         ],
         "operationId": "update_task_view",
         "parameters": [
@@ -9237,13 +9556,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks": {
       "get": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "list_workspace_tasks",
         "parameters": [
@@ -9365,13 +9686,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}": {
       "get": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "get_task",
         "parameters": [
@@ -9419,11 +9742,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "delete": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "delete_task",
         "parameters": [
@@ -9464,11 +9789,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "patch": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "update_task",
         "parameters": [
@@ -9529,13 +9856,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/activity": {
       "get": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "list_activity",
         "parameters": [
@@ -9603,13 +9932,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/assignees": {
       "get": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "list_assignees",
         "parameters": [
@@ -9660,11 +9991,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "add_assignee",
         "parameters": [
@@ -9725,13 +10058,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}": {
       "delete": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "remove_assignee",
         "parameters": [
@@ -9781,13 +10116,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/attachments": {
       "get": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "list_task_attachments",
         "parameters": [
@@ -9838,11 +10175,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "summary": "Uploads a file and attaches it to the resolved task.",
         "description": "The body is `multipart/form-data` with the file in a part named `file`. Bytes are\nstreamed and accumulated up to `max_attachment_bytes`; the first chunk that would\nexceed the cap aborts the upload with 413 so an oversize body is never fully\nbuffered. The stored blob is content-addressed, so re-uploading identical bytes\nreuses the existing object.",
@@ -9909,13 +10248,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}": {
       "delete": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "summary": "Soft-deletes a task attachment row.",
         "description": "Only the DB row is marked deleted; the content-addressed blob is left in place\nbecause the same bytes may be referenced by other attachments.",
@@ -9967,11 +10308,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "patch": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "summary": "Renames task attachment metadata without changing the stored object.",
         "operationId": "rename_task_attachment",
@@ -10042,13 +10385,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content": {
       "get": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "summary": "Streams an attachment's bytes through the API for the resolved task.",
         "description": "The attachment must belong to this task; an attachment owned by another task (or\na document) resolves to 404 rather than leaking across owners. Bytes are fetched\nfrom the configured `AttachmentStore`, so this works for both the disk and S3\nbackends.",
@@ -10100,13 +10445,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/backlinks": {
       "get": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "list_task_backlinks",
         "parameters": [
@@ -10174,13 +10521,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/checklist": {
       "get": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "list_checklist",
         "parameters": [
@@ -10231,11 +10580,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "create_checklist_item",
         "parameters": [
@@ -10293,13 +10644,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}": {
       "delete": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "delete_checklist_item",
         "parameters": [
@@ -10349,11 +10702,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "patch": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "update_checklist_item",
         "parameters": [
@@ -10423,13 +10778,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote": {
       "post": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "promote_checklist_item",
         "parameters": [
@@ -10499,13 +10856,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts": {
       "post": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "create_task_comment_draft",
         "parameters": [
@@ -10573,13 +10932,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}": {
       "delete": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "cancel_task_comment_draft",
         "parameters": [
@@ -10626,13 +10987,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments": {
       "post": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "upload_task_comment_draft_attachment",
         "parameters": [
@@ -10721,13 +11084,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/comments": {
       "get": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "list_comments",
         "parameters": [
@@ -10804,11 +11169,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "create_task_comment",
         "parameters": [
@@ -10885,13 +11252,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}": {
       "delete": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "delete_comment",
         "parameters": [
@@ -10941,11 +11310,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "patch": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "update_comment",
         "parameters": [
@@ -11015,13 +11386,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments": {
       "get": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "list_task_comment_attachments",
         "parameters": [
@@ -11075,11 +11448,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "upload_task_comment_attachment",
         "parameters": [
@@ -11146,13 +11521,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}": {
       "delete": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "delete_task_comment_attachment",
         "parameters": [
@@ -11204,13 +11581,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content": {
       "get": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "download_task_comment_attachment",
         "parameters": [
@@ -11285,13 +11664,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/graph": {
       "get": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "get_task_graph",
         "parameters": [
@@ -11350,13 +11731,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/move": {
       "post": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "move_task",
         "parameters": [
@@ -11417,13 +11800,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/parent": {
       "post": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "set_task_parent",
         "parameters": [
@@ -11484,13 +11869,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/promote": {
       "post": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "promote_subtask",
         "parameters": [
@@ -11538,13 +11925,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/references": {
       "get": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "list_references",
         "parameters": [
@@ -11595,11 +11984,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "summary": "Creates a reference from the authorized source task to exactly one target.",
         "description": "`task_references` targets are backed by foreign-key columns: the row cannot\nbe stored without a real target in this workspace. Both-null and both-set\nbodies are rejected here as 422 before reaching the DB, preventing a CHECK\nconstraint violation or a silent both-null insert.",
@@ -11665,13 +12056,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/references/batch": {
       "post": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "create_references_batch",
         "requestBody": {
@@ -11709,13 +12102,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}": {
       "delete": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "delete_reference",
         "parameters": [
@@ -11765,13 +12160,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/tasks/{readable_id}/subtasks": {
       "get": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "list_subtasks",
         "parameters": [
@@ -11822,11 +12219,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "tasks"
+          "tasks",
+          "acta"
         ],
         "operationId": "create_subtask",
         "parameters": [
@@ -11887,13 +12286,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/webhooks": {
       "get": {
         "tags": [
-          "webhooks"
+          "webhooks",
+          "acta"
         ],
         "operationId": "list_webhooks",
         "parameters": [
@@ -11952,11 +12353,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "post": {
         "tags": [
-          "webhooks"
+          "webhooks",
+          "acta"
         ],
         "operationId": "create_webhook",
         "parameters": [
@@ -12008,13 +12411,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/webhooks/{webhook_id}": {
       "get": {
         "tags": [
-          "webhooks"
+          "webhooks",
+          "acta"
         ],
         "operationId": "get_webhook",
         "parameters": [
@@ -12063,11 +12468,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "delete": {
         "tags": [
-          "webhooks"
+          "webhooks",
+          "acta"
         ],
         "operationId": "delete_webhook",
         "parameters": [
@@ -12109,11 +12516,13 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       },
       "patch": {
         "tags": [
-          "webhooks"
+          "webhooks",
+          "acta"
         ],
         "operationId": "update_webhook",
         "parameters": [
@@ -12175,13 +12584,15 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/api/workspaces/{ws}/webhooks/{webhook_id}/deliveries": {
       "get": {
         "tags": [
-          "webhooks"
+          "webhooks",
+          "acta"
         ],
         "operationId": "list_webhook_deliveries",
         "parameters": [
@@ -12250,26 +12661,30 @@
           {
             "bearer_auth": []
           }
-        ]
+        ],
+        "x-atlas-component": "acta"
       }
     },
     "/health": {
       "get": {
         "tags": [
-          "crate::routes::health"
+          "crate::routes::health",
+          "platform"
         ],
         "operationId": "health",
         "responses": {
           "200": {
             "description": "Service is healthy"
           }
-        }
+        },
+        "x-atlas-component": "platform"
       }
     },
     "/ready": {
       "get": {
         "tags": [
-          "crate::routes::health"
+          "crate::routes::health",
+          "platform"
         ],
         "summary": "Readiness probe: liveness plus a `SELECT 1` round-trip to the database.",
         "description": "Unlike `/health` (a cheap liveness signal), this endpoint touches the pool so\nan orchestrator can withhold traffic while the database is unreachable or the\npool is exhausted. Returns 503 on any database error.",
@@ -12281,20 +12696,23 @@
           "503": {
             "description": "Service is not ready: the database is unreachable"
           }
-        }
+        },
+        "x-atlas-component": "platform"
       }
     },
     "/version": {
       "get": {
         "tags": [
-          "crate::routes::health"
+          "crate::routes::health",
+          "platform"
         ],
         "operationId": "version",
         "responses": {
           "200": {
             "description": "Service version"
           }
-        }
+        },
+        "x-atlas-component": "platform"
       }
     }
   },
@@ -13496,67 +13914,36 @@
         "description": "The compatible default comment page or the opt-in full comment feed page."
       },
       "ConflictProblemDto": {
-        "type": "object",
-        "description": "RFC 9457 problem+json extension for CAS revision conflicts (status 409).\n\nFlattens `ProblemDetails` fields alongside conflict-specific fields so the\nclient receives a single `application/problem+json` body.",
-        "required": [
-          "type",
-          "title",
-          "status",
-          "current_revision_id",
-          "current_seq",
-          "base_to_current_patch"
-        ],
-        "properties": {
-          "base_to_current_patch": {
-            "type": "string",
-            "description": "Unified diff from the client's base revision to the current head."
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProblemDetails"
           },
-          "current_revision_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "The revision ID that is currently head (the client's token is stale)."
-          },
-          "current_seq": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Sequence number of the current head revision."
-          },
-          "detail": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "hint": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "instance": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "request_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "status": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "title": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string"
+          {
+            "type": "object",
+            "required": [
+              "current_revision_id",
+              "current_seq",
+              "base_to_current_patch"
+            ],
+            "properties": {
+              "base_to_current_patch": {
+                "type": "string",
+                "description": "Unified diff from the client's base revision to the current head."
+              },
+              "current_revision_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The revision ID that is currently head (the client's token is stale)."
+              },
+              "current_seq": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Sequence number of the current head revision."
+              }
+            }
           }
-        }
+        ],
+        "description": "RFC 9457 problem+json extension for CAS revision conflicts (status 409).\n\nEmbeds `ProblemDetails` (`#[serde(flatten)]`) alongside conflict-specific\nfields so the client receives a single `application/problem+json` body."
       },
       "CopyDocumentRequest": {
         "type": "object",
@@ -19029,6 +19416,14 @@
   },
   "tags": [
     {
+      "name": "meta",
+      "description": "Server metadata"
+    },
+    {
+      "name": "ui-state",
+      "description": "Per-user UI state"
+    },
+    {
       "name": "audit",
       "description": "Security audit log"
     },
@@ -19041,20 +19436,8 @@
       "description": "User management (root-only)"
     },
     {
-      "name": "meta",
-      "description": "Server metadata"
-    },
-    {
-      "name": "ui-state",
-      "description": "Per-user UI state"
-    },
-    {
       "name": "api-keys",
       "description": "Workspace API key management"
-    },
-    {
-      "name": "projects",
-      "description": "Project CRUD"
     },
     {
       "name": "grants",
@@ -19063,6 +19446,10 @@
     {
       "name": "groups",
       "description": "Workspace principal groups"
+    },
+    {
+      "name": "projects",
+      "description": "Project CRUD"
     },
     {
       "name": "workspaces",
