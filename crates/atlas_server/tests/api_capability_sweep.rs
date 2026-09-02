@@ -12,7 +12,7 @@
 //! the manual `enforce_api_key_scope` call sites are covered identically:
 //!
 //! 1. A key with an EMPTY scope set gets 403 with a scope-denial detail on
-//!    every `ROUTE_REGISTRY` entry that declares `capability: Some(_)`.
+//!    every live registry route that declares `action: Some(_)`.
 //! 2. A key holding all catalog capabilities never gets a scope-403 on any
 //!    of those same entries (it may still get a 404 from an earlier
 //!    destructive call in the same sweep touching a shared fixture — that is
@@ -56,13 +56,15 @@ use atlas_api::{
 };
 use atlas_client::{AtlasClient, ClientError};
 use atlas_core::principal::UserId;
+use atlas_core::registry::{HttpMethod, build};
 use atlas_custos::capability::Capability;
 use atlas_custos::entities::identity::ApiKeyType;
 use atlas_custos_postgres::repos::identity::PgApiKeyRepo;
 use atlas_server::{
     crypto::WebhookCrypto,
     persistence::repos::{ApiKeyRepo, NewApiKey},
-    routes::registry::ROUTE_REGISTRY,
+    reg5::{StorageBackend, reg5_component_entries},
+    router_audit::capability_from_action_id,
 };
 use support::{TestDb, TestServer, login_user_with_workspace};
 
@@ -590,8 +592,9 @@ impl Case {
     ];
 
     /// `(method, capability)` as declared for this case's route — cross-checked
-    /// against `ROUTE_REGISTRY` in `capability_sweep_covers_every_registry_entry`
-    /// so this list can never silently drift from the registry.
+    /// against the live REG-5 registry in
+    /// `capability_sweep_covers_every_registry_entry` so this list can never
+    /// silently drift from it.
     fn registry_key(self) -> (&'static str, &'static str) {
         match self {
             Case::CreateTask => ("POST", "tasks:create"),
@@ -1741,11 +1744,17 @@ async fn raw_call(
     path: &str,
 ) -> Result<(), ClientError> {
     let url = format!("{base_url}{path}");
+    // No `_` fallback: every call site names its method explicitly, so an
+    // unrecognized value is a bug in the caller, not a route this helper
+    // should silently retry as GET (the defect this PR's other raw-request
+    // migration in `api_401_sweep.rs` fixes for the same reason).
     let builder = match method {
+        "GET" => http.get(&url),
         "POST" => http.post(&url),
+        "PUT" => http.put(&url),
         "PATCH" => http.patch(&url),
         "DELETE" => http.delete(&url),
-        _ => http.get(&url),
+        other => panic!("raw_call: unsupported method `{other}`"),
     };
     let builder = if path.ends_with("/content/search") {
         builder.json(&serde_json::json!({"query": "x"}))
@@ -1778,21 +1787,45 @@ fn is_scope_denial(err: &ClientError) -> bool {
     )
 }
 
+fn http_method_str(method: HttpMethod) -> &'static str {
+    match method {
+        HttpMethod::Get => "GET",
+        HttpMethod::Post => "POST",
+        HttpMethod::Put => "PUT",
+        HttpMethod::Patch => "PATCH",
+        HttpMethod::Delete => "DELETE",
+        HttpMethod::Head => "HEAD",
+        HttpMethod::Options => "OPTIONS",
+    }
+}
+
 #[tokio::test]
 async fn capability_sweep_covers_every_registry_entry() {
     let mut from_cases: Vec<(&'static str, &'static str)> =
         Case::ALL.iter().map(|c| c.registry_key()).collect();
     from_cases.sort_unstable();
 
-    let mut from_registry: Vec<(&'static str, &'static str)> = ROUTE_REGISTRY
+    let registry = build(reg5_component_entries(StorageBackend::Filesystem))
+        .expect("REG-5 entries must satisfy every registry::build() validator");
+
+    let mut from_registry: Vec<(&'static str, &'static str)> = registry
+        .entries()
         .iter()
-        .filter_map(|e| e.capability.map(|cap| (e.method, cap)))
+        .flat_map(|entry| entry.api.routes.iter())
+        .filter_map(|route| {
+            route.action.as_ref().map(|action| {
+                (
+                    http_method_str(route.method),
+                    capability_from_action_id(action).as_str(),
+                )
+            })
+        })
         .collect();
     from_registry.sort_unstable();
 
     assert_eq!(
         from_cases, from_registry,
-        "the sweep's Case list must cover exactly the ROUTE_REGISTRY entries with capability: Some(_)"
+        "the sweep's Case list must cover exactly the live registry's entries with action: Some(_)"
     );
 }
 

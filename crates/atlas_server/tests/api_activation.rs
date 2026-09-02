@@ -1335,32 +1335,16 @@ async fn post_activate_concurrent_requests_exactly_one_wins() {
 }
 
 // ── T33: registry entries for GET and POST /api/activate/{token} exist ────────
-
-#[test]
-fn registry_has_get_and_post_activate_entries() {
-    use atlas_server::routes::registry::{ROUTE_REGISTRY, RouteKind};
-
-    let get_entry = ROUTE_REGISTRY.iter().find(|e| {
-        e.method == "GET"
-            && e.openapi_path == Some("/api/activate/{token}")
-            && e.kind == RouteKind::Public
-    });
-
-    let post_entry = ROUTE_REGISTRY.iter().find(|e| {
-        e.method == "POST"
-            && e.openapi_path == Some("/api/activate/{token}")
-            && e.kind == RouteKind::Public
-    });
-
-    assert!(
-        get_entry.is_some(),
-        "ROUTE_REGISTRY must contain GET /api/activate/{{token}} (Public)"
-    );
-    assert!(
-        post_entry.is_some(),
-        "ROUTE_REGISTRY must contain POST /api/activate/{{token}} (Public)"
-    );
-}
+//
+// `registry_has_get_and_post_activate_entries` previously asserted that the
+// old hand-maintained route registry (retired in `v2-e3-s2` PR5) contained these
+// two entries as public — a self-check against a static list, not against
+// real router or registry state. That invariant is now proven by
+// `custos`'s own audit (`declared_routes()`/`public_declared_routes()` in
+// `crates/atlas_server/src/routes/custos.rs`), which declares both routes as
+// `DeclaredScope::Unauthenticated` and compares them against the live REG-5
+// registry bidirectionally (spec acceptance gates 1-2). No replacement test
+// is needed here.
 
 // ── A disabled pending user cannot self-activate (generic 404, no oracle) ─────
 
