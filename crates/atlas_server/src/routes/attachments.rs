@@ -91,7 +91,7 @@ fn parse_owner_kind(raw: Option<&str>) -> Result<Option<AttachmentOwnerKind>, Ap
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/attachments",
+    path = "/workspaces/{ws}/attachments",
     operation_id = "list_workspace_attachments",
     tag = "attachments",
     security(("bearer_auth" = [])),
@@ -232,7 +232,7 @@ async fn hydrate_uploaders(
 
 #[utoipa::path(
     patch,
-    path = "/api/workspaces/{ws}/attachments/{attachment_id}",
+    path = "/workspaces/{ws}/attachments/{attachment_id}",
     operation_id = "rename_workspace_attachment",
     tag = "attachments",
     security(("bearer_auth" = [])),

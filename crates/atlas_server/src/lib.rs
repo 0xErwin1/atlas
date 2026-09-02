@@ -141,15 +141,25 @@ pub fn app(state: AppState) -> Router {
     // seven `DefaultBodyLimit`-layered routes plus its own governed ingest
     // route) they carried inline here before their respective conversions —
     // merging an already-layered router is the same operation as merging
-    // two already-layered routers (D6). `/openapi.json` and `/scalar` moved
-    // into `acta::router()`'s public sub-router alongside the ingest route
-    // (see that module's doc for why); every other route that used to live
-    // here has moved into one of the three component routers, so this is
-    // now exactly the three-way merge D6 describes, with no inline
-    // `.route()` call left in this function.
-    let router = routes::platform::router(state.clone())
+    // two already-layered routers (D6).
+    //
+    // `v2-e3-s4` PR4 (D2): every registry-declared route literal was
+    // rewritten to namespace-relative form, so the `/api` prefix that used
+    // to be baked into each literal is now applied exactly once, here, via
+    // `Router::nest("/api", ...)` — the single mount D1 describes (PR5 adds
+    // a second, `/api/v2`, nest at this same composition root). The five
+    // routes that never carried an `/api` prefix (`/health`, `/ready`,
+    // `/version`, `/openapi.json`, `/scalar`) are NOT part of the nested
+    // router: each component now exposes a `root_router()` for exactly
+    // those routes, built and merged separately, outside the `/api` nest, so
+    // they keep being served at their bare root-level path.
+    let api_router = routes::platform::router(state.clone())
         .merge(routes::custos::router(state.clone()))
-        .merge(routes::acta::router(state));
+        .merge(routes::acta::router(state.clone()));
+
+    let root_router = routes::platform::root_router(state).merge(routes::acta::root_router());
+
+    let router = Router::new().nest("/api", api_router).merge(root_router);
     apply_layers(router)
 }
 

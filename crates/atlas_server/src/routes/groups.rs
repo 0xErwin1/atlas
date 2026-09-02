@@ -24,7 +24,7 @@ use atlas_custos_postgres::repos::security_audit::PgSecurityAuditRepo;
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/groups",
+    path = "/workspaces/{ws}/groups",
     tag = "groups",
     security(("bearer_auth" = [])),
     params(
@@ -96,7 +96,7 @@ pub(crate) async fn create_group(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/groups",
+    path = "/workspaces/{ws}/groups",
     tag = "groups",
     security(("bearer_auth" = [])),
     params(
@@ -127,7 +127,7 @@ pub(crate) async fn list_groups(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/groups/{group_id}",
+    path = "/workspaces/{ws}/groups/{group_id}",
     tag = "groups",
     security(("bearer_auth" = [])),
     params(
@@ -194,7 +194,7 @@ pub(crate) async fn delete_group(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/groups/{group_id}/members",
+    path = "/workspaces/{ws}/groups/{group_id}/members",
     tag = "groups",
     security(("bearer_auth" = [])),
     params(
@@ -301,7 +301,7 @@ pub(crate) async fn add_group_member(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/groups/{group_id}/members/{user_id}",
+    path = "/workspaces/{ws}/groups/{group_id}/members/{user_id}",
     tag = "groups",
     security(("bearer_auth" = [])),
     params(
@@ -380,7 +380,7 @@ pub(crate) async fn remove_group_member(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/groups/{group_id}/members",
+    path = "/workspaces/{ws}/groups/{group_id}/members",
     tag = "groups",
     security(("bearer_auth" = [])),
     params(

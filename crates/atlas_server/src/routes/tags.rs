@@ -49,7 +49,7 @@ fn tag_to_dto(t: Tag) -> TagDto {
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/tags",
+    path = "/workspaces/{ws}/tags",
     tag = "tags",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -78,7 +78,7 @@ pub(crate) async fn list_tags(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/tags",
+    path = "/workspaces/{ws}/tags",
     tag = "tags",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -130,7 +130,7 @@ pub(crate) async fn create_tag(
 
 #[utoipa::path(
     patch,
-    path = "/api/workspaces/{ws}/tags/{tag_id}",
+    path = "/workspaces/{ws}/tags/{tag_id}",
     tag = "tags",
     security(("bearer_auth" = [])),
     params(
@@ -179,7 +179,7 @@ pub(crate) async fn patch_tag(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/tags/used",
+    path = "/workspaces/{ws}/tags/used",
     tag = "tags",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -211,7 +211,7 @@ pub(crate) async fn list_used_labels(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/tags/{tag_id}",
+    path = "/workspaces/{ws}/tags/{tag_id}",
     tag = "tags",
     security(("bearer_auth" = [])),
     params(

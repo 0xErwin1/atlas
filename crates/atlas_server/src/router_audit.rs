@@ -148,6 +148,31 @@ pub fn joined(namespace: &str, relative_path: &str) -> String {
     format!("{namespace}{relative_path}")
 }
 
+/// Routes mounted directly at the composition root, outside the `/api`
+/// nest (`v2-e3-s4` D2/T4.X): `/health`/`/ready`/`/version` carried no
+/// `/api` prefix before this slice's rewrite and must not gain one, and
+/// `/openapi.json`/`/scalar` are the document's own serving endpoints,
+/// also mounted outside `/api`. Every other registry-declared route lives
+/// under the `/api` nest (and, from PR5, the `/api/v2` nest too).
+pub const ROOT_LEVEL_PATHS: &[&str] =
+    &["/health", "/ready", "/version", "/openapi.json", "/scalar"];
+
+/// The concrete path a registry-relative `path` is actually served at under
+/// `namespace` (`v2-e3-s4` D2/T4.X): a [`ROOT_LEVEL_PATHS`] member stays
+/// unprefixed (it is never nested under `/api`/`/api/v2` at all); every
+/// other route is [`joined`] with `namespace`. This is the one place a
+/// registry-relative path is turned into the URL actually reachable on the
+/// wire, so every consumer that builds a request or compares against the
+/// OpenAPI document's (prefixed) path keys goes through this function
+/// rather than hand-concatenating `/api` a second time.
+pub fn mounted_path(namespace: &str, path: &str) -> String {
+    if ROOT_LEVEL_PATHS.contains(&path) {
+        path.to_string()
+    } else {
+        joined(namespace, path)
+    }
+}
+
 /// Translates a registry-declared `ActionId` (`<component>::<family>::<action>`)
 /// into the `Capability` its wire form (`family:action`) denotes, so the
 /// declare-and-verify audit compares the registry's declared action against
@@ -563,14 +588,14 @@ fn one_shot_route_paths(routes: &[AuditedRoute]) -> Vec<(HttpMethod, &'static st
 pub const ONE_SHOT_IDEMPOTENT_ROUTES: &[(HttpMethod, &str, &str)] = &[
     (
         HttpMethod::Post,
-        "/api/admin/trash/purge",
+        "/admin/trash/purge",
         "purge_trash enqueues an async, tracked purge job with no domain \
          uniqueness check; a lost row would let a 5xx retry enqueue a \
          second purge job.",
     ),
     (
         HttpMethod::Post,
-        "/api/workspaces/{ws}/semantic-search/reindex",
+        "/workspaces/{ws}/semantic-search/reindex",
         "semantic_reindex_start enqueues an async reindex job with no domain \
          uniqueness check; same reasoning as purge_trash.",
     ),
@@ -1235,12 +1260,12 @@ mod tests {
             (HttpMethod::Get, "/health"),
             (HttpMethod::Get, "/ready"),
             (HttpMethod::Get, "/version"),
-            (HttpMethod::Post, "/api/auth/login"),
-            (HttpMethod::Get, "/api/activate/{token}"),
-            (HttpMethod::Post, "/api/activate/{token}"),
+            (HttpMethod::Post, "/auth/login"),
+            (HttpMethod::Get, "/activate/{token}"),
+            (HttpMethod::Post, "/activate/{token}"),
             (
                 HttpMethod::Post,
-                "/api/workspaces/{ws}/integrations/{integration}/events",
+                "/workspaces/{ws}/integrations/{integration}/events",
             ),
             (HttpMethod::Get, "/openapi.json"),
             (HttpMethod::Get, "/scalar"),

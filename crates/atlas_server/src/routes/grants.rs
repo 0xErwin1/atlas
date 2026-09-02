@@ -62,7 +62,7 @@ pub(crate) struct PaginationQuery {
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/projects/{project_slug}/grants",
+    path = "/workspaces/{ws}/projects/{project_slug}/grants",
     tag = "grants",
     security(("bearer_auth" = [])),
     params(
@@ -176,7 +176,7 @@ pub(crate) async fn create_project_grant(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/projects/{project_slug}/grants",
+    path = "/workspaces/{ws}/projects/{project_slug}/grants",
     tag = "grants",
     security(("bearer_auth" = [])),
     params(
@@ -235,7 +235,7 @@ pub(crate) async fn list_project_grants(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}",
+    path = "/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}",
     tag = "grants",
     security(("bearer_auth" = [])),
     params(
@@ -341,7 +341,7 @@ pub(crate) async fn delete_project_grant(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/grants",
+    path = "/workspaces/{ws}/grants",
     tag = "grants",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -452,7 +452,7 @@ pub(crate) async fn create_workspace_grant(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/grants",
+    path = "/workspaces/{ws}/grants",
     tag = "grants",
     security(("bearer_auth" = [])),
     params(
@@ -509,7 +509,7 @@ pub(crate) async fn list_workspace_grants(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/grants/{grant_id}",
+    path = "/workspaces/{ws}/grants/{grant_id}",
     tag = "grants",
     security(("bearer_auth" = [])),
     params(

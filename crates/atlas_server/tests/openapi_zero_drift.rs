@@ -5,18 +5,18 @@
 //! literal with a `HashSet`-based, bidirectional, registry-derived
 //! comparison (INV-SET, INV-DATA-DRIVEN).
 //!
-//! Scope note (reconciled against `v2-e3-s4-tasks.md` T2.12's own text,
-//! which frames this comparison as `/api/v2`-joined): at this PR's own
-//! checkpoint, neither side of the comparison has been namespaced yet.
-//! `reg5.rs`'s route literals are still `/api`-absolute (D2's rewrite is
-//! PR4, sequenced after this one), and every handler's own
-//! `#[utoipa::path(path = "...")]` literal is a third, independent literal
-//! population D2 never touches at all — it stays `/api`-absolute by
-//! construction in every PR of this slice. Comparing today's two genuinely
-//! `/api`-absolute sets directly (no `joined()` call) is therefore the
-//! correct, currently-true comparison; `router_audit::joined`/`NAMESPACES`
-//! exist (D1) for PR5's dual-mount assertions, which operate on the
-//! router's own mount points, not on this document-vs-registry check.
+//! Scope note, updated by PR4 (T4.X): PR2's own checkpoint compared two
+//! genuinely `/api`-absolute sets directly, since neither `reg5.rs`'s route
+//! literals nor the `#[utoipa::path(path = "...")]` annotations had been
+//! rewritten yet. PR4's literal rewrite made both populations
+//! namespace-relative, and `document()` (`routes/openapi.rs`) now re-mounts
+//! its merged paths under `/api` at composition time
+//! (`crate::routes::openapi::prefix_document_paths`), so the document's own
+//! path keys stay `/api`-absolute, byte-identical to what they were before
+//! the rewrite. This test's registry side is therefore joined through
+//! [`atlas_server::router_audit::mounted_path`] before comparing against the
+//! document, which is the same "root-level routes stay unprefixed, every
+//! other route is `/api`-joined" rule `document()` itself applies.
 
 use std::collections::HashSet;
 use std::fs;
@@ -58,7 +58,8 @@ fn registry_route_set() -> HashSet<(HttpMethod, String)> {
             .unwrap_or_else(|| panic!("{component_id} must be a registered REG-5 component"));
 
         for route in &entry.api.routes {
-            routes.insert((route.method, route.path.as_str().to_string()));
+            let mounted = atlas_server::router_audit::mounted_path("/api", route.path.as_str());
+            routes.insert((route.method, mounted));
         }
     }
     routes

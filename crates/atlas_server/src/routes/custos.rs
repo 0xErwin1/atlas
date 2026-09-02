@@ -102,11 +102,11 @@ mod public {
 
         Router::new()
             .route(
-                "/api/auth/login",
+                "/auth/login",
                 axum::routing::post(auth::login).layer(GovernorLayer::new(login_config)),
             )
             .route(
-                "/api/activate/{token}",
+                "/activate/{token}",
                 axum::routing::get(activate::get_activation_info)
                     .post(activate::post_activate)
                     .layer(GovernorLayer::new(activate_config)),
@@ -121,7 +121,7 @@ mod public {
         vec![
             AuditedRoute {
                 method: HttpMethod::Post,
-                path: "/api/auth/login",
+                path: "/auth/login",
                 scope: DeclaredScope::Unauthenticated,
                 // D8: no Principal exists before login succeeds — the
                 // mechanism has no principal_id to scope dedup by.
@@ -130,14 +130,14 @@ mod public {
             },
             AuditedRoute {
                 method: HttpMethod::Get,
-                path: "/api/activate/{token}",
+                path: "/activate/{token}",
                 scope: DeclaredScope::Unauthenticated,
                 idempotent: false,
                 one_shot: false,
             },
             AuditedRoute {
                 method: HttpMethod::Post,
-                path: "/api/activate/{token}",
+                path: "/activate/{token}",
                 scope: DeclaredScope::Unauthenticated,
                 // D8: token-in-path auth, not a Principal from require_authn.
                 idempotent: false,
@@ -171,60 +171,60 @@ mod protected {
 
     crate::component_routes! {
         state: AppState;
-        "/api/auth/logout" => [ post(auth::logout, exempt) ];
-        "/api/auth/me" => [ get(auth::me, exempt) ];
-        "/api/auth/change-password" => [ post(auth::change_password, exempt) ];
-        "/api/users/me" => [ patch(auth::update_me, exempt) ];
-        "/api/users" => [
+        "/auth/logout" => [ post(auth::logout, exempt) ];
+        "/auth/me" => [ get(auth::me, exempt) ];
+        "/auth/change-password" => [ post(auth::change_password, exempt) ];
+        "/users/me" => [ patch(auth::update_me, exempt) ];
+        "/users" => [
             post(users::create_user, exempt),
             get(users::list_users, exempt)
         ];
-        "/api/users/{user_id}/disable" => [ post(users::disable_user, exempt) ];
-        "/api/users/{user_id}/enable" => [ post(users::enable_user, exempt) ];
-        "/api/users/{user_id}/reset-password" => [ post(users::reset_password, exempt) ];
-        "/api/users/{user_id}/activation-link" => [
+        "/users/{user_id}/disable" => [ post(users::disable_user, exempt) ];
+        "/users/{user_id}/enable" => [ post(users::enable_user, exempt) ];
+        "/users/{user_id}/reset-password" => [ post(users::reset_password, exempt) ];
+        "/users/{user_id}/activation-link" => [
             post(users::regenerate_activation_link, exempt)
         ];
-        "/api/users/{user_id}/system-admin" => [ post(users::set_system_admin, exempt) ];
-        "/api/users/{user_id}/memberships" => [ get(users::list_user_memberships, exempt) ];
-        "/api/admin/audit" => [ get(audit::list_platform_audit, exempt) ];
-        "/api/api-keys" => [
+        "/users/{user_id}/system-admin" => [ post(users::set_system_admin, exempt) ];
+        "/users/{user_id}/memberships" => [ get(users::list_user_memberships, exempt) ];
+        "/admin/audit" => [ get(audit::list_platform_audit, exempt) ];
+        "/api-keys" => [
             post(api_keys::create_user_api_key, exempt),
             get(api_keys::list_user_api_keys, exempt)
         ];
-        "/api/api-keys/{key_id}" => [
+        "/api-keys/{key_id}" => [
             delete(api_keys::revoke_user_api_key, exempt),
             patch(api_keys::update_user_api_key, exempt)
         ];
-        "/api/api-keys/{key_id}/grants" => [ get(api_keys::list_api_key_grants, exempt) ];
-        "/api/api-keys/{key_id}/grants/{grant_id}" => [
+        "/api-keys/{key_id}/grants" => [ get(api_keys::list_api_key_grants, exempt) ];
+        "/api-keys/{key_id}/grants/{grant_id}" => [
             delete(api_keys::delete_api_key_grant, exempt)
         ];
-        "/api/workspaces/{ws}/projects/{project_slug}/grants" => [
+        "/workspaces/{ws}/projects/{project_slug}/grants" => [
             post(grants::create_project_grant, idempotent),
             get(grants::list_project_grants)
         ];
-        "/api/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}" => [
+        "/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}" => [
             delete(grants::delete_project_grant)
         ];
-        "/api/workspaces/{ws}/grants" => [
+        "/workspaces/{ws}/grants" => [
             post(grants::create_workspace_grant, idempotent),
             get(grants::list_workspace_grants)
         ];
-        "/api/workspaces/{ws}/grants/{grant_id}" => [ delete(grants::delete_workspace_grant) ];
-        "/api/workspaces/{ws}/groups" => [
+        "/workspaces/{ws}/grants/{grant_id}" => [ delete(grants::delete_workspace_grant) ];
+        "/workspaces/{ws}/groups" => [
             post(groups::create_group, exempt, idempotent),
             get(groups::list_groups, exempt)
         ];
-        "/api/workspaces/{ws}/groups/{group_id}" => [ delete(groups::delete_group, exempt) ];
-        "/api/workspaces/{ws}/groups/{group_id}/members" => [
+        "/workspaces/{ws}/groups/{group_id}" => [ delete(groups::delete_group, exempt) ];
+        "/workspaces/{ws}/groups/{group_id}/members" => [
             post(groups::add_group_member, exempt, idempotent),
             get(groups::list_group_members, exempt)
         ];
-        "/api/workspaces/{ws}/groups/{group_id}/members/{user_id}" => [
+        "/workspaces/{ws}/groups/{group_id}/members/{user_id}" => [
             delete(groups::remove_group_member, exempt)
         ];
-        "/api/workspaces/{ws}/audit" => [ get(audit::list_workspace_audit, exempt) ];
+        "/workspaces/{ws}/audit" => [ get(audit::list_workspace_audit, exempt) ];
     }
 }
 
@@ -505,8 +505,8 @@ mod tests {
         let grants_read_routes: Vec<_> = routes
             .iter()
             .filter(|route| {
-                route.path == "/api/workspaces/{ws}/grants"
-                    || route.path == "/api/workspaces/{ws}/projects/{project_slug}/grants"
+                route.path == "/workspaces/{ws}/grants"
+                    || route.path == "/workspaces/{ws}/projects/{project_slug}/grants"
             })
             .filter(|route| route.method == HttpMethod::Get)
             .collect();

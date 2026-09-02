@@ -45,7 +45,7 @@ pub(crate) struct SemanticSearchQueryParams {
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/semantic-search",
+    path = "/workspaces/{ws}/semantic-search",
     tag = "search",
     security(("bearer_auth" = [])),
     params(
@@ -157,7 +157,7 @@ pub(crate) async fn semantic_search(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/semantic-search/reindex",
+    path = "/workspaces/{ws}/semantic-search/reindex",
     tag = "search",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -178,7 +178,7 @@ pub(crate) async fn semantic_reindex_plan(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/semantic-search/reindex",
+    path = "/workspaces/{ws}/semantic-search/reindex",
     tag = "search",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),

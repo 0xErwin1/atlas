@@ -78,7 +78,7 @@ fn column_to_dto(c: BoardColumn) -> atlas_api::dtos::boards_tasks::ColumnDto {
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/status-templates",
+    path = "/workspaces/{ws}/status-templates",
     tag = "status-templates",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -107,7 +107,7 @@ pub(crate) async fn list_status_templates(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/status-templates",
+    path = "/workspaces/{ws}/status-templates",
     tag = "status-templates",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -163,7 +163,7 @@ pub(crate) async fn create_status_template(
 
 #[utoipa::path(
     patch,
-    path = "/api/workspaces/{ws}/status-templates/{template_id}",
+    path = "/workspaces/{ws}/status-templates/{template_id}",
     tag = "status-templates",
     security(("bearer_auth" = [])),
     params(
@@ -250,7 +250,7 @@ pub(crate) async fn update_status_template(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/status-templates/{template_id}",
+    path = "/workspaces/{ws}/status-templates/{template_id}",
     tag = "status-templates",
     security(("bearer_auth" = [])),
     params(
@@ -286,7 +286,7 @@ pub(crate) async fn delete_status_template(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/boards/{board_id}/apply-status-templates",
+    path = "/workspaces/{ws}/boards/{board_id}/apply-status-templates",
     tag = "status-templates",
     security(("bearer_auth" = [])),
     params(

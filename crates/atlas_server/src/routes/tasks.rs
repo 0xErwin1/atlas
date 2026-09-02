@@ -214,7 +214,7 @@ fn comment_draft_to_dto(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts",
+    path = "/workspaces/{ws}/tasks/{readable_id}/comment-drafts",
     operation_id = "create_task_comment_draft",
     tag = "tasks",
     security(("bearer_auth" = [])),
@@ -269,7 +269,7 @@ pub(crate) async fn create_comment_draft(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}",
+    path = "/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}",
     operation_id = "cancel_task_comment_draft",
     tag = "tasks",
     security(("bearer_auth" = [])),
@@ -1020,7 +1020,7 @@ fn parse_due_date(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/boards/{board_id}/tasks",
+    path = "/workspaces/{ws}/boards/{board_id}/tasks",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -1229,7 +1229,7 @@ async fn create_task_response(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/boards/{board_id}/tasks",
+    path = "/workspaces/{ws}/boards/{board_id}/tasks",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -1326,7 +1326,7 @@ pub(crate) async fn list_tasks(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}",
+    path = "/workspaces/{ws}/tasks/{readable_id}",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -1364,7 +1364,7 @@ pub(crate) async fn get_task(
 
 #[utoipa::path(
     patch,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}",
+    path = "/workspaces/{ws}/tasks/{readable_id}",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -1436,7 +1436,7 @@ pub(crate) async fn update_task(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}",
+    path = "/workspaces/{ws}/tasks/{readable_id}",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -1472,7 +1472,7 @@ pub(crate) async fn delete_task(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/move",
+    path = "/workspaces/{ws}/tasks/{readable_id}/move",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -1533,7 +1533,7 @@ pub(crate) async fn move_task(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/assignees",
+    path = "/workspaces/{ws}/tasks/{readable_id}/assignees",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -1574,7 +1574,7 @@ pub(crate) async fn list_assignees(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/assignees",
+    path = "/workspaces/{ws}/tasks/{readable_id}/assignees",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -1636,7 +1636,7 @@ pub(crate) async fn add_assignee(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}",
+    path = "/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -1675,7 +1675,7 @@ pub(crate) async fn remove_assignee(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/references",
+    path = "/workspaces/{ws}/tasks/{readable_id}/references",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -1923,7 +1923,7 @@ async fn resolve_reference_target(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/references",
+    path = "/workspaces/{ws}/tasks/{readable_id}/references",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -2127,7 +2127,7 @@ fn reference_batch_problem(index: usize, error: ApiError) -> CreateReferenceBatc
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/references/batch",
+    path = "/workspaces/{ws}/tasks/{readable_id}/references/batch",
     tag = "tasks",
     security(("bearer_auth" = [])),
     request_body = CreateReferenceBatchRequest,
@@ -2207,7 +2207,7 @@ pub(crate) async fn create_references_batch(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}",
+    path = "/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -2246,7 +2246,7 @@ pub(crate) async fn delete_reference(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/attachments",
+    path = "/workspaces/{ws}/tasks/{readable_id}/attachments",
     operation_id = "upload_task_attachment",
     tag = "tasks",
     security(("bearer_auth" = [])),
@@ -2360,7 +2360,7 @@ pub(crate) async fn upload_attachment(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/attachments",
+    path = "/workspaces/{ws}/tasks/{readable_id}/attachments",
     operation_id = "list_task_attachments",
     tag = "tasks",
     security(("bearer_auth" = [])),
@@ -2400,7 +2400,7 @@ pub(crate) async fn list_attachments(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content",
+    path = "/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content",
     operation_id = "download_task_attachment",
     tag = "tasks",
     security(("bearer_auth" = [])),
@@ -2475,7 +2475,7 @@ pub(crate) async fn download_attachment(
 
 #[utoipa::path(
     patch,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}",
+    path = "/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}",
     operation_id = "rename_task_attachment",
     tag = "tasks",
     security(("bearer_auth" = [])),
@@ -2529,7 +2529,7 @@ pub(crate) async fn rename_attachment(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}",
+    path = "/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}",
     operation_id = "delete_task_attachment",
     tag = "tasks",
     security(("bearer_auth" = [])),
@@ -2580,7 +2580,7 @@ pub(crate) async fn delete_attachment(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",
+    path = "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",
     operation_id = "upload_task_comment_attachment",
     tag = "tasks",
     security(("bearer_auth" = [])),
@@ -2808,7 +2808,7 @@ async fn upload_comment_attachment_for_path(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments",
+    path = "/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments",
     operation_id = "upload_task_comment_draft_attachment",
     tag = "tasks",
     security(("bearer_auth" = [])),
@@ -2841,7 +2841,7 @@ pub(crate) async fn upload_comment_draft_attachment(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",
+    path = "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",
     operation_id = "list_task_comment_attachments",
     tag = "tasks",
     security(("bearer_auth" = [])),
@@ -2933,7 +2933,7 @@ pub(crate) async fn list_comment_attachments(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content",
+    path = "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content",
     operation_id = "download_task_comment_attachment",
     tag = "tasks",
     security(("bearer_auth" = [])),
@@ -3021,7 +3021,7 @@ pub(crate) async fn download_comment_attachment(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}",
+    path = "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}",
     operation_id = "delete_task_comment_attachment",
     tag = "tasks",
     security(("bearer_auth" = [])),
@@ -3210,7 +3210,7 @@ pub(crate) struct TaskGraphQuery {
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/graph",
+    path = "/workspaces/{ws}/tasks/{readable_id}/graph",
     operation_id = "get_task_graph",
     tag = "tasks",
     security(("bearer_auth" = [])),
@@ -3378,7 +3378,7 @@ async fn authorize_graph_nodes(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/backlinks",
+    path = "/workspaces/{ws}/tasks/{readable_id}/backlinks",
     operation_id = "list_task_backlinks",
     tag = "tasks",
     security(("bearer_auth" = [])),
@@ -3627,7 +3627,7 @@ async fn load_document_sources(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/checklist",
+    path = "/workspaces/{ws}/tasks/{readable_id}/checklist",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -3663,7 +3663,7 @@ pub(crate) async fn list_checklist(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/checklist",
+    path = "/workspaces/{ws}/tasks/{readable_id}/checklist",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -3713,7 +3713,7 @@ pub(crate) async fn create_checklist_item(
 
 #[utoipa::path(
     patch,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}",
+    path = "/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -3779,7 +3779,7 @@ pub(crate) async fn update_checklist_item(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}",
+    path = "/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -3817,7 +3817,7 @@ pub(crate) async fn delete_checklist_item(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote",
+    path = "/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -3929,7 +3929,7 @@ async fn tasks_to_summaries(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/subtasks",
+    path = "/workspaces/{ws}/tasks/{readable_id}/subtasks",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -3962,7 +3962,7 @@ pub(crate) async fn list_subtasks(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/subtasks",
+    path = "/workspaces/{ws}/tasks/{readable_id}/subtasks",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -4029,7 +4029,7 @@ pub(crate) async fn create_subtask(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/parent",
+    path = "/workspaces/{ws}/tasks/{readable_id}/parent",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -4081,7 +4081,7 @@ pub(crate) async fn set_task_parent(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/promote",
+    path = "/workspaces/{ws}/tasks/{readable_id}/promote",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -4117,7 +4117,7 @@ pub(crate) async fn promote_subtask(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/activity",
+    path = "/workspaces/{ws}/tasks/{readable_id}/activity",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -4179,7 +4179,7 @@ pub(crate) async fn list_activity(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/comments",
+    path = "/workspaces/{ws}/tasks/{readable_id}/comments",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -4259,7 +4259,7 @@ pub(crate) async fn list_comments(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/comments",
+    path = "/workspaces/{ws}/tasks/{readable_id}/comments",
     operation_id = "create_task_comment",
     tag = "tasks",
     security(("bearer_auth" = [])),
@@ -4326,7 +4326,7 @@ pub(crate) async fn create_comment(
 
 #[utoipa::path(
     patch,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}",
+    path = "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -4372,7 +4372,7 @@ pub(crate) async fn update_comment(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}",
+    path = "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -4430,7 +4430,7 @@ pub(crate) struct WorkspaceActivityQuery {
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/activity",
+    path = "/workspaces/{ws}/activity",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(
@@ -4771,7 +4771,7 @@ async fn enrich_workspace_activity_entries(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/tasks",
+    path = "/workspaces/{ws}/tasks",
     tag = "tasks",
     security(("bearer_auth" = [])),
     params(

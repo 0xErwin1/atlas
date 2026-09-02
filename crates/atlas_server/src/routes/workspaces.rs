@@ -58,7 +58,7 @@ const DEFAULT_STATUSES: &[(&str, &str)] = &[
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces",
+    path = "/workspaces",
     tag = "workspaces",
     security(("bearer_auth" = [])),
     request_body = CreateWorkspaceRequest,
@@ -228,7 +228,7 @@ async fn seed_status_templates(state: &AppState, ctx: &WorkspaceCtx) -> Result<(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces",
+    path = "/workspaces",
     tag = "workspaces",
     security(("bearer_auth" = [])),
     responses(
@@ -338,7 +338,7 @@ async fn reachable_workspaces_for_user(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}",
+    path = "/workspaces/{ws}",
     tag = "workspaces",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -357,7 +357,7 @@ pub(crate) async fn get_workspace(
 
 #[utoipa::path(
     patch,
-    path = "/api/workspaces/{ws}",
+    path = "/workspaces/{ws}",
     tag = "workspaces",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -411,7 +411,7 @@ pub(crate) async fn update_workspace(
 
 #[utoipa::path(
     get,
-    path = "/api/admin/workspaces",
+    path = "/admin/workspaces",
     tag = "workspaces",
     security(("bearer_auth" = [])),
     responses(
@@ -440,7 +440,7 @@ pub(crate) async fn admin_list_workspaces(
 
 #[utoipa::path(
     patch,
-    path = "/api/admin/workspaces/{ws}",
+    path = "/admin/workspaces/{ws}",
     tag = "workspaces",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -518,7 +518,7 @@ pub(crate) async fn admin_update_workspace(
 
 #[utoipa::path(
     delete,
-    path = "/api/admin/workspaces/{ws}",
+    path = "/admin/workspaces/{ws}",
     tag = "workspaces",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),

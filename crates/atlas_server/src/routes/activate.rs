@@ -34,7 +34,7 @@ use atlas_custos_postgres::repos::security_audit::PgSecurityAuditRepo;
 
 #[utoipa::path(
     get,
-    path = "/api/activate/{token}",
+    path = "/activate/{token}",
     tag = "auth",
     params(("token" = String, Path, description = "Activation token")),
     responses(
@@ -100,7 +100,7 @@ pub(crate) async fn get_activation_info(
 /// the token stays unconsumed, and no session is issued.
 #[utoipa::path(
     post,
-    path = "/api/activate/{token}",
+    path = "/activate/{token}",
     tag = "auth",
     params(("token" = String, Path, description = "Activation token")),
     request_body = ActivatePasswordRequest,

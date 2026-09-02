@@ -148,7 +148,7 @@ const MAX_DOCUMENT_SEARCH_SCAN_BYTES: u64 = 1024 * 1024;
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/projects/{project_slug}/documents",
+    path = "/workspaces/{ws}/projects/{project_slug}/documents",
     tag = "documents",
     security(("bearer_auth" = [])),
     params(
@@ -257,7 +257,7 @@ async fn persist_new_document(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/projects/{project_slug}/documents",
+    path = "/workspaces/{ws}/projects/{project_slug}/documents",
     tag = "documents",
     security(("bearer_auth" = [])),
     params(
@@ -345,7 +345,7 @@ pub(crate) async fn list_documents(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/documents/{slug}",
+    path = "/workspaces/{ws}/documents/{slug}",
     tag = "documents",
     security(("bearer_auth" = [])),
     params(
@@ -369,7 +369,7 @@ pub(crate) async fn get_document(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/documents/{slug}/compact",
+    path = "/workspaces/{ws}/documents/{slug}/compact",
     tag = "documents",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path), ("slug" = String, Path)),
@@ -406,7 +406,7 @@ pub(crate) async fn get_document_compact(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/documents/{slug}/content/range",
+    path = "/workspaces/{ws}/documents/{slug}/content/range",
     tag = "documents",
     security(("bearer_auth" = [])),
     params(
@@ -458,7 +458,7 @@ pub(crate) async fn get_content_range(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/documents/{slug}/content/search",
+    path = "/workspaces/{ws}/documents/{slug}/content/search",
     tag = "documents",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path), ("slug" = String, Path)),
@@ -823,7 +823,7 @@ fn decode_document_continuation<T: serde::de::DeserializeOwned>(
 
 #[utoipa::path(
     patch,
-    path = "/api/workspaces/{ws}/documents/{slug}",
+    path = "/workspaces/{ws}/documents/{slug}",
     tag = "documents",
     security(("bearer_auth" = [])),
     params(
@@ -901,7 +901,7 @@ pub(crate) async fn update_document(
 
 #[utoipa::path(
     put,
-    path = "/api/workspaces/{ws}/documents/{slug}/content",
+    path = "/workspaces/{ws}/documents/{slug}/content",
     tag = "documents",
     security(("bearer_auth" = [])),
     params(
@@ -949,7 +949,7 @@ pub(crate) async fn update_content(
 
 #[utoipa::path(
     patch,
-    path = "/api/workspaces/{ws}/documents/{slug}/content/range",
+    path = "/workspaces/{ws}/documents/{slug}/content/range",
     tag = "documents",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path), ("slug" = String, Path)),
@@ -1008,7 +1008,7 @@ pub(crate) async fn edit_content_range(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/documents/{slug}",
+    path = "/workspaces/{ws}/documents/{slug}",
     tag = "documents",
     security(("bearer_auth" = [])),
     params(
@@ -1043,7 +1043,7 @@ pub(crate) async fn delete_document(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/documents/{slug}/history",
+    path = "/workspaces/{ws}/documents/{slug}/history",
     tag = "documents",
     security(("bearer_auth" = [])),
     params(
@@ -1116,7 +1116,7 @@ pub(crate) async fn list_history(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/documents/{slug}/revisions/{seq}",
+    path = "/workspaces/{ws}/documents/{slug}/revisions/{seq}",
     tag = "documents",
     security(("bearer_auth" = [])),
     params(
@@ -1172,7 +1172,7 @@ pub(crate) async fn get_revision_content(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/documents/{slug}/backlinks",
+    path = "/workspaces/{ws}/documents/{slug}/backlinks",
     tag = "documents",
     security(("bearer_auth" = [])),
     params(
@@ -1311,7 +1311,7 @@ pub(crate) async fn list_backlinks(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/documents/{slug}/frontmatter",
+    path = "/workspaces/{ws}/documents/{slug}/frontmatter",
     tag = "documents",
     security(("bearer_auth" = [])),
     params(
@@ -1338,7 +1338,7 @@ pub(crate) async fn get_frontmatter(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/documents/{slug}/attachments",
+    path = "/workspaces/{ws}/documents/{slug}/attachments",
     tag = "documents",
     security(("bearer_auth" = [])),
     params(
@@ -1431,7 +1431,7 @@ pub(crate) async fn upload_attachment(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/documents/{slug}/attachments",
+    path = "/workspaces/{ws}/documents/{slug}/attachments",
     tag = "documents",
     security(("bearer_auth" = [])),
     params(
@@ -1491,7 +1491,7 @@ pub(crate) async fn list_attachments(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/attachments/{attachment_id}",
+    path = "/workspaces/{ws}/attachments/{attachment_id}",
     tag = "documents",
     security(("bearer_auth" = [])),
     params(
@@ -1573,7 +1573,7 @@ pub(crate) async fn download_attachment(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/attachments/{attachment_id}",
+    path = "/workspaces/{ws}/attachments/{attachment_id}",
     tag = "documents",
     security(("bearer_auth" = [])),
     params(
@@ -1632,7 +1632,7 @@ pub(crate) async fn delete_attachment(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
+    path = "/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
     operation_id = "upload_document_comment_attachment",
     tag = "documents",
     security(("bearer_auth" = [])),
@@ -1729,7 +1729,7 @@ pub(crate) async fn upload_comment_attachment(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
+    path = "/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
     operation_id = "list_document_comment_attachments",
     tag = "documents",
     security(("bearer_auth" = [])),
@@ -1819,7 +1819,7 @@ pub(crate) async fn list_comment_attachments(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
+    path = "/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
     operation_id = "download_document_comment_attachment",
     tag = "documents",
     security(("bearer_auth" = [])),
@@ -1907,7 +1907,7 @@ pub(crate) async fn download_comment_attachment(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
+    path = "/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
     operation_id = "delete_document_comment_attachment",
     tag = "documents",
     security(("bearer_auth" = [])),
@@ -2010,7 +2010,7 @@ pub(crate) async fn delete_comment_attachment(
 
 #[utoipa::path(
     patch,
-    path = "/api/workspaces/{ws}/documents/{slug}/move",
+    path = "/workspaces/{ws}/documents/{slug}/move",
     tag = "documents",
     security(("bearer_auth" = [])),
     params(
@@ -2206,7 +2206,7 @@ async fn authorize_document_root_destination(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/documents/moves/batch",
+    path = "/workspaces/{ws}/documents/moves/batch",
     tag = "documents",
     security(("bearer_auth" = [])),
     request_body = DocumentMoveBatchRequest,
@@ -2254,7 +2254,7 @@ pub(crate) async fn move_documents_batch(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/documents/{slug}/copy",
+    path = "/workspaces/{ws}/documents/{slug}/copy",
     tag = "documents",
     security(("bearer_auth" = [])),
     params(
@@ -2410,7 +2410,7 @@ pub(crate) struct DocumentCommentDraftAttachmentPath {
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/documents/{slug}/comment-drafts",
+    path = "/workspaces/{ws}/documents/{slug}/comment-drafts",
     operation_id = "create_document_comment_draft",
     tag = "documents",
     security(("bearer_auth" = [])),
@@ -2470,7 +2470,7 @@ pub(crate) async fn create_comment_draft(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}",
+    path = "/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}",
     operation_id = "cancel_document_comment_draft",
     tag = "documents",
     security(("bearer_auth" = [])),
@@ -2524,7 +2524,7 @@ pub(crate) async fn cancel_comment_draft(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments",
+    path = "/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments",
     operation_id = "upload_document_comment_draft_attachment",
     tag = "documents",
     security(("bearer_auth" = [])),
@@ -2678,7 +2678,7 @@ pub(crate) async fn upload_comment_draft_attachment(
 // GET /api/workspaces/{ws}/documents/{slug}/comments
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/documents/{slug}/comments",
+    path = "/workspaces/{ws}/documents/{slug}/comments",
     operation_id = "list_document_comments",
     tag = "documents",
     security(("bearer_auth" = [])),
@@ -2755,7 +2755,7 @@ pub(crate) async fn list_comments(
 // POST /api/workspaces/{ws}/documents/{slug}/comments
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/documents/{slug}/comments",
+    path = "/workspaces/{ws}/documents/{slug}/comments",
     operation_id = "create_document_comment",
     tag = "documents",
     security(("bearer_auth" = [])),
@@ -2818,7 +2818,7 @@ pub(crate) async fn create_comment(
 // PATCH /api/workspaces/{ws}/documents/{slug}/comments/{comment_id}
 #[utoipa::path(
     patch,
-    path = "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}",
+    path = "/workspaces/{ws}/documents/{slug}/comments/{comment_id}",
     operation_id = "update_document_comment",
     tag = "documents",
     security(("bearer_auth" = [])),
@@ -2861,7 +2861,7 @@ pub(crate) async fn update_comment(
 // DELETE /api/workspaces/{ws}/documents/{slug}/comments/{comment_id}
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}",
+    path = "/workspaces/{ws}/documents/{slug}/comments/{comment_id}",
     operation_id = "delete_document_comment",
     tag = "documents",
     security(("bearer_auth" = [])),

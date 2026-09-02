@@ -27,7 +27,7 @@ pub(crate) struct TrashQuery {
     limit: Option<u32>,
 }
 
-#[utoipa::path(get, path = "/api/admin/trash", tag = "trash", security(("bearer_auth" = [])), params(("workspace_id" = Option<uuid::Uuid>, Query), ("kind" = Option<TrashKindDto>, Query), ("cursor" = Option<String>, Query), ("limit" = Option<u32>, Query)), responses((status = 200, body = Page<TrashItemDto>), (status = 400), (status = 401), (status = 403)))]
+#[utoipa::path(get, path = "/admin/trash", tag = "trash", security(("bearer_auth" = [])), params(("workspace_id" = Option<uuid::Uuid>, Query), ("kind" = Option<TrashKindDto>, Query), ("cursor" = Option<String>, Query), ("limit" = Option<u32>, Query)), responses((status = 200, body = Page<TrashItemDto>), (status = 400), (status = 401), (status = 403)))]
 pub(crate) async fn list_trash(
     _admin: RequireUserAdmin,
     State(state): State<AppState>,
@@ -56,7 +56,7 @@ pub(crate) async fn list_trash(
     )))
 }
 
-#[utoipa::path(post, path = "/api/admin/trash/restore", tag = "trash", security(("bearer_auth" = [])), request_body = RestoreTrashItemRequest, responses((status = 204, description = "Restored or already live"), (status = 401), (status = 403), (status = 404), (status = 409)))]
+#[utoipa::path(post, path = "/admin/trash/restore", tag = "trash", security(("bearer_auth" = [])), request_body = RestoreTrashItemRequest, responses((status = 204, description = "Restored or already live"), (status = 401), (status = 403), (status = 404), (status = 409)))]
 pub(crate) async fn restore_trash(
     admin: RequireUserAdmin,
     State(state): State<AppState>,
@@ -70,7 +70,7 @@ pub(crate) async fn restore_trash(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[utoipa::path(post, path = "/api/admin/trash/purge", tag = "trash", security(("bearer_auth" = [])), request_body = PurgeTrashItemRequest, responses((status = 202, body = PurgeStatusDtoResponse, description = "Database purge committed; cleanup is pending"), (status = 204, description = "Purge cleanup already complete"), (status = 400), (status = 401), (status = 403), (status = 404)))]
+#[utoipa::path(post, path = "/admin/trash/purge", tag = "trash", security(("bearer_auth" = [])), request_body = PurgeTrashItemRequest, responses((status = 202, body = PurgeStatusDtoResponse, description = "Database purge committed; cleanup is pending"), (status = 204, description = "Purge cleanup already complete"), (status = 400), (status = 401), (status = 403), (status = 404)))]
 pub(crate) async fn purge_trash(
     admin: RequireUserAdmin,
     State(state): State<AppState>,
@@ -99,7 +99,7 @@ pub(crate) async fn purge_trash(
     Ok((StatusCode::ACCEPTED, Json(to_purge_dto(operation))).into_response())
 }
 
-#[utoipa::path(get, path = "/api/admin/trash/purges/{operation_id}", tag = "trash", security(("bearer_auth" = [])), params(("operation_id" = uuid::Uuid, Path)), responses((status = 200, body = PurgeStatusDtoResponse), (status = 401), (status = 403), (status = 404)))]
+#[utoipa::path(get, path = "/admin/trash/purges/{operation_id}", tag = "trash", security(("bearer_auth" = [])), params(("operation_id" = uuid::Uuid, Path)), responses((status = 200, body = PurgeStatusDtoResponse), (status = 401), (status = 403), (status = 404)))]
 pub(crate) async fn get_purge_status(
     _admin: RequireUserAdmin,
     State(state): State<AppState>,

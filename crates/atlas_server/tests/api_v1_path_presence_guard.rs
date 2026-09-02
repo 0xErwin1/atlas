@@ -5,7 +5,9 @@ mod support;
 use std::collections::{HashMap, HashSet};
 
 use atlas_core::registry::HttpMethod;
-use atlas_server::router_audit::{acta_route_paths, custos_route_paths, platform_route_paths};
+use atlas_server::router_audit::{
+    acta_route_paths, custos_route_paths, mounted_path, platform_route_paths,
+};
 
 /// D9 (`v2-e3-s4` PR1): a frozen, pre-rewrite snapshot of every `(method,
 /// path)` pair `platform`/`custos`/`acta` declared BEFORE any of this
@@ -90,11 +92,11 @@ async fn every_v1_fixture_route_is_reachable_at_its_pre_s4_mount() {
          itself has drifted from what it froze"
     );
 
-    let public_paths: HashSet<&str> = platform_route_paths()
+    let public_paths: HashSet<String> = platform_route_paths()
         .into_iter()
         .chain(custos_route_paths())
         .chain(acta_route_paths())
-        .map(|(_, path)| path)
+        .map(|(_, path)| mounted_path("/api", path))
         .collect();
 
     let mut methods_by_path: HashMap<&str, Vec<HttpMethod>> = HashMap::new();

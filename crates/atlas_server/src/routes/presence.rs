@@ -35,7 +35,7 @@ fn principal_key(principal: &Principal) -> PrincipalKey {
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/boards/{board_id}/presence",
+    path = "/workspaces/{ws}/boards/{board_id}/presence",
     tag = "presence",
     security(("bearer_auth" = [])),
     params(
@@ -74,7 +74,7 @@ pub(crate) async fn heartbeat(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/boards/{board_id}/presence",
+    path = "/workspaces/{ws}/boards/{board_id}/presence",
     tag = "presence",
     security(("bearer_auth" = [])),
     params(
@@ -109,7 +109,7 @@ pub(crate) async fn leave(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/documents/{slug}/presence",
+    path = "/workspaces/{ws}/documents/{slug}/presence",
     tag = "presence",
     security(("bearer_auth" = [])),
     params(
@@ -152,7 +152,7 @@ pub(crate) async fn document_heartbeat(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/documents/{slug}/presence",
+    path = "/workspaces/{ws}/documents/{slug}/presence",
     tag = "presence",
     security(("bearer_auth" = [])),
     params(

@@ -8,6 +8,7 @@
 mod support;
 
 use atlas_core::registry::HttpMethod;
+use atlas_server::router_audit::mounted_path;
 use support::route_matrix::route_matrix;
 
 /// Maps every `HttpMethod` variant to its `reqwest::Method`. Exhaustive by
@@ -42,7 +43,7 @@ async fn all_non_public_routes_require_authentication() {
             continue;
         }
 
-        let path = entry.path_template.replace("{ws}", &ws_slug);
+        let path = mounted_path("/api", &entry.path_template.replace("{ws}", &ws_slug));
         let url = format!("{}{}", server.base_url(), path);
 
         let status = http
@@ -87,7 +88,7 @@ async fn all_registry_entries_are_wired_in_router() {
             continue;
         }
 
-        let path = entry.path_template.replace("{ws}", ws_slug);
+        let path = mounted_path("/api", &entry.path_template.replace("{ws}", ws_slug));
         let url = format!("{}{}", server.base_url(), path);
 
         let status = http

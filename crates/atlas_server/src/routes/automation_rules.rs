@@ -124,7 +124,7 @@ fn principal_user_id(auth: &Authorized<WorkspaceRes, AdminMin>) -> Result<Uuid, 
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/automation-rules",
+    path = "/workspaces/{ws}/automation-rules",
     tag = "automation-rules",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -175,7 +175,7 @@ pub(crate) struct ListAutomationRulesQuery {
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/automation-rules",
+    path = "/workspaces/{ws}/automation-rules",
     tag = "automation-rules",
     security(("bearer_auth" = [])),
     params(
@@ -234,7 +234,7 @@ pub(crate) async fn list_automation_rules(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/automation-rules/{rule_id}",
+    path = "/workspaces/{ws}/automation-rules/{rule_id}",
     tag = "automation-rules",
     security(("bearer_auth" = [])),
     params(
@@ -268,7 +268,7 @@ pub(crate) async fn get_automation_rule(
 
 #[utoipa::path(
     patch,
-    path = "/api/workspaces/{ws}/automation-rules/{rule_id}",
+    path = "/workspaces/{ws}/automation-rules/{rule_id}",
     tag = "automation-rules",
     security(("bearer_auth" = [])),
     params(
@@ -311,7 +311,7 @@ pub(crate) async fn patch_automation_rule(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/automation-rules/{rule_id}",
+    path = "/workspaces/{ws}/automation-rules/{rule_id}",
     tag = "automation-rules",
     security(("bearer_auth" = [])),
     params(

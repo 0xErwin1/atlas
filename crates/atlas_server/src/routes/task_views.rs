@@ -203,7 +203,7 @@ fn task_view_to_dto(tv: TaskView) -> TaskViewDto {
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/task-views",
+    path = "/workspaces/{ws}/task-views",
     tag = "task-views",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -234,7 +234,7 @@ pub(crate) async fn list_task_views(
 
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/task-views",
+    path = "/workspaces/{ws}/task-views",
     tag = "task-views",
     security(("bearer_auth" = [])),
     params(("ws" = String, Path, description = "Workspace slug")),
@@ -278,7 +278,7 @@ pub(crate) async fn create_task_view(
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/task-views/{id}",
+    path = "/workspaces/{ws}/task-views/{id}",
     tag = "task-views",
     security(("bearer_auth" = [])),
     params(
@@ -320,7 +320,7 @@ pub(crate) async fn get_task_view(
 
 #[utoipa::path(
     patch,
-    path = "/api/workspaces/{ws}/task-views/{id}",
+    path = "/workspaces/{ws}/task-views/{id}",
     tag = "task-views",
     security(("bearer_auth" = [])),
     params(
@@ -368,7 +368,7 @@ pub(crate) async fn update_task_view(
 
 #[utoipa::path(
     delete,
-    path = "/api/workspaces/{ws}/task-views/{id}",
+    path = "/workspaces/{ws}/task-views/{id}",
     tag = "task-views",
     security(("bearer_auth" = [])),
     params(

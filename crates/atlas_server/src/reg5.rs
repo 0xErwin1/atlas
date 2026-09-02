@@ -111,7 +111,7 @@ fn platform_entry() -> ComponentEntry {
             routes: vec![
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/me/ui-state"),
+                    path: route_path("/me/ui-state"),
                     operation_id: "get_ui_state".to_string(),
                     action: None,
                     idempotent: false,
@@ -119,7 +119,7 @@ fn platform_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Put,
-                    path: route_path("/api/me/ui-state"),
+                    path: route_path("/me/ui-state"),
                     operation_id: "set_ui_state".to_string(),
                     action: None,
                     idempotent: false,
@@ -127,7 +127,7 @@ fn platform_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/meta"),
+                    path: route_path("/meta"),
                     operation_id: "meta".to_string(),
                     action: None,
                     idempotent: false,
@@ -233,7 +233,7 @@ fn custos_entry() -> ComponentEntry {
             routes: vec![
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/auth/logout"),
+                    path: route_path("/auth/logout"),
                     operation_id: "logout".to_string(),
                     action: None,
                     idempotent: false,
@@ -241,7 +241,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/auth/me"),
+                    path: route_path("/auth/me"),
                     operation_id: "me".to_string(),
                     action: None,
                     idempotent: false,
@@ -249,7 +249,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/auth/change-password"),
+                    path: route_path("/auth/change-password"),
                     operation_id: "change_password".to_string(),
                     action: None,
                     idempotent: false,
@@ -257,7 +257,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path("/api/users/me"),
+                    path: route_path("/users/me"),
                     operation_id: "update_me".to_string(),
                     action: None,
                     idempotent: false,
@@ -265,7 +265,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/users"),
+                    path: route_path("/users"),
                     operation_id: "create_user".to_string(),
                     action: None,
                     idempotent: false,
@@ -273,7 +273,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/users"),
+                    path: route_path("/users"),
                     operation_id: "list_users".to_string(),
                     action: None,
                     idempotent: false,
@@ -281,7 +281,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/users/{user_id}/disable"),
+                    path: route_path("/users/{user_id}/disable"),
                     operation_id: "disable_user".to_string(),
                     action: None,
                     idempotent: false,
@@ -289,7 +289,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/users/{user_id}/enable"),
+                    path: route_path("/users/{user_id}/enable"),
                     operation_id: "enable_user".to_string(),
                     action: None,
                     idempotent: false,
@@ -297,7 +297,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/users/{user_id}/reset-password"),
+                    path: route_path("/users/{user_id}/reset-password"),
                     operation_id: "reset_password".to_string(),
                     action: None,
                     idempotent: false,
@@ -305,7 +305,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/users/{user_id}/activation-link"),
+                    path: route_path("/users/{user_id}/activation-link"),
                     operation_id: "regenerate_activation_link".to_string(),
                     action: None,
                     idempotent: false,
@@ -313,7 +313,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/users/{user_id}/system-admin"),
+                    path: route_path("/users/{user_id}/system-admin"),
                     operation_id: "set_system_admin".to_string(),
                     action: None,
                     idempotent: false,
@@ -321,7 +321,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/users/{user_id}/memberships"),
+                    path: route_path("/users/{user_id}/memberships"),
                     operation_id: "list_user_memberships".to_string(),
                     action: None,
                     idempotent: false,
@@ -329,7 +329,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/admin/audit"),
+                    path: route_path("/admin/audit"),
                     operation_id: "list_platform_audit".to_string(),
                     action: None,
                     idempotent: false,
@@ -337,7 +337,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/api-keys"),
+                    path: route_path("/api-keys"),
                     operation_id: "create_user_api_key".to_string(),
                     action: None,
                     idempotent: false,
@@ -345,7 +345,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/api-keys"),
+                    path: route_path("/api-keys"),
                     operation_id: "list_user_api_keys".to_string(),
                     action: None,
                     idempotent: false,
@@ -353,7 +353,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path("/api/api-keys/{key_id}"),
+                    path: route_path("/api-keys/{key_id}"),
                     operation_id: "revoke_user_api_key".to_string(),
                     action: None,
                     idempotent: false,
@@ -361,7 +361,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path("/api/api-keys/{key_id}"),
+                    path: route_path("/api-keys/{key_id}"),
                     operation_id: "update_user_api_key".to_string(),
                     action: None,
                     idempotent: false,
@@ -369,7 +369,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/api-keys/{key_id}/grants"),
+                    path: route_path("/api-keys/{key_id}/grants"),
                     operation_id: "list_api_key_grants".to_string(),
                     action: None,
                     idempotent: false,
@@ -377,7 +377,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path("/api/api-keys/{key_id}/grants/{grant_id}"),
+                    path: route_path("/api-keys/{key_id}/grants/{grant_id}"),
                     operation_id: "delete_api_key_grant".to_string(),
                     action: None,
                     idempotent: false,
@@ -385,7 +385,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/projects/{project_slug}/grants"),
+                    path: route_path("/workspaces/{ws}/projects/{project_slug}/grants"),
                     operation_id: "create_project_grant".to_string(),
                     action: None,
                     idempotent: true,
@@ -393,7 +393,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/projects/{project_slug}/grants"),
+                    path: route_path("/workspaces/{ws}/projects/{project_slug}/grants"),
                     operation_id: "list_project_grants".to_string(),
                     action: Some(action("custos::grants::read")),
                     idempotent: false,
@@ -401,9 +401,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path(
-                        "/api/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}",
-                    ),
+                    path: route_path("/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}"),
                     operation_id: "delete_project_grant".to_string(),
                     action: None,
                     idempotent: false,
@@ -411,7 +409,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/grants"),
+                    path: route_path("/workspaces/{ws}/grants"),
                     operation_id: "create_workspace_grant".to_string(),
                     action: None,
                     idempotent: true,
@@ -419,7 +417,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/grants"),
+                    path: route_path("/workspaces/{ws}/grants"),
                     operation_id: "list_workspace_grants".to_string(),
                     action: Some(action("custos::grants::read")),
                     idempotent: false,
@@ -427,7 +425,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path("/api/workspaces/{ws}/grants/{grant_id}"),
+                    path: route_path("/workspaces/{ws}/grants/{grant_id}"),
                     operation_id: "delete_workspace_grant".to_string(),
                     action: None,
                     idempotent: false,
@@ -435,7 +433,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/groups"),
+                    path: route_path("/workspaces/{ws}/groups"),
                     operation_id: "create_group".to_string(),
                     action: None,
                     idempotent: true,
@@ -443,7 +441,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/groups"),
+                    path: route_path("/workspaces/{ws}/groups"),
                     operation_id: "list_groups".to_string(),
                     action: None,
                     idempotent: false,
@@ -451,7 +449,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path("/api/workspaces/{ws}/groups/{group_id}"),
+                    path: route_path("/workspaces/{ws}/groups/{group_id}"),
                     operation_id: "delete_group".to_string(),
                     action: None,
                     idempotent: false,
@@ -459,7 +457,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/groups/{group_id}/members"),
+                    path: route_path("/workspaces/{ws}/groups/{group_id}/members"),
                     operation_id: "add_group_member".to_string(),
                     action: None,
                     idempotent: true,
@@ -467,7 +465,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/groups/{group_id}/members"),
+                    path: route_path("/workspaces/{ws}/groups/{group_id}/members"),
                     operation_id: "list_group_members".to_string(),
                     action: None,
                     idempotent: false,
@@ -475,7 +473,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path("/api/workspaces/{ws}/groups/{group_id}/members/{user_id}"),
+                    path: route_path("/workspaces/{ws}/groups/{group_id}/members/{user_id}"),
                     operation_id: "remove_group_member".to_string(),
                     action: None,
                     idempotent: false,
@@ -483,7 +481,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/audit"),
+                    path: route_path("/workspaces/{ws}/audit"),
                     operation_id: "list_workspace_audit".to_string(),
                     action: None,
                     idempotent: false,
@@ -491,7 +489,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/auth/login"),
+                    path: route_path("/auth/login"),
                     operation_id: "login".to_string(),
                     action: None,
                     idempotent: false,
@@ -499,7 +497,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/activate/{token}"),
+                    path: route_path("/activate/{token}"),
                     operation_id: "get_activation_info".to_string(),
                     action: None,
                     idempotent: false,
@@ -507,7 +505,7 @@ fn custos_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/activate/{token}"),
+                    path: route_path("/activate/{token}"),
                     operation_id: "post_activate".to_string(),
                     action: None,
                     idempotent: false,
@@ -577,7 +575,7 @@ fn acta_entry() -> ComponentEntry {
             routes: vec![
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/admin/trash"),
+                    path: route_path("/admin/trash"),
                     operation_id: "list_trash".to_string(),
                     action: None,
                     idempotent: false,
@@ -585,7 +583,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/admin/trash/restore"),
+                    path: route_path("/admin/trash/restore"),
                     operation_id: "restore_trash".to_string(),
                     action: None,
                     idempotent: false,
@@ -593,7 +591,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/admin/trash/purge"),
+                    path: route_path("/admin/trash/purge"),
                     operation_id: "purge_trash".to_string(),
                     action: None,
                     idempotent: true,
@@ -601,7 +599,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/admin/trash/purges/{operation_id}"),
+                    path: route_path("/admin/trash/purges/{operation_id}"),
                     operation_id: "get_purge_status".to_string(),
                     action: None,
                     idempotent: false,
@@ -609,7 +607,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces"),
+                    path: route_path("/workspaces"),
                     operation_id: "list_workspaces".to_string(),
                     action: None,
                     idempotent: false,
@@ -617,7 +615,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces"),
+                    path: route_path("/workspaces"),
                     operation_id: "create_workspace".to_string(),
                     action: None,
                     idempotent: true,
@@ -625,7 +623,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}"),
+                    path: route_path("/workspaces/{ws}"),
                     operation_id: "get_workspace".to_string(),
                     action: None,
                     idempotent: false,
@@ -633,7 +631,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path("/api/workspaces/{ws}"),
+                    path: route_path("/workspaces/{ws}"),
                     operation_id: "update_workspace".to_string(),
                     action: Some(action("acta::config::update")),
                     idempotent: false,
@@ -641,7 +639,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/admin/workspaces"),
+                    path: route_path("/admin/workspaces"),
                     operation_id: "admin_list_workspaces".to_string(),
                     action: None,
                     idempotent: false,
@@ -649,7 +647,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path("/api/admin/workspaces/{ws}"),
+                    path: route_path("/admin/workspaces/{ws}"),
                     operation_id: "admin_update_workspace".to_string(),
                     action: None,
                     idempotent: false,
@@ -657,7 +655,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path("/api/admin/workspaces/{ws}"),
+                    path: route_path("/admin/workspaces/{ws}"),
                     operation_id: "admin_delete_workspace".to_string(),
                     action: None,
                     idempotent: false,
@@ -665,7 +663,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/admin/status-templates"),
+                    path: route_path("/admin/status-templates"),
                     operation_id: "list_platform_status_templates".to_string(),
                     action: None,
                     idempotent: false,
@@ -673,7 +671,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/admin/status-templates"),
+                    path: route_path("/admin/status-templates"),
                     operation_id: "create_platform_status_template".to_string(),
                     action: None,
                     idempotent: true,
@@ -681,7 +679,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path("/api/admin/status-templates/{template_id}"),
+                    path: route_path("/admin/status-templates/{template_id}"),
                     operation_id: "update_platform_status_template".to_string(),
                     action: None,
                     idempotent: false,
@@ -689,7 +687,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path("/api/admin/status-templates/{template_id}"),
+                    path: route_path("/admin/status-templates/{template_id}"),
                     operation_id: "delete_platform_status_template".to_string(),
                     action: None,
                     idempotent: false,
@@ -697,7 +695,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/projects"),
+                    path: route_path("/workspaces/{ws}/projects"),
                     operation_id: "create_project".to_string(),
                     action: Some(action("acta::projects::create")),
                     idempotent: true,
@@ -705,7 +703,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/projects"),
+                    path: route_path("/workspaces/{ws}/projects"),
                     operation_id: "list_projects".to_string(),
                     action: Some(action("acta::projects::read")),
                     idempotent: false,
@@ -713,7 +711,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/projects/{project_slug}"),
+                    path: route_path("/workspaces/{ws}/projects/{project_slug}"),
                     operation_id: "get_project".to_string(),
                     action: Some(action("acta::projects::read")),
                     idempotent: false,
@@ -721,7 +719,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path("/api/workspaces/{ws}/projects/{project_slug}"),
+                    path: route_path("/workspaces/{ws}/projects/{project_slug}"),
                     operation_id: "update_project".to_string(),
                     action: Some(action("acta::projects::update")),
                     idempotent: false,
@@ -729,7 +727,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path("/api/workspaces/{ws}/projects/{project_slug}"),
+                    path: route_path("/workspaces/{ws}/projects/{project_slug}"),
                     operation_id: "delete_project".to_string(),
                     action: Some(action("acta::projects::delete")),
                     idempotent: false,
@@ -737,7 +735,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/members"),
+                    path: route_path("/workspaces/{ws}/members"),
                     operation_id: "list_workspace_members".to_string(),
                     action: None,
                     idempotent: false,
@@ -745,7 +743,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/members"),
+                    path: route_path("/workspaces/{ws}/members"),
                     operation_id: "add_member".to_string(),
                     action: None,
                     idempotent: true,
@@ -753,7 +751,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/assignable-users"),
+                    path: route_path("/workspaces/{ws}/assignable-users"),
                     operation_id: "list_assignable_users".to_string(),
                     action: None,
                     idempotent: false,
@@ -761,7 +759,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path("/api/workspaces/{ws}/members/{user_id}"),
+                    path: route_path("/workspaces/{ws}/members/{user_id}"),
                     operation_id: "update_member_role".to_string(),
                     action: None,
                     idempotent: false,
@@ -769,7 +767,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path("/api/workspaces/{ws}/members/{user_id}"),
+                    path: route_path("/workspaces/{ws}/members/{user_id}"),
                     operation_id: "remove_member".to_string(),
                     action: None,
                     idempotent: false,
@@ -777,7 +775,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/tags"),
+                    path: route_path("/workspaces/{ws}/tags"),
                     operation_id: "list_tags".to_string(),
                     action: Some(action("acta::config::read")),
                     idempotent: false,
@@ -785,7 +783,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/tags"),
+                    path: route_path("/workspaces/{ws}/tags"),
                     operation_id: "create_tag".to_string(),
                     action: Some(action("acta::config::create")),
                     idempotent: true,
@@ -793,7 +791,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/tags/used"),
+                    path: route_path("/workspaces/{ws}/tags/used"),
                     operation_id: "list_used_labels".to_string(),
                     action: Some(action("acta::config::read")),
                     idempotent: false,
@@ -801,7 +799,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path("/api/workspaces/{ws}/tags/{tag_id}"),
+                    path: route_path("/workspaces/{ws}/tags/{tag_id}"),
                     operation_id: "patch_tag".to_string(),
                     action: Some(action("acta::config::update")),
                     idempotent: false,
@@ -809,7 +807,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path("/api/workspaces/{ws}/tags/{tag_id}"),
+                    path: route_path("/workspaces/{ws}/tags/{tag_id}"),
                     operation_id: "delete_tag".to_string(),
                     action: Some(action("acta::config::delete")),
                     idempotent: false,
@@ -817,7 +815,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/status-templates"),
+                    path: route_path("/workspaces/{ws}/status-templates"),
                     operation_id: "list_status_templates".to_string(),
                     action: Some(action("acta::boards::read")),
                     idempotent: false,
@@ -825,7 +823,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/status-templates"),
+                    path: route_path("/workspaces/{ws}/status-templates"),
                     operation_id: "create_status_template".to_string(),
                     action: Some(action("acta::boards::create")),
                     idempotent: true,
@@ -833,7 +831,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path("/api/workspaces/{ws}/status-templates/{template_id}"),
+                    path: route_path("/workspaces/{ws}/status-templates/{template_id}"),
                     operation_id: "update_status_template".to_string(),
                     action: Some(action("acta::boards::update")),
                     idempotent: false,
@@ -841,7 +839,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path("/api/workspaces/{ws}/status-templates/{template_id}"),
+                    path: route_path("/workspaces/{ws}/status-templates/{template_id}"),
                     operation_id: "delete_status_template".to_string(),
                     action: Some(action("acta::boards::delete")),
                     idempotent: false,
@@ -849,9 +847,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path(
-                        "/api/workspaces/{ws}/boards/{board_id}/apply-status-templates",
-                    ),
+                    path: route_path("/workspaces/{ws}/boards/{board_id}/apply-status-templates"),
                     operation_id: "apply_status_templates".to_string(),
                     action: Some(action("acta::boards::update")),
                     idempotent: false,
@@ -859,7 +855,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/property-definitions"),
+                    path: route_path("/workspaces/{ws}/property-definitions"),
                     operation_id: "list_property_definitions".to_string(),
                     action: Some(action("acta::config::read")),
                     idempotent: false,
@@ -867,7 +863,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/property-definitions"),
+                    path: route_path("/workspaces/{ws}/property-definitions"),
                     operation_id: "create_property_definition".to_string(),
                     action: Some(action("acta::config::create")),
                     idempotent: true,
@@ -876,7 +872,7 @@ fn acta_entry() -> ComponentEntry {
                 RouteDeclaration {
                     method: HttpMethod::Delete,
                     path: route_path(
-                        "/api/workspaces/{ws}/property-definitions/{property_definition_id}",
+                        "/workspaces/{ws}/property-definitions/{property_definition_id}",
                     ),
                     operation_id: "delete_property_definition".to_string(),
                     action: Some(action("acta::config::delete")),
@@ -885,7 +881,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/saved-searches"),
+                    path: route_path("/workspaces/{ws}/saved-searches"),
                     operation_id: "list_saved_searches".to_string(),
                     action: Some(action("acta::saved_searches::read")),
                     idempotent: false,
@@ -893,7 +889,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/saved-searches"),
+                    path: route_path("/workspaces/{ws}/saved-searches"),
                     operation_id: "create_saved_search".to_string(),
                     action: Some(action("acta::saved_searches::create")),
                     idempotent: true,
@@ -901,7 +897,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path("/api/workspaces/{ws}/saved-searches/{id}"),
+                    path: route_path("/workspaces/{ws}/saved-searches/{id}"),
                     operation_id: "rename_saved_search".to_string(),
                     action: Some(action("acta::saved_searches::update")),
                     idempotent: false,
@@ -909,7 +905,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path("/api/workspaces/{ws}/saved-searches/{id}"),
+                    path: route_path("/workspaces/{ws}/saved-searches/{id}"),
                     operation_id: "delete_saved_search".to_string(),
                     action: Some(action("acta::saved_searches::delete")),
                     idempotent: false,
@@ -917,7 +913,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/task-views"),
+                    path: route_path("/workspaces/{ws}/task-views"),
                     operation_id: "list_task_views".to_string(),
                     action: Some(action("acta::task_views::read")),
                     idempotent: false,
@@ -925,7 +921,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/task-views"),
+                    path: route_path("/workspaces/{ws}/task-views"),
                     operation_id: "create_task_view".to_string(),
                     action: Some(action("acta::task_views::create")),
                     idempotent: true,
@@ -933,7 +929,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/task-views/{id}"),
+                    path: route_path("/workspaces/{ws}/task-views/{id}"),
                     operation_id: "get_task_view".to_string(),
                     action: Some(action("acta::task_views::read")),
                     idempotent: false,
@@ -941,7 +937,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path("/api/workspaces/{ws}/task-views/{id}"),
+                    path: route_path("/workspaces/{ws}/task-views/{id}"),
                     operation_id: "update_task_view".to_string(),
                     action: Some(action("acta::task_views::update")),
                     idempotent: false,
@@ -949,7 +945,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path("/api/workspaces/{ws}/task-views/{id}"),
+                    path: route_path("/workspaces/{ws}/task-views/{id}"),
                     operation_id: "delete_task_view".to_string(),
                     action: Some(action("acta::task_views::delete")),
                     idempotent: false,
@@ -957,7 +953,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/projects/{project_slug}/boards"),
+                    path: route_path("/workspaces/{ws}/projects/{project_slug}/boards"),
                     operation_id: "create_board".to_string(),
                     action: Some(action("acta::boards::create")),
                     idempotent: true,
@@ -965,7 +961,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/projects/{project_slug}/boards"),
+                    path: route_path("/workspaces/{ws}/projects/{project_slug}/boards"),
                     operation_id: "list_boards".to_string(),
                     action: Some(action("acta::boards::read")),
                     idempotent: false,
@@ -973,7 +969,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/boards/{board_id}"),
+                    path: route_path("/workspaces/{ws}/boards/{board_id}"),
                     operation_id: "get_board".to_string(),
                     action: Some(action("acta::boards::read")),
                     idempotent: false,
@@ -981,7 +977,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path("/api/workspaces/{ws}/boards/{board_id}"),
+                    path: route_path("/workspaces/{ws}/boards/{board_id}"),
                     operation_id: "update_board".to_string(),
                     action: Some(action("acta::boards::update")),
                     idempotent: false,
@@ -989,7 +985,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path("/api/workspaces/{ws}/boards/{board_id}"),
+                    path: route_path("/workspaces/{ws}/boards/{board_id}"),
                     operation_id: "delete_board".to_string(),
                     action: Some(action("acta::boards::delete")),
                     idempotent: false,
@@ -997,7 +993,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path("/api/workspaces/{ws}/boards/{board_id}/move"),
+                    path: route_path("/workspaces/{ws}/boards/{board_id}/move"),
                     operation_id: "move_board".to_string(),
                     action: Some(action("acta::boards::update")),
                     idempotent: false,
@@ -1005,7 +1001,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/boards/{board_id}/archive"),
+                    path: route_path("/workspaces/{ws}/boards/{board_id}/archive"),
                     operation_id: "archive_board".to_string(),
                     action: Some(action("acta::boards::update")),
                     idempotent: false,
@@ -1013,7 +1009,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/boards/{board_id}/unarchive"),
+                    path: route_path("/workspaces/{ws}/boards/{board_id}/unarchive"),
                     operation_id: "unarchive_board".to_string(),
                     action: Some(action("acta::boards::update")),
                     idempotent: false,
@@ -1021,7 +1017,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/boards/{board_id}/columns"),
+                    path: route_path("/workspaces/{ws}/boards/{board_id}/columns"),
                     operation_id: "create_column".to_string(),
                     action: Some(action("acta::boards::update")),
                     idempotent: true,
@@ -1029,7 +1025,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/boards/{board_id}/columns"),
+                    path: route_path("/workspaces/{ws}/boards/{board_id}/columns"),
                     operation_id: "list_columns".to_string(),
                     action: Some(action("acta::boards::read")),
                     idempotent: false,
@@ -1037,7 +1033,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path("/api/workspaces/{ws}/boards/{board_id}/columns/{column_id}"),
+                    path: route_path("/workspaces/{ws}/boards/{board_id}/columns/{column_id}"),
                     operation_id: "update_column".to_string(),
                     action: Some(action("acta::boards::update")),
                     idempotent: false,
@@ -1045,7 +1041,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path("/api/workspaces/{ws}/boards/{board_id}/columns/{column_id}"),
+                    path: route_path("/workspaces/{ws}/boards/{board_id}/columns/{column_id}"),
                     operation_id: "delete_column".to_string(),
                     action: Some(action("acta::boards::update")),
                     idempotent: false,
@@ -1053,7 +1049,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/boards/{board_id}/tasks"),
+                    path: route_path("/workspaces/{ws}/boards/{board_id}/tasks"),
                     operation_id: "create_task".to_string(),
                     action: Some(action("acta::tasks::create")),
                     idempotent: true,
@@ -1061,7 +1057,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/boards/{board_id}/tasks"),
+                    path: route_path("/workspaces/{ws}/boards/{board_id}/tasks"),
                     operation_id: "list_tasks".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
@@ -1069,7 +1065,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/boards/{board_id}/presence"),
+                    path: route_path("/workspaces/{ws}/boards/{board_id}/presence"),
                     operation_id: "heartbeat".to_string(),
                     action: Some(action("acta::boards::read")),
                     idempotent: false,
@@ -1077,7 +1073,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path("/api/workspaces/{ws}/boards/{board_id}/presence"),
+                    path: route_path("/workspaces/{ws}/boards/{board_id}/presence"),
                     operation_id: "leave".to_string(),
                     action: Some(action("acta::boards::read")),
                     idempotent: false,
@@ -1085,7 +1081,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/documents/{slug}/presence"),
+                    path: route_path("/workspaces/{ws}/documents/{slug}/presence"),
                     operation_id: "document_heartbeat".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
@@ -1093,7 +1089,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path("/api/workspaces/{ws}/documents/{slug}/presence"),
+                    path: route_path("/workspaces/{ws}/documents/{slug}/presence"),
                     operation_id: "document_leave".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
@@ -1101,7 +1097,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/tasks"),
+                    path: route_path("/workspaces/{ws}/tasks"),
                     operation_id: "list_workspace_tasks".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
@@ -1109,7 +1105,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/tasks/{readable_id}"),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}"),
                     operation_id: "get_task".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
@@ -1117,7 +1113,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path("/api/workspaces/{ws}/tasks/{readable_id}"),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}"),
                     operation_id: "update_task".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: false,
@@ -1125,7 +1121,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path("/api/workspaces/{ws}/tasks/{readable_id}"),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}"),
                     operation_id: "delete_task".to_string(),
                     action: Some(action("acta::tasks::delete")),
                     idempotent: false,
@@ -1133,7 +1129,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/tasks/{readable_id}/move"),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}/move"),
                     operation_id: "move_task".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: false,
@@ -1141,7 +1137,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/tasks/{readable_id}/assignees"),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}/assignees"),
                     operation_id: "list_assignees".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
@@ -1149,7 +1145,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/tasks/{readable_id}/assignees"),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}/assignees"),
                     operation_id: "add_assignee".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: true,
@@ -1158,7 +1154,7 @@ fn acta_entry() -> ComponentEntry {
                 RouteDeclaration {
                     method: HttpMethod::Delete,
                     path: route_path(
-                        "/api/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}",
+                        "/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}",
                     ),
                     operation_id: "remove_assignee".to_string(),
                     action: Some(action("acta::tasks::update")),
@@ -1167,7 +1163,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/tasks/{readable_id}/references"),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}/references"),
                     operation_id: "list_references".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
@@ -1175,7 +1171,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/tasks/{readable_id}/references"),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}/references"),
                     operation_id: "create_reference".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: true,
@@ -1183,7 +1179,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/tasks/{readable_id}/references/batch"),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}/references/batch"),
                     operation_id: "create_references_batch".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: true,
@@ -1192,7 +1188,7 @@ fn acta_entry() -> ComponentEntry {
                 RouteDeclaration {
                     method: HttpMethod::Delete,
                     path: route_path(
-                        "/api/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}",
+                        "/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}",
                     ),
                     operation_id: "delete_reference".to_string(),
                     action: Some(action("acta::tasks::update")),
@@ -1201,7 +1197,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/tasks/{readable_id}/attachments"),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}/attachments"),
                     operation_id: "upload_task_attachment".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: false,
@@ -1209,7 +1205,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/tasks/{readable_id}/attachments"),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}/attachments"),
                     operation_id: "list_task_attachments".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
@@ -1218,7 +1214,7 @@ fn acta_entry() -> ComponentEntry {
                 RouteDeclaration {
                     method: HttpMethod::Get,
                     path: route_path(
-                        "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content",
+                        "/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content",
                     ),
                     operation_id: "download_task_attachment".to_string(),
                     action: Some(action("acta::tasks::read")),
@@ -1228,7 +1224,7 @@ fn acta_entry() -> ComponentEntry {
                 RouteDeclaration {
                     method: HttpMethod::Patch,
                     path: route_path(
-                        "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}",
+                        "/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}",
                     ),
                     operation_id: "rename_task_attachment".to_string(),
                     action: Some(action("acta::tasks::update")),
@@ -1238,7 +1234,7 @@ fn acta_entry() -> ComponentEntry {
                 RouteDeclaration {
                     method: HttpMethod::Delete,
                     path: route_path(
-                        "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}",
+                        "/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}",
                     ),
                     operation_id: "delete_task_attachment".to_string(),
                     action: Some(action("acta::tasks::update")),
@@ -1248,7 +1244,7 @@ fn acta_entry() -> ComponentEntry {
                 RouteDeclaration {
                     method: HttpMethod::Post,
                     path: route_path(
-                        "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",
+                        "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",
                     ),
                     operation_id: "upload_task_comment_attachment".to_string(),
                     action: Some(action("acta::tasks::update")),
@@ -1258,7 +1254,7 @@ fn acta_entry() -> ComponentEntry {
                 RouteDeclaration {
                     method: HttpMethod::Get,
                     path: route_path(
-                        "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",
+                        "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",
                     ),
                     operation_id: "list_task_comment_attachments".to_string(),
                     action: Some(action("acta::tasks::read")),
@@ -1267,7 +1263,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts"),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}/comment-drafts"),
                     operation_id: "create_task_comment_draft".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: true,
@@ -1276,7 +1272,7 @@ fn acta_entry() -> ComponentEntry {
                 RouteDeclaration {
                     method: HttpMethod::Delete,
                     path: route_path(
-                        "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}",
+                        "/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}",
                     ),
                     operation_id: "cancel_task_comment_draft".to_string(),
                     action: Some(action("acta::tasks::update")),
@@ -1286,7 +1282,7 @@ fn acta_entry() -> ComponentEntry {
                 RouteDeclaration {
                     method: HttpMethod::Post,
                     path: route_path(
-                        "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments",
+                        "/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments",
                     ),
                     operation_id: "upload_task_comment_draft_attachment".to_string(),
                     action: Some(action("acta::tasks::update")),
@@ -1296,7 +1292,7 @@ fn acta_entry() -> ComponentEntry {
                 RouteDeclaration {
                     method: HttpMethod::Get,
                     path: route_path(
-                        "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content",
+                        "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content",
                     ),
                     operation_id: "download_task_comment_attachment".to_string(),
                     action: Some(action("acta::tasks::read")),
@@ -1306,7 +1302,7 @@ fn acta_entry() -> ComponentEntry {
                 RouteDeclaration {
                     method: HttpMethod::Delete,
                     path: route_path(
-                        "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}",
+                        "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}",
                     ),
                     operation_id: "delete_task_comment_attachment".to_string(),
                     action: Some(action("acta::tasks::update")),
@@ -1315,7 +1311,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/tasks/{readable_id}/backlinks"),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}/backlinks"),
                     operation_id: "list_task_backlinks".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
@@ -1323,7 +1319,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/tasks/{readable_id}/graph"),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}/graph"),
                     operation_id: "get_task_graph".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
@@ -1331,7 +1327,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/tasks/{readable_id}/checklist"),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}/checklist"),
                     operation_id: "list_checklist".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
@@ -1339,7 +1335,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/tasks/{readable_id}/checklist"),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}/checklist"),
                     operation_id: "create_checklist_item".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: true,
@@ -1347,9 +1343,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path(
-                        "/api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}",
-                    ),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}"),
                     operation_id: "update_checklist_item".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: false,
@@ -1357,9 +1351,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path(
-                        "/api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}",
-                    ),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}"),
                     operation_id: "delete_checklist_item".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: false,
@@ -1368,7 +1360,7 @@ fn acta_entry() -> ComponentEntry {
                 RouteDeclaration {
                     method: HttpMethod::Post,
                     path: route_path(
-                        "/api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote",
+                        "/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote",
                     ),
                     operation_id: "promote_checklist_item".to_string(),
                     action: Some(action("acta::tasks::create")),
@@ -1377,7 +1369,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/tasks/{readable_id}/subtasks"),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}/subtasks"),
                     operation_id: "list_subtasks".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
@@ -1385,7 +1377,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/tasks/{readable_id}/subtasks"),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}/subtasks"),
                     operation_id: "create_subtask".to_string(),
                     action: Some(action("acta::tasks::create")),
                     idempotent: true,
@@ -1393,7 +1385,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/tasks/{readable_id}/promote"),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}/promote"),
                     operation_id: "promote_subtask".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: true,
@@ -1401,7 +1393,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/tasks/{readable_id}/parent"),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}/parent"),
                     operation_id: "set_task_parent".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: false,
@@ -1409,7 +1401,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/tasks/{readable_id}/activity"),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}/activity"),
                     operation_id: "list_activity".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
@@ -1417,7 +1409,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/tasks/{readable_id}/comments"),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}/comments"),
                     operation_id: "list_comments".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
@@ -1425,7 +1417,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/tasks/{readable_id}/comments"),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}/comments"),
                     operation_id: "create_task_comment".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: true,
@@ -1433,9 +1425,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path(
-                        "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}",
-                    ),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}"),
                     operation_id: "update_comment".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: false,
@@ -1443,9 +1433,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path(
-                        "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}",
-                    ),
+                    path: route_path("/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}"),
                     operation_id: "delete_comment".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: false,
@@ -1453,7 +1441,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/activity"),
+                    path: route_path("/workspaces/{ws}/activity"),
                     operation_id: "list_workspace_activity".to_string(),
                     action: None,
                     idempotent: false,
@@ -1461,7 +1449,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/projects/{project_slug}/documents"),
+                    path: route_path("/workspaces/{ws}/projects/{project_slug}/documents"),
                     operation_id: "create_document".to_string(),
                     action: Some(action("acta::docs::create")),
                     idempotent: true,
@@ -1469,7 +1457,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/projects/{project_slug}/documents"),
+                    path: route_path("/workspaces/{ws}/projects/{project_slug}/documents"),
                     operation_id: "list_documents".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
@@ -1477,7 +1465,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/documents/{slug}"),
+                    path: route_path("/workspaces/{ws}/documents/{slug}"),
                     operation_id: "get_document".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
@@ -1485,7 +1473,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path("/api/workspaces/{ws}/documents/{slug}"),
+                    path: route_path("/workspaces/{ws}/documents/{slug}"),
                     operation_id: "update_document".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: false,
@@ -1493,7 +1481,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path("/api/workspaces/{ws}/documents/{slug}"),
+                    path: route_path("/workspaces/{ws}/documents/{slug}"),
                     operation_id: "delete_document".to_string(),
                     action: Some(action("acta::docs::delete")),
                     idempotent: false,
@@ -1501,7 +1489,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Put,
-                    path: route_path("/api/workspaces/{ws}/documents/{slug}/content"),
+                    path: route_path("/workspaces/{ws}/documents/{slug}/content"),
                     operation_id: "update_content".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: false,
@@ -1509,7 +1497,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/documents/{slug}/compact"),
+                    path: route_path("/workspaces/{ws}/documents/{slug}/compact"),
                     operation_id: "get_document_compact".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
@@ -1517,7 +1505,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/documents/{slug}/content/range"),
+                    path: route_path("/workspaces/{ws}/documents/{slug}/content/range"),
                     operation_id: "get_content_range".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
@@ -1525,7 +1513,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path("/api/workspaces/{ws}/documents/{slug}/content/range"),
+                    path: route_path("/workspaces/{ws}/documents/{slug}/content/range"),
                     operation_id: "edit_content_range".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: false,
@@ -1533,7 +1521,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/documents/{slug}/content/search"),
+                    path: route_path("/workspaces/{ws}/documents/{slug}/content/search"),
                     operation_id: "search_content".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
@@ -1541,7 +1529,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/documents/{slug}/history"),
+                    path: route_path("/workspaces/{ws}/documents/{slug}/history"),
                     operation_id: "list_history".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
@@ -1549,7 +1537,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/documents/{slug}/revisions/{seq}"),
+                    path: route_path("/workspaces/{ws}/documents/{slug}/revisions/{seq}"),
                     operation_id: "get_revision_content".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
@@ -1557,7 +1545,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/documents/{slug}/backlinks"),
+                    path: route_path("/workspaces/{ws}/documents/{slug}/backlinks"),
                     operation_id: "list_backlinks".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
@@ -1565,7 +1553,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/documents/{slug}/frontmatter"),
+                    path: route_path("/workspaces/{ws}/documents/{slug}/frontmatter"),
                     operation_id: "get_frontmatter".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
@@ -1573,7 +1561,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/documents/{slug}/attachments"),
+                    path: route_path("/workspaces/{ws}/documents/{slug}/attachments"),
                     operation_id: "upload_attachment".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: false,
@@ -1581,7 +1569,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/documents/{slug}/attachments"),
+                    path: route_path("/workspaces/{ws}/documents/{slug}/attachments"),
                     operation_id: "list_attachments".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
@@ -1589,7 +1577,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/attachments"),
+                    path: route_path("/workspaces/{ws}/attachments"),
                     operation_id: "list_workspace_attachments".to_string(),
                     action: None,
                     idempotent: false,
@@ -1597,7 +1585,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/attachments/{attachment_id}"),
+                    path: route_path("/workspaces/{ws}/attachments/{attachment_id}"),
                     operation_id: "download_attachment".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
@@ -1605,7 +1593,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path("/api/workspaces/{ws}/attachments/{attachment_id}"),
+                    path: route_path("/workspaces/{ws}/attachments/{attachment_id}"),
                     operation_id: "rename_workspace_attachment".to_string(),
                     action: None,
                     idempotent: false,
@@ -1613,7 +1601,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path("/api/workspaces/{ws}/attachments/{attachment_id}"),
+                    path: route_path("/workspaces/{ws}/attachments/{attachment_id}"),
                     operation_id: "delete_attachment".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: false,
@@ -1622,7 +1610,7 @@ fn acta_entry() -> ComponentEntry {
                 RouteDeclaration {
                     method: HttpMethod::Post,
                     path: route_path(
-                        "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
+                        "/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
                     ),
                     operation_id: "upload_document_comment_attachment".to_string(),
                     action: Some(action("acta::docs::update")),
@@ -1632,7 +1620,7 @@ fn acta_entry() -> ComponentEntry {
                 RouteDeclaration {
                     method: HttpMethod::Get,
                     path: route_path(
-                        "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
+                        "/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
                     ),
                     operation_id: "list_document_comment_attachments".to_string(),
                     action: Some(action("acta::docs::read")),
@@ -1641,7 +1629,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/documents/{slug}/comment-drafts"),
+                    path: route_path("/workspaces/{ws}/documents/{slug}/comment-drafts"),
                     operation_id: "create_document_comment_draft".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: true,
@@ -1649,9 +1637,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path(
-                        "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}",
-                    ),
+                    path: route_path("/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}"),
                     operation_id: "cancel_document_comment_draft".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: false,
@@ -1660,7 +1646,7 @@ fn acta_entry() -> ComponentEntry {
                 RouteDeclaration {
                     method: HttpMethod::Post,
                     path: route_path(
-                        "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments",
+                        "/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments",
                     ),
                     operation_id: "upload_document_comment_draft_attachment".to_string(),
                     action: Some(action("acta::docs::update")),
@@ -1670,7 +1656,7 @@ fn acta_entry() -> ComponentEntry {
                 RouteDeclaration {
                     method: HttpMethod::Get,
                     path: route_path(
-                        "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
+                        "/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
                     ),
                     operation_id: "download_document_comment_attachment".to_string(),
                     action: Some(action("acta::docs::read")),
@@ -1680,7 +1666,7 @@ fn acta_entry() -> ComponentEntry {
                 RouteDeclaration {
                     method: HttpMethod::Delete,
                     path: route_path(
-                        "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
+                        "/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
                     ),
                     operation_id: "delete_document_comment_attachment".to_string(),
                     action: Some(action("acta::docs::update")),
@@ -1689,7 +1675,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path("/api/workspaces/{ws}/documents/{slug}/move"),
+                    path: route_path("/workspaces/{ws}/documents/{slug}/move"),
                     operation_id: "move_document".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: false,
@@ -1697,7 +1683,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/documents/moves/batch"),
+                    path: route_path("/workspaces/{ws}/documents/moves/batch"),
                     operation_id: "move_documents_batch".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: false,
@@ -1705,7 +1691,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/documents/{slug}/copy"),
+                    path: route_path("/workspaces/{ws}/documents/{slug}/copy"),
                     operation_id: "copy_document".to_string(),
                     action: Some(action("acta::docs::create")),
                     idempotent: true,
@@ -1713,7 +1699,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/documents/{slug}/comments"),
+                    path: route_path("/workspaces/{ws}/documents/{slug}/comments"),
                     operation_id: "list_document_comments".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
@@ -1721,7 +1707,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/documents/{slug}/comments"),
+                    path: route_path("/workspaces/{ws}/documents/{slug}/comments"),
                     operation_id: "create_document_comment".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: true,
@@ -1729,7 +1715,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path("/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}"),
+                    path: route_path("/workspaces/{ws}/documents/{slug}/comments/{comment_id}"),
                     operation_id: "update_document_comment".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: false,
@@ -1737,7 +1723,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path("/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}"),
+                    path: route_path("/workspaces/{ws}/documents/{slug}/comments/{comment_id}"),
                     operation_id: "delete_document_comment".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: false,
@@ -1745,7 +1731,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/projects/{project_slug}/folders"),
+                    path: route_path("/workspaces/{ws}/projects/{project_slug}/folders"),
                     operation_id: "create_folder".to_string(),
                     action: Some(action("acta::folders::create")),
                     idempotent: true,
@@ -1753,7 +1739,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/projects/{project_slug}/folders"),
+                    path: route_path("/workspaces/{ws}/projects/{project_slug}/folders"),
                     operation_id: "list_folders".to_string(),
                     action: Some(action("acta::folders::read")),
                     idempotent: false,
@@ -1761,7 +1747,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/folders/{folder_id}"),
+                    path: route_path("/workspaces/{ws}/folders/{folder_id}"),
                     operation_id: "get_folder".to_string(),
                     action: Some(action("acta::folders::read")),
                     idempotent: false,
@@ -1769,7 +1755,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path("/api/workspaces/{ws}/folders/{folder_id}"),
+                    path: route_path("/workspaces/{ws}/folders/{folder_id}"),
                     operation_id: "rename_folder".to_string(),
                     action: Some(action("acta::folders::update")),
                     idempotent: false,
@@ -1777,7 +1763,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path("/api/workspaces/{ws}/folders/{folder_id}"),
+                    path: route_path("/workspaces/{ws}/folders/{folder_id}"),
                     operation_id: "delete_folder".to_string(),
                     action: Some(action("acta::folders::delete")),
                     idempotent: false,
@@ -1785,7 +1771,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path("/api/workspaces/{ws}/folders/{folder_id}/move"),
+                    path: route_path("/workspaces/{ws}/folders/{folder_id}/move"),
                     operation_id: "move_folder".to_string(),
                     action: Some(action("acta::folders::update")),
                     idempotent: false,
@@ -1793,7 +1779,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/folders/{folder_id}/copy"),
+                    path: route_path("/workspaces/{ws}/folders/{folder_id}/copy"),
                     operation_id: "copy_folder".to_string(),
                     action: Some(action("acta::folders::create")),
                     idempotent: true,
@@ -1801,7 +1787,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/webhooks"),
+                    path: route_path("/workspaces/{ws}/webhooks"),
                     operation_id: "create_webhook".to_string(),
                     action: Some(action("acta::webhooks::create")),
                     idempotent: false,
@@ -1809,7 +1795,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/webhooks"),
+                    path: route_path("/workspaces/{ws}/webhooks"),
                     operation_id: "list_webhooks".to_string(),
                     action: Some(action("acta::webhooks::read")),
                     idempotent: false,
@@ -1817,7 +1803,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/webhooks/{webhook_id}"),
+                    path: route_path("/workspaces/{ws}/webhooks/{webhook_id}"),
                     operation_id: "get_webhook".to_string(),
                     action: Some(action("acta::webhooks::read")),
                     idempotent: false,
@@ -1825,7 +1811,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path("/api/workspaces/{ws}/webhooks/{webhook_id}"),
+                    path: route_path("/workspaces/{ws}/webhooks/{webhook_id}"),
                     operation_id: "update_webhook".to_string(),
                     action: Some(action("acta::webhooks::update")),
                     idempotent: false,
@@ -1833,7 +1819,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path("/api/workspaces/{ws}/webhooks/{webhook_id}"),
+                    path: route_path("/workspaces/{ws}/webhooks/{webhook_id}"),
                     operation_id: "delete_webhook".to_string(),
                     action: Some(action("acta::webhooks::delete")),
                     idempotent: false,
@@ -1841,7 +1827,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/webhooks/{webhook_id}/deliveries"),
+                    path: route_path("/workspaces/{ws}/webhooks/{webhook_id}/deliveries"),
                     operation_id: "list_webhook_deliveries".to_string(),
                     action: Some(action("acta::webhooks::read")),
                     idempotent: false,
@@ -1849,7 +1835,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/integration-configs"),
+                    path: route_path("/workspaces/{ws}/integration-configs"),
                     operation_id: "create_integration_config".to_string(),
                     action: None,
                     idempotent: false,
@@ -1857,7 +1843,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/integration-configs"),
+                    path: route_path("/workspaces/{ws}/integration-configs"),
                     operation_id: "list_integration_configs".to_string(),
                     action: None,
                     idempotent: false,
@@ -1865,7 +1851,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/integration-configs/{config_id}"),
+                    path: route_path("/workspaces/{ws}/integration-configs/{config_id}"),
                     operation_id: "get_integration_config".to_string(),
                     action: None,
                     idempotent: false,
@@ -1873,7 +1859,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path("/api/workspaces/{ws}/integration-configs/{config_id}"),
+                    path: route_path("/workspaces/{ws}/integration-configs/{config_id}"),
                     operation_id: "patch_integration_config".to_string(),
                     action: None,
                     idempotent: false,
@@ -1881,7 +1867,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path("/api/workspaces/{ws}/integration-configs/{config_id}"),
+                    path: route_path("/workspaces/{ws}/integration-configs/{config_id}"),
                     operation_id: "delete_integration_config".to_string(),
                     action: None,
                     idempotent: false,
@@ -1889,7 +1875,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/automation-rules"),
+                    path: route_path("/workspaces/{ws}/automation-rules"),
                     operation_id: "create_automation_rule".to_string(),
                     action: None,
                     idempotent: true,
@@ -1897,7 +1883,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/automation-rules"),
+                    path: route_path("/workspaces/{ws}/automation-rules"),
                     operation_id: "list_automation_rules".to_string(),
                     action: None,
                     idempotent: false,
@@ -1905,7 +1891,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/automation-rules/{rule_id}"),
+                    path: route_path("/workspaces/{ws}/automation-rules/{rule_id}"),
                     operation_id: "get_automation_rule".to_string(),
                     action: None,
                     idempotent: false,
@@ -1913,7 +1899,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
-                    path: route_path("/api/workspaces/{ws}/automation-rules/{rule_id}"),
+                    path: route_path("/workspaces/{ws}/automation-rules/{rule_id}"),
                     operation_id: "patch_automation_rule".to_string(),
                     action: None,
                     idempotent: false,
@@ -1921,7 +1907,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
-                    path: route_path("/api/workspaces/{ws}/automation-rules/{rule_id}"),
+                    path: route_path("/workspaces/{ws}/automation-rules/{rule_id}"),
                     operation_id: "delete_automation_rule".to_string(),
                     action: None,
                     idempotent: false,
@@ -1929,7 +1915,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/events"),
+                    path: route_path("/workspaces/{ws}/events"),
                     operation_id: "stream_events".to_string(),
                     action: None,
                     idempotent: false,
@@ -1937,7 +1923,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/search"),
+                    path: route_path("/workspaces/{ws}/search"),
                     operation_id: "search".to_string(),
                     action: None,
                     idempotent: false,
@@ -1945,7 +1931,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/semantic-search"),
+                    path: route_path("/workspaces/{ws}/semantic-search"),
                     operation_id: "semantic_search".to_string(),
                     action: None,
                     idempotent: false,
@@ -1953,7 +1939,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
-                    path: route_path("/api/workspaces/{ws}/semantic-search/reindex"),
+                    path: route_path("/workspaces/{ws}/semantic-search/reindex"),
                     operation_id: "semantic_reindex_plan".to_string(),
                     action: Some(action("acta::config::read")),
                     idempotent: false,
@@ -1961,7 +1947,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/semantic-search/reindex"),
+                    path: route_path("/workspaces/{ws}/semantic-search/reindex"),
                     operation_id: "semantic_reindex_start".to_string(),
                     action: Some(action("acta::config::update")),
                     idempotent: true,
@@ -1969,7 +1955,7 @@ fn acta_entry() -> ComponentEntry {
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
-                    path: route_path("/api/workspaces/{ws}/integrations/{integration}/events"),
+                    path: route_path("/workspaces/{ws}/integrations/{integration}/events"),
                     operation_id: "ingest_github_event".to_string(),
                     action: None,
                     idempotent: false,

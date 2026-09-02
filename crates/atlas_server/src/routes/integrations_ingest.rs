@@ -210,7 +210,7 @@ fn verify_github_signature(sig_header: &str, secret: &[u8], body: &[u8]) -> Resu
 /// that GitHub does not retry on idempotent re-deliveries.
 #[utoipa::path(
     post,
-    path = "/api/workspaces/{ws}/integrations/{integration}/events",
+    path = "/workspaces/{ws}/integrations/{integration}/events",
     tag = "integrations",
     params(
         ("ws" = String, Path, description = "Workspace slug"),

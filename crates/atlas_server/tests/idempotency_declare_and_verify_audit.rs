@@ -101,7 +101,7 @@ fn a_route_missing_from_the_wired_set_fails_the_audit_and_is_named() {
     let mut wired = wired_idempotent_set();
     let declared = declared_true_set();
 
-    let removed = (HttpMethod::Post, "/api/workspaces".to_string());
+    let removed = (HttpMethod::Post, "/workspaces".to_string());
     assert!(
         wired.remove(&removed),
         "sanity: create_workspace must be in the wired set before removal"
@@ -126,7 +126,7 @@ fn an_extra_wired_route_not_declared_true_fails_the_audit_and_is_named() {
 
     // A route that IS declared but is idempotent:false (logout) — pretend
     // it got wired by mistake.
-    let bogus = (HttpMethod::Post, "/api/auth/logout".to_string());
+    let bogus = (HttpMethod::Post, "/auth/logout".to_string());
     assert!(
         wired.insert(bogus.clone()),
         "sanity: logout must not already be in the wired set"
@@ -194,7 +194,7 @@ fn wired_store_briefly_set_matches_one_shot_idempotent_routes_exactly() {
 /// 5xx-policy split, since none of its three requests provoke a 5xx.
 #[test]
 fn purge_trash_is_a_member_of_the_one_shot_set() {
-    let purge_trash = (HttpMethod::Post, "/api/admin/trash/purge".to_string());
+    let purge_trash = (HttpMethod::Post, "/admin/trash/purge".to_string());
     assert!(
         one_shot_truth_set().contains(&purge_trash),
         "purge_trash must be named in ONE_SHOT_IDEMPOTENT_ROUTES"

@@ -77,7 +77,7 @@ impl SearchMode {
 
 #[utoipa::path(
     get,
-    path = "/api/workspaces/{ws}/search",
+    path = "/workspaces/{ws}/search",
     tag = "search",
     security(("bearer_auth" = [])),
     params(
