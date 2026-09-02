@@ -316,18 +316,20 @@ async fn down_restores_target_columns_and_survives_a_forward_only_orphan() {
         .await
         .expect("seed post-migration grant rows, including one orphaned by a never-live target");
 
-    // Reverts eight steps, not one: S3d appended `m20260830_000051_custos_set_schema`,
+    // Reverts nine steps, not one: S3d appended `m20260830_000051_custos_set_schema`,
     // S4 PR9 appended `m20260831_000052_acta_platform_ui_state`, S4 PR11
     // appended `m20260901_000053_acta_identity_workspaces_set_schema`, S4
     // PR12 appended `m20260902_000054_acta_documents_set_schema`, S4 PR13
     // appended `m20260903_000055_acta_boards_tasks_set_schema`, S4 PR14
     // appended `m20260904_000056_acta_comments_events_tags_set_schema`, and
     // S4 PR15 appended
-    // `m20260905_000057_acta_search_attachments_lifecycle_set_schema` after
-    // this migration in `custos_new()`/`acta_new()`, so "the last applied
-    // migration" is now the search/attachments/lifecycle-group schema move
-    // rather than the O1 migration under test here. Reverting eight steps
-    // undoes the search/attachments/lifecycle-group move (moving
+    // `m20260905_000057_acta_search_attachments_lifecycle_set_schema`, and
+    // E3-S3 PR3 appended `m20260906_000058_acta_platform_idempotency_keys`
+    // after this migration in `custos_new()`/`acta_new()`, so "the last
+    // applied migration" is now the platform idempotency-keys table rather
+    // than the O1 migration under test here. Reverting nine steps drops the
+    // idempotency-keys table, then undoes the
+    // search/attachments/lifecycle-group move (moving
     // `search_embeddings`/`purge_operations`/etc. back to `public`), then the
     // comments/events/tags-group move (moving `comments`/`tags`/etc. back to
     // `public`), then the boards/tasks-group move (moving `boards`/`tasks`/etc.
@@ -338,7 +340,7 @@ async fn down_restores_target_columns_and_survives_a_forward_only_orphan() {
     // schema move (moving the eight tables back to `public`), then O1's own
     // down(), landing on the same pre-O1, unqualified-table-name state this
     // test asserted before S3d/S4 existed.
-    ComposedMigrator::down(db.conn(), Some(8))
+    ComposedMigrator::down(db.conn(), Some(9))
         .await
         .expect("down survives an orphaned grant");
 
@@ -351,7 +353,7 @@ async fn down_restores_target_columns_and_survives_a_forward_only_orphan() {
         board_id: Option<Uuid>,
     }
 
-    // schema-gate:off — after the eight-step down() above, SET SCHEMA has
+    // schema-gate:off — after the nine-step down() above, SET SCHEMA has
     // been reverted, so `permission_grants` is back in `public` at this point.
     let rows = TargetRow::find_by_statement(Statement::from_string(
         sea_orm::DatabaseBackend::Postgres,
