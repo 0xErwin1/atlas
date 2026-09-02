@@ -11,7 +11,8 @@
 # Stage 1 of the desktop package: the built Vue SPA. The Rust build embeds this
 # via `generate_context!` at compile time, so it must exist before stage 2.
 # The `@atlas/web` build script reads the committed `apps/web/openapi.json`
-# (kept current by openapi_drift.rs), so no server-side schema generation runs.
+# (kept current by dump_openapi + openapi_zero_drift.rs's registry↔document
+# guard, v2-e3-s4 D5), so no server-side schema generation runs.
 stdenv.mkDerivation (finalAttrs: {
   pname = "atlas-web-dist";
   version = "0.0.0";

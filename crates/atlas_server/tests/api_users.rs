@@ -323,7 +323,7 @@ async fn regenerate_activation_link_on_activated_user_returns_409() {
 
 // ── T17: registry/openapi entries exist for new routes ────────────────────────
 
-// (covered by openapi_drift test binary which runs against the router)
+// (covered by openapi_zero_drift's registry↔document set-equality test, `v2-e3-s4` D5)
 
 // ── disable_user_revokes_sessions (unchanged behavior test) ──────────────────
 

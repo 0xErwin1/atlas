@@ -1330,7 +1330,7 @@ async fn update_content_stale_base_returns_409() {
         other => panic!("stale base revision must surface ClientError::Conflict, got: {other:?}"),
     };
 
-    assert_eq!(conflict.status, 409, "conflict status must be 409");
+    assert_eq!(conflict.problem.status, 409, "conflict status must be 409");
     assert_eq!(
         conflict.current_seq, 2,
         "conflict must carry the current head seq"

@@ -115,6 +115,7 @@ fn platform_entry() -> ComponentEntry {
                     operation_id: "get_ui_state".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Put,
@@ -122,6 +123,7 @@ fn platform_entry() -> ComponentEntry {
                     operation_id: "set_ui_state".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -129,6 +131,7 @@ fn platform_entry() -> ComponentEntry {
                     operation_id: "meta".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -136,6 +139,7 @@ fn platform_entry() -> ComponentEntry {
                     operation_id: "health".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: true,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -143,6 +147,7 @@ fn platform_entry() -> ComponentEntry {
                     operation_id: "ready".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: true,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -150,6 +155,7 @@ fn platform_entry() -> ComponentEntry {
                     operation_id: "version".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: true,
                 },
                 // `v2-e3-s4` D3: representable now that `RoutePath` accepts
                 // one interior dot in the final segment. Mount location is
@@ -163,6 +169,7 @@ fn platform_entry() -> ComponentEntry {
                     operation_id: "openapi_json".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: true,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -170,6 +177,7 @@ fn platform_entry() -> ComponentEntry {
                     operation_id: "scalar".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: true,
                 },
             ],
             dto_owner: Some(component("platform")),
@@ -229,6 +237,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "logout".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -236,6 +245,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "me".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -243,6 +253,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "change_password".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -250,6 +261,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "update_me".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -257,6 +269,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "create_user".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -264,6 +277,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "list_users".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -271,6 +285,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "disable_user".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -278,6 +293,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "enable_user".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -285,6 +301,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "reset_password".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -292,6 +309,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "regenerate_activation_link".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -299,6 +317,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "set_system_admin".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -306,6 +325,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "list_user_memberships".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -313,6 +333,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "list_platform_audit".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -320,6 +341,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "create_user_api_key".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -327,6 +349,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "list_user_api_keys".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -334,6 +357,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "revoke_user_api_key".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -341,6 +365,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "update_user_api_key".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -348,6 +373,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "list_api_key_grants".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -355,6 +381,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "delete_api_key_grant".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -362,6 +389,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "create_project_grant".to_string(),
                     action: None,
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -369,6 +397,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "list_project_grants".to_string(),
                     action: Some(action("custos::grants::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -378,6 +407,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "delete_project_grant".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -385,6 +415,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "create_workspace_grant".to_string(),
                     action: None,
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -392,6 +423,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "list_workspace_grants".to_string(),
                     action: Some(action("custos::grants::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -399,6 +431,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "delete_workspace_grant".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -406,6 +439,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "create_group".to_string(),
                     action: None,
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -413,6 +447,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "list_groups".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -420,6 +455,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "delete_group".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -427,6 +463,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "add_group_member".to_string(),
                     action: None,
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -434,6 +471,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "list_group_members".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -441,6 +479,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "remove_group_member".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -448,6 +487,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "list_workspace_audit".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -455,6 +495,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "login".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: true,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -462,6 +503,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "get_activation_info".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: true,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -469,6 +511,7 @@ fn custos_entry() -> ComponentEntry {
                     operation_id: "post_activate".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: true,
                 },
             ],
             dto_owner: Some(component("custos")),
@@ -538,6 +581,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_trash".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -545,6 +589,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "restore_trash".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -552,6 +597,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "purge_trash".to_string(),
                     action: None,
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -559,6 +605,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "get_purge_status".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -566,6 +613,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_workspaces".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -573,6 +621,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "create_workspace".to_string(),
                     action: None,
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -580,6 +629,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "get_workspace".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -587,6 +637,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "update_workspace".to_string(),
                     action: Some(action("acta::config::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -594,6 +645,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "admin_list_workspaces".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -601,6 +653,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "admin_update_workspace".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -608,6 +661,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "admin_delete_workspace".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -615,6 +669,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_platform_status_templates".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -622,6 +677,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "create_platform_status_template".to_string(),
                     action: None,
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -629,6 +685,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "update_platform_status_template".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -636,6 +693,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "delete_platform_status_template".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -643,6 +701,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "create_project".to_string(),
                     action: Some(action("acta::projects::create")),
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -650,6 +709,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_projects".to_string(),
                     action: Some(action("acta::projects::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -657,6 +717,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "get_project".to_string(),
                     action: Some(action("acta::projects::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -664,6 +725,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "update_project".to_string(),
                     action: Some(action("acta::projects::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -671,6 +733,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "delete_project".to_string(),
                     action: Some(action("acta::projects::delete")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -678,6 +741,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_workspace_members".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -685,6 +749,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "add_member".to_string(),
                     action: None,
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -692,6 +757,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_assignable_users".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -699,6 +765,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "update_member_role".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -706,6 +773,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "remove_member".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -713,6 +781,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_tags".to_string(),
                     action: Some(action("acta::config::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -720,6 +789,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "create_tag".to_string(),
                     action: Some(action("acta::config::create")),
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -727,6 +797,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_used_labels".to_string(),
                     action: Some(action("acta::config::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -734,6 +805,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "patch_tag".to_string(),
                     action: Some(action("acta::config::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -741,6 +813,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "delete_tag".to_string(),
                     action: Some(action("acta::config::delete")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -748,6 +821,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_status_templates".to_string(),
                     action: Some(action("acta::boards::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -755,6 +829,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "create_status_template".to_string(),
                     action: Some(action("acta::boards::create")),
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -762,6 +837,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "update_status_template".to_string(),
                     action: Some(action("acta::boards::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -769,6 +845,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "delete_status_template".to_string(),
                     action: Some(action("acta::boards::delete")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -778,6 +855,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "apply_status_templates".to_string(),
                     action: Some(action("acta::boards::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -785,6 +863,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_property_definitions".to_string(),
                     action: Some(action("acta::config::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -792,6 +871,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "create_property_definition".to_string(),
                     action: Some(action("acta::config::create")),
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -801,6 +881,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "delete_property_definition".to_string(),
                     action: Some(action("acta::config::delete")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -808,6 +889,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_saved_searches".to_string(),
                     action: Some(action("acta::saved_searches::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -815,6 +897,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "create_saved_search".to_string(),
                     action: Some(action("acta::saved_searches::create")),
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -822,6 +905,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "rename_saved_search".to_string(),
                     action: Some(action("acta::saved_searches::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -829,6 +913,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "delete_saved_search".to_string(),
                     action: Some(action("acta::saved_searches::delete")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -836,6 +921,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_task_views".to_string(),
                     action: Some(action("acta::task_views::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -843,6 +929,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "create_task_view".to_string(),
                     action: Some(action("acta::task_views::create")),
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -850,6 +937,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "get_task_view".to_string(),
                     action: Some(action("acta::task_views::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -857,6 +945,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "update_task_view".to_string(),
                     action: Some(action("acta::task_views::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -864,6 +953,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "delete_task_view".to_string(),
                     action: Some(action("acta::task_views::delete")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -871,6 +961,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "create_board".to_string(),
                     action: Some(action("acta::boards::create")),
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -878,6 +969,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_boards".to_string(),
                     action: Some(action("acta::boards::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -885,6 +977,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "get_board".to_string(),
                     action: Some(action("acta::boards::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -892,6 +985,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "update_board".to_string(),
                     action: Some(action("acta::boards::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -899,6 +993,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "delete_board".to_string(),
                     action: Some(action("acta::boards::delete")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -906,6 +1001,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "move_board".to_string(),
                     action: Some(action("acta::boards::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -913,6 +1009,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "archive_board".to_string(),
                     action: Some(action("acta::boards::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -920,6 +1017,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "unarchive_board".to_string(),
                     action: Some(action("acta::boards::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -927,6 +1025,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "create_column".to_string(),
                     action: Some(action("acta::boards::update")),
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -934,6 +1033,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_columns".to_string(),
                     action: Some(action("acta::boards::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -941,6 +1041,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "update_column".to_string(),
                     action: Some(action("acta::boards::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -948,6 +1049,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "delete_column".to_string(),
                     action: Some(action("acta::boards::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -955,6 +1057,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "create_task".to_string(),
                     action: Some(action("acta::tasks::create")),
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -962,6 +1065,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_tasks".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -969,6 +1073,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "heartbeat".to_string(),
                     action: Some(action("acta::boards::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -976,6 +1081,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "leave".to_string(),
                     action: Some(action("acta::boards::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -983,6 +1089,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "document_heartbeat".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -990,6 +1097,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "document_leave".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -997,6 +1105,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_workspace_tasks".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1004,6 +1113,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "get_task".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -1011,6 +1121,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "update_task".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -1018,6 +1129,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "delete_task".to_string(),
                     action: Some(action("acta::tasks::delete")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1025,6 +1137,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "move_task".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1032,6 +1145,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_assignees".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1039,6 +1153,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "add_assignee".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -1048,6 +1163,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "remove_assignee".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1055,6 +1171,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_references".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1062,6 +1179,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "create_reference".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1069,6 +1187,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "create_references_batch".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -1078,6 +1197,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "delete_reference".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1085,6 +1205,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "upload_task_attachment".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1092,6 +1213,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_task_attachments".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1101,6 +1223,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "download_task_attachment".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -1110,6 +1233,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "rename_task_attachment".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -1119,6 +1243,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "delete_task_attachment".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1128,6 +1253,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "upload_task_comment_attachment".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1137,6 +1263,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_task_comment_attachments".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1144,6 +1271,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "create_task_comment_draft".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -1153,6 +1281,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "cancel_task_comment_draft".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1162,6 +1291,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "upload_task_comment_draft_attachment".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1171,6 +1301,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "download_task_comment_attachment".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -1180,6 +1311,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "delete_task_comment_attachment".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1187,6 +1319,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_task_backlinks".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1194,6 +1327,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "get_task_graph".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1201,6 +1335,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_checklist".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1208,6 +1343,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "create_checklist_item".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -1217,6 +1353,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "update_checklist_item".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -1226,6 +1363,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "delete_checklist_item".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1235,6 +1373,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "promote_checklist_item".to_string(),
                     action: Some(action("acta::tasks::create")),
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1242,6 +1381,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_subtasks".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1249,6 +1389,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "create_subtask".to_string(),
                     action: Some(action("acta::tasks::create")),
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1256,6 +1397,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "promote_subtask".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1263,6 +1405,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "set_task_parent".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1270,6 +1413,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_activity".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1277,6 +1421,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_comments".to_string(),
                     action: Some(action("acta::tasks::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1284,6 +1429,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "create_task_comment".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -1293,6 +1439,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "update_comment".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -1302,6 +1449,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "delete_comment".to_string(),
                     action: Some(action("acta::tasks::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1309,6 +1457,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_workspace_activity".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1316,6 +1465,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "create_document".to_string(),
                     action: Some(action("acta::docs::create")),
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1323,6 +1473,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_documents".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1330,6 +1481,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "get_document".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -1337,6 +1489,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "update_document".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -1344,6 +1497,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "delete_document".to_string(),
                     action: Some(action("acta::docs::delete")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Put,
@@ -1351,6 +1505,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "update_content".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1358,6 +1513,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "get_document_compact".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1365,6 +1521,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "get_content_range".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -1372,6 +1529,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "edit_content_range".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1379,6 +1537,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "search_content".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1386,6 +1545,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_history".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1393,6 +1553,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "get_revision_content".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1400,6 +1561,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_backlinks".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1407,6 +1569,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "get_frontmatter".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1414,6 +1577,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "upload_attachment".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1421,6 +1585,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_attachments".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1428,6 +1593,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_workspace_attachments".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1435,6 +1601,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "download_attachment".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -1442,6 +1609,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "rename_workspace_attachment".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -1449,6 +1617,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "delete_attachment".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1458,6 +1627,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "upload_document_comment_attachment".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1467,6 +1637,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_document_comment_attachments".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1474,6 +1645,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "create_document_comment_draft".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -1483,6 +1655,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "cancel_document_comment_draft".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1492,6 +1665,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "upload_document_comment_draft_attachment".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1501,6 +1675,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "download_document_comment_attachment".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -1510,6 +1685,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "delete_document_comment_attachment".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -1517,6 +1693,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "move_document".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1524,6 +1701,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "move_documents_batch".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1531,6 +1709,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "copy_document".to_string(),
                     action: Some(action("acta::docs::create")),
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1538,6 +1717,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_document_comments".to_string(),
                     action: Some(action("acta::docs::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1545,6 +1725,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "create_document_comment".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -1552,6 +1733,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "update_document_comment".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -1559,6 +1741,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "delete_document_comment".to_string(),
                     action: Some(action("acta::docs::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1566,6 +1749,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "create_folder".to_string(),
                     action: Some(action("acta::folders::create")),
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1573,6 +1757,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_folders".to_string(),
                     action: Some(action("acta::folders::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1580,6 +1765,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "get_folder".to_string(),
                     action: Some(action("acta::folders::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -1587,6 +1773,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "rename_folder".to_string(),
                     action: Some(action("acta::folders::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -1594,6 +1781,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "delete_folder".to_string(),
                     action: Some(action("acta::folders::delete")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -1601,6 +1789,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "move_folder".to_string(),
                     action: Some(action("acta::folders::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1608,6 +1797,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "copy_folder".to_string(),
                     action: Some(action("acta::folders::create")),
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1615,6 +1805,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "create_webhook".to_string(),
                     action: Some(action("acta::webhooks::create")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1622,6 +1813,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_webhooks".to_string(),
                     action: Some(action("acta::webhooks::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1629,6 +1821,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "get_webhook".to_string(),
                     action: Some(action("acta::webhooks::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -1636,6 +1829,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "update_webhook".to_string(),
                     action: Some(action("acta::webhooks::update")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -1643,6 +1837,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "delete_webhook".to_string(),
                     action: Some(action("acta::webhooks::delete")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1650,6 +1845,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_webhook_deliveries".to_string(),
                     action: Some(action("acta::webhooks::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1657,6 +1853,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "create_integration_config".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1664,6 +1861,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_integration_configs".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1671,6 +1869,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "get_integration_config".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -1678,6 +1877,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "patch_integration_config".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -1685,6 +1885,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "delete_integration_config".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1692,6 +1893,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "create_automation_rule".to_string(),
                     action: None,
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1699,6 +1901,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "list_automation_rules".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1706,6 +1909,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "get_automation_rule".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
@@ -1713,6 +1917,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "patch_automation_rule".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Delete,
@@ -1720,6 +1925,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "delete_automation_rule".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1727,6 +1933,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "stream_events".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1734,6 +1941,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "search".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1741,6 +1949,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "semantic_search".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Get,
@@ -1748,6 +1957,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "semantic_reindex_plan".to_string(),
                     action: Some(action("acta::config::read")),
                     idempotent: false,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1755,6 +1965,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "semantic_reindex_start".to_string(),
                     action: Some(action("acta::config::update")),
                     idempotent: true,
+                    is_public: false,
                 },
                 RouteDeclaration {
                     method: HttpMethod::Post,
@@ -1762,6 +1973,7 @@ fn acta_entry() -> ComponentEntry {
                     operation_id: "ingest_github_event".to_string(),
                     action: None,
                     idempotent: false,
+                    is_public: true,
                 },
             ],
             dto_owner: Some(component("acta")),

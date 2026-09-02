@@ -183,6 +183,7 @@ fn multi_violation_entries() -> Vec<ComponentEntry> {
         operation_id: "listTasks".to_string(),
         action: None,
         idempotent: true,
+        is_public: false,
     });
     acta.authorization.actions.push(action("acta::task::read"));
     acta.dependencies.push(Dependency {
@@ -222,6 +223,7 @@ fn multi_violation_entries() -> Vec<ComponentEntry> {
         operation_id: "listTasksDuplicate".to_string(),
         action: None,
         idempotent: true,
+        is_public: false,
     });
     acta_duplicate
         .authorization

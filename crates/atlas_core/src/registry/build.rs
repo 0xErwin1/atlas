@@ -498,6 +498,7 @@ mod tests {
             operation_id: "op".to_string(),
             action: None,
             idempotent: false,
+            is_public: false,
         });
         entry
     }

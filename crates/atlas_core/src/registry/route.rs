@@ -247,6 +247,15 @@ pub struct RouteDeclaration {
     /// re-executes. See `docs/reg5-idempotent-judgment.md`'s "5xx policy"
     /// section.
     pub idempotent: bool,
+    /// Whether this route is mounted with no auth layer at all (`v2-e3-s4`,
+    /// D7) — a promotion of `tests/support/route_matrix.rs`'s existing,
+    /// already-tested computation (membership in
+    /// `platform_route_paths().chain(custos_route_paths()).chain(
+    /// acta_route_paths())`, the union of every component's public
+    /// sub-router accessor) from a test-only helper into the registry
+    /// itself. A pure structural lookup against already-correct code, set
+    /// once per logical route in `reg5.rs` — not a per-route judgment call.
+    pub is_public: bool,
 }
 
 #[cfg(test)]
