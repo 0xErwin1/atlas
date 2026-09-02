@@ -112,18 +112,7 @@ mod protected {
 /// [`root_router`] instead and merged at the composition root, outside the
 /// `/api` nest — see `lib.rs::app()`.
 pub fn router(state: AppState) -> Router {
-    protected::router(state.clone())
-        .layer(axum::middleware::from_fn(
-            crate::auth::csrf::require_csrf_for_cookie_mutations,
-        ))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            crate::middleware::rate_limit::require_rate_limit,
-        ))
-        .layer(axum::middleware::from_fn_with_state(
-            state,
-            crate::auth::middleware::require_authn,
-        ))
+    super::protection::protect(protected::router(state.clone()), state)
 }
 
 /// Platform's root-level router (`v2-e3-s4` PR4, D2): `/health`, `/ready`,

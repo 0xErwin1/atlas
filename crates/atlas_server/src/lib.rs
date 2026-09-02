@@ -153,14 +153,39 @@ pub fn app(state: AppState) -> Router {
     // router: each component now exposes a `root_router()` for exactly
     // those routes, built and merged separately, outside the `/api` nest, so
     // they keep being served at their bare root-level path.
+    //
+    // Unmatched paths run the protected stack before answering 404, so an
+    // unauthenticated probe of any path that does not exist gets 401 and only
+    // an authenticated one gets 404. Before the `/api` nest this happened by
+    // accident: `Router::merge` keeps whichever side has a non-default
+    // fallback, `Router::layer` also wraps the default fallback, and the last
+    // merged component's protected layers therefore ended up wrapping the
+    // root's default 404. `Router::nest` only carries the inner router's
+    // fallback across when that fallback is not the default one, so the
+    // nested `api_router` loses it and unmatched paths would fall through to
+    // a bare 404. The fallback is now declared explicitly, at the root so
+    // it covers every nest, and merged last: merging a router with a custom
+    // fallback into one with the default fallback adopts the custom one.
     let api_router = routes::platform::router(state.clone())
         .merge(routes::custos::router(state.clone()))
         .merge(routes::acta::router(state.clone()));
 
-    let root_router = routes::platform::root_router(state).merge(routes::acta::root_router());
+    let root_router =
+        routes::platform::root_router(state.clone()).merge(routes::acta::root_router());
 
-    let router = Router::new().nest("/api", api_router).merge(root_router);
+    let fallback_router = routes::protection::protect(Router::new().fallback(not_found), state);
+
+    let router = Router::new()
+        .nest("/api", api_router)
+        .merge(root_router)
+        .merge(fallback_router);
     apply_layers(router)
+}
+
+/// Response body-less 404, identical to axum's default fallback, so the only
+/// difference from the default is the protected stack `app()` wraps it in.
+async fn not_found() -> axum::http::StatusCode {
+    axum::http::StatusCode::NOT_FOUND
 }
 
 /// Wraps `router` with the standard request-id / trace / problem-stamp layer stack.

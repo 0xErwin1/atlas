@@ -235,18 +235,7 @@ mod protected {
 /// today (see the module doc).
 pub fn router(state: AppState) -> Router {
     let public = public::router(state.clone());
-    let protected = protected::router(state.clone())
-        .layer(axum::middleware::from_fn(
-            crate::auth::csrf::require_csrf_for_cookie_mutations,
-        ))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            crate::middleware::rate_limit::require_rate_limit,
-        ))
-        .layer(axum::middleware::from_fn_with_state(
-            state,
-            crate::auth::middleware::require_authn,
-        ));
+    let protected = super::protection::protect(protected::router(state.clone()), state);
 
     public.merge(protected)
 }

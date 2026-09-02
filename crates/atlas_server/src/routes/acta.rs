@@ -736,18 +736,8 @@ pub fn router(state: AppState) -> Router {
         .merge(documents_folders::router(state.clone()))
         .merge(search_family::router(state.clone()))
         .merge(webhooks_automations::router(state.clone()))
-        .merge(layered::router(state.clone()))
-        .layer(axum::middleware::from_fn(
-            crate::auth::csrf::require_csrf_for_cookie_mutations,
-        ))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            crate::middleware::rate_limit::require_rate_limit,
-        ))
-        .layer(axum::middleware::from_fn_with_state(
-            state,
-            crate::auth::middleware::require_authn,
-        ));
+        .merge(layered::router(state.clone()));
+    let protected = super::protection::protect(protected, state);
 
     public.merge(protected)
 }
