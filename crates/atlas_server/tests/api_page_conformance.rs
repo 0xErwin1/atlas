@@ -60,7 +60,7 @@ use std::path::Path;
 
 use atlas_api::dtos::documents::CreateDocumentRequest;
 use atlas_api::dtos::{CreateGrantRequest, CreateProjectRequest, GrantPrincipal};
-use atlas_api::pagination::Cursor;
+use atlas_api::pagination::{Cursor, SearchCursor};
 use atlas_client::AtlasClient;
 use atlas_core::registry::HttpMethod;
 use atlas_server::persistence::repos::ApiKeyRepo;
@@ -433,9 +433,11 @@ pub(crate) async fn fake_vec_handler(
 /// not equal or contain any item's own plaintext id — proving the cursor is
 /// not a bare re-encoding of a visible identifier.
 fn assert_cursor_is_opaque(cursor: &str, item_ids: &[uuid::Uuid]) {
+    // Two opaque wire formats exist: the 22-char UUIDv7 `Cursor` and the
+    // 34-char sort-aware `SearchCursor` that sorted lists (tasks) emit.
     assert!(
-        Cursor::decode(cursor).is_some(),
-        "next_cursor {cursor:?} does not decode as a valid base64url-nopad Cursor"
+        Cursor::decode(cursor).is_some() || SearchCursor::decode(cursor).is_some(),
+        "next_cursor {cursor:?} does not decode as a valid base64url-nopad Cursor or SearchCursor"
     );
     for id in item_ids {
         let plain = id.to_string();
