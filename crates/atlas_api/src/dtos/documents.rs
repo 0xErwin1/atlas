@@ -715,6 +715,13 @@ pub struct CommentDraftDto {
 ///
 /// Flattens `ProblemDetails` fields alongside conflict-specific fields so the
 /// client receives a single `application/problem+json` body.
+//
+// The fields are mirrored by hand rather than embedded with `serde(flatten)`:
+// an embed keeps the wire bytes identical but turns the OpenAPI schema from a
+// flat object into an `allOf` composition, and the doc comment above is part
+// of that schema's description, so both stay as they were until the schema
+// is allowed to change. `problem_details_key_mirror_guard` keeps the mirror
+// in sync with `ProblemDetails`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ConflictProblemDto {
@@ -762,5 +769,56 @@ impl ConflictProblemDto {
             current_seq,
             base_to_current_patch,
         }
+    }
+}
+
+#[cfg(test)]
+mod problem_mirror_tests {
+    use super::*;
+    use crate::problem::ProblemDetails;
+
+    fn json_keys(value: &serde_json::Value) -> std::collections::BTreeSet<String> {
+        value
+            .as_object()
+            .expect("value must serialize to a JSON object")
+            .keys()
+            .cloned()
+            .collect()
+    }
+
+    /// `ConflictProblemDto` mirrors `ProblemDetails`'s fields by hand rather
+    /// than embedding it, because embedding would turn the OpenAPI schema
+    /// for this body from a flat object into an `allOf` composition. This
+    /// guard fails the moment `ProblemDetails` gains a field that has not
+    /// been added here too, since a silent drift would otherwise only show
+    /// up as a missing key on the wire.
+    #[test]
+    fn problem_details_key_mirror_guard() {
+        // Built as a full struct literal (not via `ProblemDetails::new`) so
+        // that adding a field to `ProblemDetails` fails this file to
+        // compile until the new field is also listed here.
+        let problem = ProblemDetails {
+            r#type: "urn:atlas:error:example".into(),
+            title: "Example".into(),
+            status: 500,
+            detail: Some("detail".into()),
+            instance: Some("/example".into()),
+            request_id: Some("req-1".into()),
+            hint: Some("hint".into()),
+        };
+        let problem_keys =
+            json_keys(&serde_json::to_value(&problem).expect("problem must serialize"));
+
+        let mut conflict = ConflictProblemDto::new(uuid::Uuid::nil(), 1, "patch".into());
+        conflict.instance = Some("/example".into());
+        conflict.request_id = Some("req-1".into());
+        let conflict_keys =
+            json_keys(&serde_json::to_value(&conflict).expect("conflict dto must serialize"));
+
+        let missing: Vec<&String> = problem_keys.difference(&conflict_keys).collect();
+        assert!(
+            missing.is_empty(),
+            "ConflictProblemDto is missing ProblemDetails keys: {missing:?}"
+        );
     }
 }

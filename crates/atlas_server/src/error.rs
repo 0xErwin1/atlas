@@ -5,6 +5,7 @@ use axum::{
     http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
+use serde::Serialize;
 
 /// Component-conflict codes for Acta resources, relocated from `atlas_domain`
 /// (S2e). Kept beside `ApiError` since it is the sole consumer of these codes.
@@ -147,13 +148,7 @@ impl IntoResponse for ApiError {
                     c.current_seq,
                     c.base_to_current_patch,
                 );
-                let bytes = serde_json::to_vec(&body).unwrap_or_else(|_| b"{}".to_vec());
-                let mut response = (StatusCode::CONFLICT, bytes).into_response();
-                response.headers_mut().insert(
-                    header::CONTENT_TYPE,
-                    HeaderValue::from_static("application/problem+json"),
-                );
-                return response;
+                return render_problem(StatusCode::CONFLICT, body);
             }
             ApiError::TooManyRequests { retry_after_secs } => {
                 let problem = ProblemDetails::new(
@@ -165,12 +160,7 @@ impl IntoResponse for ApiError {
                     "You are sending requests too quickly. Wait for the Retry-After interval before retrying.",
                 );
 
-                let body = serde_json::to_vec(&problem).unwrap_or_else(|_| b"{}".to_vec());
-                let mut response = (StatusCode::TOO_MANY_REQUESTS, body).into_response();
-                response.headers_mut().insert(
-                    header::CONTENT_TYPE,
-                    HeaderValue::from_static("application/problem+json"),
-                );
+                let mut response = render_problem(StatusCode::TOO_MANY_REQUESTS, problem);
                 if let Ok(value) = HeaderValue::from_str(&retry_after_secs.to_string()) {
                     response.headers_mut().insert(header::RETRY_AFTER, value);
                 }
@@ -205,7 +195,7 @@ impl IntoResponse for ApiError {
             ApiError::Domain(domain_err) => return domain_error_response(domain_err),
         };
 
-        build_problem_response(status, problem)
+        render_problem(status, problem)
     }
 }
 
@@ -317,15 +307,165 @@ fn domain_error_response(err: DomainError) -> Response {
         },
     };
 
-    build_problem_response(status, problem)
+    render_problem(status, problem)
 }
 
-fn build_problem_response(status: StatusCode, problem: ProblemDetails) -> Response {
-    let body = serde_json::to_vec(&problem).unwrap_or_else(|_| b"{}".to_vec());
-    let mut response = (status, body).into_response();
+/// Serializes `body` and wraps it in a `StatusCode` response carrying
+/// `content-type: application/problem+json` — the single site every
+/// RFC 9457 error variant renders through, including variants (like
+/// `ConflictProblemDto`) that extend `ProblemDetails` with extra fields
+/// rather than using it directly (D-9457).
+fn render_problem<T: Serialize>(status: StatusCode, body: T) -> Response {
+    let bytes = serde_json::to_vec(&body).unwrap_or_else(|_| b"{}".to_vec());
+    let mut response = (status, bytes).into_response();
     response.headers_mut().insert(
         header::CONTENT_TYPE,
         HeaderValue::from_static("application/problem+json"),
     );
     response
+}
+
+/// T1.1/T1.5/T1.6/T1.7 (`v2-e3-s3` PR1, D-9457): golden-body regression
+/// coverage for the RFC 9457 fold.
+///
+/// `RevisionConflict` and `TooManyRequests` are the only two `ApiError`
+/// variants that hand-build their JSON body instead of routing through the
+/// shared `ProblemDetails` render path (see the module doc). The fold in
+/// this PR must not change one byte of either variant's wire body: the
+/// fixtures below were captured from this file's pre-fold rendering (a
+/// `serde_json::to_vec` + manual `content-type` header per variant) and are
+/// asserted byte-identical after the fold lands.
+#[cfg(test)]
+mod golden_body_tests {
+    use super::*;
+    use atlas_core::error::RevisionConflict;
+
+    fn sample_revision_conflict() -> ApiError {
+        ApiError::RevisionConflict(RevisionConflict {
+            resource_id: uuid::Uuid::nil(),
+            current_revision_id: uuid::Uuid::parse_str("0195f7b4-1234-7abc-8def-0123456789ab")
+                .expect("valid uuid literal"),
+            current_seq: 42,
+            base_to_current_patch: "--- a\n+++ b\n@@ -1 +1 @@\n-old\n+new\n".to_string(),
+        })
+    }
+
+    fn sample_too_many_requests() -> ApiError {
+        ApiError::TooManyRequests {
+            retry_after_secs: 17,
+        }
+    }
+
+    /// Captured verbatim (T1.1) from the pre-fold hand-built render path at
+    /// `error.rs:144-157`, before any fold code touched this file.
+    const REVISION_CONFLICT_GOLDEN: &str = r#"{"type":"urn:atlas:error:revision-conflict","title":"Revision Conflict","status":409,"detail":"The base_revision_id does not match the current revision. Apply base_to_current_patch and retry.","hint":"Apply the provided patch to your local content, then retry with the new revision id.","current_revision_id":"0195f7b4-1234-7abc-8def-0123456789ab","current_seq":42,"base_to_current_patch":"--- a\n+++ b\n@@ -1 +1 @@\n-old\n+new\n"}"#;
+
+    /// Captured verbatim (T1.1) from the pre-fold hand-built render path at
+    /// `error.rs:158-178`, before any fold code touched this file.
+    const TOO_MANY_REQUESTS_GOLDEN: &str = r#"{"type":"urn:atlas:error:rate-limited","title":"Too Many Requests","status":429,"hint":"You are sending requests too quickly. Wait for the Retry-After interval before retrying."}"#;
+
+    async fn render_body(err: ApiError) -> (StatusCode, Option<String>, Option<String>, String) {
+        let response = err.into_response();
+        let status = response.status();
+        let content_type = response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned);
+        let retry_after = response
+            .headers()
+            .get(header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned);
+        let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .expect("response body must be readable");
+        let body = String::from_utf8(bytes.to_vec()).expect("response body must be valid utf-8");
+        (status, content_type, retry_after, body)
+    }
+
+    #[tokio::test]
+    async fn revision_conflict_body_is_byte_identical_to_golden() {
+        let (status, content_type, _retry_after, body) =
+            render_body(sample_revision_conflict()).await;
+
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(content_type.as_deref(), Some("application/problem+json"));
+        assert_eq!(
+            body, REVISION_CONFLICT_GOLDEN,
+            "RevisionConflict's rendered body drifted from the pre-fold golden fixture"
+        );
+    }
+
+    #[tokio::test]
+    async fn too_many_requests_body_and_retry_after_are_byte_identical_to_golden() {
+        let (status, content_type, retry_after, body) =
+            render_body(sample_too_many_requests()).await;
+
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(content_type.as_deref(), Some("application/problem+json"));
+        assert_eq!(retry_after.as_deref(), Some("17"));
+        assert_eq!(
+            body, TOO_MANY_REQUESTS_GOLDEN,
+            "TooManyRequests's rendered body drifted from the pre-fold golden fixture"
+        );
+    }
+
+    /// T1.1's own regression proof: the golden comparison must be capable of
+    /// failing. Moving/renaming a field in the fixture's copy (never in the
+    /// handler) must turn the comparison RED — proving the assertion is not
+    /// passing vacuously by construction.
+    #[tokio::test]
+    async fn golden_comparison_fails_when_a_field_is_renamed() {
+        let (_status, _content_type, _retry_after, body) =
+            render_body(sample_revision_conflict()).await;
+
+        let mutated_golden = REVISION_CONFLICT_GOLDEN.replacen(
+            "\"current_revision_id\"",
+            "\"current_revision_id_renamed\"",
+            1,
+        );
+        assert_ne!(
+            mutated_golden, REVISION_CONFLICT_GOLDEN,
+            "the mutation helper must actually change the fixture copy"
+        );
+        assert_ne!(
+            body, mutated_golden,
+            "a renamed field in the fixture must make the byte-identity check fail; \
+             it did not, so this test does not actually prove anything"
+        );
+    }
+
+    /// T1.6/T1.7: every `ApiError` variant OTHER than `RevisionConflict` and
+    /// `TooManyRequests` must render byte-unchanged after the fold. These
+    /// already went through `ProblemDetails`/`render_problem` before
+    /// this PR, so the fold (T1.2-T1.4) must not touch their construction at
+    /// all — this test pins their bodies too, independent of the two folded
+    /// variants above.
+    #[tokio::test]
+    async fn other_variants_render_unchanged_by_the_fold() {
+        let (status, content_type, _retry_after, body) = render_body(ApiError::Unauthorized).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_eq!(content_type.as_deref(), Some("application/problem+json"));
+        assert_eq!(
+            body,
+            r#"{"type":"urn:atlas:error:unauthorized","title":"Unauthorized","status":401,"hint":"Provide a valid Bearer token or session cookie. Login at POST /api/auth/login."}"#
+        );
+
+        let (status, content_type, _retry_after, body) = render_body(ApiError::Conflict).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(content_type.as_deref(), Some("application/problem+json"));
+        assert_eq!(
+            body,
+            r#"{"type":"urn:atlas:error:revision-conflict","title":"Revision Conflict","status":409}"#
+        );
+
+        let (status, content_type, _retry_after, body) = render_body(ApiError::NotFound).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(content_type.as_deref(), Some("application/problem+json"));
+        assert_eq!(
+            body,
+            r#"{"type":"urn:atlas:error:not-found","title":"Not Found","status":404,"hint":"Check the identifier — it may not exist or you may not have access."}"#
+        );
+    }
 }
