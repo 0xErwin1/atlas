@@ -7,6 +7,8 @@ mod documents;
 #[allow(unreachable_pub)]
 mod grant_diagnostics;
 #[allow(unreachable_pub)]
+mod idempotency;
+#[allow(unreachable_pub)]
 mod identity;
 #[allow(unreachable_pub)]
 mod integration_config;
@@ -25,6 +27,11 @@ mod workspace_core;
 pub use identity::{
     ActivationTokenRepo, ApiKey, ApiKeyRepo, NewActivationToken, NewApiKey, NewSession, NewUser,
     PgUiStateRepo, Session, SessionRepo, UiStateRepo, User, UserRepo, UserUiState,
+};
+
+pub use idempotency::{
+    CLEANUP_BATCH_LIMIT, CompleteOutcome, IN_FLIGHT_TTL, IdempotencyScope, InsertOutcome,
+    PgIdempotencyRepo, StoredResponse,
 };
 
 pub use attachment_store::DiskAttachmentStore;
