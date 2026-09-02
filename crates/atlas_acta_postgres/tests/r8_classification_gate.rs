@@ -122,7 +122,7 @@ const CLASSIFIED_CUSTOS_TABLES: &[&str] = &[
 /// `platform.ui_state` by PR9 (design §D4) — it is genuinely platform-scoped
 /// (per-user UI preferences, no workspace or Acta resource reference) and is
 /// deliberately absent from `CLASSIFIED_ACTA_TABLES`.
-const CLASSIFIED_PLATFORM_TABLES: &[&str] = &["ui_state"];
+const CLASSIFIED_PLATFORM_TABLES: &[&str] = &["ui_state", "idempotency_keys"];
 
 /// Framework bookkeeping tables, owned by no product.
 const CLASSIFIED_HISTORICAL_TABLES: &[&str] = &["seaql_migrations"];
