@@ -601,11 +601,13 @@ async fn reference_batch_rejects_oversized_envelopes_before_processing_items() {
         .await
         .expect("create target");
 
-    let endpoint = format!(
-        "{}/api/workspaces/{}/tasks/{}/references/batch",
+    let endpoint = support::path::api_url(
         server.base_url(),
-        ws.slug,
-        source.readable_id
+        "acta",
+        &format!(
+            "/workspaces/{}/tasks/{}/references/batch",
+            ws.slug, source.readable_id
+        ),
     );
     let token = client.token().expect("session token");
     let valid_reference = serde_json::json!({
@@ -738,11 +740,13 @@ async fn reference_batch_preserves_input_order_failures_and_current_target_title
         .expect("create document target");
 
     let response = reqwest::Client::new()
-        .post(format!(
-            "{}/api/workspaces/{}/tasks/{}/references/batch",
+        .post(support::path::api_url(
             server.base_url(),
-            ws.slug,
-            source.readable_id
+            "acta",
+            &format!(
+                "/workspaces/{}/tasks/{}/references/batch",
+                ws.slug, source.readable_id
+            ),
         ))
         .bearer_auth(client.token().expect("session token"))
         .json(&serde_json::json!({
@@ -1002,12 +1006,7 @@ async fn reference_batch_conceals_inaccessible_and_cross_tenant_targets() {
         .expect("create foreign document");
 
     let response = reqwest::Client::new()
-        .post(format!(
-            "{}/api/workspaces/{}/tasks/{}/references/batch",
-            server.base_url(),
-            ws.slug,
-            source.readable_id
-        ))
+        .post(support::path::api_url(server.base_url(), "acta", &format!("/workspaces/{}/tasks/{}/references/batch", ws.slug, source.readable_id)))
         .bearer_auth(editor.token().expect("editor token"))
         .json(&serde_json::json!({
             "references": [
@@ -1101,12 +1100,7 @@ async fn reference_batch_conceals_inaccessible_and_cross_tenant_targets() {
     .await
     .expect("grant viewer source-board access");
     let viewer_response = reqwest::Client::new()
-        .post(format!(
-            "{}/api/workspaces/{}/tasks/{}/references/batch",
-            server.base_url(),
-            ws.slug,
-            source.readable_id
-        ))
+        .post(support::path::api_url(server.base_url(), "acta", &format!("/workspaces/{}/tasks/{}/references/batch", ws.slug, source.readable_id)))
         .bearer_auth(viewer.token().expect("viewer token"))
         .json(&serde_json::json!({
             "references": [{ "kind": "relates", "target_task_readable_id": source.readable_id, "target_document_id": null }]

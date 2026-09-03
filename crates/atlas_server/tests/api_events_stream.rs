@@ -62,7 +62,7 @@ use uuid::Uuid;
 // ---------------------------------------------------------------------------
 
 fn events_url(base: &str, ws_slug: &str) -> String {
-    format!("{base}/api/workspaces/{ws_slug}/events")
+    support::path::api_url(base, "acta", &format!("/workspaces/{ws_slug}/events"))
 }
 
 /// A `task.created`-shaped envelope carrying `task_id`, used verbatim as SSE data.

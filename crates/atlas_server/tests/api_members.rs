@@ -1041,11 +1041,10 @@ async fn patch_malformed_json_returns_400() {
 
     let response = owner2
         .http_client()
-        .patch(format!(
-            "{}/api/workspaces/{}/members/{}",
+        .patch(support::path::api_url(
             server.base_url(),
-            ws.slug,
-            target_user.id.0
+            "acta",
+            &format!("/workspaces/{}/members/{}", ws.slug, target_user.id.0),
         ))
         .bearer_auth(owner2.token().unwrap_or(""))
         .header("x-atlas-csrf", "1")

@@ -34,7 +34,7 @@ use uuid::Uuid;
 // ---------------------------------------------------------------------------
 
 fn search_url(base: &str, ws: &str, qs: &str) -> String {
-    format!("{base}/api/workspaces/{ws}/search?{qs}")
+    support::path::api_url(base, "acta", &format!("/workspaces/{ws}/search?{qs}"))
 }
 
 async fn get_search(

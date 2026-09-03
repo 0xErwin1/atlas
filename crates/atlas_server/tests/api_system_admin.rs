@@ -63,10 +63,10 @@ async fn set_system_admin(
 ) -> Result<UserDto, atlas_client::ClientError> {
     let response = client
         .http_client()
-        .post(format!(
-            "{}/api/users/{}/system-admin",
+        .post(support::path::api_url(
             client.base_url(),
-            user_id
+            "custos",
+            &format!("/users/{}/system-admin", user_id),
         ))
         .bearer_auth(client.token().unwrap_or(""))
         .header("x-atlas-csrf", "1")

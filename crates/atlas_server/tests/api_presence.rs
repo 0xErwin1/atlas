@@ -41,11 +41,15 @@ use atlas_server::persistence::repos::{PgProjectRepo, ProjectRepo};
 // ---------------------------------------------------------------------------
 
 fn presence_url(base: &str, ws_slug: &str, board_id: &uuid::Uuid) -> String {
-    format!("{base}/api/workspaces/{ws_slug}/boards/{board_id}/presence")
+    support::path::api_url(
+        base,
+        "acta",
+        &format!("/workspaces/{ws_slug}/boards/{board_id}/presence"),
+    )
 }
 
 fn events_url(base: &str, ws_slug: &str) -> String {
-    format!("{base}/api/workspaces/{ws_slug}/events")
+    support::path::api_url(base, "acta", &format!("/workspaces/{ws_slug}/events"))
 }
 
 async fn seed_project_and_board(

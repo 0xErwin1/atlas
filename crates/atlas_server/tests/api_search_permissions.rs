@@ -60,7 +60,7 @@ use uuid::Uuid;
 // ---------------------------------------------------------------------------
 
 fn search_url(base: &str, ws: &str, q: &str) -> String {
-    format!("{base}/api/workspaces/{ws}/search?q={q}")
+    support::path::api_url(base, "acta", &format!("/workspaces/{ws}/search?q={q}"))
 }
 
 async fn get_search_with_token(
@@ -949,7 +949,8 @@ async fn search_page(
 ) -> Page<SearchHitDto> {
     // Query values are safe to inline: `q` is an alphanumeric token, `limit` is a
     // number, and the cursor is base64url-nopad (no reserved characters).
-    let mut url = format!("{base}/api/workspaces/{ws_slug}/search?q={q}");
+    let mut url =
+        support::path::api_url(base, "acta", &format!("/workspaces/{ws_slug}/search?q={q}"));
     if let Some(l) = limit {
         url.push_str(&format!("&limit={l}"));
     }

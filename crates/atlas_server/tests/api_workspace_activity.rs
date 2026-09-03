@@ -1131,10 +1131,10 @@ async fn workspace_activity_api_key_without_tasks_read_is_forbidden() {
 
     let http = reqwest::Client::new();
     let resp = http
-        .get(format!(
-            "{}/api/workspaces/{}/activity",
+        .get(support::path::api_url(
             server.base_url(),
-            ws.slug
+            "acta",
+            &format!("/workspaces/{}/activity", ws.slug),
         ))
         .bearer_auth(&key_created.secret)
         .send()

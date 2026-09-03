@@ -241,7 +241,11 @@ async fn project_purge_revokes_exactly_the_transitively_affected_grants() {
         .expect("soft delete project");
 
     let response = reqwest::Client::new()
-        .post(format!("{}/api/admin/trash/purge", server.base_url()))
+        .post(support::path::api_url(
+            server.base_url(),
+            "acta",
+            "/admin/trash/purge",
+        ))
         .bearer_auth(admin.token().expect("admin token"))
         .json(&serde_json::json!({
             "kind": "project",

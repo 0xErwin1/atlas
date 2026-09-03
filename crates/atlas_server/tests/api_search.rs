@@ -30,9 +30,9 @@ use uuid::Uuid;
 
 fn search_url(base: &str, ws: &str, qs: &str) -> String {
     if qs.is_empty() {
-        format!("{base}/api/workspaces/{ws}/search")
+        support::path::api_url(base, "acta", &format!("/workspaces/{ws}/search"))
     } else {
-        format!("{base}/api/workspaces/{ws}/search?{qs}")
+        support::path::api_url(base, "acta", &format!("/workspaces/{ws}/search?{qs}"))
     }
 }
 

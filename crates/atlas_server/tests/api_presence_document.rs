@@ -37,11 +37,15 @@ use atlas_api::dtos::{CreateProjectRequest, documents::CreateDocumentRequest};
 // ---------------------------------------------------------------------------
 
 fn presence_url(base: &str, ws_slug: &str, slug: &str) -> String {
-    format!("{base}/api/workspaces/{ws_slug}/documents/{slug}/presence")
+    support::path::api_url(
+        base,
+        "acta",
+        &format!("/workspaces/{ws_slug}/documents/{slug}/presence"),
+    )
 }
 
 fn events_url(base: &str, ws_slug: &str) -> String {
-    format!("{base}/api/workspaces/{ws_slug}/events")
+    support::path::api_url(base, "acta", &format!("/workspaces/{ws_slug}/events"))
 }
 
 fn project_req(slug: &str, prefix: &str, visibility: Option<&str>) -> CreateProjectRequest {

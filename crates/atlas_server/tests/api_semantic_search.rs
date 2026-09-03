@@ -57,9 +57,13 @@ impl EmbeddingProvider for RecordingEmbeddingProvider {
 
 fn semantic_search_url(base: &str, ws: &str, qs: &str) -> String {
     if qs.is_empty() {
-        format!("{base}/api/workspaces/{ws}/semantic-search")
+        support::path::api_url(base, "acta", &format!("/workspaces/{ws}/semantic-search"))
     } else {
-        format!("{base}/api/workspaces/{ws}/semantic-search?{qs}")
+        support::path::api_url(
+            base,
+            "acta",
+            &format!("/workspaces/{ws}/semantic-search?{qs}"),
+        )
     }
 }
 
@@ -254,10 +258,10 @@ async fn semantic_search_returns_compact_page_without_lexical_route_change() {
     );
 
     let lexical_resp = http
-        .get(format!(
-            "{}/api/workspaces/{}/search?q=semantic%20incident",
+        .get(support::path::api_url(
             server.base_url(),
-            ws.slug
+            "acta",
+            &format!("/workspaces/{}/search?q=semantic%20incident", ws.slug),
         ))
         .bearer_auth(token)
         .send()
@@ -269,7 +273,11 @@ async fn semantic_search_returns_compact_page_without_lexical_route_change() {
 }
 
 fn reindex_url(base: &str, ws: &str) -> String {
-    format!("{base}/api/workspaces/{ws}/semantic-search/reindex")
+    support::path::api_url(
+        base,
+        "acta",
+        &format!("/workspaces/{ws}/semantic-search/reindex"),
+    )
 }
 
 /// Seeds one document and one task, then empties the queue the seeding filled.

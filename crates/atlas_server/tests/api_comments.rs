@@ -764,10 +764,10 @@ async fn document_backlinks_expose_comment_source_without_attachment_links() {
     ));
 
     let search: Value = reqwest::Client::new()
-        .get(format!(
-            "{}/api/workspaces/{}/search?q={attachment_id}",
+        .get(support::path::api_url(
             server.base_url(),
-            ws.slug
+            "acta",
+            &format!("/workspaces/{}/search?q={attachment_id}", ws.slug),
         ))
         .bearer_auth(client.token().expect("session token"))
         .send()
@@ -943,11 +943,13 @@ async fn full_feed_is_opt_in_and_default_comment_page_is_unchanged() {
     assert_eq!(default_page.items[0].body, "Comment with no links");
 
     let response = reqwest::Client::new()
-        .get(format!(
-            "{}/api/workspaces/{}/tasks/{}/comments?feed=full",
+        .get(support::path::api_url(
             server.base_url(),
-            ws.slug,
-            readable_id
+            "acta",
+            &format!(
+                "/workspaces/{}/tasks/{}/comments?feed=full",
+                ws.slug, readable_id
+            ),
         ))
         .bearer_auth(client.token().expect("session token"))
         .send()
@@ -1129,15 +1131,18 @@ async fn full_feeds_redact_deleted_targets_for_human_and_api_key_viewers() {
 
     for token in [owner.token().expect("owner token"), api_key.secret.as_str()] {
         for url in [
-            format!(
-                "{}/api/workspaces/{}/tasks/{task_id}/comments?feed=full",
+            support::path::api_url(
                 server.base_url(),
-                ws.slug
+                "acta",
+                &format!("/workspaces/{}/tasks/{task_id}/comments?feed=full", ws.slug),
             ),
-            format!(
-                "{}/api/workspaces/{}/documents/{document_slug}/comments?feed=full",
+            support::path::api_url(
                 server.base_url(),
-                ws.slug
+                "acta",
+                &format!(
+                    "/workspaces/{}/documents/{document_slug}/comments?feed=full",
+                    ws.slug
+                ),
             ),
         ] {
             let page: Value = reqwest::Client::new()
@@ -1169,15 +1174,18 @@ async fn full_feeds_redact_deleted_targets_for_human_and_api_key_viewers() {
         .expect("delete linked targets");
 
     for url in [
-        format!(
-            "{}/api/workspaces/{}/tasks/{task_id}/comments?feed=full",
+        support::path::api_url(
             server.base_url(),
-            ws.slug
+            "acta",
+            &format!("/workspaces/{}/tasks/{task_id}/comments?feed=full", ws.slug),
         ),
-        format!(
-            "{}/api/workspaces/{}/documents/{document_slug}/comments?feed=full",
+        support::path::api_url(
             server.base_url(),
-            ws.slug
+            "acta",
+            &format!(
+                "/workspaces/{}/documents/{document_slug}/comments?feed=full",
+                ws.slug
+            ),
         ),
     ] {
         let page: Value = reqwest::Client::new()
@@ -1294,15 +1302,18 @@ async fn full_feeds_retain_deleted_comment_events_without_deleted_comment_data_o
         .expect("disable deleted-comment actor");
 
     for url in [
-        format!(
-            "{}/api/workspaces/{}/tasks/{task_id}/comments?feed=full",
+        support::path::api_url(
             server.base_url(),
-            ws.slug
+            "acta",
+            &format!("/workspaces/{}/tasks/{task_id}/comments?feed=full", ws.slug),
         ),
-        format!(
-            "{}/api/workspaces/{}/documents/{document_slug}/comments?feed=full",
+        support::path::api_url(
             server.base_url(),
-            ws.slug
+            "acta",
+            &format!(
+                "/workspaces/{}/documents/{document_slug}/comments?feed=full",
+                ws.slug
+            ),
         ),
     ] {
         let page: Value = reqwest::Client::new()
@@ -1353,15 +1364,21 @@ async fn full_feeds_fail_closed_with_the_internal_problem_for_invalid_cursors() 
     let document_slug = document.slug.expect("document slug");
 
     for url in [
-        format!(
-            "{}/api/workspaces/{}/tasks/{task_id}/comments?feed=full&cursor=not-a-feed-cursor",
+        support::path::api_url(
             server.base_url(),
-            ws.slug
+            "acta",
+            &format!(
+                "/workspaces/{}/tasks/{task_id}/comments?feed=full&cursor=not-a-feed-cursor",
+                ws.slug
+            ),
         ),
-        format!(
-            "{}/api/workspaces/{}/documents/{document_slug}/comments?feed=full&cursor=not-a-feed-cursor",
+        support::path::api_url(
             server.base_url(),
-            ws.slug
+            "acta",
+            &format!(
+                "/workspaces/{}/documents/{document_slug}/comments?feed=full&cursor=not-a-feed-cursor",
+                ws.slug
+            ),
         ),
     ] {
         let response = reqwest::Client::new()
@@ -1461,15 +1478,18 @@ async fn full_feeds_recheck_target_access_after_the_link_is_written() {
         .expect("make projects visible");
 
     let urls = [
-        format!(
-            "{}/api/workspaces/{}/tasks/{task_id}/comments?feed=full",
+        support::path::api_url(
             server.base_url(),
-            ws.slug
+            "acta",
+            &format!("/workspaces/{}/tasks/{task_id}/comments?feed=full", ws.slug),
         ),
-        format!(
-            "{}/api/workspaces/{}/documents/{source_slug}/comments?feed=full",
+        support::path::api_url(
             server.base_url(),
-            ws.slug
+            "acta",
+            &format!(
+                "/workspaces/{}/documents/{source_slug}/comments?feed=full",
+                ws.slug
+            ),
         ),
     ];
     for url in &urls {
@@ -1591,19 +1611,25 @@ async fn full_feeds_paginate_merged_comment_and_event_boundaries_without_gaps_or
     }
     for (url, first, second) in [
         (
-            format!(
-                "{}/api/workspaces/{}/tasks/{task_id}/comments?feed=full&limit=2",
+            support::path::api_url(
                 server.base_url(),
-                ws.slug
+                "acta",
+                &format!(
+                    "/workspaces/{}/tasks/{task_id}/comments?feed=full&limit=2",
+                    ws.slug
+                ),
             ),
             task_comments[0].id,
             task_comments[1].id,
         ),
         (
-            format!(
-                "{}/api/workspaces/{}/documents/{document_slug}/comments?feed=full&limit=2",
+            support::path::api_url(
                 server.base_url(),
-                ws.slug
+                "acta",
+                &format!(
+                    "/workspaces/{}/documents/{document_slug}/comments?feed=full&limit=2",
+                    ws.slug
+                ),
             ),
             document_comments[0].id,
             document_comments[1].id,
@@ -1651,10 +1677,10 @@ async fn disabled_or_revoked_principals_are_rejected_before_full_feed_projection
     let (owner, ws, user) =
         support::login_user_with_workspace(&server, &db, "comment-feed-rejected-principals").await;
     let task_id = seed_task(&owner, &ws.slug, "comment-feed-rejected-proj", "CFR").await;
-    let url = format!(
-        "{}/api/workspaces/{}/tasks/{task_id}/comments?feed=full",
+    let url = support::path::api_url(
         server.base_url(),
-        ws.slug
+        "acta",
+        &format!("/workspaces/{}/tasks/{task_id}/comments?feed=full", ws.slug),
     );
 
     db.conn()

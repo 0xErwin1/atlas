@@ -474,10 +474,10 @@ async fn set_system_admin_self_is_blocked() {
 
     let response = root
         .http_client()
-        .post(format!(
-            "{}/api/users/{}/system-admin",
+        .post(support::path::api_url(
             root.base_url(),
-            my_id,
+            "custos",
+            &format!("/users/{}/system-admin", my_id),
         ))
         .bearer_auth(root.token().unwrap_or(""))
         .header("x-atlas-csrf", "1")

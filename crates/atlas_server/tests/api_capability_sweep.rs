@@ -64,7 +64,7 @@ use atlas_server::{
     crypto::WebhookCrypto,
     persistence::repos::{ApiKeyRepo, NewApiKey},
     reg5::{StorageBackend, reg5_component_entries},
-    router_audit::{capability_from_action_id, mounted_path},
+    router_audit::{V1_NAMESPACE, capability_from_action_id, mounted_path},
 };
 use support::{TestDb, TestServer, login_user_with_workspace};
 
@@ -847,9 +847,12 @@ async fn invoke(
                 token,
                 pass,
                 "POST",
-                &format!(
-                    "/api/workspaces/{ws}/tasks/{}/references/batch",
-                    fx.task_readable_id
+                &support::path::api_path(
+                    "acta",
+                    &format!(
+                        "/workspaces/{ws}/tasks/{}/references/batch",
+                        fx.task_readable_id
+                    ),
                 ),
             )
             .await
@@ -994,9 +997,12 @@ async fn invoke(
                 token,
                 pass,
                 "POST",
-                &format!(
-                    "/api/workspaces/{ws}/tasks/{}/comment-drafts",
-                    fx.task_readable_id
+                &support::path::api_path(
+                    "acta",
+                    &format!(
+                        "/workspaces/{ws}/tasks/{}/comment-drafts",
+                        fx.task_readable_id
+                    ),
                 ),
             )
             .await
@@ -1008,9 +1014,12 @@ async fn invoke(
                 token,
                 pass,
                 "DELETE",
-                &format!(
-                    "/api/workspaces/{ws}/tasks/{}/comment-drafts/{nil}",
-                    fx.task_readable_id
+                &support::path::api_path(
+                    "acta",
+                    &format!(
+                        "/workspaces/{ws}/tasks/{}/comment-drafts/{nil}",
+                        fx.task_readable_id
+                    ),
                 ),
             )
             .await
@@ -1022,9 +1031,12 @@ async fn invoke(
                 token,
                 pass,
                 "POST",
-                &format!(
-                    "/api/workspaces/{ws}/tasks/{}/comment-drafts/{nil}/attachments",
-                    fx.task_readable_id
+                &support::path::api_path(
+                    "acta",
+                    &format!(
+                        "/workspaces/{ws}/tasks/{}/comment-drafts/{nil}/attachments",
+                        fx.task_readable_id
+                    ),
                 ),
             )
             .await
@@ -1088,7 +1100,10 @@ async fn invoke(
                 token,
                 pass,
                 "GET",
-                &format!("/api/workspaces/{ws}/documents/{}/compact", fx.document_ref),
+                &support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{ws}/documents/{}/compact", fx.document_ref),
+                ),
             )
             .await
         }
@@ -1099,9 +1114,12 @@ async fn invoke(
                 token,
                 pass,
                 "GET",
-                &format!(
-                    "/api/workspaces/{ws}/documents/{}/content/range",
-                    fx.document_ref
+                &support::path::api_path(
+                    "acta",
+                    &format!(
+                        "/workspaces/{ws}/documents/{}/content/range",
+                        fx.document_ref
+                    ),
                 ),
             )
             .await
@@ -1113,9 +1131,12 @@ async fn invoke(
                 token,
                 pass,
                 "POST",
-                &format!(
-                    "/api/workspaces/{ws}/documents/{}/content/search",
-                    fx.document_ref
+                &support::path::api_path(
+                    "acta",
+                    &format!(
+                        "/workspaces/{ws}/documents/{}/content/search",
+                        fx.document_ref
+                    ),
                 ),
             )
             .await
@@ -1131,9 +1152,12 @@ async fn invoke(
                 token,
                 pass,
                 "PATCH",
-                &format!(
-                    "/api/workspaces/{ws}/documents/{}/content/range",
-                    fx.document_ref
+                &support::path::api_path(
+                    "acta",
+                    &format!(
+                        "/workspaces/{ws}/documents/{}/content/range",
+                        fx.document_ref
+                    ),
                 ),
             )
             .await
@@ -1216,9 +1240,12 @@ async fn invoke(
                 token,
                 pass,
                 "POST",
-                &format!(
-                    "/api/workspaces/{ws}/documents/{}/comment-drafts",
-                    fx.document_ref
+                &support::path::api_path(
+                    "acta",
+                    &format!(
+                        "/workspaces/{ws}/documents/{}/comment-drafts",
+                        fx.document_ref
+                    ),
                 ),
             )
             .await
@@ -1230,9 +1257,12 @@ async fn invoke(
                 token,
                 pass,
                 "DELETE",
-                &format!(
-                    "/api/workspaces/{ws}/documents/{}/comment-drafts/{nil}",
-                    fx.document_ref
+                &support::path::api_path(
+                    "acta",
+                    &format!(
+                        "/workspaces/{ws}/documents/{}/comment-drafts/{nil}",
+                        fx.document_ref
+                    ),
                 ),
             )
             .await
@@ -1255,9 +1285,12 @@ async fn invoke(
                 token,
                 pass,
                 "POST",
-                &format!(
-                    "/api/workspaces/{ws}/documents/{}/comment-drafts/{nil}/attachments",
-                    fx.document_ref
+                &support::path::api_path(
+                    "acta",
+                    &format!(
+                        "/workspaces/{ws}/documents/{}/comment-drafts/{nil}/attachments",
+                        fx.document_ref
+                    ),
                 ),
             )
             .await
@@ -1292,9 +1325,9 @@ async fn invoke(
                 token,
                 pass,
                 "POST",
-                &format!(
-                    "/api/workspaces/{ws}/documents/{}/presence",
-                    fx.document_ref
+                &support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{ws}/documents/{}/presence", fx.document_ref),
                 ),
             )
             .await
@@ -1306,9 +1339,9 @@ async fn invoke(
                 token,
                 pass,
                 "DELETE",
-                &format!(
-                    "/api/workspaces/{ws}/documents/{}/presence",
-                    fx.document_ref
+                &support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{ws}/documents/{}/presence", fx.document_ref),
                 ),
             )
             .await
@@ -1320,7 +1353,10 @@ async fn invoke(
                 token,
                 pass,
                 "POST",
-                &format!("/api/workspaces/{ws}/documents/moves/batch"),
+                &support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{ws}/documents/moves/batch"),
+                ),
             )
             .await
         }
@@ -1388,7 +1424,10 @@ async fn invoke(
                 token,
                 pass,
                 "POST",
-                &format!("/api/workspaces/{ws}/boards/{}/presence", fx.board_id),
+                &support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{ws}/boards/{}/presence", fx.board_id),
+                ),
             )
             .await
         }
@@ -1399,7 +1438,10 @@ async fn invoke(
                 token,
                 pass,
                 "DELETE",
-                &format!("/api/workspaces/{ws}/boards/{}/presence", fx.board_id),
+                &support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{ws}/boards/{}/presence", fx.board_id),
+                ),
             )
             .await
         }
@@ -1488,7 +1530,7 @@ async fn invoke(
                 token,
                 pass,
                 "POST",
-                &format!("/api/workspaces/{ws}/webhooks"),
+                &support::path::api_path("acta", &format!("/workspaces/{ws}/webhooks")),
             )
             .await
         }
@@ -1499,7 +1541,7 @@ async fn invoke(
                 token,
                 pass,
                 "GET",
-                &format!("/api/workspaces/{ws}/webhooks"),
+                &support::path::api_path("acta", &format!("/workspaces/{ws}/webhooks")),
             )
             .await
         }
@@ -1510,7 +1552,10 @@ async fn invoke(
                 token,
                 pass,
                 "GET",
-                &format!("/api/workspaces/{ws}/webhooks/{}", fx.webhook_id),
+                &support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{ws}/webhooks/{}", fx.webhook_id),
+                ),
             )
             .await
         }
@@ -1521,7 +1566,10 @@ async fn invoke(
                 token,
                 pass,
                 "PATCH",
-                &format!("/api/workspaces/{ws}/webhooks/{}", fx.webhook_id),
+                &support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{ws}/webhooks/{}", fx.webhook_id),
+                ),
             )
             .await
         }
@@ -1532,7 +1580,10 @@ async fn invoke(
                 token,
                 pass,
                 "DELETE",
-                &format!("/api/workspaces/{ws}/webhooks/{}", fx.webhook_id),
+                &support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{ws}/webhooks/{}", fx.webhook_id),
+                ),
             )
             .await
         }
@@ -1547,7 +1598,10 @@ async fn invoke(
                 token,
                 pass,
                 "GET",
-                &format!("/api/workspaces/{ws}/webhooks/{}/deliveries", fx.webhook_id),
+                &support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{ws}/webhooks/{}/deliveries", fx.webhook_id),
+                ),
             )
             .await
         }
@@ -1565,7 +1619,10 @@ async fn invoke(
                 token,
                 pass,
                 "GET",
-                &format!("/api/workspaces/{ws}/semantic-search/reindex"),
+                &support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{ws}/semantic-search/reindex"),
+                ),
             )
             .await
         }
@@ -1576,7 +1633,10 @@ async fn invoke(
                 token,
                 pass,
                 "POST",
-                &format!("/api/workspaces/{ws}/semantic-search/reindex"),
+                &support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{ws}/semantic-search/reindex"),
+                ),
             )
             .await
         }
@@ -1587,7 +1647,7 @@ async fn invoke(
                 token,
                 pass,
                 "GET",
-                &format!("/api/workspaces/{ws}/tags"),
+                &support::path::api_path("acta", &format!("/workspaces/{ws}/tags")),
             )
             .await
         }
@@ -1598,7 +1658,7 @@ async fn invoke(
                 token,
                 pass,
                 "POST",
-                &format!("/api/workspaces/{ws}/tags"),
+                &support::path::api_path("acta", &format!("/workspaces/{ws}/tags")),
             )
             .await
         }
@@ -1609,7 +1669,7 @@ async fn invoke(
                 token,
                 pass,
                 "GET",
-                &format!("/api/workspaces/{ws}/tags/used"),
+                &support::path::api_path("acta", &format!("/workspaces/{ws}/tags/used")),
             )
             .await
         }
@@ -1620,7 +1680,7 @@ async fn invoke(
                 token,
                 pass,
                 "PATCH",
-                &format!("/api/workspaces/{ws}/tags/{nil}"),
+                &support::path::api_path("acta", &format!("/workspaces/{ws}/tags/{nil}")),
             )
             .await
         }
@@ -1631,7 +1691,7 @@ async fn invoke(
                 token,
                 pass,
                 "DELETE",
-                &format!("/api/workspaces/{ws}/tags/{nil}"),
+                &support::path::api_path("acta", &format!("/workspaces/{ws}/tags/{nil}")),
             )
             .await
         }
@@ -1642,7 +1702,7 @@ async fn invoke(
                 token,
                 pass,
                 "GET",
-                &format!("/api/workspaces/{ws}/property-definitions"),
+                &support::path::api_path("acta", &format!("/workspaces/{ws}/property-definitions")),
             )
             .await
         }
@@ -1653,7 +1713,7 @@ async fn invoke(
                 token,
                 pass,
                 "POST",
-                &format!("/api/workspaces/{ws}/property-definitions"),
+                &support::path::api_path("acta", &format!("/workspaces/{ws}/property-definitions")),
             )
             .await
         }
@@ -1664,7 +1724,10 @@ async fn invoke(
                 token,
                 pass,
                 "DELETE",
-                &format!("/api/workspaces/{ws}/property-definitions/{nil}"),
+                &support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{ws}/property-definitions/{nil}"),
+                ),
             )
             .await
         }
@@ -1693,7 +1756,10 @@ async fn invoke(
                 token,
                 pass,
                 "GET",
-                &format!("/api/workspaces/{ws}/projects/{}/grants", fx.project_slug),
+                &support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{ws}/projects/{}/grants", fx.project_slug),
+                ),
             )
             .await
         }
@@ -1704,7 +1770,7 @@ async fn invoke(
                 token,
                 pass,
                 "GET",
-                &format!("/api/workspaces/{ws}/grants"),
+                &support::path::api_path("acta", &format!("/workspaces/{ws}/grants")),
             )
             .await
         }
@@ -1796,9 +1862,10 @@ async fn raw_call(
     path: &str,
 ) -> Result<(), ClientError> {
     let relative = path
-        .strip_prefix("/api/")
+        .strip_prefix(V1_NAMESPACE)
+        .and_then(|rest| rest.strip_prefix('/'))
         .map(|rest| format!("/{rest}"))
-        .unwrap_or_else(|| panic!("raw_call: path `{path}` must start with `/api/`"));
+        .unwrap_or_else(|| panic!("raw_call: path `{path}` must start with `{V1_NAMESPACE}/`"));
     let registry_method: HttpMethod = method
         .parse()
         .unwrap_or_else(|err| panic!("raw_call: {err}"));
@@ -2124,11 +2191,13 @@ async fn partial_document_edit_requires_docs_update_capability() {
     )
     .await;
     let update_response = http
-        .patch(format!(
-            "{}/api/workspaces/{}/documents/{}/content/range",
+        .patch(support::path::api_url(
             server.base_url(),
-            fx.ws_slug,
-            fx.document_ref
+            "acta",
+            &format!(
+                "/workspaces/{}/documents/{}/content/range",
+                fx.ws_slug, fx.document_ref
+            ),
         ))
         .bearer_auth(&update_token)
         .json(&request)
@@ -2152,11 +2221,13 @@ async fn partial_document_edit_requires_docs_update_capability() {
     )
     .await;
     let wrong_response = http
-        .patch(format!(
-            "{}/api/workspaces/{}/documents/{}/content/range",
+        .patch(support::path::api_url(
             server.base_url(),
-            fx.ws_slug,
-            fx.document_ref
+            "acta",
+            &format!(
+                "/workspaces/{}/documents/{}/content/range",
+                fx.ws_slug, fx.document_ref
+            ),
         ))
         .bearer_auth(&wrong_token)
         .json(&request)
@@ -2204,10 +2275,10 @@ async fn document_move_batch_requires_docs_update_capability() {
     )
     .await;
     let update_response = http
-        .post(format!(
-            "{}/api/workspaces/{}/documents/moves/batch",
+        .post(support::path::api_url(
             server.base_url(),
-            fx.ws_slug
+            "acta",
+            &format!("/workspaces/{}/documents/moves/batch", fx.ws_slug),
         ))
         .bearer_auth(&update_token)
         .json(&body)
@@ -2235,10 +2306,10 @@ async fn document_move_batch_requires_docs_update_capability() {
     )
     .await;
     let wrong_response = http
-        .post(format!(
-            "{}/api/workspaces/{}/documents/moves/batch",
+        .post(support::path::api_url(
             server.base_url(),
-            fx.ws_slug
+            "acta",
+            &format!("/workspaces/{}/documents/moves/batch", fx.ws_slug),
         ))
         .bearer_auth(&wrong_token)
         .json(&body)
@@ -2290,11 +2361,13 @@ async fn reference_batch_requires_tasks_update_capability() {
     )
     .await;
     let update_response = http
-        .post(format!(
-            "{}/api/workspaces/{}/tasks/{}/references/batch",
+        .post(support::path::api_url(
             server.base_url(),
-            fx.ws_slug,
-            fx.task_readable_id
+            "acta",
+            &format!(
+                "/workspaces/{}/tasks/{}/references/batch",
+                fx.ws_slug, fx.task_readable_id
+            ),
         ))
         .bearer_auth(&update_token)
         .json(&body)
@@ -2324,11 +2397,13 @@ async fn reference_batch_requires_tasks_update_capability() {
     )
     .await;
     let wrong_response = http
-        .post(format!(
-            "{}/api/workspaces/{}/tasks/{}/references/batch",
+        .post(support::path::api_url(
             server.base_url(),
-            fx.ws_slug,
-            fx.task_readable_id
+            "acta",
+            &format!(
+                "/workspaces/{}/tasks/{}/references/batch",
+                fx.ws_slug, fx.task_readable_id
+            ),
         ))
         .bearer_auth(&wrong_token)
         .json(&body)

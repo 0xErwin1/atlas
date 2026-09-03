@@ -52,7 +52,7 @@ use tokio::sync::watch;
 // ---------------------------------------------------------------------------
 
 fn events_url(base: &str, ws_slug: &str) -> String {
-    format!("{base}/api/workspaces/{ws_slug}/events")
+    support::path::api_url(base, "acta", &format!("/workspaces/{ws_slug}/events"))
 }
 
 /// Reads the next meaningful SSE frame (skipping keep-alive comments), returning

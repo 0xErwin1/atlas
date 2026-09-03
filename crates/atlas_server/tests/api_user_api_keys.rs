@@ -834,7 +834,11 @@ async fn create_user_api_key_rejects_unknown_scope_with_422() {
 
     let response = owner
         .http_client()
-        .post(format!("{}/api/api-keys", server.base_url()))
+        .post(support::path::api_url(
+            server.base_url(),
+            "custos",
+            "/api-keys",
+        ))
         .header("x-atlas-csrf", "1")
         .bearer_auth(owner.token().expect("token"))
         .json(&serde_json::json!({

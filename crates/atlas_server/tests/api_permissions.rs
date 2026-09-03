@@ -705,10 +705,10 @@ async fn share_denied_403_does_not_leak_variant_name() {
 
     let http = reqwest::Client::new();
     let resp = http
-        .post(format!(
-            "{}/api/workspaces/{}/projects/sharedeny-proj/grants",
+        .post(support::path::api_url(
             server.base_url(),
-            ws.slug
+            "custos",
+            &format!("/workspaces/{}/projects/sharedeny-proj/grants", ws.slug),
         ))
         .bearer_auth(key_created.secret.clone())
         .json(&CreateGrantRequest {
