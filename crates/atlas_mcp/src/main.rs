@@ -418,7 +418,7 @@ mod tests {
     #[tokio::test]
     async fn stateless_http_ignores_stale_session_and_resolves_bearer_per_request()
     -> anyhow::Result<()> {
-        let backend = Router::new().route("/api/auth/me", get(mock_identity));
+        let backend = Router::new().route("/api/v2/custos/auth/me", get(mock_identity));
         let (backend_url, backend_server) = spawn_router(backend).await?;
         let router = build_http_router(backend_url, "127.0.0.1".to_string(), TEST_PORT)?;
         let (base_url, mcp_server) = spawn_router(router).await?;
@@ -452,7 +452,7 @@ mod tests {
 
     #[tokio::test]
     async fn stateless_http_tools_list_offers_the_verb_shaped_catalog() -> anyhow::Result<()> {
-        let backend = Router::new().route("/api/meta", get(mock_meta));
+        let backend = Router::new().route("/api/v2/platform/meta", get(mock_meta));
         let (backend_url, backend_server) = spawn_router(backend).await?;
         let router = build_http_router(backend_url, "127.0.0.1".to_string(), TEST_PORT)?;
         let (base_url, mcp_server) = spawn_router(router).await?;
@@ -719,7 +719,7 @@ mod tests {
     #[tokio::test]
     async fn modern_read_resource_is_scoped_private() -> anyhow::Result<()> {
         let backend = Router::new().route(
-            "/api/workspaces/{workspace}/documents/{slug}",
+            "/api/v2/acta/workspaces/{workspace}/documents/{slug}",
             get(mock_document),
         );
         let (backend_url, backend_server) = spawn_router(backend).await?;
@@ -922,7 +922,7 @@ mod tests {
         use base64::Engine;
 
         let backend = Router::new().route(
-            "/api/workspaces/{workspace}/documents/{slug}",
+            "/api/v2/acta/workspaces/{workspace}/documents/{slug}",
             get(mock_document),
         );
         let (backend_url, backend_server) = spawn_router(backend).await?;
@@ -1029,7 +1029,7 @@ mod tests {
     #[tokio::test]
     async fn modern_read_of_a_missing_document_is_invalid_params() -> anyhow::Result<()> {
         let backend = Router::new().route(
-            "/api/workspaces/{workspace}/documents/{slug}",
+            "/api/v2/acta/workspaces/{workspace}/documents/{slug}",
             get(missing_document),
         );
         let (backend_url, backend_server) = spawn_router(backend).await?;
@@ -1060,7 +1060,7 @@ mod tests {
     #[tokio::test]
     async fn legacy_read_of_a_missing_document_keeps_resource_not_found() -> anyhow::Result<()> {
         let backend = Router::new().route(
-            "/api/workspaces/{workspace}/documents/{slug}",
+            "/api/v2/acta/workspaces/{workspace}/documents/{slug}",
             get(missing_document),
         );
         let (backend_url, backend_server) = spawn_router(backend).await?;
@@ -1100,7 +1100,7 @@ mod tests {
         let deletes = Arc::new(AtomicUsize::new(0));
         let counter = deletes.clone();
         let router = Router::new().route(
-            "/api/workspaces/{workspace}/tasks/{readable_id}",
+            "/api/v2/acta/workspaces/{workspace}/tasks/{readable_id}",
             axum::routing::delete(move || {
                 let counter = counter.clone();
                 async move {
