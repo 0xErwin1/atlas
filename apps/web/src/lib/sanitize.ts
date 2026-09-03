@@ -1,3 +1,5 @@
+import { toCurrentApiPath } from '@/lib/legacyApiPath';
+
 const TAG_RE = /<\/?[a-zA-Z][a-zA-Z0-9]*\b[^>]*>/g;
 const MARK_OPEN_RE = /^<mark\b/i;
 const MARK_CLOSE_RE = /^<\/mark\b/i;
@@ -71,8 +73,9 @@ const URL_SCHEME_RE = /^([a-zA-Z][a-zA-Z0-9+.-]*):/;
  * character (tabs, newlines, and other C0/DEL bytes) BEFORE inspecting the
  * scheme, because browsers silently drop those characters when parsing a URL —
  * so `java\tscript:alert(1)` would run as `javascript:` unless neutralized here.
- * The returned value is the SAME normalized string that was validated, so what
- * the caller emits is exactly what passed the check.
+ * The validated string is what the caller emits, with one exception: a
+ * validated V1 attachment path is mapped to its V2 form (see `toCurrentApiPath`),
+ * since this is the single point every rendered `href`/`src` passes through.
  */
 export function safeUrl(raw: string): string | null {
   // biome-ignore lint/suspicious/noControlCharactersInRegex: browsers strip these from URLs, so they must be removed before the scheme check to avoid a `java\tscript:` bypass.
@@ -81,10 +84,10 @@ export function safeUrl(raw: string): string | null {
   if (normalized.length === 0) return null;
 
   const match = URL_SCHEME_RE.exec(normalized);
-  if (match === null) return normalized;
+  if (match === null) return toCurrentApiPath(normalized);
 
   const scheme = `${match[1]?.toLowerCase()}:`;
-  return SAFE_URL_SCHEMES.has(scheme) ? normalized : null;
+  return SAFE_URL_SCHEMES.has(scheme) ? toCurrentApiPath(normalized) : null;
 }
 
 const SAFE_HTML_TAGS = new Set([

@@ -60,6 +60,32 @@ describe('useApiImageSrc', () => {
     );
   });
 
+  it('fetches a V1 attachment source from its V2 path, since the server keeps no V1 alias', async () => {
+    platformFetch.mockResolvedValue(imageResponse());
+    const { value: resolve } = runInScope(() => useApiImageSrc());
+
+    await expect(resolve('/api/workspaces/acme/tasks/ATL-1/attachments/a/content')).resolves.toBe('blob:1');
+
+    const request = platformFetch.mock.calls[0]?.[0] as Request;
+    expect(new URL(request.url).pathname).toBe(
+      '/api/v2/acta/workspaces/acme/tasks/ATL-1/attachments/a/content',
+    );
+  });
+
+  it('shares one object URL between the V1 and V2 forms of the same attachment', async () => {
+    platformFetch.mockResolvedValue(imageResponse());
+    const { value: resolve } = runInScope(() => useApiImageSrc());
+
+    const [legacy, current] = await Promise.all([
+      resolve('/api/workspaces/acme/attachments/a/content'),
+      resolve('/api/v2/acta/workspaces/acme/attachments/a/content'),
+    ]);
+
+    expect(legacy).toBe('blob:1');
+    expect(current).toBe('blob:1');
+    expect(platformFetch).toHaveBeenCalledTimes(1);
+  });
+
   it('fetches each source once and shares the object URL across repeated resolutions', async () => {
     platformFetch.mockResolvedValue(imageResponse());
     const { value: resolve } = runInScope(() => useApiImageSrc());

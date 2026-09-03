@@ -3,7 +3,7 @@
 mod support;
 
 use atlas_core::registry::HttpMethod;
-use atlas_server::router_audit::{mounted_path, namespaces_for};
+use atlas_server::router_audit::{mounted_path, v2_namespace};
 
 /// `v2-e3-s2-router-audit` PR4 verify gap: proves acta's 169 routes keep
 /// their pre-refactor mount and authentication posture against the
@@ -53,7 +53,7 @@ use atlas_server::router_audit::{mounted_path, namespaces_for};
 /// the RIGHT method instead of a wrong one, where 401 (not 405) is the
 /// expected, meaningful signal.
 ///
-/// 336 unauthenticated requests (168 per namespace) in one test run cannot trip a rate limiter
+/// 168 unauthenticated requests in one test run cannot trip a rate limiter
 /// or governor into a spurious 429: `acta::router()` layers `require_authn`
 /// LAST (`acta.rs`'s `router()`, the `.layer(require_authn)` call sits below
 /// `.layer(rate_limit)` and `.layer(csrf)` in source order), and axum layers
@@ -69,12 +69,11 @@ use atlas_server::router_audit::{mounted_path, namespaces_for};
 /// route with its own per-route `GovernorLayer` (`ingest_github_event`) is
 /// public, excluded from this sweep, and probed separately below with a
 /// request count (two) far under its `burst_size(20)` quota
-/// (`acta.rs::public::router`), which `lib.rs::app()`'s cloned router
-/// shares across both mounts.
+/// (`acta.rs::public::router`).
 ///
-/// `v2-e3-s4` PR7 (D10): both proofs run once per namespace in
-/// `namespaces_for("acta")` (`/api` and `/api/v2/acta`), offenders naming
-/// the namespace.
+/// `v2-e3-s4` PR7 (D10), collapsed to one mount by `v2-e3-s7` (D1/U2): both
+/// proofs run once, at acta's own `/api/v2/acta` mount, offenders naming the
+/// namespace.
 #[tokio::test]
 async fn acta_protected_routes_reject_unauthenticated_requests() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -107,34 +106,34 @@ async fn acta_protected_routes_reject_unauthenticated_requests() {
         .first()
         .expect("acta has exactly one public route");
 
-    for namespace in namespaces_for("acta") {
-        let namespace = namespace.as_str();
-        for (method, path_template) in &protected_routes {
-            let path = mounted_path(namespace, &substitute_placeholders(path_template));
-            let status = send(&http, axum_method(*method), server.base_url(), &path).await;
+    let namespace = v2_namespace("acta");
+    let namespace = namespace.as_str();
 
-            assert_eq!(
-                status, 401,
-                "namespace {namespace}: protected acta route {method:?} {path_template} must \
-                 reject an unauthenticated request, got {status}"
-            );
-        }
+    for (method, path_template) in &protected_routes {
+        let path = mounted_path(namespace, &substitute_placeholders(path_template));
+        let status = send(&http, axum_method(*method), server.base_url(), &path).await;
 
-        let public_path = mounted_path(namespace, &substitute_placeholders(public_path_template));
-
-        let mount_status = send(
-            &http,
-            reqwest::Method::PATCH,
-            server.base_url(),
-            &public_path,
-        )
-        .await;
         assert_eq!(
-            mount_status, 405,
-            "namespace {namespace}: public route {public_path_template} must be mounted in the \
-             assembled router (PATCH probe), got {mount_status}"
+            status, 401,
+            "namespace {namespace}: protected acta route {method:?} {path_template} must \
+             reject an unauthenticated request, got {status}"
         );
     }
+
+    let public_path = mounted_path(namespace, &substitute_placeholders(public_path_template));
+
+    let mount_status = send(
+        &http,
+        reqwest::Method::PATCH,
+        server.base_url(),
+        &public_path,
+    )
+    .await;
+    assert_eq!(
+        mount_status, 405,
+        "namespace {namespace}: public route {public_path_template} must be mounted in the \
+         assembled router (PATCH probe), got {mount_status}"
+    );
 
     db.teardown().await;
 }

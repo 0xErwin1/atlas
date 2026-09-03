@@ -9,14 +9,12 @@
 //! composed OpenAPI document at its own mount, `/api/v2/<component>` —
 //! `document()` (`routes/openapi.rs`) re-keys each fragment under its owning
 //! component's V2 namespace before merging (`crate::routes::openapi::
-//! mounted_fragment`), so the document's own path keys are V2-form,
-//! independent of the suite's flippable `DEFAULT_NAMESPACE_INDEX`. This
-//! test's registry side is therefore joined through
-//! `RouteMatrixEntry::mounted_document()`, never `mounted_default()` — the
-//! document's mount and the suite's request-building mount are two distinct
-//! facts, and S7's flip of `DEFAULT_NAMESPACE_INDEX` moves only the second
-//! one. Before this PR, this guard ran against the document's `/api`
-//! (V1-form) keys; that scope note is superseded by this one.
+//! mounted_fragment`), so the document's own path keys are V2-form. Since
+//! `v2-e3-s7` collapsed the suite to a single mount, this test's registry
+//! side is joined through `RouteMatrixEntry::mounted()`, the same primitive
+//! every other request-building test in this crate uses. Before that slice,
+//! this guard ran against the document's `/api` (V1-form) keys; that scope
+//! note is superseded by this one.
 //!
 //! PR6 update: `GET /api/v2/acta/workspaces/{ws}/events` (`routes::events`)
 //! is now `#[utoipa::path]`-annotated and registered in `acta`'s fragment, so
@@ -48,7 +46,7 @@ const UNANNOTATED_ROUTES: &[(HttpMethod, &str)] = &[
 fn registry_route_set() -> HashSet<(HttpMethod, String)> {
     support::route_matrix::route_matrix()
         .into_iter()
-        .map(|entry| (entry.method, entry.mounted_document()))
+        .map(|entry| (entry.method, entry.mounted()))
         .collect()
 }
 

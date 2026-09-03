@@ -95,7 +95,10 @@ async fn every_component_router_is_merged_into_app() {
         );
 
         let (path, probe_method) = pick_probe(component, &routes);
-        let mounted = atlas_server::router_audit::mounted_path("/api", path);
+        let mounted = atlas_server::router_audit::mounted_path(
+            &atlas_server::router_audit::v2_namespace(component),
+            path,
+        );
 
         let status = send(&http, probe_method.clone(), server.base_url(), &mounted).await;
 
@@ -208,10 +211,11 @@ const CANDIDATE_ORDER: [HttpMethod; 7] = [
     HttpMethod::Options,
 ];
 
-/// T5.1/T5.2/T7.6 (`v2-e3-s4` PR5/PR7, D1/D10): every declared route
-/// resolves at BOTH `/api` and its own `/api/v2/<component>`, exhaustively
-/// over `route_matrix()` (INV-DATA-DRIVEN,
-/// not sampled). Mount proof never uses "not 404" (INV-LIVE-PROOF), and it
+/// T5.1/T5.2/T7.6 (`v2-e3-s4` PR5/PR7, D1/D10), collapsed to one mount by
+/// `v2-e3-s7` (D1/U2, D1.4): every declared route resolves at its own
+/// `/api/v2/<component>` mount, exhaustively over `route_matrix()`
+/// (INV-DATA-DRIVEN, not sampled; `INV-NONVACUOUS`: the matrix examined
+/// must be non-empty). Mount proof never uses "not 404" (INV-LIVE-PROOF), and it
 /// never uses an unauthenticated 401 either: `lib.rs::app()` merges a
 /// PROTECTED root fallback last, so an unroutable path answers 401 to an
 /// unauthenticated request exactly like a mounted protected route does
@@ -230,12 +234,10 @@ const CANDIDATE_ORDER: [HttpMethod; 7] = [
 /// `CANDIDATE_ORDER` always yields a foreign method and needs no extension.
 ///
 /// Governor budget: custos's `login`/`activate` governors (burst 5, refill
-/// 1/s, one state shared by both mounts because `lib.rs::app()` nests a
-/// clone of `custos_router` at `/api/v2/custos` and the original at `/api`)
-/// see `POST /api/auth/login` once from `login_user_with_workspace`, plus one
-/// login probe per namespace (3 total), and two activate probes per
-/// namespace (GET and POST entries share the path; 4 total). Both stay under
-/// the burst, so no sleep is needed. `AppState::for_test` sets
+/// 1/s) see `POST /api/v2/custos/auth/login` once from
+/// `login_user_with_workspace`, plus one login probe (2 total), and one
+/// activate probe (GET and POST entries share the path; 2 total). Both stay
+/// under the burst, so no sleep is needed. `AppState::for_test` sets
 /// `rate_limiter: None`, so the authenticated probes have no other budget.
 ///
 /// T5.18/T5.19 (D7): this is also the live half of the `is_public`
@@ -257,14 +259,12 @@ const CANDIDATE_ORDER: [HttpMethod; 7] = [
 /// The registry declares 9 public routes: 5 root-level
 /// (`router_audit::ROOT_LEVEL_PATHS`: `/health`, `/ready`, `/version`,
 /// `/openapi.json`, `/scalar`) and 4 namespaced. `mounted_path` returns a
-/// root-level path unchanged for every namespace, so looping those entries
-/// over `entry.namespaces()` would probe the same URL twice and prove
-/// nothing about either mount. They are probed exactly once, outside the
-/// namespace loop, and the set skipped inside it is asserted equal to
-/// `ROOT_LEVEL_PATHS` so the skip cannot grow without that constant growing
-/// with it.
+/// root-level path unchanged regardless of namespace, so a root-level entry
+/// is probed exactly once, outside the per-entry mount loop, and the set
+/// skipped there is asserted equal to `ROOT_LEVEL_PATHS` so the skip cannot
+/// grow without that constant growing with it.
 #[tokio::test]
-async fn every_declared_route_resolves_at_both_mounts() {
+async fn every_declared_route_resolves_at_its_component_mount() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
     let http = reqwest::Client::new();
@@ -337,58 +337,68 @@ async fn every_declared_route_resolves_at_both_mounts() {
          every ROOT_LEVEL_PATHS member must still be declared by the registry"
     );
 
+    let mut probed_routes = 0usize;
+
     for entry in &matrix {
         if ROOT_LEVEL_PATHS.contains(&entry.path_template.as_str()) {
             continue;
         }
 
         let relative = entry.path_template.replace("{ws}", ws_slug);
+        let namespace = atlas_server::router_audit::v2_namespace(&entry.component);
+        let mounted = mounted_path(&namespace, &relative);
 
-        for namespace in entry.namespaces() {
-            let mounted = mounted_path(&namespace, &relative);
+        let declared_methods = methods_by_path
+            .get(entry.path_template.as_str())
+            .expect("path must have at least its own declared method");
+        let foreign_method = CANDIDATE_ORDER
+            .into_iter()
+            .find(|candidate| !declared_methods.contains(candidate))
+            .unwrap_or_else(|| {
+                panic!(
+                    "{}: every candidate probe method is already declared",
+                    entry.path_template
+                )
+            });
 
-            let declared_methods = methods_by_path
-                .get(entry.path_template.as_str())
-                .expect("path must have at least its own declared method");
-            let foreign_method = CANDIDATE_ORDER
-                .into_iter()
-                .find(|candidate| !declared_methods.contains(candidate))
-                .unwrap_or_else(|| {
-                    panic!(
-                        "{}: every candidate probe method is already declared",
-                        entry.path_template
-                    )
-                });
-
-            let bearer = (!entry.is_public).then_some(token);
-            let visibility = if entry.is_public {
-                "public"
-            } else {
-                "protected"
-            };
-            let status = send_with_bearer(
-                &http,
-                axum_method(foreign_method),
-                server.base_url(),
-                &mounted,
-                bearer,
-            )
-            .await;
-            assert_eq!(
-                status, 405,
-                "namespace {namespace}: {visibility} route {} {mounted} must be mounted (probed \
-                 with a foreign method {foreign_method:?}), got {status}",
-                entry.method
-            );
-        }
+        let bearer = (!entry.is_public).then_some(token);
+        let visibility = if entry.is_public {
+            "public"
+        } else {
+            "protected"
+        };
+        let status = send_with_bearer(
+            &http,
+            axum_method(foreign_method),
+            server.base_url(),
+            &mounted,
+            bearer,
+        )
+        .await;
+        assert_eq!(
+            status, 405,
+            "namespace {namespace}: {visibility} route {} {mounted} must be mounted (probed \
+             with a foreign method {foreign_method:?}), got {status}",
+            entry.method
+        );
+        probed_routes += 1;
     }
+
+    assert!(
+        probed_routes > 0,
+        "the mount proof must examine at least one non-root-level route, or its assertions \
+         pass vacuously"
+    );
 
     db.teardown().await;
 }
 
-/// T5.3/T5.4 (`v2-e3-s4` PR5, D1): a foreign prefix never matches any
-/// declared route at either mount — `/apiv2/<rel>` and `/api/v3/<rel>` fall
-/// through to the root fallback for every entry in `route_matrix()`. That
+/// T5.3/T5.4 (`v2-e3-s4` PR5, D1), extended with `/api` by `v2-e3-s7`
+/// (D1.2, U3): a foreign prefix never matches any declared route — `/apiv2`,
+/// `/api/v3`, and (since the V1 mount's retirement) the bare `/api` itself
+/// all fall through to the root fallback for every entry in
+/// `route_matrix()`, making SHELL-API-6 ("no V1 aliases") a tested property
+/// of the shell's routing surface. That
 /// fallback is protected (`lib.rs::app()` merges
 /// `protect(Router::new().fallback(not_found))` last), so the proof has two
 /// halves per path, the same shape `api_unmatched_path_fallback.rs` proves
@@ -412,7 +422,7 @@ async fn a_foreign_prefix_never_matches_any_declared_route() {
     let ws_slug = "foreign-prefix-no-such-workspace";
     let matrix = route_matrix();
 
-    for foreign_prefix in ["/apiv2", "/api/v3"] {
+    for foreign_prefix in ["/apiv2", "/api/v3", "/api"] {
         for entry in &matrix {
             let relative = entry.path_template.replace("{ws}", ws_slug);
             let foreign = format!("{foreign_prefix}{relative}");
@@ -457,7 +467,7 @@ async fn a_foreign_prefix_never_matches_any_declared_route() {
 /// The three component ids `lib.rs::app()` nests under `/api/v2` (`v2-e3-s4`
 /// PR7, D10). Kept as a small fixed list rather than derived from the
 /// registry: the registry has no "list every component id" accessor, and
-/// this list is exactly the set `namespaces_for` and `app()`'s three
+/// this list is exactly the set `v2_namespace` and `app()`'s three
 /// `.nest("/api/v2/<component>", ...)` calls are also hand-written against.
 const ALL_COMPONENTS: [&str; 3] = ["platform", "custos", "acta"];
 

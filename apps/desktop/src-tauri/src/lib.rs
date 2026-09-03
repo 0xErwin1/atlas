@@ -460,6 +460,7 @@ pub fn build_authenticated_request(
         return Err(DesktopError::InvalidBearer);
     }
 
+    // api-path-guard:off
     if !path.starts_with("/api/") || path.starts_with("//") {
         return Err(DesktopError::InvalidApiPath);
     }
@@ -468,6 +469,7 @@ pub fn build_authenticated_request(
     if !url.path().starts_with("/api/") {
         return Err(DesktopError::InvalidApiPath);
     }
+    // api-path-guard:on
     let method = Method::from_bytes(method.as_bytes()).map_err(|_| DesktopError::InvalidMethod)?;
     let mut request = Request::new(method, url);
     let mut authorization = HeaderValue::from_str(&format!("Bearer {bearer}"))
@@ -485,8 +487,13 @@ pub fn build_authenticated_request(
 }
 
 pub async fn execute_protected_rest(origin: &str, bearer: &str) -> Result<(), DesktopError> {
-    let request =
-        build_authenticated_request(origin, "GET", "/api/auth/me", bearer, TransportKind::Rest)?;
+    let request = build_authenticated_request(
+        origin,
+        "GET",
+        "/api/v2/custos/auth/me",
+        bearer,
+        TransportKind::Rest,
+    )?;
     let response = reqwest::Client::new()
         .execute(request)
         .await
@@ -508,7 +515,7 @@ pub async fn execute_bearer_logout(
     let request = build_authenticated_request(
         origin,
         "POST",
-        "/api/auth/logout",
+        "/api/v2/custos/auth/logout",
         bearer,
         TransportKind::Rest,
     )?;
@@ -533,7 +540,7 @@ pub async fn execute_bearer_sse(
     let request = build_authenticated_request(
         origin,
         "GET",
-        &format!("/api/workspaces/{workspace}/events"),
+        &format!("/api/v2/acta/workspaces/{workspace}/events"),
         bearer,
         TransportKind::Sse,
     )?;
@@ -558,7 +565,7 @@ pub async fn execute_workspace_sse(
     let request = build_authenticated_request(
         origin,
         "GET",
-        &format!("/api/workspaces/{workspace}/events"),
+        &format!("/api/v2/acta/workspaces/{workspace}/events"),
         bearer,
         TransportKind::Sse,
     )?;
@@ -963,7 +970,7 @@ impl<S: SecretStore> DesktopSession<S> {
                 build_authenticated_request(
                     scope.origin(),
                     "GET",
-                    "/api/auth/me",
+                    "/api/v2/custos/auth/me",
                     &bearer,
                     TransportKind::Rest,
                 )
@@ -1045,7 +1052,7 @@ impl<S: SecretStore> DesktopSession<S> {
             .authenticated_request_with_method(
                 scope,
                 "POST",
-                "/api/auth/logout",
+                "/api/v2/custos/auth/logout",
                 TransportKind::Rest,
             )
             .map(with_logout_remote_timeout)
@@ -1091,7 +1098,7 @@ impl<S: SecretStore> DesktopSession<S> {
         let request = build_authenticated_request(
             scope.origin(),
             "GET",
-            &format!("/api/workspaces/{workspace}/events"),
+            &format!("/api/v2/acta/workspaces/{workspace}/events"),
             &bearer,
             TransportKind::Sse,
         )?;
@@ -1256,6 +1263,7 @@ fn canonical_origin(origin: &str) -> Result<String, DesktopError> {
 }
 
 fn validate_api_path(path: &str) -> Result<(), DesktopError> {
+    // api-path-guard:off
     if !path.starts_with("/api/")
         || path.starts_with("//")
         || path.contains('\\')
@@ -1263,6 +1271,7 @@ fn validate_api_path(path: &str) -> Result<(), DesktopError> {
     {
         return Err(DesktopError::InvalidApiPath);
     }
+    // api-path-guard:on
 
     let path_only = path.split_once(['?', '#']).map_or(path, |(value, _)| value);
     for segment in path_only.split('/') {

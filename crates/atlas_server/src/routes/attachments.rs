@@ -663,6 +663,15 @@ fn workspace_attachment_to_dto(
     }
 }
 
+/// `v2-e3-s7`: built at acta's own `/api/v2/acta` mount, via
+/// `router_audit::v2_namespace` rather than a hand-typed `/api` literal, so
+/// this DTO field — served to clients as `content_url` and followed
+/// verbatim by `apps/web/src/composables/useApiImageSrc.ts` — never embeds
+/// a mount the shell has stopped serving.
 fn attachment_content_url(workspace_slug: &str, id: AttachmentId) -> String {
-    format!("/api/workspaces/{workspace_slug}/attachments/{}", id.0)
+    format!(
+        "{}/workspaces/{workspace_slug}/attachments/{}",
+        crate::router_audit::v2_namespace("acta"),
+        id.0
+    )
 }

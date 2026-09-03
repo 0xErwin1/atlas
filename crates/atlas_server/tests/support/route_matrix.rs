@@ -21,51 +21,21 @@ pub(crate) struct RouteMatrixEntry {
     /// The owning component's `ComponentEntry.identity.stable_id`
     /// (`v2-e3-s4` PR7, D10): sourced from the same `registry.entries()`
     /// loop `route_matrix()` already iterates, never a hand-typed per-path
-    /// lookup table. Drives [`RouteMatrixEntry::namespaces`], so every
-    /// namespace-scoped sweep checks a route at exactly its own two mounts.
+    /// lookup table. Drives [`RouteMatrixEntry::mounted`], so every
+    /// namespace-scoped sweep checks a route at exactly its own
+    /// `/api/v2/<component>` mount.
     pub component: String,
 }
 
 impl RouteMatrixEntry {
-    /// The concrete request path this entry is reachable at under `namespace`
-    /// (`v2-e3-s4` PR5, D1, T5.8): every namespace-scoped sweep consumes this
-    /// method instead of hand-concatenating `namespace` and `path_template`
-    /// itself, reusing `router_audit::mounted_path` — the same primitive the
-    /// production `app()` composition and every other namespace-aware test in
-    /// this slice go through.
-    pub(crate) fn mounted(&self, namespace: &str) -> String {
-        atlas_server::router_audit::mounted_path(namespace, &self.path_template)
-    }
-
-    /// This entry's own two mounts (`v2-e3-s4` PR7, D10): `/api` and
-    /// `/api/v2/<component>`, wrapping `router_audit::namespaces_for` with
-    /// this entry's own `component` — the per-component replacement for the
-    /// former flat `router_audit::NAMESPACES` constant.
-    pub(crate) fn namespaces(&self) -> [String; 2] {
-        atlas_server::router_audit::namespaces_for(&self.component)
-    }
-
-    /// This entry's path, mounted under the suite's current default
-    /// namespace (`v2-e3-s5` design D5): delegates to
-    /// `support::path::api_path`, so an entry-based lookup and a
-    /// literal-based `api_path` call resolve through the same
-    /// `DEFAULT_NAMESPACE_INDEX`. Additive to [`RouteMatrixEntry::namespaces`]
-    /// — a sweep that legitimately exercises both mounts keeps calling
-    /// `namespaces()` directly and MUST NOT be rewritten to this method.
-    pub(crate) fn mounted_default(&self) -> String {
+    /// This entry's path, mounted at its owning component's one V2 namespace
+    /// (`v2-e3-s7` cutover): delegates to `support::path::api_path`, so an
+    /// entry-based lookup and a literal-based `api_path` call resolve
+    /// through the same primitive. Replaces the former `mounted_default`/
+    /// `mounted_document` split, which existed only while the suite could
+    /// still resolve a request path at either of two live mounts.
+    pub(crate) fn mounted(&self) -> String {
         crate::support::path::api_path(&self.component, &self.path_template)
-    }
-
-    /// This entry's path as the composed OpenAPI document keys it
-    /// (`v2-e3-s6` D1): always the owning component's V2 namespace, never
-    /// `DEFAULT_NAMESPACE_INDEX`. A document-side audit MUST use this and a
-    /// request-building test MUST NOT — they are different facts, and S7's
-    /// flip of `DEFAULT_NAMESPACE_INDEX` moves only [`Self::mounted_default`].
-    pub(crate) fn mounted_document(&self) -> String {
-        atlas_server::router_audit::mounted_path(
-            &atlas_server::router_audit::v2_namespace(&self.component),
-            &self.path_template,
-        )
     }
 }
 
@@ -81,11 +51,11 @@ fn matrix_once() -> &'static [RouteMatrixEntry] {
 
 /// Whether `component` owns a route matching `relative` (`v2-e3-s5` design
 /// D2): the assertion `api_path` needs before trusting a component argument
-/// that `namespaces_for(component)[DEFAULT_NAMESPACE_INDEX]` would otherwise
-/// discard. Uses `.any()` over the cached matrix with the existing
-/// `template_matches` matcher, never [`find_by_concrete_path`] — this check
-/// has no need to disambiguate between two matching templates, only to
-/// confirm at least one owning entry exists.
+/// that `v2_namespace(component)` would otherwise discard. Uses `.any()`
+/// over the cached matrix with the existing `template_matches` matcher,
+/// never [`find_by_concrete_path`] — this check has no need to disambiguate
+/// between two matching templates, only to confirm at least one owning entry
+/// exists.
 ///
 /// A [`atlas_server::router_audit::ROOT_LEVEL_PATHS`] member is declared for
 /// every component: `mounted_path` serves it unprefixed regardless of which
@@ -266,28 +236,11 @@ mod tests {
     }
 
     #[test]
-    fn mounted_default_matches_api_path_for_every_live_entry() {
+    fn mounted_matches_api_path_for_every_live_entry() {
         for entry in route_matrix() {
             assert_eq!(
-                entry.mounted_default(),
+                entry.mounted(),
                 crate::support::path::api_path(&entry.component, &entry.path_template)
-            );
-        }
-    }
-
-    /// T1.14 (D1.3): exhaustive over every live `route_matrix()` entry, not
-    /// sampled (INV-SET precedent from S5's `mounted_default_matches_api_path_
-    /// for_every_live_entry`) — `mounted_document()` always resolves at the
-    /// entry's own V2 namespace, independent of `DEFAULT_NAMESPACE_INDEX`.
-    #[test]
-    fn mounted_document_resolves_at_the_entrys_own_v2_namespace_for_every_live_entry() {
-        for entry in route_matrix() {
-            assert_eq!(
-                entry.mounted_document(),
-                atlas_server::router_audit::mounted_path(
-                    &atlas_server::router_audit::v2_namespace(&entry.component),
-                    &entry.path_template
-                )
             );
         }
     }

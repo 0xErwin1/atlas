@@ -12,7 +12,7 @@
 //! literals.
 //!
 //! Path-key update, `v2-e3-s6` PR1 (D1.3): every document-key literal below
-//! is built through `support::path::document_path("acta", "<rel>")`, never a
+//! is built through `support::path::api_path("acta", "<rel>")`, never a
 //! hand-typed `/api/...` string — all 24 relative paths this file names are
 //! `acta`-owned, unchanged from before this slice; only how each key is
 //! built changed, to track `document()`'s V2 re-key.
@@ -21,7 +21,7 @@ mod support;
 
 use atlas_server::routes::openapi::openapi;
 use serde_json::Value;
-use support::path::document_path;
+use support::path::api_path;
 
 #[test]
 fn openapi_document_has_correct_info() {
@@ -43,7 +43,7 @@ fn trash_operations_document_lifecycle_statuses_and_admin_scope() {
         "OpenAPI must describe the root/system-admin Trash tag"
     );
 
-    let trash_path = document_path("acta", "/admin/trash");
+    let trash_path = api_path("acta", "/admin/trash");
     assert_operation_statuses(&document, &trash_path, "get", &[200, 400, 401, 403]);
     let list = operation(&document, &trash_path, "get");
     let kind_parameter = list
@@ -63,19 +63,19 @@ fn trash_operations_document_lifecycle_statuses_and_admin_scope() {
     );
     assert_operation_statuses(
         &document,
-        &document_path("acta", "/admin/trash/restore"),
+        &api_path("acta", "/admin/trash/restore"),
         "post",
         &[204, 401, 403, 404, 409],
     );
     assert_operation_statuses(
         &document,
-        &document_path("acta", "/admin/trash/purge"),
+        &api_path("acta", "/admin/trash/purge"),
         "post",
         &[202, 204, 400, 401, 403, 404],
     );
     assert_operation_statuses(
         &document,
-        &document_path("acta", "/admin/trash/purges/{operation_id}"),
+        &api_path("acta", "/admin/trash/purges/{operation_id}"),
         "get",
         &[200, 401, 403, 404],
     );
@@ -84,7 +84,7 @@ fn trash_operations_document_lifecycle_statuses_and_admin_scope() {
 #[test]
 fn task_attachment_rename_operation_documents_typed_contract() {
     let document = serde_json::to_value(openapi()).expect("serialize OpenAPI document");
-    let path = document_path(
+    let path = api_path(
         "acta",
         "/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}",
     );
@@ -110,7 +110,7 @@ fn compact_document_operation_documents_the_metadata_only_contract() {
     let document = serde_json::to_value(openapi()).expect("serialize OpenAPI document");
     let compact = operation(
         &document,
-        &document_path("acta", "/workspaces/{ws}/documents/{slug}/compact"),
+        &api_path("acta", "/workspaces/{ws}/documents/{slug}/compact"),
         "get",
     );
 
@@ -131,7 +131,7 @@ fn compact_document_operation_documents_the_metadata_only_contract() {
 #[test]
 fn reference_batch_operation_documents_its_bounded_result_contract() {
     let document = serde_json::to_value(openapi()).expect("serialize OpenAPI document");
-    let path = document_path(
+    let path = api_path(
         "acta",
         "/workspaces/{ws}/tasks/{readable_id}/references/batch",
     );
@@ -155,7 +155,7 @@ fn reference_batch_operation_documents_its_bounded_result_contract() {
 #[test]
 fn document_move_batch_operation_documents_its_bounded_result_contract() {
     let document = serde_json::to_value(openapi()).expect("serialize OpenAPI document");
-    let path = document_path("acta", "/workspaces/{ws}/documents/moves/batch");
+    let path = api_path("acta", "/workspaces/{ws}/documents/moves/batch");
     let batch = operation(&document, &path, "post");
 
     assert_operation_statuses(&document, &path, "post", &[200, 413, 422]);
@@ -196,13 +196,13 @@ fn comment_draft_attachment_operations_document_routes_statuses_and_binary_heade
         let comment_attachment_item_relative =
             format!("{parent_relative}/comments/{{comment_id}}/attachments/{{attachment_id}}");
 
-        let draft_path = document_path("acta", &draft_relative);
-        let upload_path = document_path("acta", &upload_relative);
-        let cancel_path = document_path("acta", &cancel_relative);
-        let comments_path = document_path("acta", &comments_relative);
-        let comment_attachments_path = document_path("acta", &comment_attachments_relative);
-        let comment_attachment_item_path = document_path("acta", &comment_attachment_item_relative);
-        let attachment_path = document_path("acta", attachment_relative);
+        let draft_path = api_path("acta", &draft_relative);
+        let upload_path = api_path("acta", &upload_relative);
+        let cancel_path = api_path("acta", &cancel_relative);
+        let comments_path = api_path("acta", &comments_relative);
+        let comment_attachments_path = api_path("acta", &comment_attachments_relative);
+        let comment_attachment_item_path = api_path("acta", &comment_attachment_item_relative);
+        let attachment_path = api_path("acta", attachment_relative);
 
         assert_operation_statuses(
             &document,
@@ -327,8 +327,8 @@ fn full_comment_feed_query_is_documented_for_both_parent_routes() {
     let document = serde_json::to_value(openapi()).expect("serialize OpenAPI document");
 
     for path in [
-        document_path("acta", "/workspaces/{ws}/tasks/{readable_id}/comments"),
-        document_path("acta", "/workspaces/{ws}/documents/{slug}/comments"),
+        api_path("acta", "/workspaces/{ws}/tasks/{readable_id}/comments"),
+        api_path("acta", "/workspaces/{ws}/documents/{slug}/comments"),
     ] {
         let pointer = format!("/paths/{}/get/parameters", path.replace('/', "~1"));
         let parameters = document.pointer(&pointer).and_then(Value::as_array);
@@ -347,8 +347,8 @@ fn comment_freedom_contract_is_exact_for_feeds_backlinks_attachments_and_metadat
     let document = serde_json::to_value(openapi()).expect("serialize OpenAPI document");
 
     for path in [
-        document_path("acta", "/workspaces/{ws}/tasks/{readable_id}/comments"),
-        document_path("acta", "/workspaces/{ws}/documents/{slug}/comments"),
+        api_path("acta", "/workspaces/{ws}/tasks/{readable_id}/comments"),
+        api_path("acta", "/workspaces/{ws}/documents/{slug}/comments"),
     ] {
         let get = operation(&document, &path, "get");
 
@@ -371,30 +371,30 @@ fn comment_freedom_contract_is_exact_for_feeds_backlinks_attachments_and_metadat
 
     assert_attachment_lifecycle(
         &document,
-        &document_path(
+        &api_path(
             "acta",
             "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",
         ),
-        &document_path(
+        &api_path(
             "acta",
             "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}",
         ),
-        &document_path(
+        &api_path(
             "acta",
             "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content",
         ),
     );
     assert_attachment_lifecycle(
         &document,
-        &document_path(
+        &api_path(
             "acta",
             "/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
         ),
-        &document_path(
+        &api_path(
             "acta",
             "/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
         ),
-        &document_path(
+        &api_path(
             "acta",
             "/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
         ),
@@ -402,7 +402,7 @@ fn comment_freedom_contract_is_exact_for_feeds_backlinks_attachments_and_metadat
 
     let document_upload = operation(
         &document,
-        &document_path(
+        &api_path(
             "acta",
             "/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
         ),

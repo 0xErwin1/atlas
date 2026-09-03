@@ -241,8 +241,15 @@ export function loadDocumentKeys(): Set<string> {
  * mirroring the Rust guards' allowlist discipline (D2.4). `useApiImageSrc.ts`'s
  * `API_PREFIX` is a generic `startsWith` boundary check, not a route call: it
  * still matches every V2 URL (`/api/v2/...` starts with `/api/`), so it is
- * correct and version-independent as written. */
-export const DEFAULT_ALLOWLIST = new Set(['src/composables/useApiImageSrc.ts::/api/']);
+ * correct and version-independent as written. `legacyApiPath.ts`'s two prefixes
+ * are legacy stored-content compatibility (user decision 2026-09-03, no server
+ * alias): stored bodies written before the cutover embed V1 attachment links,
+ * and the web rewrites them to V2 at render time. */
+export const DEFAULT_ALLOWLIST = new Set([
+  'src/composables/useApiImageSrc.ts::/api/',
+  'src/lib/legacyApiPath.ts::/api/workspaces/',
+  'src/lib/legacyApiPath.ts::/api/v2/acta/workspaces/',
+]);
 
 /**
  * The allowlist is bidirectional, like the Rust guards': an entry exempts a

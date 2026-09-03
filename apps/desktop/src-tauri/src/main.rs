@@ -743,7 +743,7 @@ async fn desktop_auth_login<R: Runtime>(
     };
     let response = match state
         .client
-        .post(format!("{origin}/api/auth/login"))
+        .post(format!("{origin}/api/v2/custos/auth/login"))
         .json(&serde_json::json!({"username": credentials.username, "password": credentials.password}))
         .send()
         .await
@@ -800,7 +800,7 @@ async fn desktop_auth_login<R: Runtime>(
     }
     let request = match state.session.lock().ok().and_then(|session| {
         session
-            .authenticated_request(&scope, "/api/auth/me", TransportKind::Rest)
+            .authenticated_request(&scope, "/api/v2/custos/auth/me", TransportKind::Rest)
             .ok()
     }) {
         Some(request) => request,
@@ -1129,7 +1129,7 @@ fn desktop_workspace_events_subscribe(
         Ok(scope) => scope,
         Err(error) => return IpcResult::error(error),
     };
-    let path = format!("/api/workspaces/{workspace_slug}/events");
+    let path = format!("/api/v2/acta/workspaces/{workspace_slug}/events");
     let request = match state.session.lock().ok().and_then(|session| {
         session
             .authenticated_request(&scope, &path, TransportKind::Sse)
@@ -2539,7 +2539,7 @@ mod command_tests {
             body: tauri::ipc::InvokeBody::Json(serde_json::json!({
                 "request": {
                     "method": "GET",
-                    "path": "/api/auth/me",
+                    "path": "/api/v2/custos/auth/me",
                     "headers": [],
                     "body": []
                 }

@@ -162,6 +162,16 @@ appeared in `api.routes`.
    at `/api/<rel>` (V1, unchanged) and at `/api/v2/<component>/<rel>` (V2),
    where `<component>` is the owning `ComponentEntry.identity.stable_id`.
 
+   > **`v2-e3-s7` update (dated note, table below unchanged):** the V1 half
+   > of the statement above — `/api/<rel>` as a second live mount — was
+   > retired by `v2-e3-s7`. Since that slice, every route is reachable at
+   > exactly its own `/api/v2/<component>/<rel>` mount; `/api/<rel>` answers
+   > the generic protected fallback (401 unauthenticated, 404 authenticated)
+   > like any other unrouted path. The 212-row table below is a historical
+   > record of `RouteDeclaration.path` as it was at `v2-e3-s2` and is not
+   > rewritten to reflect the retirement — see this file's allowlist entry
+   > in `crates/atlas_server/tests/api_path_literal_guard.rs`.
+
 ## `idempotent` inference rule
 
 Not derivable from any existing source of truth (`ROUTE_REGISTRY` does not

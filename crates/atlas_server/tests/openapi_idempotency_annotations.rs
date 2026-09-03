@@ -21,7 +21,7 @@ use atlas_core::registry::HttpMethod;
 use atlas_server::reg5::{StorageBackend, reg5_component_entries};
 use atlas_server::router_audit::diff_route_sets;
 use atlas_server::routes::openapi::openapi;
-use support::path::document_path;
+use support::path::api_path;
 use utoipa::openapi::path::Operation;
 use utoipa::openapi::response::Response;
 use utoipa::openapi::{OpenApi, RefOr};
@@ -38,7 +38,7 @@ const REPLAYED_BODY_NOTE: &str =
 
 /// Every `(method, path)` the registry declares with the given `idempotent`
 /// flag, joined to the same V2-mounted form the composed document's own path
-/// keys carry as of `v2-e3-s6` D1.2 — `document_path`, keyed at each entry's
+/// keys carry as of `v2-e3-s6` D1.2 — `api_path`, keyed at each entry's
 /// own component, never a shared `/api` literal. This is the test that
 /// catches a half-moved mount (R1): if the document's re-key and this set's
 /// re-key do not land in the same commit, every one of the 34 annotations
@@ -52,7 +52,7 @@ fn declared_routes(idempotent: bool) -> HashSet<(HttpMethod, String)> {
         let component = entry.identity.stable_id.as_str();
         for route in &entry.api.routes {
             if route.idempotent == idempotent {
-                routes.insert((route.method, document_path(component, route.path.as_str())));
+                routes.insert((route.method, api_path(component, route.path.as_str())));
             }
         }
     }

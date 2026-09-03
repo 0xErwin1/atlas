@@ -76,8 +76,20 @@ use sha2::{Digest, Sha256};
 use crate::auth::middleware::Principal;
 use crate::error::ApiError;
 use crate::persistence::repos::{IdempotencyScope, InsertOutcome, PgIdempotencyRepo};
-use crate::router_audit::CANONICAL_NAMESPACE;
 use crate::state::AppState;
+
+/// The prefix this middleware prepends to the nest-relative request path
+/// when building an idempotency store key. It is a **row-key namespace, not
+/// a mount**: since `v2-e3-s7` no router nests anything at `/api`, and this
+/// string names nothing that is routed. It stays `/api` because every row in
+/// `platform.idempotency_keys` written since the feature shipped carries
+/// that prefix, and because the key must not change shape when a mount
+/// does. Do not "migrate" this to `/api/v2/<component>`: that would re-key
+/// every in-flight dedup record for no behavioral gain — the layer runs
+/// inside the nest, after axum has already stripped whichever mount prefix
+/// served the request, so `request.uri().path()` is namespace-relative and
+/// this constant is a compile-time value never read from the request.
+pub const IDEMPOTENCY_STORE_PATH_PREFIX: &str = "/api";
 
 /// A route's 5xx handling policy (D6 scoped correction,
 /// `R4-5xx-release-duplicates-one-shot-jobs`), carried structurally by which
@@ -186,7 +198,7 @@ const MAX_BUFFERED_BODY_BYTES: usize = 32 * 1024 * 1024;
 /// Computes the D4/D5 fingerprint (R4 fix): `method || "\n" ||
 /// canonical_path_and_query || "\n" || sorted(allowlisted request headers,
 /// lowercased names) || "\n" || raw body bytes`, where
-/// `canonical_path_and_query` is the [`CANONICAL_NAMESPACE`]-prefixed path
+/// `canonical_path_and_query` is the [`IDEMPOTENCY_STORE_PATH_PREFIX`]-prefixed path
 /// and query (the same value whichever mount served the request). The
 /// query string is part of the fingerprint because it changes what the same
 /// body means (e.g. a filter or target parameter); a header outside
@@ -371,17 +383,17 @@ async fn idempotency_middleware(
 
     let method = request.method().to_string();
 
-    // This layer runs inside a component router nested under both mounts,
-    // so axum has already stripped the nest prefix and `request.uri()` is
-    // namespace-relative. Prefixing it with the canonical namespace keys the
-    // store and the fingerprint on the `/api` form whichever mount the
-    // client used: one dedup record per logical operation across mounts,
-    // and rows stored before the dual mount keep matching.
-    let path = format!("{CANONICAL_NAMESPACE}{}", request.uri().path());
+    // This layer runs inside a component router nested under its own
+    // `/api/v2/<component>` mount, so axum has already stripped the nest
+    // prefix and `request.uri()` is namespace-relative. Prefixing it with
+    // the storage prefix keys the store and the fingerprint on the frozen
+    // `/api` row-key form, unchanged by the v2-e3-s7 cutover: rows stored
+    // before and after it keep matching (D2.2).
+    let path = format!("{IDEMPOTENCY_STORE_PATH_PREFIX}{}", request.uri().path());
     let path_and_query = request
         .uri()
         .path_and_query()
-        .map(|value| format!("{CANONICAL_NAMESPACE}{}", value.as_str()))
+        .map(|value| format!("{IDEMPOTENCY_STORE_PATH_PREFIX}{}", value.as_str()))
         .unwrap_or_else(|| path.clone());
 
     // Apply the route's own `DefaultBodyLimit` (falling back to axum's 2 MiB
@@ -674,6 +686,11 @@ mod tests {
             );
         }
         headers
+    }
+
+    #[test]
+    fn store_path_prefix_is_the_frozen_row_key_namespace() {
+        assert_eq!(IDEMPOTENCY_STORE_PATH_PREFIX, "/api");
     }
 
     #[test]
