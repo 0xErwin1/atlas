@@ -85,7 +85,11 @@ async fn add_member_and_login(
         .expect("add member");
 
     let resp = http()
-        .post(format!("{}/api/auth/login", server.base_url()))
+        .post(support::path::api_url(
+            server.base_url(),
+            "custos",
+            "/auth/login",
+        ))
         .json(&LoginRequest {
             username: username.to_string(),
             password: plaintext.to_string(),
@@ -114,8 +118,10 @@ async fn admin_creates_integration_config_returns_201_with_secret() {
     let ws_slug = &ws.slug;
 
     let resp = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integration-configs"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integration-configs"),
         ))
         .bearer_auth(token)
         .json(&serde_json::json!({ "integration": "github" }))
@@ -162,8 +168,10 @@ async fn list_and_get_do_not_expose_secret() {
     let ws_slug = &ws.slug;
 
     let create_resp = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integration-configs"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integration-configs"),
         ))
         .bearer_auth(token)
         .json(&serde_json::json!({ "integration": "github" }))
@@ -175,8 +183,10 @@ async fn list_and_get_do_not_expose_secret() {
     let config_id = created["id"].as_str().unwrap().to_string();
 
     let list_resp = http()
-        .get(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integration-configs"
+        .get(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integration-configs"),
         ))
         .bearer_auth(token)
         .send()
@@ -196,8 +206,10 @@ async fn list_and_get_do_not_expose_secret() {
     );
 
     let get_resp = http()
-        .get(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integration-configs/{config_id}"
+        .get(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integration-configs/{config_id}"),
         ))
         .bearer_auth(token)
         .send()
@@ -233,8 +245,10 @@ async fn non_admin_rejected_on_integration_config_endpoints() {
     let ws_slug = &ws.slug;
 
     let create_resp = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integration-configs"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integration-configs"),
         ))
         .bearer_auth(admin_token)
         .json(&serde_json::json!({ "integration": "github" }))
@@ -248,8 +262,10 @@ async fn non_admin_rejected_on_integration_config_endpoints() {
     let member_token = add_member_and_login(&server, &db, ws.id.0, "ic-nonadmin-member").await;
 
     let list_resp = http()
-        .get(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integration-configs"
+        .get(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integration-configs"),
         ))
         .bearer_auth(&member_token)
         .send()
@@ -258,8 +274,10 @@ async fn non_admin_rejected_on_integration_config_endpoints() {
     assert_eq!(list_resp.status(), 404, "non-admin list must be 404");
 
     let get_resp = http()
-        .get(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integration-configs/{config_id}"
+        .get(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integration-configs/{config_id}"),
         ))
         .bearer_auth(&member_token)
         .send()
@@ -268,8 +286,10 @@ async fn non_admin_rejected_on_integration_config_endpoints() {
     assert_eq!(get_resp.status(), 404, "non-admin get must be 404");
 
     let post_resp = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integration-configs"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integration-configs"),
         ))
         .bearer_auth(&member_token)
         .json(&serde_json::json!({ "integration": "github" }))
@@ -279,8 +299,10 @@ async fn non_admin_rejected_on_integration_config_endpoints() {
     assert_eq!(post_resp.status(), 404, "non-admin create must be 404");
 
     let delete_resp = http()
-        .delete(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integration-configs/{config_id}"
+        .delete(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integration-configs/{config_id}"),
         ))
         .bearer_auth(&member_token)
         .send()
@@ -309,8 +331,10 @@ async fn admin_delete_soft_deletes_and_revokes_key() {
     let ws_slug = &ws.slug;
 
     let create_resp = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integration-configs"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integration-configs"),
         ))
         .bearer_auth(token)
         .json(&serde_json::json!({ "integration": "github" }))
@@ -324,8 +348,10 @@ async fn admin_delete_soft_deletes_and_revokes_key() {
         Uuid::parse_str(created["integration_api_key_id"].as_str().unwrap()).unwrap();
 
     let delete_resp = http()
-        .delete(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integration-configs/{config_id}"
+        .delete(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integration-configs/{config_id}"),
         ))
         .bearer_auth(token)
         .send()
@@ -334,8 +360,10 @@ async fn admin_delete_soft_deletes_and_revokes_key() {
     assert_eq!(delete_resp.status(), 204, "delete must return 204");
 
     let get_resp = http()
-        .get(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integration-configs/{config_id}"
+        .get(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integration-configs/{config_id}"),
         ))
         .bearer_auth(token)
         .send()
@@ -371,8 +399,10 @@ async fn patch_is_active_toggles_and_gates_ingest() {
     let ws_slug = &ws.slug;
 
     let create_resp = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integration-configs"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integration-configs"),
         ))
         .bearer_auth(token)
         .json(&serde_json::json!({ "integration": "github" }))
@@ -385,8 +415,10 @@ async fn patch_is_active_toggles_and_gates_ingest() {
     let secret = created["secret"].as_str().unwrap().to_string();
 
     let deactivate = http()
-        .patch(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integration-configs/{config_id}"
+        .patch(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integration-configs/{config_id}"),
         ))
         .bearer_auth(token)
         .json(&serde_json::json!({ "is_active": false }))
@@ -402,8 +434,10 @@ async fn patch_is_active_toggles_and_gates_ingest() {
     let body = b"{\"action\":\"completed\"}";
     let sig = compute_sig(secret.as_bytes(), body);
     let ingest_off = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integrations/github/events"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integrations/github/events"),
         ))
         .header("x-hub-signature-256", &sig)
         .header("x-github-delivery", Uuid::now_v7().to_string())
@@ -420,8 +454,10 @@ async fn patch_is_active_toggles_and_gates_ingest() {
     );
 
     let reactivate = http()
-        .patch(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integration-configs/{config_id}"
+        .patch(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integration-configs/{config_id}"),
         ))
         .bearer_auth(token)
         .json(&serde_json::json!({ "is_active": true }))
@@ -433,8 +469,10 @@ async fn patch_is_active_toggles_and_gates_ingest() {
     assert_eq!(reactivated["is_active"], true, "config must be reactivated");
 
     let ingest_on = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integrations/github/events"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integrations/github/events"),
         ))
         .header("x-hub-signature-256", &sig)
         .header("x-github-delivery", Uuid::now_v7().to_string())
@@ -472,8 +510,10 @@ async fn ingest_valid_signed_event_returns_200() {
     let ws_slug = &ws.slug;
 
     let create_resp = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integration-configs"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integration-configs"),
         ))
         .bearer_auth(token)
         .json(&serde_json::json!({ "integration": "github" }))
@@ -502,8 +542,10 @@ async fn ingest_valid_signed_event_returns_200() {
     let sig = compute_sig(secret.as_bytes(), &body);
 
     let resp = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integrations/github/events"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integrations/github/events"),
         ))
         .header("x-hub-signature-256", &sig)
         .header("x-github-delivery", delivery_id.to_string())
@@ -546,8 +588,10 @@ async fn ingest_bad_sig_returns_401() {
     let ws_slug = &ws.slug;
 
     http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integration-configs"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integration-configs"),
         ))
         .bearer_auth(token)
         .json(&serde_json::json!({ "integration": "github" }))
@@ -559,8 +603,10 @@ async fn ingest_bad_sig_returns_401() {
     let bad_sig = "sha256=0000000000000000000000000000000000000000000000000000000000000000";
 
     let resp = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integrations/github/events"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integrations/github/events"),
         ))
         .header("x-hub-signature-256", bad_sig)
         .header("x-github-delivery", Uuid::now_v7().to_string())
@@ -591,8 +637,10 @@ async fn ingest_missing_sig_returns_401() {
     let ws_slug = &ws.slug;
 
     http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integration-configs"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integration-configs"),
         ))
         .bearer_auth(token)
         .json(&serde_json::json!({ "integration": "github" }))
@@ -601,8 +649,10 @@ async fn ingest_missing_sig_returns_401() {
         .unwrap();
 
     let resp = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integrations/github/events"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integrations/github/events"),
         ))
         .header("x-github-delivery", Uuid::now_v7().to_string())
         .header("content-type", "application/json")
@@ -631,8 +681,10 @@ async fn ingest_no_config_returns_404() {
     let ws_slug = &ws.slug;
 
     let resp = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integrations/github/events"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integrations/github/events"),
         ))
         .header("x-hub-signature-256", "sha256=aabbcc")
         .header("x-github-delivery", Uuid::now_v7().to_string())
@@ -663,8 +715,10 @@ async fn ingest_oversized_body_returns_413() {
     let ws_slug = &ws.slug;
 
     let create_resp = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integration-configs"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integration-configs"),
         ))
         .bearer_auth(token)
         .json(&serde_json::json!({ "integration": "github" }))
@@ -679,8 +733,10 @@ async fn ingest_oversized_body_returns_413() {
     let sig = compute_sig(secret.as_bytes(), &big_body);
 
     let resp = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integrations/github/events"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integrations/github/events"),
         ))
         .header("x-hub-signature-256", &sig)
         .header("x-github-delivery", Uuid::now_v7().to_string())
@@ -718,8 +774,10 @@ async fn ingest_duplicate_delivery_is_noop() {
     let ws_slug = &ws.slug;
 
     let create_resp = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integration-configs"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integration-configs"),
         ))
         .bearer_auth(token)
         .json(&serde_json::json!({ "integration": "github" }))
@@ -735,8 +793,10 @@ async fn ingest_duplicate_delivery_is_noop() {
 
     for _ in 0..2u8 {
         let resp = http()
-            .post(format!(
-                "{base_url}/api/workspaces/{ws_slug}/integrations/github/events"
+            .post(support::path::api_url(
+                base_url,
+                "acta",
+                &format!("/workspaces/{ws_slug}/integrations/github/events"),
             ))
             .header("x-hub-signature-256", &sig)
             .header("x-github-delivery", delivery_id.to_string())
@@ -833,8 +893,10 @@ async fn ingest_filter_match_creates_task() {
         .expect("create column");
 
     let create_resp = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integration-configs"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integration-configs"),
         ))
         .bearer_auth(token)
         .json(&serde_json::json!({ "integration": "github" }))
@@ -881,8 +943,10 @@ async fn ingest_filter_match_creates_task() {
     let sig = compute_sig(secret.as_bytes(), &body);
 
     let resp = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integrations/github/events"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integrations/github/events"),
         ))
         .header("x-hub-signature-256", &sig)
         .header("x-github-delivery", delivery_id.to_string())
@@ -981,8 +1045,10 @@ async fn ingest_filter_no_match_no_task() {
         .expect("create column");
 
     let create_resp = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integration-configs"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integration-configs"),
         ))
         .bearer_auth(token)
         .json(&serde_json::json!({ "integration": "github" }))
@@ -1028,8 +1094,10 @@ async fn ingest_filter_no_match_no_task() {
     let sig = compute_sig(secret.as_bytes(), &body);
 
     let resp = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/integrations/github/events"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integrations/github/events"),
         ))
         .header("x-hub-signature-256", &sig)
         .header("x-github-delivery", Uuid::now_v7().to_string())
@@ -1091,10 +1159,10 @@ async fn agent_with_all_capabilities_cannot_list_integration_configs() {
         .expect("make key global");
 
     let resp = http()
-        .get(format!(
-            "{}/api/workspaces/{}/integration-configs",
+        .get(support::path::api_url(
             server.base_url(),
-            ws.slug
+            "acta",
+            &format!("/workspaces/{}/integration-configs", ws.slug),
         ))
         .bearer_auth(plain)
         .send()

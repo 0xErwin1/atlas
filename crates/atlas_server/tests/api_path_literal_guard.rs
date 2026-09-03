@@ -120,20 +120,9 @@ const ALLOWED: &[Exemption] = &[
         "idempotency_repo.rs",
         "a canonical store-key row, not a request path",
     ),
-    // TRANSIENT (PR1 only) — not yet migrated onto api_path/api_url; removed
-    // file-by-file as PR2/PR3 land (design R6, spec "counts are a review
+    // TRANSIENT — not yet migrated onto api_path/api_url; removed
+    // file-by-file as PR3 lands (design R6, spec "counts are a review
     // aid, the gate is the guard's zero-unallowlisted-literal property").
-    whole_file(
-        "api_comment_attachments.rs",
-        "TRANSIENT: pending v2-e3-s5 PR2",
-    ),
-    whole_file(
-        "api_integration_configs.rs",
-        "TRANSIENT: pending v2-e3-s5 PR2",
-    ),
-    whole_file("api_activation.rs", "TRANSIENT: pending v2-e3-s5 PR2"),
-    whole_file("api_webhooks.rs", "TRANSIENT: pending v2-e3-s5 PR2"),
-    whole_file("api_automation_rules.rs", "TRANSIENT: pending v2-e3-s5 PR2"),
     whole_file("api_comments.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
     whole_file("api_documents.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
     whole_file(
