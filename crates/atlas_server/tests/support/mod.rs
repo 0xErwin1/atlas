@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+pub(crate) mod path;
 pub(crate) mod route_matrix;
 
 use atlas_acta::actor::Actor;

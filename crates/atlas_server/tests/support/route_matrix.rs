@@ -1,5 +1,7 @@
 #![allow(dead_code, clippy::panic)]
 
+use std::sync::OnceLock;
+
 use atlas_core::registry::{HttpMethod, build};
 use atlas_server::reg5::{StorageBackend, reg5_component_entries};
 
@@ -42,6 +44,51 @@ impl RouteMatrixEntry {
     pub(crate) fn namespaces(&self) -> [String; 2] {
         atlas_server::router_audit::namespaces_for(&self.component)
     }
+
+    /// This entry's path, mounted under the suite's current default
+    /// namespace (`v2-e3-s5` design D5): delegates to
+    /// `support::path::api_path`, so an entry-based lookup and a
+    /// literal-based `api_path` call resolve through the same
+    /// `DEFAULT_NAMESPACE_INDEX`. Additive to [`RouteMatrixEntry::namespaces`]
+    /// — a sweep that legitimately exercises both mounts keeps calling
+    /// `namespaces()` directly and MUST NOT be rewritten to this method.
+    pub(crate) fn mounted_default(&self) -> String {
+        crate::support::path::api_path(&self.component, &self.path_template)
+    }
+}
+
+/// One `route_matrix()` snapshot, built once per test binary (`v2-e3-s5`
+/// design D2/R7): `component_declares` runs on every `api_path` call across
+/// 249+166 migrated call sites, and rebuilding the live registry that often
+/// would make each of them pay `route_matrix()`'s registry-build cost.
+static MATRIX: OnceLock<Vec<RouteMatrixEntry>> = OnceLock::new();
+
+fn matrix_once() -> &'static [RouteMatrixEntry] {
+    MATRIX.get_or_init(route_matrix)
+}
+
+/// Whether `component` owns a route matching `relative` (`v2-e3-s5` design
+/// D2): the assertion `api_path` needs before trusting a component argument
+/// that `namespaces_for(component)[DEFAULT_NAMESPACE_INDEX]` would otherwise
+/// discard. Uses `.any()` over the cached matrix with the existing
+/// `template_matches` matcher, never [`find_by_concrete_path`] — this check
+/// has no need to disambiguate between two matching templates, only to
+/// confirm at least one owning entry exists.
+///
+/// A [`atlas_server::router_audit::ROOT_LEVEL_PATHS`] member is declared for
+/// every component: `mounted_path` serves it unprefixed regardless of which
+/// component asked (spec requirement "root-level paths are exempt through
+/// `mounted_path`, not through a test-side special case"), so ownership
+/// validation would otherwise wrongly reject a root-level request made
+/// through an unrelated component's call site.
+pub(crate) fn component_declares(component: &str, relative: &str) -> bool {
+    if atlas_server::router_audit::ROOT_LEVEL_PATHS.contains(&relative) {
+        return true;
+    }
+
+    matrix_once().iter().any(|entry| {
+        entry.component == component && template_matches(&entry.path_template, relative)
+    })
 }
 
 /// Builds the full `(method, path)` surface from the live REG-5 registry,
@@ -189,5 +236,30 @@ mod tests {
             HttpMethod::Delete,
             "/workspaces/ws-1/tasks/ATL-1",
         );
+    }
+
+    #[test]
+    fn component_declares_is_true_for_a_real_pair_from_the_live_registry() {
+        assert!(component_declares("acta", "/workspaces/{ws}/tasks"));
+    }
+
+    #[test]
+    fn component_declares_is_false_for_a_wrong_component() {
+        assert!(!component_declares("custos", "/workspaces/{ws}/tasks"));
+    }
+
+    #[test]
+    fn component_declares_is_false_for_a_nonexistent_relative_path() {
+        assert!(!component_declares("acta", "/no/such/route"));
+    }
+
+    #[test]
+    fn mounted_default_matches_api_path_for_every_live_entry() {
+        for entry in route_matrix() {
+            assert_eq!(
+                entry.mounted_default(),
+                crate::support::path::api_path(&entry.component, &entry.path_template)
+            );
+        }
     }
 }

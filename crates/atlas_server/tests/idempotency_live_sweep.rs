@@ -56,7 +56,6 @@ use atlas_api::dtos::{
 use atlas_client::AtlasClient;
 use atlas_core::registry::{HttpMethod, build};
 use atlas_server::reg5::{StorageBackend, reg5_component_entries};
-use atlas_server::router_audit::mounted_path;
 use support::{
     TestDb, TestServer, activate_user_in_db, login_root_user, login_user_with_workspace,
 };
@@ -412,7 +411,10 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                     })
                     .await
                     .expect("create user to reset");
-                let path = format!("/api/users/{}/reset-password", created.user.id);
+                let path = support::path::api_path(
+                    "custos",
+                    &format!("/users/{}/reset-password", created.user.id),
+                );
                 let body = ReqBody::Json(serde_json::json!({ "new_password": "SweepPassword1!" }));
                 assert_idempotent_true(&root, &path, &[], body).await;
             }
@@ -432,7 +434,10 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                     })
                     .await
                     .expect("create user for activation-link regen");
-                let path = format!("/api/users/{}/activation-link", created.user.id);
+                let path = support::path::api_path(
+                    "custos",
+                    &format!("/users/{}/activation-link", created.user.id),
+                );
                 assert_idempotent_true(&root, &path, &[], ReqBody::Json(serde_json::json!({})))
                     .await;
             }
@@ -442,7 +447,7 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                 let body = ReqBody::Json(serde_json::json!({ "name": "Sweep Key" }));
                 assert_idempotent_true(
                     &client,
-                    &mounted_path("/api", route.path.as_str()),
+                    &support::path::api_path("custos", route.path.as_str()),
                     &[],
                     body,
                 )
@@ -473,9 +478,9 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                     .add_member(&ws.slug, second_user_id, "member")
                     .await
                     .expect("add second user to workspace so it is a valid grant target");
-                let path = format!(
-                    "/api/workspaces/{}/projects/{}/grants",
-                    ws.slug, project.slug
+                let path = support::path::api_path(
+                    "custos",
+                    &format!("/workspaces/{}/projects/{}/grants", ws.slug, project.slug),
                 );
                 let body = ReqBody::Json(
                     serde_json::to_value(CreateGrantRequest {
@@ -497,7 +502,8 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                     .add_member(&ws.slug, second_user_id, "member")
                     .await
                     .expect("add second user to workspace so it is a valid grant target");
-                let path = format!("/api/workspaces/{}/grants", ws.slug);
+                let path =
+                    support::path::api_path("custos", &format!("/workspaces/{}/grants", ws.slug));
                 let body = ReqBody::Json(
                     serde_json::to_value(CreateGrantRequest {
                         principal: GrantPrincipal {
@@ -513,7 +519,8 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
             "/workspaces/{ws}/groups" => {
                 let (client, ws, _user) =
                     login_user_with_workspace(&server, &db, "sweep-group").await;
-                let path = format!("/api/workspaces/{}/groups", ws.slug);
+                let path =
+                    support::path::api_path("custos", &format!("/workspaces/{}/groups", ws.slug));
                 let body = ReqBody::Json(serde_json::json!({ "name": "Sweep Group" }));
                 assert_idempotent_true(&client, &path, &[], body).await;
             }
@@ -534,7 +541,10 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                     .add_member(&ws.slug, second_user_id, "member")
                     .await
                     .expect("add second user to workspace so it is a valid group-member target");
-                let path = format!("/api/workspaces/{}/groups/{}/members", ws.slug, group.id);
+                let path = support::path::api_path(
+                    "custos",
+                    &format!("/workspaces/{}/groups/{}/members", ws.slug, group.id),
+                );
                 let body = ReqBody::Json(serde_json::json!({ "user_id": second_user_id }));
                 assert_idempotent_true(&client, &path, &[], body).await;
             }
@@ -550,7 +560,7 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                 );
                 assert_idempotent_true(
                     &client,
-                    &mounted_path("/api", route.path.as_str()),
+                    &support::path::api_path("acta", route.path.as_str()),
                     &[],
                     body,
                 )
@@ -566,7 +576,7 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                 }));
                 assert_idempotent_true(
                     &root,
-                    &mounted_path("/api", route.path.as_str()),
+                    &support::path::api_path("acta", route.path.as_str()),
                     &[],
                     body,
                 )
@@ -575,7 +585,8 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
             "/workspaces/{ws}/projects" => {
                 let (client, ws, _user) =
                     login_user_with_workspace(&server, &db, "sweep-newproj").await;
-                let path = format!("/api/workspaces/{}/projects", ws.slug);
+                let path =
+                    support::path::api_path("acta", &format!("/workspaces/{}/projects", ws.slug));
                 let body = ReqBody::Json(serde_json::json!({
                     "name": "Sweep Project",
                     "slug": "sweep-project",
@@ -589,7 +600,8 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                 let (client, ws, _user) =
                     login_user_with_workspace(&server, &db, "sweep-addmember").await;
                 let second_user_id = second_platform_user(&db, "sweep-addmember-2").await;
-                let path = format!("/api/workspaces/{}/members", ws.slug);
+                let path =
+                    support::path::api_path("acta", &format!("/workspaces/{}/members", ws.slug));
                 let body = ReqBody::Json(
                     serde_json::json!({ "user_id": second_user_id, "role": "member" }),
                 );
@@ -598,14 +610,18 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
             "/workspaces/{ws}/tags" => {
                 let (client, ws, _user) =
                     login_user_with_workspace(&server, &db, "sweep-tag").await;
-                let path = format!("/api/workspaces/{}/tags", ws.slug);
+                let path =
+                    support::path::api_path("acta", &format!("/workspaces/{}/tags", ws.slug));
                 let body = ReqBody::Json(serde_json::json!({ "name": "sweep-tag" }));
                 assert_idempotent_true(&client, &path, &[], body).await;
             }
             "/workspaces/{ws}/status-templates" => {
                 let (client, ws, _user) =
                     login_user_with_workspace(&server, &db, "sweep-statustpl").await;
-                let path = format!("/api/workspaces/{}/status-templates", ws.slug);
+                let path = support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{}/status-templates", ws.slug),
+                );
                 let body = ReqBody::Json(serde_json::json!({
                     "name": "Sweep Status",
                     "color": null,
@@ -617,7 +633,10 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
             "/workspaces/{ws}/property-definitions" => {
                 let (client, ws, _user) =
                     login_user_with_workspace(&server, &db, "sweep-propdef").await;
-                let path = format!("/api/workspaces/{}/property-definitions", ws.slug);
+                let path = support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{}/property-definitions", ws.slug),
+                );
                 let body = ReqBody::Json(serde_json::json!({
                     "name": "Sweep Prop",
                     "kind": "text",
@@ -629,7 +648,10 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
             "/workspaces/{ws}/saved-searches" => {
                 let (client, ws, _user) =
                     login_user_with_workspace(&server, &db, "sweep-savedsearch").await;
-                let path = format!("/api/workspaces/{}/saved-searches", ws.slug);
+                let path = support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{}/saved-searches", ws.slug),
+                );
                 let body = ReqBody::Json(
                     serde_json::json!({ "name": "Sweep Search", "query": "is:open" }),
                 );
@@ -638,7 +660,8 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
             "/workspaces/{ws}/task-views" => {
                 let (client, ws, _user) =
                     login_user_with_workspace(&server, &db, "sweep-taskview").await;
-                let path = format!("/api/workspaces/{}/task-views", ws.slug);
+                let path =
+                    support::path::api_path("acta", &format!("/workspaces/{}/task-views", ws.slug));
                 let body = ReqBody::Json(serde_json::json!({
                     "name": "Sweep View",
                     "filters": {}
@@ -681,7 +704,7 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                 }));
                 assert_idempotent_true(
                     &root,
-                    &mounted_path("/api", route.path.as_str()),
+                    &support::path::api_path("acta", route.path.as_str()),
                     &[],
                     body,
                 )
@@ -708,9 +731,9 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                     )
                     .await
                     .expect("create project");
-                let path = format!(
-                    "/api/workspaces/{}/projects/{}/boards",
-                    ws.slug, project.slug
+                let path = support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{}/projects/{}/boards", ws.slug, project.slug),
                 );
                 let _ = &user;
                 let body = ReqBody::Json(
@@ -725,7 +748,10 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
             "/workspaces/{ws}/boards/{board_id}/columns" => {
                 let (client, ws, board_id, _column_id) =
                     provision_board(&server, &db, "sweep-column").await;
-                let path = format!("/api/workspaces/{}/boards/{}/columns", ws.slug, board_id);
+                let path = support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{}/boards/{}/columns", ws.slug, board_id),
+                );
                 let body = ReqBody::Json(
                     serde_json::to_value(CreateColumnRequest {
                         name: "Sweep Column".to_string(),
@@ -740,7 +766,10 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
             "/workspaces/{ws}/boards/{board_id}/tasks" => {
                 let (client, ws, board_id, column_id) =
                     provision_board(&server, &db, "sweep-task").await;
-                let path = format!("/api/workspaces/{}/boards/{}/tasks", ws.slug, board_id);
+                let path = support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{}/boards/{}/tasks", ws.slug, board_id),
+                );
                 let body = ReqBody::Json(
                     serde_json::to_value(CreateTaskRequest {
                         column_id,
@@ -764,9 +793,12 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                     .expect("fetch self")
                     .id
                     .expect("authenticated human user has an id");
-                let path = format!(
-                    "/api/workspaces/{}/tasks/{}/assignees",
-                    ws.slug, task.readable_id
+                let path = support::path::api_path(
+                    "acta",
+                    &format!(
+                        "/workspaces/{}/tasks/{}/assignees",
+                        ws.slug, task.readable_id
+                    ),
                 );
                 let body = ReqBody::Json(
                     serde_json::json!({ "assignee_type": "user", "assignee_id": self_id }),
@@ -776,9 +808,12 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
             "/workspaces/{ws}/tasks/{readable_id}/references" => {
                 let (client, ws, task, second_task) =
                     provision_task_pair(&server, &db, "sweep-reference").await;
-                let path = format!(
-                    "/api/workspaces/{}/tasks/{}/references",
-                    ws.slug, task.readable_id
+                let path = support::path::api_path(
+                    "acta",
+                    &format!(
+                        "/workspaces/{}/tasks/{}/references",
+                        ws.slug, task.readable_id
+                    ),
                 );
                 let body = ReqBody::Json(
                     serde_json::to_value(CreateReferenceRequest {
@@ -793,9 +828,12 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
             "/workspaces/{ws}/tasks/{readable_id}/references/batch" => {
                 let (client, ws, task, second_task) =
                     provision_task_pair(&server, &db, "sweep-refbatch").await;
-                let path = format!(
-                    "/api/workspaces/{}/tasks/{}/references/batch",
-                    ws.slug, task.readable_id
+                let path = support::path::api_path(
+                    "acta",
+                    &format!(
+                        "/workspaces/{}/tasks/{}/references/batch",
+                        ws.slug, task.readable_id
+                    ),
                 );
                 let body = ReqBody::Json(serde_json::json!({
                     "references": [{
@@ -808,9 +846,12 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
             "/workspaces/{ws}/tasks/{readable_id}/comment-drafts" => {
                 let (client, ws, task, _second_id) =
                     provision_task(&server, &db, "sweep-taskdraft").await;
-                let path = format!(
-                    "/api/workspaces/{}/tasks/{}/comment-drafts",
-                    ws.slug, task.readable_id
+                let path = support::path::api_path(
+                    "acta",
+                    &format!(
+                        "/workspaces/{}/tasks/{}/comment-drafts",
+                        ws.slug, task.readable_id
+                    ),
                 );
                 let headers = vec![("x-create-token", uuid::Uuid::now_v7().to_string())];
                 assert_idempotent_true(
@@ -824,9 +865,12 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
             "/workspaces/{ws}/tasks/{readable_id}/checklist" => {
                 let (client, ws, task, _second_id) =
                     provision_task(&server, &db, "sweep-checklist").await;
-                let path = format!(
-                    "/api/workspaces/{}/tasks/{}/checklist",
-                    ws.slug, task.readable_id
+                let path = support::path::api_path(
+                    "acta",
+                    &format!(
+                        "/workspaces/{}/tasks/{}/checklist",
+                        ws.slug, task.readable_id
+                    ),
                 );
                 let body = ReqBody::Json(
                     serde_json::to_value(CreateChecklistItemRequest {
@@ -841,7 +885,10 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
             "/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote" => {
                 let (client, ws, board_id, column_id) =
                     provision_board(&server, &db, "sweep-promoteitem").await;
-                let path_create = format!("/api/workspaces/{}/boards/{}/tasks", ws.slug, board_id);
+                let path_create = support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{}/boards/{}/tasks", ws.slug, board_id),
+                );
                 let task: atlas_api::dtos::boards_tasks::TaskDto = client
                     .create_task(
                         &ws.slug,
@@ -871,9 +918,12 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                     )
                     .await
                     .expect("create checklist item");
-                let path = format!(
-                    "/api/workspaces/{}/tasks/{}/checklist/{}/promote",
-                    ws.slug, task.readable_id, item.id
+                let path = support::path::api_path(
+                    "acta",
+                    &format!(
+                        "/workspaces/{}/tasks/{}/checklist/{}/promote",
+                        ws.slug, task.readable_id, item.id
+                    ),
                 );
                 let body = ReqBody::Json(
                     serde_json::json!({ "board_id": board_id, "column_id": column_id }),
@@ -883,9 +933,12 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
             "/workspaces/{ws}/tasks/{readable_id}/subtasks" => {
                 let (client, ws, task, _second_id) =
                     provision_task(&server, &db, "sweep-subtask").await;
-                let path = format!(
-                    "/api/workspaces/{}/tasks/{}/subtasks",
-                    ws.slug, task.readable_id
+                let path = support::path::api_path(
+                    "acta",
+                    &format!(
+                        "/workspaces/{}/tasks/{}/subtasks",
+                        ws.slug, task.readable_id
+                    ),
                 );
                 let body = ReqBody::Json(
                     serde_json::to_value(CreateSubtaskRequest {
@@ -936,9 +989,12 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                     )
                     .await
                     .expect("create subtask");
-                let path = format!(
-                    "/api/workspaces/{}/tasks/{}/promote",
-                    ws.slug, subtask.task.readable_id
+                let path = support::path::api_path(
+                    "acta",
+                    &format!(
+                        "/workspaces/{}/tasks/{}/promote",
+                        ws.slug, subtask.task.readable_id
+                    ),
                 );
                 assert_idempotent_true(&client, &path, &[], ReqBody::Json(serde_json::json!({})))
                     .await;
@@ -946,9 +1002,12 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
             "/workspaces/{ws}/tasks/{readable_id}/comments" => {
                 let (client, ws, task, _second_id) =
                     provision_task(&server, &db, "sweep-taskcomment").await;
-                let path = format!(
-                    "/api/workspaces/{}/tasks/{}/comments",
-                    ws.slug, task.readable_id
+                let path = support::path::api_path(
+                    "acta",
+                    &format!(
+                        "/workspaces/{}/tasks/{}/comments",
+                        ws.slug, task.readable_id
+                    ),
                 );
                 let body = ReqBody::Json(serde_json::json!({ "body": "Sweep comment" }));
                 assert_idempotent_true(&client, &path, &[], body).await;
@@ -973,9 +1032,12 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                     )
                     .await
                     .expect("create project");
-                let path = format!(
-                    "/api/workspaces/{}/projects/{}/documents",
-                    ws.slug, project.slug
+                let path = support::path::api_path(
+                    "acta",
+                    &format!(
+                        "/workspaces/{}/projects/{}/documents",
+                        ws.slug, project.slug
+                    ),
                 );
                 let body = ReqBody::Json(serde_json::json!({
                     "title": "Sweep Document",
@@ -988,9 +1050,12 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
             "/workspaces/{ws}/documents/{slug}/comment-drafts" => {
                 let (client, ws, doc_slug) =
                     provision_document(&server, &db, "sweep-docdraft").await;
-                let path = format!(
-                    "/api/workspaces/{}/documents/{}/comment-drafts",
-                    ws.slug, doc_slug
+                let path = support::path::api_path(
+                    "acta",
+                    &format!(
+                        "/workspaces/{}/documents/{}/comment-drafts",
+                        ws.slug, doc_slug
+                    ),
                 );
                 let headers = vec![("x-create-token", uuid::Uuid::now_v7().to_string())];
                 assert_idempotent_true(
@@ -1004,16 +1069,19 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
             "/workspaces/{ws}/documents/{slug}/copy" => {
                 let (client, ws, doc_slug) =
                     provision_document(&server, &db, "sweep-doccopy").await;
-                let path = format!("/api/workspaces/{}/documents/{}/copy", ws.slug, doc_slug);
+                let path = support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{}/documents/{}/copy", ws.slug, doc_slug),
+                );
                 assert_idempotent_true(&client, &path, &[], ReqBody::Json(serde_json::json!({})))
                     .await;
             }
             "/workspaces/{ws}/documents/{slug}/comments" => {
                 let (client, ws, doc_slug) =
                     provision_document(&server, &db, "sweep-doccomment").await;
-                let path = format!(
-                    "/api/workspaces/{}/documents/{}/comments",
-                    ws.slug, doc_slug
+                let path = support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{}/documents/{}/comments", ws.slug, doc_slug),
                 );
                 let body = ReqBody::Json(serde_json::json!({ "body": "Sweep comment" }));
                 assert_idempotent_true(&client, &path, &[], body).await;
@@ -1034,9 +1102,9 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                     )
                     .await
                     .expect("create project");
-                let path = format!(
-                    "/api/workspaces/{}/projects/{}/folders",
-                    ws.slug, project.slug
+                let path = support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{}/projects/{}/folders", ws.slug, project.slug),
                 );
                 let body = ReqBody::Json(
                     serde_json::json!({ "name": "Sweep Folder", "parent_folder_id": null }),
@@ -1070,7 +1138,10 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                     )
                     .await
                     .expect("create folder");
-                let path = format!("/api/workspaces/{}/folders/{}/copy", ws.slug, folder.id);
+                let path = support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{}/folders/{}/copy", ws.slug, folder.id),
+                );
                 let body = ReqBody::Json(serde_json::json!({ "parent_folder_id": null }));
                 assert_idempotent_true(&client, &path, &[], body).await;
             }
@@ -1081,7 +1152,10 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
             "/workspaces/{ws}/automation-rules" => {
                 let (client, ws, board_id, column_id) =
                     provision_board(&server, &db, "sweep-automation").await;
-                let path = format!("/api/workspaces/{}/automation-rules", ws.slug);
+                let path = support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{}/automation-rules", ws.slug),
+                );
                 let body = ReqBody::Json(serde_json::json!({
                     "name": "Sweep Rule",
                     "trigger_event_type": "external.github.workflow_run",
@@ -1099,7 +1173,10 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
             "/workspaces/{ws}/semantic-search/reindex" => {
                 let (client, ws, _user) =
                     login_user_with_workspace(&server, &db, "sweep-reindex").await;
-                let path = format!("/api/workspaces/{}/semantic-search/reindex", ws.slug);
+                let path = support::path::api_path(
+                    "acta",
+                    &format!("/workspaces/{}/semantic-search/reindex", ws.slug),
+                );
                 assert_idempotent_true(&client, &path, &[], ReqBody::Json(serde_json::json!({})))
                     .await;
             }
@@ -1158,9 +1235,12 @@ async fn declared_idempotent_false_sample_ignores_the_header() {
             .id
             .expect("authenticated human user has an id");
 
-        let apply_templates_path = format!(
-            "/api/workspaces/{}/boards/{}/apply-status-templates",
-            ws.slug, board_id
+        let apply_templates_path = support::path::api_path(
+            "acta",
+            &format!(
+                "/workspaces/{}/boards/{}/apply-status-templates",
+                ws.slug, board_id
+            ),
         );
         assert_idempotent_false(
             &db,
@@ -1171,7 +1251,10 @@ async fn declared_idempotent_false_sample_ignores_the_header() {
         )
         .await;
 
-        let archive_path = format!("/api/workspaces/{}/boards/{}/archive", ws.slug, board_id);
+        let archive_path = support::path::api_path(
+            "acta",
+            &format!("/workspaces/{}/boards/{}/archive", ws.slug, board_id),
+        );
         assert_idempotent_false(
             &db,
             &client,
@@ -1181,7 +1264,10 @@ async fn declared_idempotent_false_sample_ignores_the_header() {
         )
         .await;
 
-        let unarchive_path = format!("/api/workspaces/{}/boards/{}/unarchive", ws.slug, board_id);
+        let unarchive_path = support::path::api_path(
+            "acta",
+            &format!("/workspaces/{}/boards/{}/unarchive", ws.slug, board_id),
+        );
         assert_idempotent_false(
             &db,
             &client,
@@ -1191,7 +1277,10 @@ async fn declared_idempotent_false_sample_ignores_the_header() {
         )
         .await;
 
-        let heartbeat_path = format!("/api/workspaces/{}/boards/{}/presence", ws.slug, board_id);
+        let heartbeat_path = support::path::api_path(
+            "acta",
+            &format!("/workspaces/{}/boards/{}/presence", ws.slug, board_id),
+        );
         assert_idempotent_false(
             &db,
             &client,
@@ -1211,9 +1300,12 @@ async fn declared_idempotent_false_sample_ignores_the_header() {
             .expect("fetch self")
             .id
             .expect("authenticated human user has an id");
-        let path = format!(
-            "/api/workspaces/{}/documents/{}/content/search",
-            ws.slug, doc_slug
+        let path = support::path::api_path(
+            "acta",
+            &format!(
+                "/workspaces/{}/documents/{}/content/search",
+                ws.slug, doc_slug
+            ),
         );
         let body = ReqBody::Json(serde_json::json!({ "query": "hello" }));
         assert_idempotent_false(&db, &client, self_id, &path, body).await;
@@ -1233,7 +1325,10 @@ async fn declared_idempotent_false_sample_ignores_the_header() {
             .expect("fetch self")
             .id
             .expect("authenticated human user has an id");
-        let path = format!("/api/workspaces/{}/documents/moves/batch", ws.slug);
+        let path = support::path::api_path(
+            "acta",
+            &format!("/workspaces/{}/documents/moves/batch", ws.slug),
+        );
         let body = ReqBody::Json(serde_json::json!({
             "moves": [{ "source_document": doc_slug, "folder_id": null }]
         }));

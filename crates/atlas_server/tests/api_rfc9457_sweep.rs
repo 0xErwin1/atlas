@@ -114,9 +114,9 @@ async fn every_declared_route_answers_with_a_conformant_problem_body() {
 
     for pass in 0..2 {
         let pass_label = if pass == 0 {
-            "V1 (/api)"
+            "V1 (canonical namespace)"
         } else {
-            "V2 (per-component /api/v2/<component>)"
+            "V2 (per-component namespace)"
         };
         let mut excluded = Vec::new();
         let mut provoked_or_excluded: HashSet<(HttpMethod, String)> = HashSet::new();
