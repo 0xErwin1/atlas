@@ -606,12 +606,13 @@ async fn task_comment_attachment_routes_round_trip_raw_bytes() {
         .await
         .expect("create comment");
 
-    let attachment_url = format!(
-        "{}/api/workspaces/{}/tasks/{}/comments/{}/attachments",
+    let attachment_url = support::path::api_url(
         server.base_url(),
-        ws.slug,
-        task.readable_id,
-        comment.id
+        "acta",
+        &format!(
+            "/workspaces/{}/tasks/{}/comments/{}/attachments",
+            ws.slug, task.readable_id, comment.id
+        ),
     );
     let payload = b"task comment bytes".to_vec();
     let upload_response = upload(
@@ -651,12 +652,15 @@ async fn task_comment_attachment_routes_round_trip_raw_bytes() {
 
     let mismatched_comment_content = get(
         &client,
-        format!(
-            "{}/api/workspaces/{}/tasks/{}/comments/{}/attachments/{attachment_id}/content",
+        support::path::api_url(
             server.base_url(),
-            ws.slug,
-            task.readable_id,
-            uuid::Uuid::now_v7()
+            "acta",
+            &format!(
+                "/workspaces/{}/tasks/{}/comments/{}/attachments/{attachment_id}/content",
+                ws.slug,
+                task.readable_id,
+                uuid::Uuid::now_v7()
+            ),
         ),
     )
     .await;
@@ -717,12 +721,13 @@ async fn document_comment_attachment_routes_round_trip_raw_bytes() {
         .await
         .expect("create comment");
 
-    let attachment_url = format!(
-        "{}/api/workspaces/{}/documents/{}/comments/{}/attachments",
+    let attachment_url = support::path::api_url(
         server.base_url(),
-        ws.slug,
-        slug,
-        comment.id
+        "acta",
+        &format!(
+            "/workspaces/{}/documents/{}/comments/{}/attachments",
+            ws.slug, slug, comment.id
+        ),
     );
     let payload = b"document comment bytes".to_vec();
     let upload_response = upload_raw(
@@ -746,12 +751,15 @@ async fn document_comment_attachment_routes_round_trip_raw_bytes() {
 
     let mismatched_comment_content = get(
         &client,
-        format!(
-            "{}/api/workspaces/{}/documents/{}/comments/{}/attachments/{attachment_id}",
+        support::path::api_url(
             server.base_url(),
-            ws.slug,
-            slug,
-            uuid::Uuid::now_v7()
+            "acta",
+            &format!(
+                "/workspaces/{}/documents/{}/comments/{}/attachments/{attachment_id}",
+                ws.slug,
+                slug,
+                uuid::Uuid::now_v7()
+            ),
         ),
     )
     .await;
@@ -915,11 +923,13 @@ async fn task_comment_draft_create_returns_reserved_comment_identity() {
     let create_token = uuid::Uuid::now_v7();
     let response = client
         .http_client()
-        .post(format!(
-            "{}/api/workspaces/{}/tasks/{}/comment-drafts",
+        .post(support::path::api_url(
             server.base_url(),
-            ws.slug,
-            task.readable_id
+            "acta",
+            &format!(
+                "/workspaces/{}/tasks/{}/comment-drafts",
+                ws.slug, task.readable_id
+            ),
         ))
         .bearer_auth(client.token().expect("authenticated token"))
         .header("x-create-token", create_token.to_string())
@@ -934,11 +944,13 @@ async fn task_comment_draft_create_returns_reserved_comment_identity() {
 
     let replay = client
         .http_client()
-        .post(format!(
-            "{}/api/workspaces/{}/tasks/{}/comment-drafts",
+        .post(support::path::api_url(
             server.base_url(),
-            ws.slug,
-            task.readable_id
+            "acta",
+            &format!(
+                "/workspaces/{}/tasks/{}/comment-drafts",
+                ws.slug, task.readable_id
+            ),
         ))
         .bearer_auth(client.token().expect("authenticated token"))
         .header("x-create-token", create_token.to_string())
@@ -951,11 +963,13 @@ async fn task_comment_draft_create_returns_reserved_comment_identity() {
     assert_eq!(replayed["id"], draft["id"]);
 
     let draft_id = draft["id"].as_str().expect("draft id");
-    let attachment_url = format!(
-        "{}/api/workspaces/{}/tasks/{}/comment-drafts/{draft_id}/attachments",
+    let attachment_url = support::path::api_url(
         server.base_url(),
-        ws.slug,
-        task.readable_id
+        "acta",
+        &format!(
+            "/workspaces/{}/tasks/{}/comment-drafts/{draft_id}/attachments",
+            ws.slug, task.readable_id
+        ),
     );
     let upload_token = uuid::Uuid::now_v7();
     let first_upload = upload_draft(
@@ -979,11 +993,13 @@ async fn task_comment_draft_create_returns_reserved_comment_identity() {
         .expect("draft attachment id")
         .parse::<uuid::Uuid>()
         .expect("UUID draft attachment id");
-    let canonical_url = format!(
-        "{}/api/workspaces/{}/tasks/{}/comments/{draft_id}/attachments",
+    let canonical_url = support::path::api_url(
         server.base_url(),
-        ws.slug,
-        task.readable_id
+        "acta",
+        &format!(
+            "/workspaces/{}/tasks/{}/comments/{draft_id}/attachments",
+            ws.slug, task.readable_id
+        ),
     );
 
     let listed = get(&client, canonical_url.clone()).await;
@@ -1028,11 +1044,13 @@ async fn task_comment_draft_create_returns_reserved_comment_identity() {
 
     let cancelled = delete(
         &client,
-        format!(
-            "{}/api/workspaces/{}/tasks/{}/comment-drafts/{draft_id}",
+        support::path::api_url(
             server.base_url(),
-            ws.slug,
-            task.readable_id
+            "acta",
+            &format!(
+                "/workspaces/{}/tasks/{}/comment-drafts/{draft_id}",
+                ws.slug, task.readable_id
+            ),
         ),
     )
     .await;
@@ -1040,11 +1058,13 @@ async fn task_comment_draft_create_returns_reserved_comment_identity() {
 
     let repeated_cancel = delete(
         &client,
-        format!(
-            "{}/api/workspaces/{}/tasks/{}/comment-drafts/{draft_id}",
+        support::path::api_url(
             server.base_url(),
-            ws.slug,
-            task.readable_id
+            "acta",
+            &format!(
+                "/workspaces/{}/tasks/{}/comment-drafts/{draft_id}",
+                ws.slug, task.readable_id
+            ),
         ),
     )
     .await;
@@ -1052,11 +1072,10 @@ async fn task_comment_draft_create_returns_reserved_comment_identity() {
 
     let task_delete = delete(
         &client,
-        format!(
-            "{}/api/workspaces/{}/tasks/{}",
+        support::path::api_url(
             server.base_url(),
-            ws.slug,
-            task.readable_id,
+            "acta",
+            &format!("/workspaces/{}/tasks/{}", ws.slug, task.readable_id),
         ),
     )
     .await;
@@ -1134,11 +1153,13 @@ async fn task_draft_upload_conceals_missing_or_mismatched_drafts_without_residue
         .expect("create wrong parent task");
     let draft_response = client
         .http_client()
-        .post(format!(
-            "{}/api/workspaces/{}/tasks/{}/comment-drafts",
+        .post(support::path::api_url(
             server.base_url(),
-            ws.slug,
-            task.readable_id
+            "acta",
+            &format!(
+                "/workspaces/{}/tasks/{}/comment-drafts",
+                ws.slug, task.readable_id
+            ),
         ))
         .bearer_auth(client.token().expect("authenticated token"))
         .header("x-create-token", uuid::Uuid::now_v7().to_string())
@@ -1217,42 +1238,51 @@ async fn task_draft_upload_conceals_missing_or_mismatched_drafts_without_residue
     let cases = [
         (
             &client,
-            format!(
-                "{}/api/workspaces/{}/tasks/{}/comment-drafts/{}/attachments",
+            support::path::api_url(
                 server.base_url(),
-                ws.slug,
-                task.readable_id,
-                uuid::Uuid::now_v7(),
+                "acta",
+                &format!(
+                    "/workspaces/{}/tasks/{}/comment-drafts/{}/attachments",
+                    ws.slug,
+                    task.readable_id,
+                    uuid::Uuid::now_v7()
+                ),
             ),
             "unknown draft",
         ),
         (
             &client,
-            format!(
-                "{}/api/workspaces/{}/tasks/{}/comment-drafts/{draft_id}/attachments",
+            support::path::api_url(
                 server.base_url(),
-                ws.slug,
-                wrong_task.readable_id,
+                "acta",
+                &format!(
+                    "/workspaces/{}/tasks/{}/comment-drafts/{draft_id}/attachments",
+                    ws.slug, wrong_task.readable_id
+                ),
             ),
             "wrong task parent",
         ),
         (
             &other_workspace_client,
-            format!(
-                "{}/api/workspaces/{}/tasks/{}/comment-drafts/{draft_id}/attachments",
+            support::path::api_url(
                 server.base_url(),
-                other_workspace.slug,
-                other_workspace_task.readable_id,
+                "acta",
+                &format!(
+                    "/workspaces/{}/tasks/{}/comment-drafts/{draft_id}/attachments",
+                    other_workspace.slug, other_workspace_task.readable_id
+                ),
             ),
             "wrong workspace",
         ),
         (
             &other_principal,
-            format!(
-                "{}/api/workspaces/{}/tasks/{}/comment-drafts/{draft_id}/attachments",
+            support::path::api_url(
                 server.base_url(),
-                ws.slug,
-                task.readable_id,
+                "acta",
+                &format!(
+                    "/workspaces/{}/tasks/{}/comment-drafts/{draft_id}/attachments",
+                    ws.slug, task.readable_id
+                ),
             ),
             "cross-principal access",
         ),
@@ -1308,11 +1338,10 @@ async fn document_comment_draft_create_returns_reserved_comment_identity() {
 
     let response = client
         .http_client()
-        .post(format!(
-            "{}/api/workspaces/{}/documents/{}/comment-drafts",
+        .post(support::path::api_url(
             server.base_url(),
-            ws.slug,
-            slug
+            "acta",
+            &format!("/workspaces/{}/documents/{}/comment-drafts", ws.slug, slug),
         ))
         .bearer_auth(client.token().expect("authenticated token"))
         .header("x-create-token", uuid::Uuid::now_v7().to_string())
@@ -1354,10 +1383,10 @@ async fn document_comment_draft_cancel_is_directly_available_and_terminal_on_rep
     let slug = document.slug.expect("document slug");
     let draft_response = client
         .http_client()
-        .post(format!(
-            "{}/api/workspaces/{}/documents/{slug}/comment-drafts",
+        .post(support::path::api_url(
             server.base_url(),
-            ws.slug,
+            "acta",
+            &format!("/workspaces/{}/documents/{slug}/comment-drafts", ws.slug),
         ))
         .bearer_auth(client.token().expect("authenticated token"))
         .header("x-create-token", uuid::Uuid::now_v7().to_string())
@@ -1367,10 +1396,13 @@ async fn document_comment_draft_cancel_is_directly_available_and_terminal_on_rep
     assert_eq!(draft_response.status(), reqwest::StatusCode::CREATED);
     let draft: Value = draft_response.json().await.expect("decode comment draft");
     let draft_id = draft["id"].as_str().expect("draft id");
-    let cancel_url = format!(
-        "{}/api/workspaces/{}/documents/{slug}/comment-drafts/{draft_id}",
+    let cancel_url = support::path::api_url(
         server.base_url(),
-        ws.slug,
+        "acta",
+        &format!(
+            "/workspaces/{}/documents/{slug}/comment-drafts/{draft_id}",
+            ws.slug
+        ),
     );
 
     let cancelled = delete(&client, cancel_url.clone()).await;
@@ -1411,10 +1443,10 @@ async fn document_delete_conflicts_while_a_retained_comment_draft_exists() {
     let slug = document.slug.expect("document slug");
     let create_draft = client
         .http_client()
-        .post(format!(
-            "{}/api/workspaces/{}/documents/{slug}/comment-drafts",
+        .post(support::path::api_url(
             server.base_url(),
-            ws.slug,
+            "acta",
+            &format!("/workspaces/{}/documents/{slug}/comment-drafts", ws.slug),
         ))
         .bearer_auth(client.token().expect("authenticated token"))
         .header("x-create-token", uuid::Uuid::now_v7().to_string())
@@ -1425,10 +1457,10 @@ async fn document_delete_conflicts_while_a_retained_comment_draft_exists() {
 
     let deleted = delete(
         &client,
-        format!(
-            "{}/api/workspaces/{}/documents/{slug}",
+        support::path::api_url(
             server.base_url(),
-            ws.slug,
+            "acta",
+            &format!("/workspaces/{}/documents/{slug}", ws.slug),
         ),
     )
     .await;
@@ -1508,11 +1540,13 @@ async fn task_comment_finalization_transfers_draft_attachments_and_replays() {
 
     let draft = client
         .http_client()
-        .post(format!(
-            "{}/api/workspaces/{}/tasks/{}/comment-drafts",
+        .post(support::path::api_url(
             server.base_url(),
-            ws.slug,
-            task.readable_id
+            "acta",
+            &format!(
+                "/workspaces/{}/tasks/{}/comment-drafts",
+                ws.slug, task.readable_id
+            ),
         ))
         .bearer_auth(client.token().expect("authenticated token"))
         .header("x-create-token", uuid::Uuid::now_v7().to_string())
@@ -1524,11 +1558,13 @@ async fn task_comment_finalization_transfers_draft_attachments_and_replays() {
     let draft_id = draft["id"].as_str().expect("draft id");
     let draft_upload = upload_draft(
         &client,
-        format!(
-            "{}/api/workspaces/{}/tasks/{}/comment-drafts/{draft_id}/attachments",
+        support::path::api_url(
             server.base_url(),
-            ws.slug,
-            task.readable_id
+            "acta",
+            &format!(
+                "/workspaces/{}/tasks/{}/comment-drafts/{draft_id}/attachments",
+                ws.slug, task.readable_id
+            ),
         ),
         uuid::Uuid::now_v7(),
         "final] image.png",
@@ -1546,11 +1582,13 @@ async fn task_comment_finalization_transfers_draft_attachments_and_replays() {
         )
     );
 
-    let comment_url = format!(
-        "{}/api/workspaces/{}/tasks/{}/comments",
+    let comment_url = support::path::api_url(
         server.base_url(),
-        ws.slug,
-        task.readable_id
+        "acta",
+        &format!(
+            "/workspaces/{}/tasks/{}/comments",
+            ws.slug, task.readable_id
+        ),
     );
     let failed_finalization = client
         .http_client()
@@ -1662,11 +1700,13 @@ async fn task_comment_finalization_transfers_draft_attachments_and_replays() {
 
     let finalized_upload = upload_draft(
         &client,
-        format!(
-            "{}/api/workspaces/{}/tasks/{}/comment-drafts/{draft_id}/attachments",
+        support::path::api_url(
             server.base_url(),
-            ws.slug,
-            task.readable_id
+            "acta",
+            &format!(
+                "/workspaces/{}/tasks/{}/comment-drafts/{draft_id}/attachments",
+                ws.slug, task.readable_id
+            ),
         ),
         uuid::Uuid::now_v7(),
         "race.txt",
@@ -1678,11 +1718,13 @@ async fn task_comment_finalization_transfers_draft_attachments_and_replays() {
 
     let finalized_cancel = delete(
         &client,
-        format!(
-            "{}/api/workspaces/{}/tasks/{}/comment-drafts/{draft_id}",
+        support::path::api_url(
             server.base_url(),
-            ws.slug,
-            task.readable_id
+            "acta",
+            &format!(
+                "/workspaces/{}/tasks/{}/comment-drafts/{draft_id}",
+                ws.slug, task.readable_id
+            ),
         ),
     )
     .await;
@@ -1742,10 +1784,10 @@ async fn document_comment_draft_upload_replays_raw_bytes_and_rejects_changed_reu
     let slug = document.slug.expect("document slug");
     let draft_response = client
         .http_client()
-        .post(format!(
-            "{}/api/workspaces/{}/documents/{slug}/comment-drafts",
+        .post(support::path::api_url(
             server.base_url(),
-            ws.slug,
+            "acta",
+            &format!("/workspaces/{}/documents/{slug}/comment-drafts", ws.slug),
         ))
         .bearer_auth(client.token().expect("authenticated token"))
         .header("x-create-token", uuid::Uuid::now_v7().to_string())
@@ -1755,21 +1797,27 @@ async fn document_comment_draft_upload_replays_raw_bytes_and_rejects_changed_reu
     assert_eq!(draft_response.status(), reqwest::StatusCode::CREATED);
     let draft: Value = draft_response.json().await.expect("decode comment draft");
     let draft_id = draft["id"].as_str().expect("draft id");
-    let upload_url = format!(
-        "{}/api/workspaces/{}/documents/{slug}/comment-drafts/{draft_id}/attachments",
+    let upload_url = support::path::api_url(
         server.base_url(),
-        ws.slug,
+        "acta",
+        &format!(
+            "/workspaces/{}/documents/{slug}/comment-drafts/{draft_id}/attachments",
+            ws.slug
+        ),
     );
     let upload_token = uuid::Uuid::now_v7();
     let payload = b"document draft bytes".to_vec();
 
     let unknown_draft = upload_draft_raw(
         &client,
-        format!(
-            "{}/api/workspaces/{}/documents/{slug}/comment-drafts/{}/attachments",
+        support::path::api_url(
             server.base_url(),
-            ws.slug,
-            uuid::Uuid::now_v7(),
+            "acta",
+            &format!(
+                "/workspaces/{}/documents/{slug}/comment-drafts/{}/attachments",
+                ws.slug,
+                uuid::Uuid::now_v7()
+            ),
         ),
         uuid::Uuid::now_v7(),
         "unknown.txt",
@@ -1797,9 +1845,12 @@ async fn document_comment_draft_upload_replays_raw_bytes_and_rejects_changed_reu
     let attachment_id = attachment["id"].as_str().expect("attachment id");
     assert_eq!(
         attachment["url"],
-        format!(
-            "/api/workspaces/{}/documents/{slug}/comments/{draft_id}/attachments/{attachment_id}",
-            ws.slug,
+        support::path::api_path(
+            "acta",
+            &format!(
+                "/workspaces/{}/documents/{slug}/comments/{draft_id}/attachments/{attachment_id}",
+                ws.slug
+            )
         )
     );
     assert_eq!(
@@ -1810,10 +1861,13 @@ async fn document_comment_draft_upload_replays_raw_bytes_and_rejects_changed_reu
         )
     );
 
-    let canonical_url = format!(
-        "{}/api/workspaces/{}/documents/{slug}/comments/{draft_id}/attachments",
+    let canonical_url = support::path::api_url(
         server.base_url(),
-        ws.slug,
+        "acta",
+        &format!(
+            "/workspaces/{}/documents/{slug}/comments/{draft_id}/attachments",
+            ws.slug
+        ),
     );
     let listed = get(&client, canonical_url.clone()).await;
     assert_eq!(listed.status(), reqwest::StatusCode::OK);
@@ -1895,10 +1949,13 @@ async fn document_comment_draft_upload_replays_raw_bytes_and_rejects_changed_reu
         .expect("mark draft cancelled");
     let terminal_draft = upload_draft_raw(
         &client,
-        format!(
-            "{}/api/workspaces/{}/documents/{slug}/comment-drafts/{draft_id}/attachments",
+        support::path::api_url(
             server.base_url(),
-            ws.slug,
+            "acta",
+            &format!(
+                "/workspaces/{}/documents/{slug}/comment-drafts/{draft_id}/attachments",
+                ws.slug
+            ),
         ),
         uuid::Uuid::now_v7(),
         "terminal.txt",
@@ -1938,10 +1995,10 @@ async fn document_comment_finalization_transfers_draft_attachments_and_replays()
 
     let draft = client
         .http_client()
-        .post(format!(
-            "{}/api/workspaces/{}/documents/{slug}/comment-drafts",
+        .post(support::path::api_url(
             server.base_url(),
-            ws.slug,
+            "acta",
+            &format!("/workspaces/{}/documents/{slug}/comment-drafts", ws.slug),
         ))
         .bearer_auth(client.token().expect("authenticated token"))
         .header("x-create-token", uuid::Uuid::now_v7().to_string())
@@ -1953,10 +2010,13 @@ async fn document_comment_finalization_transfers_draft_attachments_and_replays()
     let draft_id = draft["id"].as_str().expect("draft id");
     let upload = upload_draft_raw(
         &client,
-        format!(
-            "{}/api/workspaces/{}/documents/{slug}/comment-drafts/{draft_id}/attachments",
+        support::path::api_url(
             server.base_url(),
-            ws.slug,
+            "acta",
+            &format!(
+                "/workspaces/{}/documents/{slug}/comment-drafts/{draft_id}/attachments",
+                ws.slug
+            ),
         ),
         uuid::Uuid::now_v7(),
         "final] image.png",
@@ -1974,10 +2034,10 @@ async fn document_comment_finalization_transfers_draft_attachments_and_replays()
         )
     );
 
-    let comment_url = format!(
-        "{}/api/workspaces/{}/documents/{slug}/comments",
+    let comment_url = support::path::api_url(
         server.base_url(),
-        ws.slug,
+        "acta",
+        &format!("/workspaces/{}/documents/{slug}/comments", ws.slug),
     );
     let failed_finalization = client
         .http_client()
@@ -2059,10 +2119,13 @@ async fn document_comment_finalization_transfers_draft_attachments_and_replays()
 
     let finalized_upload = upload_draft_raw(
         &client,
-        format!(
-            "{}/api/workspaces/{}/documents/{slug}/comment-drafts/{draft_id}/attachments",
+        support::path::api_url(
             server.base_url(),
-            ws.slug,
+            "acta",
+            &format!(
+                "/workspaces/{}/documents/{slug}/comment-drafts/{draft_id}/attachments",
+                ws.slug
+            ),
         ),
         uuid::Uuid::now_v7(),
         "race.txt",
@@ -2074,10 +2137,13 @@ async fn document_comment_finalization_transfers_draft_attachments_and_replays()
 
     let finalized_cancel = delete(
         &client,
-        format!(
-            "{}/api/workspaces/{}/documents/{slug}/comment-drafts/{draft_id}",
+        support::path::api_url(
             server.base_url(),
-            ws.slug,
+            "acta",
+            &format!(
+                "/workspaces/{}/documents/{slug}/comment-drafts/{draft_id}",
+                ws.slug
+            ),
         ),
     )
     .await;
@@ -2138,15 +2204,15 @@ async fn document_comment_finalization_rejects_terminal_drafts() {
         .await
         .expect("create document");
     let slug = document.slug.expect("document slug");
-    let drafts_url = format!(
-        "{}/api/workspaces/{}/documents/{slug}/comment-drafts",
+    let drafts_url = support::path::api_url(
         server.base_url(),
-        ws.slug,
+        "acta",
+        &format!("/workspaces/{}/documents/{slug}/comment-drafts", ws.slug),
     );
-    let comment_url = format!(
-        "{}/api/workspaces/{}/documents/{slug}/comments",
+    let comment_url = support::path::api_url(
         server.base_url(),
-        ws.slug,
+        "acta",
+        &format!("/workspaces/{}/documents/{slug}/comments", ws.slug),
     );
 
     for state in ["cancelled", "expired", "deleted_finalized"] {
@@ -2243,17 +2309,21 @@ async fn task_draft_upload_losing_to_finalization_is_conflict_without_residue() 
         )
         .await
         .expect("create task");
-    let drafts_url = format!(
-        "{}/api/workspaces/{}/tasks/{}/comment-drafts",
+    let drafts_url = support::path::api_url(
         server.base_url(),
-        ws.slug,
-        task.readable_id
+        "acta",
+        &format!(
+            "/workspaces/{}/tasks/{}/comment-drafts",
+            ws.slug, task.readable_id
+        ),
     );
-    let comment_url = format!(
-        "{}/api/workspaces/{}/tasks/{}/comments",
+    let comment_url = support::path::api_url(
         server.base_url(),
-        ws.slug,
-        task.readable_id
+        "acta",
+        &format!(
+            "/workspaces/{}/tasks/{}/comments",
+            ws.slug, task.readable_id
+        ),
     );
     let draft = client
         .http_client()
@@ -2362,15 +2432,15 @@ async fn document_draft_upload_losing_to_finalization_is_conflict_without_residu
         .await
         .expect("create document");
     let slug = document.slug.expect("document slug");
-    let drafts_url = format!(
-        "{}/api/workspaces/{}/documents/{slug}/comment-drafts",
+    let drafts_url = support::path::api_url(
         server.base_url(),
-        ws.slug,
+        "acta",
+        &format!("/workspaces/{}/documents/{slug}/comment-drafts", ws.slug),
     );
-    let comment_url = format!(
-        "{}/api/workspaces/{}/documents/{slug}/comments",
+    let comment_url = support::path::api_url(
         server.base_url(),
-        ws.slug,
+        "acta",
+        &format!("/workspaces/{}/documents/{slug}/comments", ws.slug),
     );
     let draft = client
         .http_client()
@@ -2495,17 +2565,21 @@ async fn task_canonical_draft_operations_losing_to_finalization_are_conflicts() 
         )
         .await
         .expect("create task");
-    let drafts_url = format!(
-        "{}/api/workspaces/{}/tasks/{}/comment-drafts",
+    let drafts_url = support::path::api_url(
         server.base_url(),
-        ws.slug,
-        task.readable_id
+        "acta",
+        &format!(
+            "/workspaces/{}/tasks/{}/comment-drafts",
+            ws.slug, task.readable_id
+        ),
     );
-    let comment_url = format!(
-        "{}/api/workspaces/{}/tasks/{}/comments",
+    let comment_url = support::path::api_url(
         server.base_url(),
-        ws.slug,
-        task.readable_id
+        "acta",
+        &format!(
+            "/workspaces/{}/tasks/{}/comments",
+            ws.slug, task.readable_id
+        ),
     );
 
     for operation in ["list", "download", "delete"] {
@@ -2551,15 +2625,15 @@ async fn document_canonical_draft_operations_losing_to_finalization_are_conflict
         .await
         .expect("create document");
     let slug = document.slug.expect("document slug");
-    let drafts_url = format!(
-        "{}/api/workspaces/{}/documents/{slug}/comment-drafts",
+    let drafts_url = support::path::api_url(
         server.base_url(),
-        ws.slug,
+        "acta",
+        &format!("/workspaces/{}/documents/{slug}/comment-drafts", ws.slug),
     );
-    let comment_url = format!(
-        "{}/api/workspaces/{}/documents/{slug}/comments",
+    let comment_url = support::path::api_url(
         server.base_url(),
-        ws.slug,
+        "acta",
+        &format!("/workspaces/{}/documents/{slug}/comments", ws.slug),
     );
 
     for operation in ["list", "download", "delete"] {

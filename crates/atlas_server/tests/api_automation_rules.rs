@@ -68,7 +68,11 @@ async fn add_member_and_login(
         .expect("add member");
 
     let resp = http()
-        .post(format!("{}/api/auth/login", server.base_url()))
+        .post(support::path::api_url(
+            server.base_url(),
+            "custos",
+            "/auth/login",
+        ))
         .json(&LoginRequest {
             username: username.to_string(),
             password: plaintext.to_string(),
@@ -146,8 +150,10 @@ async fn admin_creates_automation_rule_returns_201() {
         .expect("column");
 
     let resp = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/automation-rules"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/automation-rules"),
         ))
         .bearer_auth(token)
         .json(&serde_json::json!({
@@ -191,8 +197,10 @@ async fn automation_rule_project_scope_rejected_for_external_triggers() {
     let ws_slug = &ws.slug;
 
     let resp = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/automation-rules"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/automation-rules"),
         ))
         .bearer_auth(token)
         .json(&serde_json::json!({
@@ -235,8 +243,10 @@ async fn automation_rule_internal_trigger_rejected() {
     let ws_slug = &ws.slug;
 
     let resp = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/automation-rules"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/automation-rules"),
         ))
         .bearer_auth(token)
         .json(&serde_json::json!({
@@ -278,8 +288,10 @@ async fn automation_rule_invalid_action_type_rejected() {
     let ws_slug = &ws.slug;
 
     let resp = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/automation-rules"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/automation-rules"),
         ))
         .bearer_auth(token)
         .json(&serde_json::json!({
@@ -315,7 +327,11 @@ async fn add_comment_rule_accepted_and_validated() {
     let token = client.token().expect("token");
     let base_url = server.base_url();
     let ws_slug = &ws.slug;
-    let url = format!("{base_url}/api/workspaces/{ws_slug}/automation-rules");
+    let url = support::path::api_url(
+        base_url,
+        "acta",
+        &format!("/workspaces/{ws_slug}/automation-rules"),
+    );
 
     let ok = http()
         .post(&url)
@@ -372,8 +388,10 @@ async fn automation_rule_invalid_action_params_rejected() {
     let ws_slug = &ws.slug;
 
     let resp = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/automation-rules"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/automation-rules"),
         ))
         .bearer_auth(token)
         .json(&serde_json::json!({
@@ -460,8 +478,10 @@ async fn non_admin_rejected_on_automation_rule_endpoints() {
         .expect("column");
 
     let create_resp = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/automation-rules"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/automation-rules"),
         ))
         .bearer_auth(admin_token)
         .json(&serde_json::json!({
@@ -486,29 +506,49 @@ async fn non_admin_rejected_on_automation_rule_endpoints() {
     for (method, path, body) in [
         (
             "GET",
-            format!("{base_url}/api/workspaces/{ws_slug}/automation-rules"),
+            support::path::api_url(
+                base_url,
+                "acta",
+                &format!("/workspaces/{ws_slug}/automation-rules"),
+            ),
             None,
         ),
         (
             "GET",
-            format!("{base_url}/api/workspaces/{ws_slug}/automation-rules/{rule_id}"),
+            support::path::api_url(
+                base_url,
+                "acta",
+                &format!("/workspaces/{ws_slug}/automation-rules/{rule_id}"),
+            ),
             None,
         ),
         (
             "POST",
-            format!("{base_url}/api/workspaces/{ws_slug}/automation-rules"),
+            support::path::api_url(
+                base_url,
+                "acta",
+                &format!("/workspaces/{ws_slug}/automation-rules"),
+            ),
             Some(
                 serde_json::json!({"name":"x","trigger_event_type":"external.x","action_type":"create_task","action_params":{}}),
             ),
         ),
         (
             "PATCH",
-            format!("{base_url}/api/workspaces/{ws_slug}/automation-rules/{rule_id}"),
+            support::path::api_url(
+                base_url,
+                "acta",
+                &format!("/workspaces/{ws_slug}/automation-rules/{rule_id}"),
+            ),
             Some(serde_json::json!({"is_active": false})),
         ),
         (
             "DELETE",
-            format!("{base_url}/api/workspaces/{ws_slug}/automation-rules/{rule_id}"),
+            support::path::api_url(
+                base_url,
+                "acta",
+                &format!("/workspaces/{ws_slug}/automation-rules/{rule_id}"),
+            ),
             None,
         ),
     ] {
@@ -591,8 +631,10 @@ async fn automation_rule_crud() {
         .expect("column");
 
     let create_resp = http()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/automation-rules"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/automation-rules"),
         ))
         .bearer_auth(token)
         .json(&serde_json::json!({
@@ -614,8 +656,10 @@ async fn automation_rule_crud() {
     let rule_id = created["id"].as_str().unwrap().to_string();
 
     let get_resp = http()
-        .get(format!(
-            "{base_url}/api/workspaces/{ws_slug}/automation-rules/{rule_id}"
+        .get(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/automation-rules/{rule_id}"),
         ))
         .bearer_auth(token)
         .send()
@@ -626,8 +670,10 @@ async fn automation_rule_crud() {
     assert_eq!(get_body["name"], "CI rule");
 
     let list_resp = http()
-        .get(format!(
-            "{base_url}/api/workspaces/{ws_slug}/automation-rules"
+        .get(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/automation-rules"),
         ))
         .bearer_auth(token)
         .send()
@@ -639,8 +685,10 @@ async fn automation_rule_crud() {
     assert!(!items.is_empty(), "list must return at least one rule");
 
     let patch_resp = http()
-        .patch(format!(
-            "{base_url}/api/workspaces/{ws_slug}/automation-rules/{rule_id}"
+        .patch(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/automation-rules/{rule_id}"),
         ))
         .bearer_auth(token)
         .json(&serde_json::json!({"is_active": false, "name": "CI rule (disabled)"}))
@@ -653,8 +701,10 @@ async fn automation_rule_crud() {
     assert_eq!(patched["name"], "CI rule (disabled)");
 
     let delete_resp = http()
-        .delete(format!(
-            "{base_url}/api/workspaces/{ws_slug}/automation-rules/{rule_id}"
+        .delete(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/automation-rules/{rule_id}"),
         ))
         .bearer_auth(token)
         .send()
@@ -663,8 +713,10 @@ async fn automation_rule_crud() {
     assert_eq!(delete_resp.status(), 204);
 
     let after_delete_resp = http()
-        .get(format!(
-            "{base_url}/api/workspaces/{ws_slug}/automation-rules/{rule_id}"
+        .get(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/automation-rules/{rule_id}"),
         ))
         .bearer_auth(token)
         .send()
