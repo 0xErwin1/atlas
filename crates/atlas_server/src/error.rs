@@ -16,6 +16,10 @@ pub mod acta_conflict {
     pub const POSITION_EXHAUSTED: &str = "position-exhausted";
 }
 
+/// `Retry-After` value (whole seconds) a `409 idempotency-key-in-flight`
+/// response carries: the in-flight window is expected to be short.
+pub(crate) const IDEMPOTENCY_KEY_IN_FLIGHT_RETRY_AFTER: &str = "1";
+
 /// Server-side error taxonomy.
 ///
 /// Every variant maps to a specific RFC 9457 problem type and HTTP status.
@@ -211,7 +215,7 @@ impl IntoResponse for ApiError {
                 );
 
                 let mut response = render_problem(StatusCode::CONFLICT, problem);
-                if let Ok(value) = HeaderValue::from_str("1") {
+                if let Ok(value) = HeaderValue::from_str(IDEMPOTENCY_KEY_IN_FLIGHT_RETRY_AFTER) {
                     response.headers_mut().insert(header::RETRY_AFTER, value);
                 }
                 return response;

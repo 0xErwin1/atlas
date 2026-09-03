@@ -81,6 +81,25 @@ const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(15);
 /// Authorization to open the stream is enforced by the `WorkspaceAccess`
 /// extractor before any response body is produced, so an unauthenticated or
 /// cross-tenant request is rejected without ever opening a stream.
+#[utoipa::path(
+    get,
+    path = "/workspaces/{ws}/events",
+    tag = "events",
+    security(("bearer_auth" = [])),
+    params(
+        ("ws" = String, Path, description = "Workspace slug"),
+    ),
+    responses(
+        (
+            status = 200,
+            description = "Server-Sent Events stream of live workspace updates",
+            content_type = "text/event-stream",
+            body = String,
+        ),
+        (status = 401, description = "Unauthenticated"),
+        (status = 404, description = "Workspace not found or principal has no access"),
+    )
+)]
 pub(crate) async fn stream_events(
     access: WorkspaceAccess,
     State(state): State<AppState>,

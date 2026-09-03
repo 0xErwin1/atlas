@@ -922,6 +922,7 @@ pub(crate) fn protected_declared_routes() -> Vec<AuditedRoute> {
         crate::routes::folders::move_folder,
         crate::routes::folders::copy_folder,
         crate::routes::folders::delete_folder,
+        crate::routes::events::stream_events,
         crate::routes::search::search,
         crate::routes::semantic_search::semantic_search,
         crate::routes::semantic_search::semantic_reindex_plan,
