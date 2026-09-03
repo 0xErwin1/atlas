@@ -5,11 +5,11 @@
     clippy::indexing_slicing
 )]
 
-//! T5.5/T5.6 (`v2-e3-s4` PR5, D1, spec "Every declared route is mounted at
-//! both `/api` and `/api/v2`, from one declaration"): for every declared
-//! route, the same request sent to `/api/<rel>` and `/api/v2/<rel>`
-//! produces the same behavior at both mounts. Exhaustive over
-//! `route_matrix()` (INV-DATA-DRIVEN), not sampled.
+//! T5.5/T5.6/T7.10 (`v2-e3-s4` PR5/PR7, D1/D10, spec AMENDMENT "V2 prefix
+//! per component"): for every declared route of component `C`, the same
+//! request sent to `/api/<rel>` and `/api/v2/<C>/<rel>` produces the same
+//! behavior at both mounts. Exhaustive over `route_matrix()`
+//! (INV-DATA-DRIVEN), not sampled.
 //!
 //! What is compared, per route:
 //!
@@ -20,8 +20,8 @@
 //!   `application/problem+json` body is NOT byte-identical by construction:
 //!   `problem_stamp` runs at the composition root (`lib.rs::apply_layers`)
 //!   and stamps `instance` with the full request path, so the `/api` mount
-//!   carries `"instance":"/api/<rel>"` and the `/api/v2` mount carries
-//!   `"instance":"/api/v2/<rel>"` (which is also why `content-length` is
+//!   carries `"instance":"/api/<rel>"` and the `/api/v2/<C>` mount carries
+//!   `"instance":"/api/v2/<C>/<rel>"` (which is also why `content-length` is
 //!   excluded above). For those bodies the test parses both as JSON,
 //!   asserts each mount's `instance` equals that mount's own path (an
 //!   `instance` that names the wrong mount fails here, naming the route and
@@ -52,7 +52,7 @@ mod support;
 use std::collections::{BTreeMap, BTreeSet};
 
 use atlas_core::registry::HttpMethod;
-use atlas_server::router_audit::{NAMESPACES, ROOT_LEVEL_PATHS, mounted_path};
+use atlas_server::router_audit::{ROOT_LEVEL_PATHS, mounted_path};
 use support::route_matrix::route_matrix;
 
 /// See `tests/api_401_sweep.rs`'s identical helper. Exhaustive by
@@ -101,8 +101,8 @@ fn substitute_path_params(template: &str) -> String {
 /// requests this test issues for the same route. `content-length` is
 /// excluded because a problem body's `instance` field names the mount it
 /// was served from (see the module doc), so the two bodies differ in length
-/// by exactly the `/v2` segment; the body comparison below still proves the
-/// bodies agree on everything but that field.
+/// by exactly the `/v2/<component>` segment; the body comparison below still
+/// proves the bodies agree on everything but that field.
 fn is_excluded_header(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     lower == "x-request-id" || lower == "content-length" || lower.contains("date")
@@ -141,7 +141,7 @@ enum ComparableBody {
 }
 
 struct MountResponse {
-    namespace: &'static str,
+    namespace: String,
     mounted: String,
     status: u16,
     headers: BTreeMap<String, Vec<String>>,
@@ -232,9 +232,10 @@ async fn every_declared_route_answers_identically_at_both_mounts() {
         let relative = substitute_path_params(&entry.path_template);
         let request_id = format!("dual-mount-{}-{}", entry.method, relative);
 
-        let mut responses = Vec::with_capacity(NAMESPACES.len());
-        for namespace in NAMESPACES {
-            let mounted = mounted_path(namespace, &relative);
+        let namespaces = entry.namespaces();
+        let mut responses = Vec::with_capacity(namespaces.len());
+        for namespace in namespaces {
+            let mounted = mounted_path(&namespace, &relative);
             let url = format!("{}{}", server.base_url(), mounted);
 
             let response = http
@@ -264,7 +265,7 @@ async fn every_declared_route_answers_identically_at_both_mounts() {
                     &bytes,
                     entry.method,
                     &entry.path_template,
-                    namespace,
+                    &namespace,
                     &mounted,
                 ))
             } else {

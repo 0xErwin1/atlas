@@ -133,24 +133,35 @@ use crate::state::AppState;
 
 /// Builds the full application router with all routes and the middleware stack.
 pub fn app(state: AppState) -> Router {
-    // One `api_router` serves both namespaces. `Router` is `Clone`, and the
+    // Each component's own router is built once and nested at both its V1
+    // segment (merged into the shared `/api` mount) and its own
+    // `/api/v2/<component>` mount (`v2-e3-s4` PR7, D10: SHELL-API-1 and the
+    // E3 proposal fix the V2 URL with the component segment, correcting
+    // PR5's flat, shared `/api/v2` mount). `Router` is `Clone`, and the
     // clone shares every per-route layer's state: tower_governor 0.8.0's
     // `Governor::clone` (`governor.rs`) clones its `limiter`, an
-    // `Arc<RateLimiter>`, so custos's governed `login`/`activate` routes keep
-    // one brute-force budget across `/api` and `/api/v2` instead of each
-    // mount getting a fresh one. The root-level routes (`/health`, `/ready`,
-    // `/version`, `/openapi.json`, `/scalar`) live in the separately built
-    // `root_router`, outside both nests.
+    // `Arc<RateLimiter>`, so a component's governed routes (e.g. custos's
+    // `login`/`activate`) keep one brute-force budget across their `/api`
+    // and `/api/v2/<component>` mounts instead of each mount getting a
+    // fresh one — the same reuse PR5 established, restated per component.
+    // The root-level routes (`/health`, `/ready`, `/version`,
+    // `/openapi.json`, `/scalar`) live in the separately built
+    // `root_router`, outside every nest.
     //
     // Unmatched paths run the protected stack before answering 404, so an
     // unauthenticated probe of a path that does not exist gets 401 and only
     // an authenticated one gets 404. `Router::nest` drops a nested router's
     // default fallback, so the fallback is declared explicitly at the root
     // and merged last: merging a router with a custom fallback into one with
-    // the default fallback adopts the custom one, covering both nests.
-    let api_router = routes::platform::router(state.clone())
-        .merge(routes::custos::router(state.clone()))
-        .merge(routes::acta::router(state.clone()));
+    // the default fallback adopts the custom one, covering every nest.
+    let platform_router = routes::platform::router(state.clone());
+    let custos_router = routes::custos::router(state.clone());
+    let acta_router = routes::acta::router(state.clone());
+
+    let api_router = platform_router
+        .clone()
+        .merge(custos_router.clone())
+        .merge(acta_router.clone());
 
     let root_router =
         routes::platform::root_router(state.clone()).merge(routes::acta::root_router());
@@ -158,8 +169,10 @@ pub fn app(state: AppState) -> Router {
     let fallback_router = routes::protection::protect(Router::new().fallback(not_found), state);
 
     let router = Router::new()
-        .nest("/api", api_router.clone())
-        .nest("/api/v2", api_router)
+        .nest("/api", api_router)
+        .nest("/api/v2/platform", platform_router)
+        .nest("/api/v2/custos", custos_router)
+        .nest("/api/v2/acta", acta_router)
         .merge(root_router)
         .merge(fallback_router);
     apply_layers(router)

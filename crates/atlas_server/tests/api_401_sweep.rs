@@ -19,7 +19,6 @@
 mod support;
 
 use atlas_core::registry::HttpMethod;
-use atlas_server::router_audit::NAMESPACES;
 use support::route_matrix::route_matrix;
 
 /// Maps every `HttpMethod` variant to its `reqwest::Method`. Exhaustive by
@@ -40,9 +39,11 @@ fn reqwest_method(method: HttpMethod) -> reqwest::Method {
     }
 }
 
-/// T5.9/T5.10 (`v2-e3-s4` PR5, D1): namespace-parametrized over `NAMESPACES`
-/// from one data source (`route_matrix()`), not two hand-copied test files —
-/// asserts the same 401 behavior at both `/api` and `/api/v2`.
+/// T5.9/T5.10/T7.12 (`v2-e3-s4` PR5/PR7, D1/D10): namespace-parametrized off
+/// each `route_matrix()` entry's own `namespaces()` — not a flat
+/// `NAMESPACES` pair — from one data source (`route_matrix()`), not two
+/// hand-copied test files — asserts the same 401 behavior at both `/api`
+/// and the route's own `/api/v2/<component>`.
 #[tokio::test]
 async fn all_non_public_routes_require_authentication() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -53,14 +54,15 @@ async fn all_non_public_routes_require_authentication() {
     let http = reqwest::Client::new();
     let matrix = route_matrix();
 
-    for namespace in NAMESPACES {
-        for entry in &matrix {
-            if entry.is_public {
-                continue;
-            }
+    for entry in &matrix {
+        if entry.is_public {
+            continue;
+        }
 
-            let relative = entry.path_template.replace("{ws}", &ws_slug);
-            let path = atlas_server::router_audit::mounted_path(namespace, &relative);
+        let relative = entry.path_template.replace("{ws}", &ws_slug);
+
+        for namespace in entry.namespaces() {
+            let path = atlas_server::router_audit::mounted_path(&namespace, &relative);
             let url = format!("{}{}", server.base_url(), path);
 
             let status = http

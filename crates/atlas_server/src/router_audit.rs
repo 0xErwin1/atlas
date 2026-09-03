@@ -132,19 +132,36 @@ where
     }
 }
 
-/// The two mount prefixes every registry-declared route is reachable under
-/// (D1). `/api/v2`'s `Router::nest` does not exist until PR5, but `document()`'s
-/// zero-drift test (PR2, D5) already needs to reconstruct `/api/v2`-joined
-/// paths to compare against the composed OpenAPI document, whose paths are
-/// namespaced per D5's stated `/api/v2`-only scope — so this primitive lands
-/// here, ahead of the mount itself, rather than being duplicated later.
-pub const NAMESPACES: &[&str] = &["/api", "/api/v2"];
-
 /// The namespace whose form the idempotency store keys on, so one logical
 /// operation has one dedup record no matter which mount the client used.
-/// Equal to `NAMESPACES[0]`, the form rows stored before the dual mount
+/// Equal to [`V1_NAMESPACE`], the form rows stored before the dual mount
 /// already carry.
 pub const CANONICAL_NAMESPACE: &str = "/api";
+
+/// The V1 mount prefix. Equal to [`CANONICAL_NAMESPACE`]; kept as a separate
+/// name because [`namespaces_for`] reads more clearly naming both mounts by
+/// their own constant than reusing the idempotency-specific name for a
+/// routing concern.
+pub const V1_NAMESPACE: &str = CANONICAL_NAMESPACE;
+
+/// The V2 mount prefix, without a component segment. Never mounted on its
+/// own (`v2-e3-s4` PR7, D10): every V2 route lives under
+/// `V2_PREFIX/<component>`, so a request against the bare prefix matches
+/// nothing.
+pub const V2_PREFIX: &str = "/api/v2";
+
+/// The two mount prefixes a route owned by `component` is reachable under
+/// (`v2-e3-s4` PR7, D10): `/api` (shared by every component) and
+/// `/api/v2/<component>` (this component's own V2 namespace). Replaces the
+/// flat, two-entry `NAMESPACES` constant this slice's earlier PRs used: PR5
+/// mounted one shared `/api/v2` for all three components, which SHELL-API-1
+/// and the E3 proposal both fix with a per-component segment. Every former
+/// `NAMESPACES` consumer now calls this with the route's own owning
+/// component (`RouteMatrixEntry::namespaces`, `RouteMatrixEntry::component`)
+/// instead of iterating one shared pair for every route.
+pub fn namespaces_for(component: &str) -> [String; 2] {
+    [V1_NAMESPACE.to_string(), format!("{V2_PREFIX}/{component}")]
+}
 
 /// Joins a mount `namespace` with a namespace-relative `relative_path` (D1).
 /// The single place every consumer in the proposal's blast-radius table
@@ -752,8 +769,18 @@ mod tests {
     use tower::ServiceExt;
 
     #[test]
-    fn canonical_namespace_is_the_first_mount() {
-        assert_eq!(NAMESPACES.first().copied(), Some(CANONICAL_NAMESPACE));
+    fn canonical_namespace_is_the_v1_namespace() {
+        assert_eq!(V1_NAMESPACE, CANONICAL_NAMESPACE);
+    }
+
+    #[test]
+    fn namespaces_for_returns_v1_then_the_components_own_v2_prefix() {
+        for component in ["platform", "custos", "acta"] {
+            assert_eq!(
+                namespaces_for(component),
+                [V1_NAMESPACE.to_string(), format!("{V2_PREFIX}/{component}")]
+            );
+        }
     }
 
     fn declared_set(routes: &[AuditedRoute]) -> HashSet<(HttpMethod, &'static str)> {

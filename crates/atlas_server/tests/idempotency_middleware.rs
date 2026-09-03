@@ -742,8 +742,8 @@ async fn the_same_key_replays_across_namespaces() {
     };
 
     for (key, first_ns, second_ns) in [
-        ("cross-ns-v1-first", "/api", "/api/v2"),
-        ("cross-ns-v2-first", "/api/v2", "/api"),
+        ("cross-ns-v1-first", "/api", "/api/v2/acta"),
+        ("cross-ns-v2-first", "/api/v2/acta", "/api"),
     ] {
         let first = send(first_ns, key, key).await.expect("first request");
         let status1 = first.status();
