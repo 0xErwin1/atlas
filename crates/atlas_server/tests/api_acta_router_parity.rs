@@ -3,7 +3,7 @@
 mod support;
 
 use atlas_core::registry::HttpMethod;
-use atlas_server::router_audit::mounted_path;
+use atlas_server::router_audit::{NAMESPACES, mounted_path};
 
 /// `v2-e3-s2-router-audit` PR4 verify gap: proves acta's 169 routes keep
 /// their pre-refactor mount and authentication posture against the
@@ -53,7 +53,7 @@ use atlas_server::router_audit::mounted_path;
 /// the RIGHT method instead of a wrong one, where 401 (not 405) is the
 /// expected, meaningful signal.
 ///
-/// 168 unauthenticated requests in one test run cannot trip a rate limiter
+/// 336 unauthenticated requests (168 per namespace) in one test run cannot trip a rate limiter
 /// or governor into a spurious 429: `acta::router()` layers `require_authn`
 /// LAST (`acta.rs`'s `router()`, the `.layer(require_authn)` call sits below
 /// `.layer(rate_limit)` and `.layer(csrf)` in source order), and axum layers
@@ -69,7 +69,11 @@ use atlas_server::router_audit::mounted_path;
 /// route with its own per-route `GovernorLayer` (`ingest_github_event`) is
 /// public, excluded from this sweep, and probed separately below with a
 /// request count (two) far under its `burst_size(20)` quota
-/// (`acta.rs::public::router`).
+/// (`acta.rs::public::router`), which `lib.rs::app()`'s cloned router
+/// shares across both mounts.
+///
+/// `v2-e3-s4` PR5 (D1): both proofs run once per namespace in
+/// `NAMESPACES`, offenders naming the namespace.
 #[tokio::test]
 async fn acta_protected_routes_reject_unauthenticated_requests() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -83,17 +87,6 @@ async fn acta_protected_routes_reject_unauthenticated_requests() {
         "acta owns 169 routes total, 1 of which (the GitHub ingest webhook) is public; \
          this sweep must cover all 168 protected routes, not a sample"
     );
-
-    for (method, path_template) in protected_routes {
-        let path = mounted_path("/api", &substitute_placeholders(path_template));
-        let status = send(&http, axum_method(method), server.base_url(), &path).await;
-
-        assert_eq!(
-            status, 401,
-            "protected acta route {method:?} {path_template} must reject an unauthenticated \
-             request, got {status}"
-        );
-    }
 
     // The one public acta route (the GitHub ingest webhook) sits outside
     // `require_authn` but authenticates itself: the handler answers 401 for a
@@ -112,20 +105,34 @@ async fn acta_protected_routes_reject_unauthenticated_requests() {
     let (_, public_path_template) = *public_routes
         .first()
         .expect("acta has exactly one public route");
-    let public_path = mounted_path("/api", &substitute_placeholders(public_path_template));
 
-    let mount_status = send(
-        &http,
-        reqwest::Method::PATCH,
-        server.base_url(),
-        &public_path,
-    )
-    .await;
-    assert_eq!(
-        mount_status, 405,
-        "public route {public_path_template} must be mounted in the assembled router \
-         (PATCH probe), got {mount_status}"
-    );
+    for namespace in NAMESPACES {
+        for (method, path_template) in &protected_routes {
+            let path = mounted_path(namespace, &substitute_placeholders(path_template));
+            let status = send(&http, axum_method(*method), server.base_url(), &path).await;
+
+            assert_eq!(
+                status, 401,
+                "namespace {namespace}: protected acta route {method:?} {path_template} must \
+                 reject an unauthenticated request, got {status}"
+            );
+        }
+
+        let public_path = mounted_path(namespace, &substitute_placeholders(public_path_template));
+
+        let mount_status = send(
+            &http,
+            reqwest::Method::PATCH,
+            server.base_url(),
+            &public_path,
+        )
+        .await;
+        assert_eq!(
+            mount_status, 405,
+            "namespace {namespace}: public route {public_path_template} must be mounted in the \
+             assembled router (PATCH probe), got {mount_status}"
+        );
+    }
 
     db.teardown().await;
 }

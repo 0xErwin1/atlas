@@ -8,6 +8,16 @@
 //! T2.5-T2.9 (`v2-e3-s3` PR2): `Page<T>` conformance across routes declared
 //! paginated today.
 //!
+//! Namespace scope (`v2-e3-s4` PR5, T5.13/T5.14, D1): every live test in
+//! this file runs against every namespace in `router_audit::NAMESPACES`
+//! from one data source, failures naming the namespace. The generated
+//! `atlas_client` methods are `/api`-absolute (S6's job, not this one), so
+//! the live tests provision through the client and page through raw
+//! authenticated GETs built with `router_audit::joined`: the three cursor
+//! round-trip/opacity tests walk their collection at each namespace with a
+//! cursor minted by that same namespace, and the exhaustive last-page sweep
+//! fetches every classified route at each namespace.
+//!
 //! Two independent concerns live in this file:
 //!
 //! 1. A **local, no-DB, exhaustive classification** of which declared routes
@@ -64,6 +74,7 @@ use atlas_api::pagination::{Cursor, SearchCursor};
 use atlas_client::AtlasClient;
 use atlas_core::registry::HttpMethod;
 use atlas_server::persistence::repos::ApiKeyRepo;
+use atlas_server::router_audit::{NAMESPACES, joined};
 
 // ---------------------------------------------------------------------------
 // T2.5: exhaustive, source-derived Page<T> route classification
@@ -431,20 +442,166 @@ pub(crate) async fn fake_vec_handler(
 /// Shared assertions for a decoded page: the cursor, if present, must be
 /// syntactically opaque (valid base64url-nopad `Cursor` format) and must
 /// not equal or contain any item's own plaintext id — proving the cursor is
-/// not a bare re-encoding of a visible identifier.
-fn assert_cursor_is_opaque(cursor: &str, item_ids: &[uuid::Uuid]) {
+/// not a bare re-encoding of a visible identifier. `context` names the
+/// namespace and request the cursor came from.
+fn assert_cursor_is_opaque(context: &str, cursor: &str, item_ids: &[uuid::Uuid]) {
     // Two opaque wire formats exist: the 22-char UUIDv7 `Cursor` and the
     // 34-char sort-aware `SearchCursor` that sorted lists (tasks) emit.
     assert!(
         Cursor::decode(cursor).is_some() || SearchCursor::decode(cursor).is_some(),
-        "next_cursor {cursor:?} does not decode as a valid base64url-nopad Cursor or SearchCursor"
+        "{context}: next_cursor {cursor:?} does not decode as a valid base64url-nopad Cursor \
+         or SearchCursor"
     );
     for id in item_ids {
         let plain = id.to_string();
-        assert_ne!(&plain, cursor, "cursor is a bare plaintext resource id");
+        assert_ne!(
+            &plain, cursor,
+            "{context}: cursor is a bare plaintext resource id"
+        );
         assert!(
             !cursor.contains(&plain),
-            "cursor embeds a plaintext resource id ({plain}) as a substring"
+            "{context}: cursor embeds a plaintext resource id ({plain}) as a substring"
+        );
+    }
+}
+
+/// Issues one authenticated raw GET at an already-joined `path_and_query`
+/// (bypassing `AtlasClient`'s typed, `/api`-absolute methods) and returns
+/// the decoded JSON body, asserting a 200.
+async fn fetch_page_json_at(client: &AtlasClient, path_and_query: &str) -> serde_json::Value {
+    let mut builder = client
+        .http_client()
+        .get(format!("{}{}", client.base_url(), path_and_query));
+    if let Some(token) = client.token() {
+        builder = builder.bearer_auth(token);
+    }
+    let response = builder
+        .send()
+        .await
+        .unwrap_or_else(|e| panic!("GET {path_and_query}: request failed: {e}"));
+    let status = response.status();
+    let body: serde_json::Value = response
+        .json()
+        .await
+        .unwrap_or_else(|e| panic!("GET {path_and_query}: failed to decode JSON body: {e}"));
+    assert_eq!(
+        status.as_u16(),
+        200,
+        "GET {path_and_query} did not return 200: {body}"
+    );
+    body
+}
+
+/// The `id` of every item on a decoded `Page<T>` body.
+fn page_item_ids(body: &serde_json::Value, path: &str) -> Vec<uuid::Uuid> {
+    body.get("items")
+        .and_then(serde_json::Value::as_array)
+        .unwrap_or_else(|| panic!("GET {path}: response has no `items` array: {body}"))
+        .iter()
+        .map(|item| {
+            item.get("id")
+                .and_then(serde_json::Value::as_str)
+                .and_then(|raw| uuid::Uuid::parse_str(raw).ok())
+                .unwrap_or_else(|| panic!("GET {path}: item without a uuid `id`: {item}"))
+        })
+        .collect()
+}
+
+/// T5.13/T5.14 (`v2-e3-s4` PR5, D1): walks the `Page<T>` collection at
+/// `relative_path` once per namespace in `NAMESPACES`, with a cursor minted
+/// by that namespace's page fed back into that same namespace's next
+/// request. At each namespace: the first page holds exactly `limit` items
+/// and `has_more`, every cursor is opaque, no item repeats across pages,
+/// the last page carries `next_cursor: null`, and the pages together cover
+/// `expected_ids` exactly once. Failures name the namespace.
+async fn assert_pagination_round_trips_at_every_namespace(
+    client: &AtlasClient,
+    relative_path: &str,
+    expected_ids: &[uuid::Uuid],
+    limit: usize,
+) {
+    assert!(
+        expected_ids.len() > limit,
+        "{relative_path}: {} items cannot exercise a second page at limit={limit}",
+        expected_ids.len()
+    );
+    let mut expected = expected_ids.to_vec();
+    expected.sort_unstable();
+
+    for namespace in NAMESPACES {
+        let mut seen: Vec<uuid::Uuid> = Vec::new();
+        let mut cursor: Option<String> = None;
+        let mut pages_walked = 0;
+
+        loop {
+            let query = match &cursor {
+                Some(c) => format!("?limit={limit}&cursor={c}"),
+                None => format!("?limit={limit}"),
+            };
+            let path = format!("{}{query}", joined(namespace, relative_path));
+            let context = format!("namespace {namespace}: GET {path}");
+
+            let body = fetch_page_json_at(client, &path).await;
+            pages_walked += 1;
+
+            let item_ids = page_item_ids(&body, &path);
+            let has_more = body
+                .get("has_more")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or_else(|| panic!("{context}: response has no boolean `has_more`: {body}"));
+
+            if pages_walked == 1 {
+                assert_eq!(
+                    item_ids.len(),
+                    limit,
+                    "{context}: first page must hold exactly {limit} items, got {}",
+                    item_ids.len()
+                );
+                assert!(
+                    has_more,
+                    "{context}: {} items at limit={limit} must have a second page",
+                    expected.len()
+                );
+            }
+
+            for id in &item_ids {
+                assert!(
+                    !seen.contains(id),
+                    "{context}: item {id} appeared on an earlier page"
+                );
+            }
+            seen.extend(item_ids.iter().copied());
+
+            if !has_more {
+                assert_eq!(
+                    body.get("next_cursor"),
+                    Some(&serde_json::Value::Null),
+                    "{context}: last page must not carry next_cursor: {body}"
+                );
+                break;
+            }
+
+            let next = body
+                .get("next_cursor")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_else(|| {
+                    panic!("{context}: has_more=true must carry next_cursor: {body}")
+                })
+                .to_string();
+            assert_cursor_is_opaque(&context, &next, &item_ids);
+            cursor = Some(next);
+
+            assert!(
+                pages_walked < 20,
+                "{context}: pagination did not terminate — possible cursor bug"
+            );
+        }
+
+        seen.sort_unstable();
+        assert_eq!(
+            seen, expected,
+            "namespace {namespace}: pages of {relative_path} together must cover every created \
+             item exactly once"
         );
     }
 }
@@ -489,50 +646,16 @@ async fn list_documents_pagination_round_trips_and_is_opaque() {
         created_ids.push(doc.id);
     }
 
-    let page1 = client
-        .list_documents(&ws.slug, &project.slug, None, Some(2))
-        .await
-        .expect("page 1");
-    assert_eq!(page1.items.len(), 2);
-    assert!(
-        page1.has_more,
-        "3 documents with limit=2 must have a second page"
-    );
-    let cursor = page1
-        .next_cursor
-        .clone()
-        .expect("page 1 with has_more=true must carry next_cursor");
-    let page1_ids: Vec<uuid::Uuid> = page1.items.iter().map(|d| d.id).collect();
-    assert_cursor_is_opaque(&cursor, &page1_ids);
-
-    let page2 = client
-        .list_documents(&ws.slug, &project.slug, Some(&cursor), Some(2))
-        .await
-        .expect("page 2");
-    let page2_ids: Vec<uuid::Uuid> = page2.items.iter().map(|d| d.id).collect();
-    for id in &page1_ids {
-        assert!(
-            !page2_ids.contains(id),
-            "document {id} appeared on both pages"
-        );
-    }
-    assert!(
-        !page2.has_more,
-        "all 3 documents fit within pages 1+2 at limit=2"
-    );
-    assert!(
-        page2.next_cursor.is_none(),
-        "last page must not carry next_cursor"
-    );
-
-    let mut all_seen: Vec<uuid::Uuid> = page1_ids.iter().chain(page2_ids.iter()).copied().collect();
-    all_seen.sort_unstable();
-    let mut expected = created_ids;
-    expected.sort_unstable();
-    assert_eq!(
-        all_seen, expected,
-        "pages together must cover every created document exactly once"
-    );
+    assert_pagination_round_trips_at_every_namespace(
+        &client,
+        &format!(
+            "/workspaces/{}/projects/{}/documents",
+            ws.slug, project.slug
+        ),
+        &created_ids,
+        2,
+    )
+    .await;
 
     db.teardown().await;
 }
@@ -587,83 +710,33 @@ async fn list_workspace_grants_pagination_round_trips_and_is_opaque() {
         created_ids.push(grant.id);
     }
 
-    let page1 = client
-        .list_workspace_grants(&ws.slug, None, Some(2))
-        .await
-        .expect("page 1");
-    assert_eq!(page1.items.len(), 2);
-    assert!(
-        page1.has_more,
-        // Only the 3 agent grants seeded above exist: workspace creation
-        // (both the HTTP `create_workspace` handler and this test's
-        // `login_user_with_workspace` helper) grants the creator Owner
-        // *membership*, not a `permission_grant`/ACL row — see
-        // `routes/workspaces.rs::create_workspace`'s own comment ("no
-        // explicit grant is needed here") and `MINIMAL_NONEMPTY_ROUTES`
-        // below, which lists project-scope grants as unconditionally
-        // nonempty but omits workspace-scope grants for the same reason.
-        "more than 2 grants exist (3 agent grants)"
-    );
-    let cursor = page1
-        .next_cursor
-        .clone()
-        .expect("page 1 with has_more=true must carry next_cursor");
-    let page1_ids: Vec<uuid::Uuid> = page1.items.iter().map(|g| g.id).collect();
-    assert_cursor_is_opaque(&cursor, &page1_ids);
-
-    let mut page_ids = page1_ids.clone();
-    let mut next = Some(cursor);
-    let mut pages_walked = 1;
-    while let Some(c) = next {
-        let page = client
-            .list_workspace_grants(&ws.slug, Some(&c), Some(2))
-            .await
-            .expect("subsequent page");
-        pages_walked += 1;
-        for id in page.items.iter().map(|g| g.id) {
-            assert!(
-                !page_ids.contains(&id),
-                "grant {id} appeared on an earlier page"
-            );
-            page_ids.push(id);
-        }
-        if page.has_more {
-            let c = page
-                .next_cursor
-                .clone()
-                .expect("has_more=true must carry next_cursor");
-            assert_cursor_is_opaque(&c, &page.items.iter().map(|g| g.id).collect::<Vec<_>>());
-            next = Some(c);
-        } else {
-            assert!(
-                page.next_cursor.is_none(),
-                "last page must not carry next_cursor"
-            );
-            next = None;
-        }
-        assert!(
-            pages_walked < 20,
-            "pagination did not terminate — possible cursor bug"
-        );
-    }
-
-    for id in &created_ids {
-        assert!(
-            page_ids.contains(id),
-            "created grant {id} never appeared in any page"
-        );
-    }
+    // Only the 3 agent grants seeded above exist: workspace creation
+    // (both the HTTP `create_workspace` handler and this test's
+    // `login_user_with_workspace` helper) grants the creator Owner
+    // *membership*, not a `permission_grant`/ACL row — see
+    // `routes/workspaces.rs::create_workspace`'s own comment ("no
+    // explicit grant is needed here") and `MINIMAL_NONEMPTY_ROUTES`
+    // below, which lists project-scope grants as unconditionally
+    // nonempty but omits workspace-scope grants for the same reason.
+    assert_pagination_round_trips_at_every_namespace(
+        &client,
+        &format!("/workspaces/{}/grants", ws.slug),
+        &created_ids,
+        2,
+    )
+    .await;
 
     db.teardown().await;
 }
 
 /// `tasks` family: `TW11` in `api_workspace_tasks.rs` already proves
-/// round-trip and last-page absence for `list_workspace_tasks`. This adds
-/// only the property TW11 does not check: cursor opacity.
+/// round-trip and last-page absence for `list_workspace_tasks` at `/api`.
+/// This adds the property TW11 does not check, cursor opacity, and walks
+/// the same collection at every namespace.
 #[tokio::test]
 async fn list_workspace_tasks_cursor_is_opaque() {
     use atlas_api::dtos::boards_tasks::{
-        CreateBoardRequest, CreateColumnRequest, CreateTaskRequest, WorkspaceTaskQueryParams,
+        CreateBoardRequest, CreateColumnRequest, CreateTaskRequest,
     };
 
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -709,8 +782,9 @@ async fn list_workspace_tasks_cursor_is_opaque() {
         .await
         .expect("create column");
 
+    let mut created_ids = Vec::new();
     for i in 0..3 {
-        client
+        let task = client
             .create_task(
                 &ws.slug,
                 board.id,
@@ -726,28 +800,16 @@ async fn list_workspace_tasks_cursor_is_opaque() {
             )
             .await
             .expect("create task");
+        created_ids.push(task.id);
     }
 
-    let page1 = client
-        .list_workspace_tasks(
-            &ws.slug,
-            &WorkspaceTaskQueryParams {
-                limit: Some(2),
-                ..Default::default()
-            },
-        )
-        .await
-        .expect("page 1");
-    assert!(
-        page1.has_more,
-        "3 tasks with limit=2 must have a second page"
-    );
-    let cursor = page1
-        .next_cursor
-        .clone()
-        .expect("page 1 with has_more=true must carry next_cursor");
-    let page1_ids: Vec<uuid::Uuid> = page1.items.iter().map(|t| t.id).collect();
-    assert_cursor_is_opaque(&cursor, &page1_ids);
+    assert_pagination_round_trips_at_every_namespace(
+        &client,
+        &format!("/workspaces/{}/tasks", ws.slug),
+        &created_ids,
+        2,
+    )
+    .await;
 
     db.teardown().await;
 }
@@ -808,37 +870,28 @@ const MINIMAL_NONEMPTY_ROUTES: &[(HttpMethod, &str, usize, &str)] = &[
     ),
 ];
 
-/// Issues an authenticated raw GET (bypassing `AtlasClient`'s typed
-/// deserialization) and returns the decoded JSON body, so the last-page
-/// assertions below can inspect the exact wire shape of `next_cursor`
-/// (present-and-null vs. omitted) rather than an `Option<String>` that
-/// cannot distinguish the two.
-async fn fetch_page_json(client: &AtlasClient, path_and_query: &str) -> serde_json::Value {
-    let mut builder = client
-        .http_client()
-        .get(format!("{}{}", client.base_url(), path_and_query));
-    if let Some(token) = client.token() {
-        builder = builder.bearer_auth(token);
+/// Fetches namespace-relative `relative_path_and_query` once per namespace
+/// in `NAMESPACES` (T5.13/T5.14) with raw authenticated GETs, returning each
+/// namespace's decoded JSON body so the last-page assertions below can
+/// inspect the exact wire shape of `next_cursor` (present-and-null vs.
+/// omitted) rather than an `Option<String>` that cannot distinguish the two.
+async fn fetch_page_json(
+    client: &AtlasClient,
+    relative_path_and_query: &str,
+) -> Vec<(&'static str, serde_json::Value)> {
+    let mut pages = Vec::with_capacity(NAMESPACES.len());
+
+    for namespace in NAMESPACES {
+        let path = joined(namespace, relative_path_and_query);
+        pages.push((*namespace, fetch_page_json_at(client, &path).await));
     }
-    let response = builder
-        .send()
-        .await
-        .unwrap_or_else(|e| panic!("GET {path_and_query}: request failed: {e}"));
-    let status = response.status();
-    let body: serde_json::Value = response
-        .json()
-        .await
-        .unwrap_or_else(|e| panic!("GET {path_and_query}: failed to decode JSON body: {e}"));
-    assert_eq!(
-        status.as_u16(),
-        200,
-        "GET {path_and_query} did not return 200: {body}"
-    );
-    body
+
+    pages
 }
 
-/// Asserts `body` is a `Page<T>` JSON object representing its own last page
-/// with exactly `expected_items` rows.
+/// Asserts every per-namespace `body` in `pages` is a `Page<T>` JSON object
+/// representing its own last page with exactly `expected_items` rows,
+/// failures naming the namespace.
 ///
 /// `next_cursor` must be present with value `null`, not omitted: `Page<T>`
 /// (`crates/atlas_api/src/pagination.rs:142-146`) carries no `#[serde(skip_
@@ -846,28 +899,31 @@ async fn fetch_page_json(client: &AtlasClient, path_and_query: &str) -> serde_js
 /// present `null` key. Asserting `body.get("next_cursor") == Some(&Value::
 /// Null)` (rather than deserializing into `Page<T>` and checking `Option::
 /// is_none()`) is what actually distinguishes present-null from absent.
-fn assert_is_own_last_page(body: &serde_json::Value, path: &str, expected_items: usize) {
-    let items = body
-        .get("items")
-        .and_then(|v| v.as_array())
-        .unwrap_or_else(|| panic!("GET {path}: response has no `items` array: {body}"));
-    assert_eq!(
-        items.len(),
-        expected_items,
-        "GET {path}: expected {expected_items} item(s), got {}: {body}",
-        items.len()
-    );
-    assert_eq!(
-        body.get("has_more"),
-        Some(&serde_json::Value::Bool(false)),
-        "GET {path}: has_more must be false on the last page: {body}"
-    );
-    assert_eq!(
-        body.get("next_cursor"),
-        Some(&serde_json::Value::Null),
-        "GET {path}: next_cursor must be present in the body with value null \
-         on the last page, never omitted: {body}"
-    );
+fn assert_is_own_last_page(
+    pages: &[(&'static str, serde_json::Value)],
+    path: &str,
+    expected_items: usize,
+) {
+    for (namespace, body) in pages {
+        let items = page_item_ids(body, path);
+        assert_eq!(
+            items.len(),
+            expected_items,
+            "namespace {namespace}: GET {path}: expected {expected_items} item(s), got {}: {body}",
+            items.len()
+        );
+        assert_eq!(
+            body.get("has_more"),
+            Some(&serde_json::Value::Bool(false)),
+            "namespace {namespace}: GET {path}: has_more must be false on the last page: {body}"
+        );
+        assert_eq!(
+            body.get("next_cursor"),
+            Some(&serde_json::Value::Null),
+            "namespace {namespace}: GET {path}: next_cursor must be present in the body with \
+             value null on the last page, never omitted: {body}"
+        );
+    }
 }
 
 /// T2.6-T2.9 follow-up (data-driven, self-checking): every route the
@@ -927,7 +983,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 let admin_db = support::TestDb::create().await.expect("TestDb::create");
                 let admin_server = support::TestServer::spawn(&admin_db).await;
                 let admin = support::login_root_user(&admin_server, &admin_db).await;
-                let body = fetch_page_json(&admin, "/api/admin/audit").await;
+                let body = fetch_page_json(&admin, "/admin/audit").await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
                 admin_db.teardown().await;
             }
@@ -942,22 +998,21 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 let admin_db = support::TestDb::create().await.expect("TestDb::create");
                 let admin_server = support::TestServer::spawn(&admin_db).await;
                 let admin = support::login_root_user(&admin_server, &admin_db).await;
-                let body = fetch_page_json(&admin, "/api/admin/trash").await;
+                let body = fetch_page_json(&admin, "/admin/trash").await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
                 admin_db.teardown().await;
             }
             "/api-keys" => {
                 let (client, _ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-apikeys").await;
-                let body = fetch_page_json(&client, "/api/api-keys").await;
+                let body = fetch_page_json(&client, "/api-keys").await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
             "/workspaces/{ws}/activity" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-activity").await;
                 let body =
-                    fetch_page_json(&client, &format!("/api/workspaces/{}/activity", ws.slug))
-                        .await;
+                    fetch_page_json(&client, &format!("/workspaces/{}/activity", ws.slug)).await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
             "/workspaces/{ws}/attachments" => {
@@ -965,15 +1020,14 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-attachments")
                         .await;
                 let body =
-                    fetch_page_json(&client, &format!("/api/workspaces/{}/attachments", ws.slug))
-                        .await;
+                    fetch_page_json(&client, &format!("/workspaces/{}/attachments", ws.slug)).await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
             "/workspaces/{ws}/audit" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-audit").await;
                 let body =
-                    fetch_page_json(&client, &format!("/api/workspaces/{}/audit", ws.slug)).await;
+                    fetch_page_json(&client, &format!("/workspaces/{}/audit", ws.slug)).await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
             "/workspaces/{ws}/automation-rules" => {
@@ -982,7 +1036,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                         .await;
                 let body = fetch_page_json(
                     &client,
-                    &format!("/api/workspaces/{}/automation-rules", ws.slug),
+                    &format!("/workspaces/{}/automation-rules", ws.slug),
                 )
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
@@ -1017,7 +1071,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     .expect("create board");
                 let body = fetch_page_json(
                     &client,
-                    &format!("/api/workspaces/{}/boards/{}/tasks", ws.slug, board.id),
+                    &format!("/workspaces/{}/boards/{}/tasks", ws.slug, board.id),
                 )
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
@@ -1053,10 +1107,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     .expect("create document");
                 let body = fetch_page_json(
                     &client,
-                    &format!(
-                        "/api/workspaces/{}/documents/{}/attachments",
-                        ws.slug, doc.id
-                    ),
+                    &format!("/workspaces/{}/documents/{}/attachments", ws.slug, doc.id),
                 )
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
@@ -1092,7 +1143,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     .expect("create document");
                 let body = fetch_page_json(
                     &client,
-                    &format!("/api/workspaces/{}/documents/{}/backlinks", ws.slug, doc.id),
+                    &format!("/workspaces/{}/documents/{}/backlinks", ws.slug, doc.id),
                 )
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
@@ -1128,7 +1179,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     .expect("create document");
                 let body = fetch_page_json(
                     &client,
-                    &format!("/api/workspaces/{}/documents/{}/history", ws.slug, doc.id),
+                    &format!("/workspaces/{}/documents/{}/history", ws.slug, doc.id),
                 )
                 .await;
                 assert_is_own_last_page(
@@ -1141,15 +1192,14 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-grants").await;
                 let body =
-                    fetch_page_json(&client, &format!("/api/workspaces/{}/grants", ws.slug)).await;
+                    fetch_page_json(&client, &format!("/workspaces/{}/grants", ws.slug)).await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
             "/workspaces/{ws}/projects" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-projects").await;
                 let body =
-                    fetch_page_json(&client, &format!("/api/workspaces/{}/projects", ws.slug))
-                        .await;
+                    fetch_page_json(&client, &format!("/workspaces/{}/projects", ws.slug)).await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
             "/workspaces/{ws}/projects/{project_slug}/boards" => {
@@ -1171,10 +1221,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     .expect("create project");
                 let body = fetch_page_json(
                     &client,
-                    &format!(
-                        "/api/workspaces/{}/projects/{}/boards",
-                        ws.slug, project.slug
-                    ),
+                    &format!("/workspaces/{}/projects/{}/boards", ws.slug, project.slug),
                 )
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
@@ -1198,7 +1245,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 let body = fetch_page_json(
                     &client,
                     &format!(
-                        "/api/workspaces/{}/projects/{}/documents",
+                        "/workspaces/{}/projects/{}/documents",
                         ws.slug, project.slug
                     ),
                 )
@@ -1224,10 +1271,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     .expect("create project");
                 let body = fetch_page_json(
                     &client,
-                    &format!(
-                        "/api/workspaces/{}/projects/{}/folders",
-                        ws.slug, project.slug
-                    ),
+                    &format!("/workspaces/{}/projects/{}/folders", ws.slug, project.slug),
                 )
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
@@ -1251,10 +1295,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     .expect("create project");
                 let body = fetch_page_json(
                     &client,
-                    &format!(
-                        "/api/workspaces/{}/projects/{}/grants",
-                        ws.slug, project.slug
-                    ),
+                    &format!("/workspaces/{}/projects/{}/grants", ws.slug, project.slug),
                 )
                 .await;
                 assert_is_own_last_page(
@@ -1269,7 +1310,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 let body = fetch_page_json(
                     &client,
                     &format!(
-                        "/api/workspaces/{}/search?q=zzz-sweep-no-such-match-zzz",
+                        "/workspaces/{}/search?q=zzz-sweep-no-such-match-zzz",
                         ws.slug
                     ),
                 )
@@ -1283,7 +1324,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 let body = fetch_page_json(
                     &client,
                     &format!(
-                        "/api/workspaces/{}/semantic-search?q=zzz-sweep-no-such-match-zzz",
+                        "/workspaces/{}/semantic-search?q=zzz-sweep-no-such-match-zzz",
                         ws.slug
                     ),
                 )
@@ -1294,7 +1335,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-tasks").await;
                 let body =
-                    fetch_page_json(&client, &format!("/api/workspaces/{}/tasks", ws.slug)).await;
+                    fetch_page_json(&client, &format!("/workspaces/{}/tasks", ws.slug)).await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
             "/workspaces/{ws}/tasks/{readable_id}/activity" => {
@@ -1357,7 +1398,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 let body = fetch_page_json(
                     &client,
                     &format!(
-                        "/api/workspaces/{}/tasks/{}/activity",
+                        "/workspaces/{}/tasks/{}/activity",
                         ws.slug, task.readable_id
                     ),
                 )
@@ -1428,7 +1469,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 let body = fetch_page_json(
                     &client,
                     &format!(
-                        "/api/workspaces/{}/tasks/{}/backlinks",
+                        "/workspaces/{}/tasks/{}/backlinks",
                         ws.slug, task.readable_id
                     ),
                 )
@@ -1439,8 +1480,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-webhooks").await;
                 let body =
-                    fetch_page_json(&client, &format!("/api/workspaces/{}/webhooks", ws.slug))
-                        .await;
+                    fetch_page_json(&client, &format!("/workspaces/{}/webhooks", ws.slug)).await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
             "/workspaces/{ws}/webhooks/{webhook_id}/deliveries" => {
@@ -1462,10 +1502,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     .expect("create webhook");
                 let body = fetch_page_json(
                     &client,
-                    &format!(
-                        "/api/workspaces/{}/webhooks/{}/deliveries",
-                        ws.slug, webhook.id
-                    ),
+                    &format!("/workspaces/{}/webhooks/{}/deliveries", ws.slug, webhook.id),
                 )
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);

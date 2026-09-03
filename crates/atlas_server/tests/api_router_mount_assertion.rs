@@ -1,8 +1,17 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 
 mod support;
 
+use std::collections::{BTreeSet, HashMap};
+
 use atlas_core::registry::HttpMethod;
+use atlas_server::router_audit::{NAMESPACES, ROOT_LEVEL_PATHS, mounted_path};
+use support::route_matrix::route_matrix;
 
 /// T4.9 (`v2-e3-s2-router-audit` PR4, added after PR2's verify — the "MOUNT
 /// GAP" note): proves each of the three component routers is actually
@@ -161,10 +170,282 @@ fn axum_method(method: HttpMethod) -> reqwest::Method {
 }
 
 async fn send(http: &reqwest::Client, method: reqwest::Method, base_url: &str, path: &str) -> u16 {
-    http.request(method, format!("{base_url}{path}"))
+    send_with_bearer(http, method, base_url, path, None).await
+}
+
+async fn send_with_bearer(
+    http: &reqwest::Client,
+    method: reqwest::Method,
+    base_url: &str,
+    path: &str,
+    bearer: Option<&str>,
+) -> u16 {
+    let mut request = http.request(method, format!("{base_url}{path}"));
+
+    if let Some(token) = bearer {
+        request = request.bearer_auth(token);
+    }
+
+    request
         .send()
         .await
         .expect("request must not error")
         .status()
         .as_u16()
+}
+
+/// Foreign-method probe order, widest-first, mirroring `pick_probe` above
+/// and `api_v1_path_presence_guard.rs::CANDIDATE_ORDER` — the same "pick a
+/// method this path does not register" problem, reused rather than
+/// reimplemented for every exhaustive probe in this crate.
+const CANDIDATE_ORDER: [HttpMethod; 7] = [
+    HttpMethod::Patch,
+    HttpMethod::Delete,
+    HttpMethod::Put,
+    HttpMethod::Post,
+    HttpMethod::Get,
+    HttpMethod::Head,
+    HttpMethod::Options,
+];
+
+/// T5.1/T5.2 (`v2-e3-s4` PR5, D1): every declared route resolves at BOTH
+/// `/api` and `/api/v2`, exhaustively over `route_matrix()` (INV-DATA-DRIVEN,
+/// not sampled). Mount proof never uses "not 404" (INV-LIVE-PROOF), and it
+/// never uses an unauthenticated 401 either: `lib.rs::app()` merges a
+/// PROTECTED root fallback last, so an unroutable path answers 401 to an
+/// unauthenticated request exactly like a mounted protected route does
+/// (`a_foreign_prefix_never_matches_any_declared_route` below asserts that
+/// very 401 for paths that match nothing). A 401 therefore proves only that
+/// `require_authn` ran, not that any route resolved. The proof for every
+/// route is a live 405 on a foreign method (a method that path does not
+/// declare — `pick_probe`'s and `api_v1_path_presence_guard.rs`'s reasoning
+/// applies unchanged): a 405 can only come from a matched path whose
+/// `MethodRouter` lacks that method, while the fallback answers 404 with an
+/// empty body once authenticated. Public routes are probed unauthenticated
+/// (to keep the D7 drift check below), protected routes with a bearer token
+/// so the probe passes `require_authn` and reaches axum's routing. Every
+/// path declares at most 3 methods today (the widest are the 3-method
+/// `webhooks/{webhook_id}` and `task-views/{id}`), so the 7-entry
+/// `CANDIDATE_ORDER` always yields a foreign method and needs no extension.
+///
+/// Governor budget: custos's `login`/`activate` governors (burst 5, refill
+/// 1/s, one state shared by both nests because `api_router` is cloned) see
+/// `POST /api/auth/login` once from `login_user_with_workspace`, plus one
+/// login probe per namespace (3 total), and two activate probes per
+/// namespace (GET and POST entries share the path; 4 total). Both stay under
+/// the burst, so no sleep is needed. `AppState::for_test` sets
+/// `rate_limiter: None`, so the authenticated probes have no other budget.
+///
+/// T5.18/T5.19 (D7): this is also the live half of the `is_public`
+/// bidirectional audit at both mount points. A route wrongly declared
+/// `is_public: true` while still wrapped in `require_authn` fails HERE, not
+/// silently elsewhere: per this file's `every_component_router_is_merged_into_app`
+/// doc, `Router::layer` wraps a protected path's entire `MethodRouter`, so an
+/// unauthenticated foreign-method probe against a still-wrapped route gets
+/// 401 from `require_authn` before axum's own routing ever produces the
+/// expected 405 — this test's `assert_eq!(status, 405, ...)` for that route
+/// would then fail with 401, naming the offending route. The opposite drift
+/// (a route excluded from `require_authn` but not declared `is_public`) is
+/// covered by `router_audit::public_route_set_matches_route_paths_union`,
+/// the structural half of the same audit — namespace-agnostic by
+/// construction (D7): it compares `RouteDeclaration.is_public` against the
+/// router-accessor union built from the live `component_routes!` expansion,
+/// neither of which reads a mount prefix at all.
+///
+/// The registry declares 9 public routes: 5 root-level
+/// (`router_audit::ROOT_LEVEL_PATHS`: `/health`, `/ready`, `/version`,
+/// `/openapi.json`, `/scalar`) and 4 namespaced. `mounted_path` returns a
+/// root-level path unchanged for every namespace, so looping those entries
+/// over `NAMESPACES` would probe the same URL twice and prove nothing about
+/// either mount. They are probed exactly once, outside the namespace loop,
+/// and the set skipped inside it is asserted equal to `ROOT_LEVEL_PATHS`
+/// so the skip cannot grow without that constant growing with it.
+#[tokio::test]
+async fn every_declared_route_resolves_at_both_mounts() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let http = reqwest::Client::new();
+    let (client, _, _) = support::login_user_with_workspace(&server, &db, "mount-assertion").await;
+    let token = client.token().expect("authenticated token");
+
+    let ws_slug = "mount-assertion-no-such-workspace";
+    let matrix = route_matrix();
+
+    let mut methods_by_path: HashMap<&str, Vec<HttpMethod>> = HashMap::new();
+    for entry in &matrix {
+        methods_by_path
+            .entry(entry.path_template.as_str())
+            .or_default()
+            .push(entry.method);
+    }
+
+    let mut skipped_root_level: BTreeSet<String> = BTreeSet::new();
+
+    for entry in &matrix {
+        if !ROOT_LEVEL_PATHS.contains(&entry.path_template.as_str()) {
+            continue;
+        }
+        skipped_root_level.insert(entry.path_template.clone());
+
+        let declared_methods = methods_by_path
+            .get(entry.path_template.as_str())
+            .expect("path must have at least its own declared method");
+        let foreign_method = CANDIDATE_ORDER
+            .into_iter()
+            .find(|candidate| !declared_methods.contains(candidate))
+            .unwrap_or_else(|| {
+                panic!(
+                    "{}: every candidate probe method is already declared",
+                    entry.path_template
+                )
+            });
+
+        assert!(
+            entry.is_public,
+            "root-level route {} {} must be public: ROOT_LEVEL_PATHS sits outside both \
+             mounts and outside require_authn, so a protected root-level route has no proof \
+             shape here",
+            entry.method, entry.path_template
+        );
+
+        let status = send(
+            &http,
+            axum_method(foreign_method),
+            server.base_url(),
+            &entry.path_template,
+        )
+        .await;
+        assert_eq!(
+            status, 405,
+            "root-level: public route {} {} must be mounted (probed with a foreign method \
+             {foreign_method:?}), got {status}",
+            entry.method, entry.path_template
+        );
+    }
+
+    let expected_root_level: BTreeSet<String> = ROOT_LEVEL_PATHS
+        .iter()
+        .map(|path| (*path).to_string())
+        .collect();
+    assert_eq!(
+        skipped_root_level, expected_root_level,
+        "the set of routes probed once as root-level must be exactly ROOT_LEVEL_PATHS: a \
+         registry route can only leave the namespace loop by joining ROOT_LEVEL_PATHS, and \
+         every ROOT_LEVEL_PATHS member must still be declared by the registry"
+    );
+
+    for namespace in NAMESPACES {
+        for entry in &matrix {
+            if ROOT_LEVEL_PATHS.contains(&entry.path_template.as_str()) {
+                continue;
+            }
+
+            let relative = entry.path_template.replace("{ws}", ws_slug);
+            let mounted = mounted_path(namespace, &relative);
+
+            let declared_methods = methods_by_path
+                .get(entry.path_template.as_str())
+                .expect("path must have at least its own declared method");
+            let foreign_method = CANDIDATE_ORDER
+                .into_iter()
+                .find(|candidate| !declared_methods.contains(candidate))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{}: every candidate probe method is already declared",
+                        entry.path_template
+                    )
+                });
+
+            let bearer = (!entry.is_public).then_some(token);
+            let visibility = if entry.is_public {
+                "public"
+            } else {
+                "protected"
+            };
+            let status = send_with_bearer(
+                &http,
+                axum_method(foreign_method),
+                server.base_url(),
+                &mounted,
+                bearer,
+            )
+            .await;
+            assert_eq!(
+                status, 405,
+                "namespace {namespace}: {visibility} route {} {mounted} must be mounted (probed \
+                 with a foreign method {foreign_method:?}), got {status}",
+                entry.method
+            );
+        }
+    }
+
+    db.teardown().await;
+}
+
+/// T5.3/T5.4 (`v2-e3-s4` PR5, D1): a foreign prefix never matches any
+/// declared route at either mount — `/apiv2/<rel>` and `/api/v3/<rel>` fall
+/// through to the root fallback for every entry in `route_matrix()`. That
+/// fallback is protected (`lib.rs::app()` merges
+/// `protect(Router::new().fallback(not_found))` last), so the proof has two
+/// halves per path, the same shape `api_unmatched_path_fallback.rs` proves
+/// for hand-picked paths: an unauthenticated probe answers 401 from
+/// `require_authn`, and an authenticated one reaches the fallback and
+/// answers 404. Asserting a bare 404 on the unauthenticated probe would be
+/// wrong (it gets 401), and asserting only 401 would not distinguish "no
+/// route matched" from "a protected route matched", which is exactly what
+/// the authenticated 404 rules out. Deliberately built with `format!`
+/// rather than `mounted_path`/`joined`: the point here is proving the
+/// LITERAL foreign-prefixed path never resolves, not reconstructing where
+/// the route is actually mounted.
+#[tokio::test]
+async fn a_foreign_prefix_never_matches_any_declared_route() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let http = reqwest::Client::new();
+    let (client, _, _) = support::login_user_with_workspace(&server, &db, "foreign-prefix").await;
+    let token = client.token().expect("authenticated token");
+
+    let ws_slug = "foreign-prefix-no-such-workspace";
+    let matrix = route_matrix();
+
+    for foreign_prefix in ["/apiv2", "/api/v3"] {
+        for entry in &matrix {
+            let relative = entry.path_template.replace("{ws}", ws_slug);
+            let foreign = format!("{foreign_prefix}{relative}");
+
+            let unauthenticated = send(
+                &http,
+                axum_method(entry.method),
+                server.base_url(),
+                &foreign,
+            )
+            .await;
+            assert_eq!(
+                unauthenticated, 401,
+                "foreign prefix {foreign_prefix}: unauthenticated {} {foreign} must fall through \
+                 to the protected fallback and get 401, got {unauthenticated}",
+                entry.method
+            );
+
+            let authenticated = http
+                .request(
+                    axum_method(entry.method),
+                    format!("{}{foreign}", server.base_url()),
+                )
+                .bearer_auth(token)
+                .send()
+                .await
+                .expect("request must not error")
+                .status()
+                .as_u16();
+            assert_eq!(
+                authenticated, 404,
+                "foreign prefix {foreign_prefix}: authenticated {} {foreign} must not match any \
+                 route and reach the 404 fallback, got {authenticated}",
+                entry.method
+            );
+        }
+    }
+
+    db.teardown().await;
 }

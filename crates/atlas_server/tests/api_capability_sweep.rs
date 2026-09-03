@@ -64,7 +64,7 @@ use atlas_server::{
     crypto::WebhookCrypto,
     persistence::repos::{ApiKeyRepo, NewApiKey},
     reg5::{StorageBackend, reg5_component_entries},
-    router_audit::capability_from_action_id,
+    router_audit::{NAMESPACES, capability_from_action_id, mounted_path},
 };
 use support::{TestDb, TestServer, login_user_with_workspace};
 
@@ -754,6 +754,7 @@ async fn invoke(
     client: &AtlasClient,
     http: &reqwest::Client,
     base_url: &str,
+    namespace: &str,
     token: &str,
     fx: &Fixtures,
 ) -> Result<(), ClientError> {
@@ -844,6 +845,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "POST",
                 &format!(
                     "/api/workspaces/{ws}/tasks/{}/references/batch",
@@ -990,6 +992,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "POST",
                 &format!(
                     "/api/workspaces/{ws}/tasks/{}/comment-drafts",
@@ -1003,6 +1006,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "DELETE",
                 &format!(
                     "/api/workspaces/{ws}/tasks/{}/comment-drafts/{nil}",
@@ -1016,6 +1020,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "POST",
                 &format!(
                     "/api/workspaces/{ws}/tasks/{}/comment-drafts/{nil}/attachments",
@@ -1081,6 +1086,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "GET",
                 &format!("/api/workspaces/{ws}/documents/{}/compact", fx.document_ref),
             )
@@ -1091,6 +1097,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "GET",
                 &format!(
                     "/api/workspaces/{ws}/documents/{}/content/range",
@@ -1104,6 +1111,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "POST",
                 &format!(
                     "/api/workspaces/{ws}/documents/{}/content/search",
@@ -1121,6 +1129,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "PATCH",
                 &format!(
                     "/api/workspaces/{ws}/documents/{}/content/range",
@@ -1205,6 +1214,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "POST",
                 &format!(
                     "/api/workspaces/{ws}/documents/{}/comment-drafts",
@@ -1218,6 +1228,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "DELETE",
                 &format!(
                     "/api/workspaces/{ws}/documents/{}/comment-drafts/{nil}",
@@ -1242,6 +1253,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "POST",
                 &format!(
                     "/api/workspaces/{ws}/documents/{}/comment-drafts/{nil}/attachments",
@@ -1278,6 +1290,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "POST",
                 &format!(
                     "/api/workspaces/{ws}/documents/{}/presence",
@@ -1291,6 +1304,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "DELETE",
                 &format!(
                     "/api/workspaces/{ws}/documents/{}/presence",
@@ -1304,6 +1318,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "POST",
                 &format!("/api/workspaces/{ws}/documents/moves/batch"),
             )
@@ -1371,6 +1386,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "POST",
                 &format!("/api/workspaces/{ws}/boards/{}/presence", fx.board_id),
             )
@@ -1381,6 +1397,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "DELETE",
                 &format!("/api/workspaces/{ws}/boards/{}/presence", fx.board_id),
             )
@@ -1469,6 +1486,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "POST",
                 &format!("/api/workspaces/{ws}/webhooks"),
             )
@@ -1479,6 +1497,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "GET",
                 &format!("/api/workspaces/{ws}/webhooks"),
             )
@@ -1489,6 +1508,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "GET",
                 &format!("/api/workspaces/{ws}/webhooks/{}", fx.webhook_id),
             )
@@ -1499,6 +1519,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "PATCH",
                 &format!("/api/workspaces/{ws}/webhooks/{}", fx.webhook_id),
             )
@@ -1509,6 +1530,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "DELETE",
                 &format!("/api/workspaces/{ws}/webhooks/{}", fx.webhook_id),
             )
@@ -1523,6 +1545,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "GET",
                 &format!("/api/workspaces/{ws}/webhooks/{}/deliveries", fx.webhook_id),
             )
@@ -1540,6 +1563,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "GET",
                 &format!("/api/workspaces/{ws}/semantic-search/reindex"),
             )
@@ -1550,6 +1574,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "POST",
                 &format!("/api/workspaces/{ws}/semantic-search/reindex"),
             )
@@ -1560,6 +1585,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "GET",
                 &format!("/api/workspaces/{ws}/tags"),
             )
@@ -1570,6 +1596,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "POST",
                 &format!("/api/workspaces/{ws}/tags"),
             )
@@ -1580,6 +1607,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "GET",
                 &format!("/api/workspaces/{ws}/tags/used"),
             )
@@ -1590,6 +1618,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "PATCH",
                 &format!("/api/workspaces/{ws}/tags/{nil}"),
             )
@@ -1600,6 +1629,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "DELETE",
                 &format!("/api/workspaces/{ws}/tags/{nil}"),
             )
@@ -1610,6 +1640,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "GET",
                 &format!("/api/workspaces/{ws}/property-definitions"),
             )
@@ -1620,6 +1651,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "POST",
                 &format!("/api/workspaces/{ws}/property-definitions"),
             )
@@ -1630,6 +1662,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "DELETE",
                 &format!("/api/workspaces/{ws}/property-definitions/{nil}"),
             )
@@ -1658,6 +1691,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "GET",
                 &format!("/api/workspaces/{ws}/projects/{}/grants", fx.project_slug),
             )
@@ -1668,6 +1702,7 @@ async fn invoke(
                 http,
                 base_url,
                 token,
+                namespace,
                 "GET",
                 &format!("/api/workspaces/{ws}/grants"),
             )
@@ -1736,14 +1771,28 @@ async fn invoke(
 /// Fires a raw HTTP call for the handful of routes (board/document presence)
 /// that have no generated `atlas_client` method, mirroring the client's own
 /// error-decoding shape so callers can use one assertion path for every case.
+///
+/// `v2-e3-s4` PR5 (D1, R2): every call site still passes its path as an
+/// `/api`-absolute literal (`atlas_client`'s own `get`/`post`/etc. are
+/// namespace-unaware by the same construction, and this file's callers were
+/// written to mirror that shape); this is the one place that literal is
+/// turned into the concrete mount, so a caller never hand-concatenates
+/// `/api` a second time and every one of this file's raw call sites gets the
+/// namespace loop for free once it threads `namespace` down to here.
 async fn raw_call(
     http: &reqwest::Client,
     base_url: &str,
     token: &str,
+    namespace: &str,
     method: &str,
     path: &str,
 ) -> Result<(), ClientError> {
-    let url = format!("{base_url}{path}");
+    let relative = path
+        .strip_prefix("/api/")
+        .map(|rest| format!("/{rest}"))
+        .unwrap_or_else(|| panic!("raw_call: path `{path}` must start with `/api/`"));
+    let mounted = mounted_path(namespace, &relative);
+    let url = format!("{base_url}{mounted}");
     // No `_` fallback: every call site names its method explicitly, so an
     // unrecognized value is a bug in the caller, not a route this helper
     // should silently retry as GET (the defect this PR's other raw-request
@@ -1829,6 +1878,17 @@ async fn capability_sweep_covers_every_registry_entry() {
     );
 }
 
+/// T5.15/T5.16 (`v2-e3-s4` D1, R2): this sweep drives every case through
+/// `AtlasClient` or `raw_call`, never `route_matrix()` (see this file's own
+/// module doc / D1's grounding), so it does not inherit `route_matrix()`'s
+/// namespace extension and needs its own `NAMESPACES` loop here — named
+/// explicitly per R2's risk, rather than assumed covered elsewhere.
+/// `AtlasClient`'s own typed methods stay `/api`-only (namespace has no
+/// effect on those cases): `atlas_client` is untouched in this slice (S6's
+/// job), so only the `raw_call`-backed cases actually exercise `/api/v2`
+/// here; every `raw_call` case's own scope-gate outcome is identical
+/// regardless of mount, since the capability gate runs inside the same
+/// handler either way.
 #[tokio::test]
 async fn zero_scope_key_gets_scope_403_on_every_capability_gated_route() {
     let db = TestDb::create().await.expect("TestDb::create");
@@ -1842,17 +1902,30 @@ async fn zero_scope_key_gets_scope_403_on_every_capability_gated_route() {
     let agent = AtlasClient::new(server.base_url()).with_token(token.clone());
     let http = reqwest::Client::new();
 
-    for case in Case::ALL {
-        let result = invoke(*case, &agent, &http, server.base_url(), &token, &fx).await;
-        assert!(
-            matches!(&result, Err(e) if is_scope_denial(e)),
-            "case {case:?}: expected a scope-403, got {result:?}"
-        );
+    for namespace in NAMESPACES {
+        for case in Case::ALL {
+            let result = invoke(
+                *case,
+                &agent,
+                &http,
+                server.base_url(),
+                namespace,
+                &token,
+                &fx,
+            )
+            .await;
+            assert!(
+                matches!(&result, Err(e) if is_scope_denial(e)),
+                "namespace {namespace}: case {case:?}: expected a scope-403, got {result:?}"
+            );
+        }
     }
 
     db.teardown().await;
 }
 
+/// See [`zero_scope_key_gets_scope_403_on_every_capability_gated_route`]'s
+/// doc for why this loops `NAMESPACES` itself rather than inheriting it.
 #[tokio::test]
 async fn all_capabilities_scope_key_never_gets_scope_403() {
     let db = TestDb::create().await.expect("TestDb::create");
@@ -1872,13 +1945,25 @@ async fn all_capabilities_scope_key_never_gets_scope_403() {
     let agent = AtlasClient::new(server.base_url()).with_token(token.clone());
     let http = reqwest::Client::new();
 
-    for case in Case::ALL {
-        let result = invoke(*case, &agent, &http, server.base_url(), &token, &fx).await;
-        if let Err(e) = &result {
-            assert!(
-                !is_scope_denial(e),
-                "case {case:?}: unexpected scope-403 with all catalog capabilities: {e:?}"
-            );
+    for namespace in NAMESPACES {
+        for case in Case::ALL {
+            let result = invoke(
+                *case,
+                &agent,
+                &http,
+                server.base_url(),
+                namespace,
+                &token,
+                &fx,
+            )
+            .await;
+            if let Err(e) = &result {
+                assert!(
+                    !is_scope_denial(e),
+                    "namespace {namespace}: case {case:?}: unexpected scope-403 with all \
+                     catalog capabilities: {e:?}"
+                );
+            }
         }
     }
 
@@ -1966,6 +2051,7 @@ async fn each_capability_gate_admits_its_own_scope_and_rejects_a_wrong_one() {
             &wrong_agent,
             &http,
             server.base_url(),
+            "/api",
             &wrong_token,
             &fx,
         )
@@ -1993,7 +2079,16 @@ async fn each_capability_gate_admits_its_own_scope_and_rejects_a_wrong_one() {
         )
         .await;
         let ok_agent = AtlasClient::new(server.base_url()).with_token(ok_token.clone());
-        let ok_result = invoke(case, &ok_agent, &http, server.base_url(), &ok_token, &fx).await;
+        let ok_result = invoke(
+            case,
+            &ok_agent,
+            &http,
+            server.base_url(),
+            "/api",
+            &ok_token,
+            &fx,
+        )
+        .await;
         if let Err(e) = &ok_result {
             assert!(
                 !is_scope_denial(e),

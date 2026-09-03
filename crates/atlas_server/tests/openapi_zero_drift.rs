@@ -17,6 +17,17 @@
 //! [`atlas_server::router_audit::mounted_path`] before comparing against the
 //! document, which is the same "root-level routes stay unprefixed, every
 //! other route is `/api`-joined" rule `document()` itself applies.
+//!
+//! Scope statement, confirmed by PR5 (T5.20): this guard runs against `/api`
+//! only, never `/api/v2` — stated explicitly here rather than left ambiguous
+//! (`v2-e3-s4`'s cross-cutting-audit requirement forbids an unstated scope).
+//! `document()`'s own path keys are `/api`-absolute by construction
+//! (`prefix_document_paths(doc, "/api")`, unchanged by PR5); PR5's own scope
+//! excludes any change to the composed OpenAPI document or its mount
+//! prefix, so there is no `/api/v2`-prefixed rendering of this document for
+//! this guard to compare against yet. Re-mounting the document's own path
+//! keys under `/api/v2` (and re-scoping this guard to match) is a future
+//! slice's job, not this PR's.
 
 use std::collections::HashSet;
 use std::fs;

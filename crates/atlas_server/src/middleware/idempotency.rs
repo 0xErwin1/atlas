@@ -44,6 +44,8 @@
 //!   `ApiError::IdempotencyKeyInFlight`.
 //! - `Replay(stored)` — the same request was already completed; return the
 //!   stored status/body/allowlisted headers plus `Idempotent-Replayed: true`.
+//!   A stored `location` header is replayed verbatim across mounts, never
+//!   rewritten to the mount the retry came in on; no handler sets one today.
 //! - `Mismatch { existing_fingerprint }` — the same key was reused for a
 //!   different request; 409 `ApiError::IdempotencyKeyConflict`.
 //!
@@ -74,6 +76,7 @@ use sha2::{Digest, Sha256};
 use crate::auth::middleware::Principal;
 use crate::error::ApiError;
 use crate::persistence::repos::{IdempotencyScope, InsertOutcome, PgIdempotencyRepo};
+use crate::router_audit::CANONICAL_NAMESPACE;
 use crate::state::AppState;
 
 /// A route's 5xx handling policy (D6 scoped correction,
@@ -178,10 +181,12 @@ const RESPONSE_HEADER_ALLOWLIST: &[&str] = &["content-type", "location", "etag"]
 const MAX_BUFFERED_BODY_BYTES: usize = 32 * 1024 * 1024;
 
 /// Computes the D4/D5 fingerprint (R4 fix): `method || "\n" ||
-/// concrete_path_and_query || "\n" || sorted(allowlisted request headers,
-/// lowercased names) || "\n" || raw body bytes`. The query string is part of
-/// the fingerprint because it changes what the same body means (e.g. a
-/// filter or target parameter); a header outside
+/// canonical_path_and_query || "\n" || sorted(allowlisted request headers,
+/// lowercased names) || "\n" || raw body bytes`, where
+/// `canonical_path_and_query` is the [`CANONICAL_NAMESPACE`]-prefixed path
+/// and query (the same value whichever mount served the request). The
+/// query string is part of the fingerprint because it changes what the same
+/// body means (e.g. a filter or target parameter); a header outside
 /// [`FINGERPRINT_HEADER_ALLOWLIST`] never affects the hash regardless of
 /// case.
 fn compute_fingerprint(
@@ -363,20 +368,17 @@ async fn idempotency_middleware(
 
     let method = request.method().to_string();
 
-    // Component routers are nested under their namespace, and axum strips
-    // the nest prefix from `request.uri()` before a nested route's layers
-    // run. The store key and the fingerprint must carry the path the client
-    // sent, so both read `OriginalUri`, which the root router records before
-    // any nesting.
-    let original_uri = request
-        .extensions()
-        .get::<axum::extract::OriginalUri>()
-        .map(|original| original.0.clone())
-        .unwrap_or_else(|| request.uri().clone());
-    let path = original_uri.path().to_string();
-    let path_and_query = original_uri
+    // This layer runs inside a component router nested under both mounts,
+    // so axum has already stripped the nest prefix and `request.uri()` is
+    // namespace-relative. Prefixing it with the canonical namespace keys the
+    // store and the fingerprint on the `/api` form whichever mount the
+    // client used: one dedup record per logical operation across mounts,
+    // and rows stored before the dual mount keep matching.
+    let path = format!("{CANONICAL_NAMESPACE}{}", request.uri().path());
+    let path_and_query = request
+        .uri()
         .path_and_query()
-        .map(|value| value.as_str().to_string())
+        .map(|value| format!("{CANONICAL_NAMESPACE}{}", value.as_str()))
         .unwrap_or_else(|| path.clone());
 
     // Apply the route's own `DefaultBodyLimit` (falling back to axum's 2 MiB

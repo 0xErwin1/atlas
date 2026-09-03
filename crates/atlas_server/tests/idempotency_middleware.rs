@@ -36,6 +36,7 @@ use atlas_server::middleware::idempotency::{
 use atlas_server::persistence::repos::{
     CompleteOutcome, IN_FLIGHT_TTL, IdempotencyScope, InsertOutcome, PgIdempotencyRepo,
 };
+use atlas_server::router_audit::CANONICAL_NAMESPACE;
 use atlas_server::state::AppState;
 use axum::body::Body;
 use axum::extract::Request;
@@ -93,16 +94,26 @@ async fn mock_handler_with_cookie() -> Response {
     response
 }
 
+/// Nests a mock router under the canonical namespace exactly as production
+/// mounts every component router, so the idempotency layer sees the same
+/// prefix-stripped `request.uri()` it sees in the real layer stack and the
+/// store rows carry the `/api/...` form the tests query and seed by.
+fn mounted(router: Router) -> Router {
+    Router::new().nest(CANONICAL_NAMESPACE, router)
+}
+
 fn mock_router(state: AppState) -> Router {
-    Router::new()
-        .route("/mock", post(mock_create_handler))
-        .route("/mock-cookie", post(mock_handler_with_cookie))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            idempotency_middleware_release,
-        ))
-        .layer(axum::middleware::from_fn(inject_principal))
-        .with_state(state)
+    mounted(
+        Router::new()
+            .route("/mock", post(mock_create_handler))
+            .route("/mock-cookie", post(mock_handler_with_cookie))
+            .layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                idempotency_middleware_release,
+            ))
+            .layer(axum::middleware::from_fn(inject_principal))
+            .with_state(state),
+    )
 }
 
 /// R1 fix proof: a route carrying its own `DefaultBodyLimit`, wired in the
@@ -113,18 +124,20 @@ fn mock_router(state: AppState) -> Router {
 fn mock_router_with_body_limit(state: AppState) -> Router {
     const ROUTE_BODY_LIMIT: usize = 1024;
 
-    Router::new()
-        .route(
-            "/mock-limited",
-            post(mock_create_handler)
-                .layer::<_, std::convert::Infallible>(axum::middleware::from_fn_with_state(
-                    state.clone(),
-                    idempotency_middleware_release,
-                ))
-                .layer(axum::extract::DefaultBodyLimit::max(ROUTE_BODY_LIMIT)),
-        )
-        .layer(axum::middleware::from_fn(inject_principal))
-        .with_state(state)
+    mounted(
+        Router::new()
+            .route(
+                "/mock-limited",
+                post(mock_create_handler)
+                    .layer::<_, std::convert::Infallible>(axum::middleware::from_fn_with_state(
+                        state.clone(),
+                        idempotency_middleware_release,
+                    ))
+                    .layer(axum::extract::DefaultBodyLimit::max(ROUTE_BODY_LIMIT)),
+            )
+            .layer(axum::middleware::from_fn(inject_principal))
+            .with_state(state),
+    )
 }
 
 /// R4 fix proof: a handler whose completion installs a trigger that blocks
@@ -156,14 +169,16 @@ fn mock_router_with_dropping_handler(state: AppState, conn: sea_orm::DatabaseCon
         }
     };
 
-    Router::new()
-        .route("/mock-drop", post(handler))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            idempotency_middleware_release,
-        ))
-        .layer(axum::middleware::from_fn(inject_principal))
-        .with_state(state)
+    mounted(
+        Router::new()
+            .route("/mock-drop", post(handler))
+            .layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                idempotency_middleware_release,
+            ))
+            .layer(axum::middleware::from_fn(inject_principal))
+            .with_state(state),
+    )
 }
 
 /// D6 scoped correction (`R4-5xx-release-duplicates-one-shot-jobs`) proof: a
@@ -189,14 +204,16 @@ fn mock_router_with_flaky_handler(state: AppState, calls: Arc<AtomicUsize>) -> R
         }
     };
 
-    Router::new()
-        .route("/mock-flaky", post(handler))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            idempotency_middleware_store_briefly,
-        ))
-        .layer(axum::middleware::from_fn(inject_principal))
-        .with_state(state)
+    mounted(
+        Router::new()
+            .route("/mock-flaky", post(handler))
+            .layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                idempotency_middleware_store_briefly,
+            ))
+            .layer(axum::middleware::from_fn(inject_principal))
+            .with_state(state),
+    )
 }
 
 /// D6 scoped correction counterpart to [`mock_router_with_flaky_handler`]: a
@@ -221,14 +238,16 @@ fn mock_router_with_flaky_create_handler(state: AppState, calls: Arc<AtomicUsize
         }
     };
 
-    Router::new()
-        .route("/mock-flaky-create", post(handler))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            idempotency_middleware_release,
-        ))
-        .layer(axum::middleware::from_fn(inject_principal))
-        .with_state(state)
+    mounted(
+        Router::new()
+            .route("/mock-flaky-create", post(handler))
+            .layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                idempotency_middleware_release,
+            ))
+            .layer(axum::middleware::from_fn(inject_principal))
+            .with_state(state),
+    )
 }
 
 /// R2 fix proof (`R2-response-buffer-silently-emptied`, ORCHESTRATOR RULING
@@ -254,14 +273,16 @@ fn mock_router_with_oversized_response_handler(state: AppState, calls: Arc<Atomi
         }
     };
 
-    Router::new()
-        .route("/mock-oversized-response", post(handler))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            idempotency_middleware_release,
-        ))
-        .layer(axum::middleware::from_fn(inject_principal))
-        .with_state(state)
+    mounted(
+        Router::new()
+            .route("/mock-oversized-response", post(handler))
+            .layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                idempotency_middleware_release,
+            ))
+            .layer(axum::middleware::from_fn(inject_principal))
+            .with_state(state),
+    )
 }
 
 /// A simple counting handler used for the store-unavailable degraded-mode
@@ -275,14 +296,16 @@ fn mock_router_with_counting_handler(state: AppState, calls: Arc<AtomicUsize>) -
         }
     };
 
-    Router::new()
-        .route("/mock-count", post(handler))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            idempotency_middleware_release,
-        ))
-        .layer(axum::middleware::from_fn(inject_principal))
-        .with_state(state)
+    mounted(
+        Router::new()
+            .route("/mock-count", post(handler))
+            .layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                idempotency_middleware_release,
+            ))
+            .layer(axum::middleware::from_fn(inject_principal))
+            .with_state(state),
+    )
 }
 
 /// `inject_principal`'s `Extension`-based approach only works via
@@ -326,14 +349,16 @@ fn mock_router_with_slow_handler(state: AppState, calls: Arc<AtomicUsize>) -> Ro
         }
     };
 
-    Router::new()
-        .route("/mock-slow", post(handler))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            idempotency_middleware_release,
-        ))
-        .layer(axum::middleware::from_fn(inject_principal_from_header))
-        .with_state(state)
+    mounted(
+        Router::new()
+            .route("/mock-slow", post(handler))
+            .layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                idempotency_middleware_release,
+            ))
+            .layer(axum::middleware::from_fn(inject_principal_from_header))
+            .with_state(state),
+    )
 }
 
 async fn state_for(db: &TestDb) -> AppState {
@@ -384,7 +409,7 @@ async fn matching_retry_replays_without_rerunning_the_handler() {
 
     let first = router
         .clone()
-        .oneshot(request_with("/mock", "key-1", body.clone(), principal))
+        .oneshot(request_with("/api/mock", "key-1", body.clone(), principal))
         .await
         .expect("first response");
     assert_eq!(first.status(), StatusCode::CREATED);
@@ -392,7 +417,7 @@ async fn matching_retry_replays_without_rerunning_the_handler() {
 
     let second = router
         .clone()
-        .oneshot(request_with("/mock", "key-1", body, principal))
+        .oneshot(request_with("/api/mock", "key-1", body, principal))
         .await
         .expect("second response");
 
@@ -419,7 +444,7 @@ async fn mismatched_retry_returns_409_conflict() {
     router
         .clone()
         .oneshot(request_with(
-            "/mock",
+            "/api/mock",
             "key-2",
             json!({"name": "a"}),
             principal,
@@ -430,7 +455,7 @@ async fn mismatched_retry_returns_409_conflict() {
     let second = router
         .clone()
         .oneshot(request_with(
-            "/mock",
+            "/api/mock",
             "key-2",
             json!({"name": "b"}),
             principal,
@@ -463,7 +488,7 @@ async fn concurrent_in_flight_returns_409_with_a_distinct_problem_type() {
     let scope = IdempotencyScope {
         principal_id,
         method: "POST".to_string(),
-        path: "/mock".to_string(),
+        path: "/api/mock".to_string(),
         key: "key-3".to_string(),
     };
     let now = Utc::now();
@@ -481,7 +506,7 @@ async fn concurrent_in_flight_returns_409_with_a_distinct_problem_type() {
     let principal = StubPrincipal(principal_id);
     let second = router
         .oneshot(request_with(
-            "/mock",
+            "/api/mock",
             "key-3",
             json!({"name": "a"}),
             principal,
@@ -514,7 +539,7 @@ async fn superseded_complete_never_replays_and_leaves_the_reclaimed_row_in_fligh
     let scope = IdempotencyScope {
         principal_id,
         method: "POST".to_string(),
-        path: "/mock".to_string(),
+        path: "/api/mock".to_string(),
         key: "key-4".to_string(),
     };
 
@@ -598,7 +623,12 @@ async fn set_cookie_is_never_stored_or_replayed() {
 
     let first = router
         .clone()
-        .oneshot(request_with("/mock-cookie", "key-5", json!({}), principal))
+        .oneshot(request_with(
+            "/api/mock-cookie",
+            "key-5",
+            json!({}),
+            principal,
+        ))
         .await
         .expect("first response");
     assert!(
@@ -607,7 +637,12 @@ async fn set_cookie_is_never_stored_or_replayed() {
     );
 
     let second = router
-        .oneshot(request_with("/mock-cookie", "key-5", json!({}), principal))
+        .oneshot(request_with(
+            "/api/mock-cookie",
+            "key-5",
+            json!({}),
+            principal,
+        ))
         .await
         .expect("second (replayed) response");
 
@@ -680,6 +715,85 @@ async fn a_request_that_fails_authn_leaves_no_row_in_the_store() {
         count, 0,
         "a request rejected by require_authn must leave zero rows for its Idempotency-Key"
     );
+}
+
+/// The store keys on the canonical `/api` form of the path
+/// (`router_audit::CANONICAL_NAMESPACE`), so one `Idempotency-Key` names one
+/// logical operation across both mounts: a retry against the other namespace
+/// replays instead of running the handler again, proven in both orders.
+#[tokio::test]
+async fn the_same_key_replays_across_namespaces() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, user) =
+        support::login_user_with_workspace(&server, &db, "idem-cross-ns").await;
+    let token = client.token().expect("session token").to_string();
+    let relative = format!("/workspaces/{}/tags", ws.slug);
+
+    let send = |namespace: &str, key: &str, name: &str| {
+        client
+            .http_client()
+            .post(format!("{}{namespace}{relative}", server.base_url()))
+            .bearer_auth(&token)
+            .header("x-atlas-csrf", "1")
+            .header("idempotency-key", key)
+            .json(&json!({ "name": name }))
+            .send()
+    };
+
+    for (key, first_ns, second_ns) in [
+        ("cross-ns-v1-first", "/api", "/api/v2"),
+        ("cross-ns-v2-first", "/api/v2", "/api"),
+    ] {
+        let first = send(first_ns, key, key).await.expect("first request");
+        let status1 = first.status();
+        assert_eq!(
+            status1.as_u16(),
+            201,
+            "{first_ns}: the original request must create the tag before any replay is compared"
+        );
+        assert!(
+            first.headers().get("idempotent-replayed").is_none(),
+            "{first_ns}: the original response must never carry Idempotent-Replayed"
+        );
+        let body1 = first.bytes().await.expect("first body");
+
+        let second = send(second_ns, key, key).await.expect("second request");
+        assert_eq!(second.status(), status1, "{second_ns}: replay status");
+        assert_eq!(
+            second
+                .headers()
+                .get("idempotent-replayed")
+                .and_then(|v| v.to_str().ok()),
+            Some("true"),
+            "{second_ns}: the same key sent to the other mount must replay"
+        );
+        assert_eq!(
+            second.bytes().await.expect("second body"),
+            body1,
+            "{second_ns}: replay body"
+        );
+
+        let paths: Vec<String> = sea_orm::ConnectionTrait::query_all_raw(
+            db.conn(),
+            sea_orm::Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                "SELECT path FROM platform.idempotency_keys \
+                 WHERE principal_id = $1 AND method = $2 AND key = $3",
+                [user.id.0.into(), "POST".into(), key.into()],
+            ),
+        )
+        .await
+        .expect("path query must not error")
+        .into_iter()
+        .map(|row| row.try_get::<String>("", "path").expect("path column"))
+        .collect();
+        assert_eq!(
+            paths,
+            vec![format!("/api{relative}")],
+            "{first_ns} then {second_ns}: exactly one row, keyed on the /api form"
+        );
+    }
 }
 
 /// Untested spec scenario (verify report finding): "A response MUST be
@@ -859,7 +973,7 @@ async fn body_over_the_routes_own_default_body_limit_returns_413_and_leaves_no_r
 
     let response = router
         .oneshot(request_with(
-            "/mock-limited",
+            "/api/mock-limited",
             "big-body-key",
             body,
             principal,
@@ -907,7 +1021,7 @@ async fn same_key_and_body_but_different_query_string_returns_409_conflict() {
     router
         .clone()
         .oneshot(request_with(
-            "/mock?scope=a",
+            "/api/mock?scope=a",
             "key-query",
             body.clone(),
             principal,
@@ -916,7 +1030,12 @@ async fn same_key_and_body_but_different_query_string_returns_409_conflict() {
         .expect("first response");
 
     let second = router
-        .oneshot(request_with("/mock?scope=b", "key-query", body, principal))
+        .oneshot(request_with(
+            "/api/mock?scope=b",
+            "key-query",
+            body,
+            principal,
+        ))
         .await
         .expect("second response");
 
@@ -942,7 +1061,7 @@ async fn differing_x_file_name_header_alone_still_replays() {
     router
         .clone()
         .oneshot(request_with_headers(
-            "/mock",
+            "/api/mock",
             "key-file-name",
             body.clone(),
             principal,
@@ -953,7 +1072,7 @@ async fn differing_x_file_name_header_alone_still_replays() {
 
     let second = router
         .oneshot(request_with_headers(
-            "/mock",
+            "/api/mock",
             "key-file-name",
             body,
             principal,
@@ -988,7 +1107,7 @@ async fn same_key_and_body_but_different_x_create_token_header_returns_409_confl
     router
         .clone()
         .oneshot(request_with_headers(
-            "/mock",
+            "/api/mock",
             "key-create-token",
             body.clone(),
             principal,
@@ -999,7 +1118,7 @@ async fn same_key_and_body_but_different_x_create_token_header_returns_409_confl
 
     let second = router
         .oneshot(request_with_headers(
-            "/mock",
+            "/api/mock",
             "key-create-token",
             body,
             principal,
@@ -1028,7 +1147,7 @@ async fn differing_user_agent_alone_still_replays() {
     router
         .clone()
         .oneshot(request_with_headers(
-            "/mock",
+            "/api/mock",
             "key-ua",
             body.clone(),
             principal,
@@ -1039,7 +1158,7 @@ async fn differing_user_agent_alone_still_replays() {
 
     let second = router
         .oneshot(request_with_headers(
-            "/mock",
+            "/api/mock",
             "key-ua",
             body,
             principal,
@@ -1074,7 +1193,7 @@ async fn byte_identical_retry_with_differing_b3_trace_header_replays() {
     router
         .clone()
         .oneshot(request_with_headers(
-            "/mock",
+            "/api/mock",
             "key-b3-trace",
             body.clone(),
             principal,
@@ -1085,7 +1204,7 @@ async fn byte_identical_retry_with_differing_b3_trace_header_replays() {
 
     let second = router
         .oneshot(request_with_headers(
-            "/mock",
+            "/api/mock",
             "key-b3-trace",
             body,
             principal,
@@ -1124,7 +1243,7 @@ async fn a_complete_store_error_returns_the_handlers_real_response_instead_of_50
     let response = router
         .clone()
         .oneshot(request_with(
-            "/mock-drop",
+            "/api/mock-drop",
             "key-drop",
             json!({"name": "first"}),
             principal,
@@ -1145,7 +1264,7 @@ async fn a_complete_store_error_returns_the_handlers_real_response_instead_of_50
 
     let retry = router
         .oneshot(request_with(
-            "/mock-drop",
+            "/api/mock-drop",
             "key-drop",
             json!({"name": "first"}),
             principal,
@@ -1201,7 +1320,7 @@ async fn a_client_disconnect_mid_handler_still_records_the_completed_response() 
         .expect("impatient client");
 
     let first = impatient
-        .post(format!("http://{addr}/mock-slow"))
+        .post(format!("http://{addr}/api/mock-slow"))
         .header("content-type", "application/json")
         .header("idempotency-key", key)
         .header("x-stub-principal", principal.to_string())
@@ -1218,7 +1337,7 @@ async fn a_client_disconnect_mid_handler_still_records_the_completed_response() 
 
     let patient = reqwest::Client::new();
     let second = patient
-        .post(format!("http://{addr}/mock-slow"))
+        .post(format!("http://{addr}/api/mock-slow"))
         .header("content-type", "application/json")
         .header("idempotency-key", key)
         .header("x-stub-principal", principal.to_string())
@@ -1268,7 +1387,7 @@ async fn a_5xx_is_stored_for_the_failure_retention_and_then_re_executes() {
     let first = router
         .clone()
         .oneshot(request_with(
-            "/mock-flaky",
+            "/api/mock-flaky",
             "key-flaky",
             body.clone(),
             principal,
@@ -1290,7 +1409,7 @@ async fn a_5xx_is_stored_for_the_failure_retention_and_then_re_executes() {
             [
                 principal.0.into(),
                 "POST".into(),
-                "/mock-flaky".into(),
+                "/api/mock-flaky".into(),
                 "key-flaky".into(),
             ],
         ),
@@ -1318,7 +1437,7 @@ async fn a_5xx_is_stored_for_the_failure_retention_and_then_re_executes() {
     let second = router
         .clone()
         .oneshot(request_with(
-            "/mock-flaky",
+            "/api/mock-flaky",
             "key-flaky",
             body.clone(),
             principal,
@@ -1354,7 +1473,7 @@ async fn a_5xx_is_stored_for_the_failure_retention_and_then_re_executes() {
                 (Utc::now() - Duration::minutes(1)).into(),
                 principal.0.into(),
                 "POST".into(),
-                "/mock-flaky".into(),
+                "/api/mock-flaky".into(),
                 "key-flaky".into(),
             ],
         ),
@@ -1363,7 +1482,12 @@ async fn a_5xx_is_stored_for_the_failure_retention_and_then_re_executes() {
     .expect("forcing expiry must not error");
 
     let third = router
-        .oneshot(request_with("/mock-flaky", "key-flaky", body, principal))
+        .oneshot(request_with(
+            "/api/mock-flaky",
+            "key-flaky",
+            body,
+            principal,
+        ))
         .await
         .expect("third response");
     assert_eq!(
@@ -1398,7 +1522,7 @@ async fn a_5xx_release_deletes_the_row_and_the_next_attempt_re_executes() {
     let first = router
         .clone()
         .oneshot(request_with(
-            "/mock-flaky-create",
+            "/api/mock-flaky-create",
             "key-flaky-create",
             body.clone(),
             principal,
@@ -1420,7 +1544,7 @@ async fn a_5xx_release_deletes_the_row_and_the_next_attempt_re_executes() {
             [
                 principal.0.into(),
                 "POST".into(),
-                "/mock-flaky-create".into(),
+                "/api/mock-flaky-create".into(),
                 "key-flaky-create".into(),
             ],
         ),
@@ -1436,7 +1560,7 @@ async fn a_5xx_release_deletes_the_row_and_the_next_attempt_re_executes() {
     let second = router
         .clone()
         .oneshot(request_with(
-            "/mock-flaky-create",
+            "/api/mock-flaky-create",
             "key-flaky-create",
             body.clone(),
             principal,
@@ -1462,7 +1586,7 @@ async fn a_5xx_release_deletes_the_row_and_the_next_attempt_re_executes() {
 
     let third = router
         .oneshot(request_with(
-            "/mock-flaky-create",
+            "/api/mock-flaky-create",
             "key-flaky-create",
             body,
             principal,
@@ -1523,7 +1647,12 @@ async fn an_insert_in_flight_store_failure_degrades_to_no_dedup_instead_of_block
 
     let first = router
         .clone()
-        .oneshot(request_with("/mock-count", key, body.clone(), principal))
+        .oneshot(request_with(
+            "/api/mock-count",
+            key,
+            body.clone(),
+            principal,
+        ))
         .await
         .expect("first response");
 
@@ -1565,7 +1694,12 @@ async fn an_insert_in_flight_store_failure_degrades_to_no_dedup_instead_of_block
 
     let second = router
         .clone()
-        .oneshot(request_with("/mock-count", key, body.clone(), principal))
+        .oneshot(request_with(
+            "/api/mock-count",
+            key,
+            body.clone(),
+            principal,
+        ))
         .await
         .expect("second response");
 
@@ -1597,7 +1731,7 @@ async fn an_insert_in_flight_store_failure_degrades_to_no_dedup_instead_of_block
     .expect("dropping the blocking trigger must not error");
 
     let third = router
-        .oneshot(request_with("/mock-count", key, body, principal))
+        .oneshot(request_with("/api/mock-count", key, body, principal))
         .await
         .expect("third response");
 
@@ -1641,7 +1775,7 @@ async fn an_oversized_response_body_returns_500_and_releases_the_claim() {
     let first = router
         .clone()
         .oneshot(request_with(
-            "/mock-oversized-response",
+            "/api/mock-oversized-response",
             "key-oversized",
             body.clone(),
             principal,
@@ -1673,7 +1807,7 @@ async fn an_oversized_response_body_returns_500_and_releases_the_claim() {
             [
                 principal.0.into(),
                 "POST".into(),
-                "/mock-oversized-response".into(),
+                "/api/mock-oversized-response".into(),
                 "key-oversized".into(),
             ],
         ),
@@ -1687,7 +1821,7 @@ async fn an_oversized_response_body_returns_500_and_releases_the_claim() {
 
     let second = router
         .oneshot(request_with(
-            "/mock-oversized-response",
+            "/api/mock-oversized-response",
             "key-oversized",
             body,
             principal,
