@@ -35,7 +35,7 @@ export const useShareStore = defineStore('share', () => {
 
     if (resource.kind === 'workspace') {
       const result = await collectPaged<GrantDto>((cursor) =>
-        wrappedClient.GET('/api/workspaces/{ws}/grants', {
+        wrappedClient.GET('/api/v2/custos/workspaces/{ws}/grants', {
           params: {
             path: { ws: resource.ws },
             query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) },
@@ -46,7 +46,7 @@ export const useShareStore = defineStore('share', () => {
       apiError = result.error;
     } else {
       const result = await collectPaged<GrantDto>((cursor) =>
-        wrappedClient.GET('/api/workspaces/{ws}/projects/{project_slug}/grants', {
+        wrappedClient.GET('/api/v2/custos/workspaces/{ws}/projects/{project_slug}/grants', {
           params: {
             path: { ws: resource.ws, project_slug: resource.projectSlug },
             query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) },
@@ -68,7 +68,7 @@ export const useShareStore = defineStore('share', () => {
   }
 
   async function loadMembers(ws: string): Promise<void> {
-    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/members', {
+    const { data, error: apiError } = await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/members', {
       params: { path: { ws } },
     });
 
@@ -93,16 +93,19 @@ export const useShareStore = defineStore('share', () => {
     let apiError: unknown;
 
     if (resource.kind === 'workspace') {
-      const result = await wrappedClient.POST('/api/workspaces/{ws}/grants', {
+      const result = await wrappedClient.POST('/api/v2/custos/workspaces/{ws}/grants', {
         params: { path: { ws: resource.ws } },
         body: { principal, role },
       });
       apiError = result.error;
     } else {
-      const result = await wrappedClient.POST('/api/workspaces/{ws}/projects/{project_slug}/grants', {
-        params: { path: { ws: resource.ws, project_slug: resource.projectSlug } },
-        body: { principal, role },
-      });
+      const result = await wrappedClient.POST(
+        '/api/v2/custos/workspaces/{ws}/projects/{project_slug}/grants',
+        {
+          params: { path: { ws: resource.ws, project_slug: resource.projectSlug } },
+          body: { principal, role },
+        },
+      );
       apiError = result.error;
     }
 
@@ -130,13 +133,13 @@ export const useShareStore = defineStore('share', () => {
     let apiError: unknown;
 
     if (resource.kind === 'workspace') {
-      const result = await wrappedClient.DELETE('/api/workspaces/{ws}/grants/{grant_id}', {
+      const result = await wrappedClient.DELETE('/api/v2/custos/workspaces/{ws}/grants/{grant_id}', {
         params: { path: { ws: resource.ws, grant_id: grantId } },
       });
       apiError = result.error;
     } else {
       const result = await wrappedClient.DELETE(
-        '/api/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}',
+        '/api/v2/custos/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}',
         {
           params: { path: { ws: resource.ws, project_slug: resource.projectSlug, grant_id: grantId } },
         },

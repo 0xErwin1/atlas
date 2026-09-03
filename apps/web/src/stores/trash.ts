@@ -44,7 +44,9 @@ export const useTrashStore = defineStore('trash', () => {
       ...(nextFilter.kind !== undefined ? { kind: nextFilter.kind } : {}),
       ...(cursor !== undefined ? { cursor } : {}),
     };
-    const { data, error: apiError } = await wrappedClient.GET('/api/admin/trash', { params: { query } });
+    const { data, error: apiError } = await wrappedClient.GET('/api/v2/acta/admin/trash', {
+      params: { query },
+    });
 
     if (generation !== requestGeneration) return;
 
@@ -66,7 +68,7 @@ export const useTrashStore = defineStore('trash', () => {
 
   async function restore(item: TrashItem): Promise<boolean> {
     error.value = null;
-    const { error: apiError } = await wrappedClient.POST('/api/admin/trash/restore', {
+    const { error: apiError } = await wrappedClient.POST('/api/v2/acta/admin/trash/restore', {
       body: { kind: item.kind, target_id: item.target_id },
     });
 
@@ -81,7 +83,7 @@ export const useTrashStore = defineStore('trash', () => {
 
   async function purge(item: TrashItem): Promise<PurgeStatus | null> {
     error.value = null;
-    const { data, error: apiError } = await wrappedClient.POST('/api/admin/trash/purge', {
+    const { data, error: apiError } = await wrappedClient.POST('/api/v2/acta/admin/trash/purge', {
       body: { kind: item.kind, target_id: item.target_id, confirm: true },
     });
 
@@ -101,9 +103,12 @@ export const useTrashStore = defineStore('trash', () => {
   async function poll(operationId: string): Promise<PurgeStatus | null> {
     if (operationId === '') return null;
 
-    const { data, error: apiError } = await wrappedClient.GET('/api/admin/trash/purges/{operation_id}', {
-      params: { path: { operation_id: operationId } },
-    });
+    const { data, error: apiError } = await wrappedClient.GET(
+      '/api/v2/acta/admin/trash/purges/{operation_id}',
+      {
+        params: { path: { operation_id: operationId } },
+      },
+    );
 
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to check purge status');

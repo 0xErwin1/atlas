@@ -23,7 +23,7 @@ export const usePlatformStatusTemplatesStore = defineStore('platformStatusTempla
   }
 
   async function load(): Promise<void> {
-    const { data, error: apiError } = await wrappedClient.GET('/api/admin/status-templates');
+    const { data, error: apiError } = await wrappedClient.GET('/api/v2/acta/admin/status-templates');
 
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to load Atlas default statuses');
@@ -39,7 +39,7 @@ export const usePlatformStatusTemplatesStore = defineStore('platformStatusTempla
    * into the sorted cache. Returns the created row, or null on failure.
    */
   async function create(name: string): Promise<PlatformStatusTemplateDto | null> {
-    const { data, error: apiError } = await wrappedClient.POST('/api/admin/status-templates', {
+    const { data, error: apiError } = await wrappedClient.POST('/api/v2/acta/admin/status-templates', {
       body: { name, before: null, after: null },
     });
 
@@ -58,10 +58,13 @@ export const usePlatformStatusTemplatesStore = defineStore('platformStatusTempla
    * `null` clears it). Returns true on success.
    */
   async function update(id: string, patch: { name?: string; color?: string | null }): Promise<boolean> {
-    const { data, error: apiError } = await wrappedClient.PATCH('/api/admin/status-templates/{template_id}', {
-      params: { path: { template_id: id } },
-      body: patch,
-    });
+    const { data, error: apiError } = await wrappedClient.PATCH(
+      '/api/v2/acta/admin/status-templates/{template_id}',
+      {
+        params: { path: { template_id: id } },
+        body: patch,
+      },
+    );
 
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to update Atlas default status');
@@ -81,10 +84,13 @@ export const usePlatformStatusTemplatesStore = defineStore('platformStatusTempla
     id: string,
     placement: { before: string | null; after: string | null },
   ): Promise<boolean> {
-    const { data, error: apiError } = await wrappedClient.PATCH('/api/admin/status-templates/{template_id}', {
-      params: { path: { template_id: id } },
-      body: { before: placement.before, after: placement.after },
-    });
+    const { data, error: apiError } = await wrappedClient.PATCH(
+      '/api/v2/acta/admin/status-templates/{template_id}',
+      {
+        params: { path: { template_id: id } },
+        body: { before: placement.before, after: placement.after },
+      },
+    );
 
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to reorder Atlas default status');
@@ -98,9 +104,12 @@ export const usePlatformStatusTemplatesStore = defineStore('platformStatusTempla
 
   /** Deletes a default status and drops it from the cache. Returns true on success. */
   async function remove(id: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.DELETE('/api/admin/status-templates/{template_id}', {
-      params: { path: { template_id: id } },
-    });
+    const { error: apiError } = await wrappedClient.DELETE(
+      '/api/v2/acta/admin/status-templates/{template_id}',
+      {
+        params: { path: { template_id: id } },
+      },
+    );
 
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to delete Atlas default status');

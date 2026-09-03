@@ -39,7 +39,7 @@ describe('useActivityStore', () => {
     const store = useActivityStore();
     await store.load('acme');
 
-    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/activity', {
+    expect(GET).toHaveBeenCalledWith('/api/v2/acta/workspaces/{ws}/activity', {
       params: { path: { ws: 'acme' }, query: {} },
     });
     expect(store.entries).toHaveLength(2);

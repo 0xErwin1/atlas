@@ -303,7 +303,7 @@ async function loadCatalogCached(ctx: CatalogLoadContext, key: string): Promise<
     ctx.loadStartedAtSeq = liveMutationSeq;
     const [folderPage, summaryPage, boardPage] = await Promise.all([
       collectPaged((cursor) =>
-        wrappedClient.GET('/api/workspaces/{ws}/projects/{project_slug}/folders', {
+        wrappedClient.GET('/api/v2/acta/workspaces/{ws}/projects/{project_slug}/folders', {
           params: {
             path: { ws: wsSlug, project_slug: project.slug },
             query: { limit: 200, ...(cursor === undefined ? {} : { cursor }) },
@@ -311,7 +311,7 @@ async function loadCatalogCached(ctx: CatalogLoadContext, key: string): Promise<
         }),
       ),
       collectPaged((cursor) =>
-        wrappedClient.GET('/api/workspaces/{ws}/projects/{project_slug}/documents', {
+        wrappedClient.GET('/api/v2/acta/workspaces/{ws}/projects/{project_slug}/documents', {
           params: {
             path: { ws: wsSlug, project_slug: project.slug },
             query: { limit: 200, ...(cursor === undefined ? {} : { cursor }) },
@@ -319,7 +319,7 @@ async function loadCatalogCached(ctx: CatalogLoadContext, key: string): Promise<
         }),
       ),
       collectPaged((cursor) =>
-        wrappedClient.GET('/api/workspaces/{ws}/projects/{project_slug}/boards', {
+        wrappedClient.GET('/api/v2/acta/workspaces/{ws}/projects/{project_slug}/boards', {
           params: {
             path: { ws: wsSlug, project_slug: project.slug },
             query: { limit: 200, ...(cursor === undefined ? {} : { cursor }) },

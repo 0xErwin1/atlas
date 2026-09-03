@@ -227,7 +227,7 @@ describe('CommentComposer', () => {
     await flushPromises();
 
     expect(remove).toHaveBeenCalledWith(
-      '/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}',
+      '/api/v2/acta/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}',
       expect.objectContaining({ params: { path: { ws: 'acme', slug: 'note', draft_id: 'draft-4' } } }),
     );
     expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('');

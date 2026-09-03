@@ -172,7 +172,7 @@ export const useDocumentsStore = defineStore('documents', () => {
    */
   async function fetchSummary(ws: string, slug: string): Promise<FetchedDocumentSummary | null> {
     const response = await wrappedClient
-      .GET('/api/workspaces/{ws}/documents/{slug}', { params: { path: { ws, slug } } })
+      .GET('/api/v2/acta/workspaces/{ws}/documents/{slug}', { params: { path: { ws, slug } } })
       .catch(() => null);
     if (response === null) return null;
 
@@ -275,7 +275,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     }
 
     const { items, error: apiError } = await collectPaged<DocumentSummary>((cursor) =>
-      wrappedClient.GET('/api/workspaces/{ws}/projects/{project_slug}/documents', {
+      wrappedClient.GET('/api/v2/acta/workspaces/{ws}/projects/{project_slug}/documents', {
         params: {
           path: { ws, project_slug: projectSlug },
           query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) },
@@ -319,7 +319,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     };
     const load = async (): Promise<BacklinkSummary[]> => {
       const { items, error: apiError } = await collectPaged<BacklinkSummary>((cursor) =>
-        wrappedClient.GET('/api/workspaces/{ws}/documents/{slug}/backlinks', {
+        wrappedClient.GET('/api/v2/acta/workspaces/{ws}/documents/{slug}/backlinks', {
           params: { path: { ws, slug }, query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) } },
         }),
       );
@@ -393,7 +393,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     commentsError.value = null;
 
     const { data, error: apiError } = await wrappedClient.GET(
-      '/api/workspaces/{ws}/documents/{slug}/comments',
+      '/api/v2/acta/workspaces/{ws}/documents/{slug}/comments',
       { params: { path: { ws, slug } } },
     );
 
@@ -436,7 +436,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     commentsError.value = null;
 
     const { data, error: apiError } = await wrappedClient.GET(
-      '/api/workspaces/{ws}/documents/{slug}/comments',
+      '/api/v2/acta/workspaces/{ws}/documents/{slug}/comments',
       { params: { path: { ws, slug }, query: { cursor } } },
     );
 
@@ -469,7 +469,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.POST(
-      '/api/workspaces/{ws}/documents/{slug}/comments',
+      '/api/v2/acta/workspaces/{ws}/documents/{slug}/comments',
       {
         params: { path: { ws, slug } },
         body: draftId === undefined ? { body } : { body, draft_id: draftId },
@@ -503,7 +503,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     comments.value = comments.value.filter((c) => c.id !== commentId);
 
     const { error: apiError } = await wrappedClient.DELETE(
-      '/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}',
+      '/api/v2/acta/workspaces/{ws}/documents/{slug}/comments/{comment_id}',
       { params: { path: { ws, slug, comment_id: commentId } } },
     );
 
@@ -527,7 +527,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.PATCH(
-      '/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}',
+      '/api/v2/acta/workspaces/{ws}/documents/{slug}/comments/{comment_id}',
       { params: { path: { ws, slug, comment_id: commentId } }, body: { body } },
     );
 
@@ -555,7 +555,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     folderId?: string,
   ): Promise<string | null> {
     const { data, error: apiError } = await wrappedClient.POST(
-      '/api/workspaces/{ws}/projects/{project_slug}/documents',
+      '/api/v2/acta/workspaces/{ws}/projects/{project_slug}/documents',
       {
         params: { path: { ws, project_slug: projectSlug } },
         body: { title, folder_id: folderId ?? null },
@@ -572,7 +572,7 @@ export const useDocumentsStore = defineStore('documents', () => {
   }
 
   async function rename(ws: string, projectSlug: string, slug: string, title: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.PATCH('/api/workspaces/{ws}/documents/{slug}', {
+    const { error: apiError } = await wrappedClient.PATCH('/api/v2/acta/workspaces/{ws}/documents/{slug}', {
       params: { path: { ws, slug } },
       body: { title },
     });
@@ -592,7 +592,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     slug: string,
     cache?: { workspaceId: string },
   ): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.DELETE('/api/workspaces/{ws}/documents/{slug}', {
+    const { error: apiError } = await wrappedClient.DELETE('/api/v2/acta/workspaces/{ws}/documents/{slug}', {
       params: { path: { ws, slug } },
     });
 
@@ -619,10 +619,13 @@ export const useDocumentsStore = defineStore('documents', () => {
     slug: string,
     folderId: string | null,
   ): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.PATCH('/api/workspaces/{ws}/documents/{slug}/move', {
-      params: { path: { ws, slug } },
-      body: { folder_id: folderId },
-    });
+    const { error: apiError } = await wrappedClient.PATCH(
+      '/api/v2/acta/workspaces/{ws}/documents/{slug}/move',
+      {
+        params: { path: { ws, slug } },
+        body: { folder_id: folderId },
+      },
+    );
 
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to move document');
@@ -639,10 +642,13 @@ export const useDocumentsStore = defineStore('documents', () => {
     slug: string,
     folderId: string | null,
   ): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/documents/{slug}/copy', {
-      params: { path: { ws, slug } },
-      body: { folder_id: folderId },
-    });
+    const { error: apiError } = await wrappedClient.POST(
+      '/api/v2/acta/workspaces/{ws}/documents/{slug}/copy',
+      {
+        params: { path: { ws, slug } },
+        body: { folder_id: folderId },
+      },
+    );
 
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to copy document');
@@ -667,7 +673,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.POST(
-      '/api/workspaces/{ws}/documents/{slug}/attachments',
+      '/api/v2/acta/workspaces/{ws}/documents/{slug}/attachments',
       {
         params: { path: { ws, slug } },
         body: file,

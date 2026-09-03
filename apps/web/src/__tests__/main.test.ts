@@ -205,16 +205,16 @@ describe('platform transport bootstrap', () => {
 
     const requests = fetch.mock.calls.map(([request]) => request as Request);
     expect(requests.map((request) => new URL(request.url).pathname)).toEqual([
-      '/api/auth/login',
-      '/api/auth/me',
-      '/api/auth/me',
-      '/api/auth/logout',
+      '/api/v2/custos/auth/login',
+      '/api/v2/custos/auth/me',
+      '/api/v2/custos/auth/me',
+      '/api/v2/custos/auth/logout',
     ]);
     for (const request of requests) {
       expect(request.credentials).toBe('include');
     }
     expect(requests[0]?.headers.get('X-Atlas-CSRF')).toBe('1');
-    expect(EventSource).toHaveBeenCalledExactlyOnceWith('/api/workspaces/acme/events');
+    expect(EventSource).toHaveBeenCalledExactlyOnceWith('/api/v2/acta/workspaces/acme/events');
     vi.unstubAllGlobals();
   });
 
@@ -361,7 +361,7 @@ describe('transport status lifecycle', () => {
     window.dispatchEvent(new Event('offline'));
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 200 })));
 
-    await wrappedClient.GET('/api/auth/me');
+    await wrappedClient.GET('/api/v2/custos/auth/me');
 
     expect(status.statusFor('transport')).toBe('ready');
     vi.unstubAllGlobals();
@@ -377,14 +377,14 @@ describe('transport status lifecycle', () => {
     expect(status.statusFor('transport')).toBe('ready');
 
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response(null, { status: 503 })));
-    await wrappedClient.GET('/api/auth/me');
+    await wrappedClient.GET('/api/v2/custos/auth/me');
     expect(status.statusFor('transport')).toBe('offline');
 
     window.dispatchEvent(new Event('online'));
     expect(status.statusFor('transport')).toBe('reconnecting');
 
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response(null, { status: 200 })));
-    await wrappedClient.GET('/api/auth/me');
+    await wrappedClient.GET('/api/v2/custos/auth/me');
     expect(status.statusFor('transport')).toBe('ready');
 
     vi.unstubAllGlobals();
@@ -398,7 +398,7 @@ describe('transport status lifecycle', () => {
     cleanup();
 
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 503 })));
-    await wrappedClient.GET('/api/auth/me');
+    await wrappedClient.GET('/api/v2/custos/auth/me');
 
     expect(status.statusFor('transport')).toBe('ready');
     vi.unstubAllGlobals();
@@ -410,12 +410,12 @@ describe('transport status lifecycle', () => {
     status.setReady('transport', true);
     vi.stubGlobal('fetch', vi.fn().mockRejectedValueOnce(new TypeError('network unavailable')));
 
-    await expect(wrappedClient.GET('/api/auth/me')).rejects.toThrow('network unavailable');
+    await expect(wrappedClient.GET('/api/v2/custos/auth/me')).rejects.toThrow('network unavailable');
     expect(status.statusFor('transport')).toBe('error-with-data');
     expect(status.usesFullLoader('transport')).toBe(false);
 
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response(null, { status: 200 })));
-    await wrappedClient.GET('/api/auth/me');
+    await wrappedClient.GET('/api/v2/custos/auth/me');
     expect(status.statusFor('transport')).toBe('ready');
 
     vi.unstubAllGlobals();
@@ -446,7 +446,7 @@ describe('cache invalidation lifecycle', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((request: Request) => {
-        if (new URL(request.url).pathname === '/api/workspaces') {
+        if (new URL(request.url).pathname === '/api/v2/acta/workspaces') {
           return Promise.resolve(
             Response.json([
               {
@@ -465,7 +465,7 @@ describe('cache invalidation lifecycle', () => {
     const workspace = useWorkspaceStore(appPinia);
 
     await workspace.loadWorkspaces();
-    await wrappedClient.GET('/api/workspaces/{ws}/documents/{slug}', {
+    await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/documents/{slug}', {
       params: { path: { ws: 'atlas', slug: 'document-a' } },
     });
 
@@ -492,7 +492,7 @@ describe('cache invalidation lifecycle', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((request: Request) => {
-        if (new URL(request.url).pathname === '/api/workspaces') {
+        if (new URL(request.url).pathname === '/api/v2/acta/workspaces') {
           return Promise.resolve(Response.json([{ id: workspaceId, name: 'Atlas', slug: 'atlas' }]));
         }
         return Promise.resolve(new Response(null, { status: 404 }));
@@ -501,7 +501,7 @@ describe('cache invalidation lifecycle', () => {
     const workspace = useWorkspaceStore(appPinia);
 
     await workspace.loadWorkspaces();
-    await wrappedClient.GET('/api/workspaces/{ws}/documents/{slug}', {
+    await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/documents/{slug}', {
       params: { path: { ws: 'atlas', slug: 'document-a' } },
     });
 
@@ -532,7 +532,7 @@ describe('cache invalidation lifecycle', () => {
     allowResourceCache();
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 404 })));
 
-    const failedResponse = wrappedClient.GET('/api/workspaces/{ws}/documents/{slug}', {
+    const failedResponse = wrappedClient.GET('/api/v2/acta/workspaces/{ws}/documents/{slug}', {
       params: { path: { ws: 'unknown-timeout', slug: 'document-a' } },
     });
     await vi.advanceTimersByTimeAsync(5 * 60_000);
@@ -603,7 +603,7 @@ describe('cache invalidation lifecycle', () => {
       'fetch',
       vi.fn((request: Request) => {
         const pathname = new URL(request.url).pathname;
-        if (pathname === '/api/workspaces') {
+        if (pathname === '/api/v2/acta/workspaces') {
           workspaceListRequests += 1;
           return Promise.resolve(
             Response.json([
@@ -614,10 +614,10 @@ describe('cache invalidation lifecycle', () => {
             ]),
           );
         }
-        if (pathname === '/api/workspaces/atlas/documents/document-a') {
+        if (pathname === '/api/v2/acta/workspaces/atlas/documents/document-a') {
           return Promise.resolve(new Response(null, { status: 404 }));
         }
-        if (pathname === '/api/workspaces/atlas') {
+        if (pathname === '/api/v2/acta/workspaces/atlas') {
           return Promise.resolve(new Response(null, { status: 403 }));
         }
         return Promise.resolve(new Response(null, { status: 403 }));
@@ -626,7 +626,7 @@ describe('cache invalidation lifecycle', () => {
     const workspace = useWorkspaceStore(appPinia);
 
     await workspace.loadWorkspaces();
-    await wrappedClient.GET('/api/workspaces/{ws}/documents/{slug}', {
+    await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/documents/{slug}', {
       params: { path: { ws: 'atlas', slug: 'document-a' } },
     });
     expect(coldEntries).toEqual([
@@ -634,12 +634,12 @@ describe('cache invalidation lifecycle', () => {
       { workspaceId: survivingWorkspaceId, tags: ['document:document-a'] },
     ]);
 
-    await wrappedClient.GET('/api/workspaces/{ws}', { params: { path: { ws: 'atlas' } } });
+    await wrappedClient.GET('/api/v2/acta/workspaces/{ws}', { params: { path: { ws: 'atlas' } } });
     expect(coldEntries).toEqual([{ workspaceId: survivingWorkspaceId, tags: ['document:document-a'] }]);
 
     let unknownCompleted = false;
     const unknownRequest = wrappedClient
-      .GET('/api/workspaces/{ws}/documents/{slug}', {
+      .GET('/api/v2/acta/workspaces/{ws}/documents/{slug}', {
         params: { path: { ws: 'unknown', slug: 'document-a' } },
       })
       .then(() => {

@@ -41,7 +41,7 @@ describe('useGroupsStore', () => {
     const store = useGroupsStore();
     await store.load('acme');
 
-    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/groups', {
+    expect(GET).toHaveBeenCalledWith('/api/v2/custos/workspaces/{ws}/groups', {
       params: { path: { ws: 'acme' } },
     });
     expect(store.groups).toHaveLength(1);
@@ -67,7 +67,7 @@ describe('useGroupsStore', () => {
     const ok = await store.create('acme', 'Design');
 
     expect(ok).toBe(true);
-    expect(POST).toHaveBeenCalledWith('/api/workspaces/{ws}/groups', {
+    expect(POST).toHaveBeenCalledWith('/api/v2/custos/workspaces/{ws}/groups', {
       params: { path: { ws: 'acme' } },
       body: { name: 'Design' },
     });
@@ -94,7 +94,7 @@ describe('useGroupsStore', () => {
     const ok = await store.remove('acme', 'g1');
 
     expect(ok).toBe(true);
-    expect(DELETE).toHaveBeenCalledWith('/api/workspaces/{ws}/groups/{group_id}', {
+    expect(DELETE).toHaveBeenCalledWith('/api/v2/custos/workspaces/{ws}/groups/{group_id}', {
       params: { path: { ws: 'acme', group_id: 'g1' } },
     });
     expect(store.groups).toHaveLength(1);
@@ -107,7 +107,7 @@ describe('useGroupsStore', () => {
     const store = useGroupsStore();
     await store.loadMembers('acme', 'g1');
 
-    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/groups/{group_id}/members', {
+    expect(GET).toHaveBeenCalledWith('/api/v2/custos/workspaces/{ws}/groups/{group_id}/members', {
       params: { path: { ws: 'acme', group_id: 'g1' } },
     });
     expect(store.members).toHaveLength(2);
@@ -121,7 +121,7 @@ describe('useGroupsStore', () => {
     const ok = await store.addMember('acme', 'g1', 'u3');
 
     expect(ok).toBe(true);
-    expect(POST).toHaveBeenCalledWith('/api/workspaces/{ws}/groups/{group_id}/members', {
+    expect(POST).toHaveBeenCalledWith('/api/v2/custos/workspaces/{ws}/groups/{group_id}/members', {
       params: { path: { ws: 'acme', group_id: 'g1' } },
       body: { user_id: 'u3' },
     });
@@ -136,9 +136,12 @@ describe('useGroupsStore', () => {
     const ok = await store.removeMember('acme', 'g1', 'u1');
 
     expect(ok).toBe(true);
-    expect(DELETE).toHaveBeenCalledWith('/api/workspaces/{ws}/groups/{group_id}/members/{user_id}', {
-      params: { path: { ws: 'acme', group_id: 'g1', user_id: 'u1' } },
-    });
+    expect(DELETE).toHaveBeenCalledWith(
+      '/api/v2/custos/workspaces/{ws}/groups/{group_id}/members/{user_id}',
+      {
+        params: { path: { ws: 'acme', group_id: 'g1', user_id: 'u1' } },
+      },
+    );
     expect(store.members).toHaveLength(1);
     expect(store.members[0]?.user_id).toBe('u2');
   });

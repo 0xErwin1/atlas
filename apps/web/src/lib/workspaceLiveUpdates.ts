@@ -240,7 +240,7 @@ export function createWorkspaceLiveUpdatesBroker(
 
   function probeAuthorization(candidate: Lifetime, sourceToken: symbol, recoveryAttempt: symbol): void {
     void wrappedClient
-      .GET('/api/workspaces/{ws}', { params: { path: { ws: candidate.workspaceSlug } } })
+      .GET('/api/v2/acta/workspaces/{ws}', { params: { path: { ws: candidate.workspaceSlug } } })
       .then(({ response }) => {
         if (!isCurrent(candidate, sourceToken, recoveryAttempt)) return;
 

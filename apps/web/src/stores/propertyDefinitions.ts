@@ -20,9 +20,12 @@ export const usePropertyDefinitionsStore = defineStore('propertyDefinitions', ()
     if (!force && loadedWs.value === ws) return;
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/property-definitions', {
-      params: { path: { ws }, query: { applies_to: 'task' } },
-    });
+    const { data, error: apiError } = await wrappedClient.GET(
+      '/api/v2/acta/workspaces/{ws}/property-definitions',
+      {
+        params: { path: { ws }, query: { applies_to: 'task' } },
+      },
+    );
 
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to load custom fields');
@@ -39,10 +42,13 @@ export const usePropertyDefinitionsStore = defineStore('propertyDefinitions', ()
   ): Promise<PropertyDefinitionDto | null> {
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/property-definitions', {
-      params: { path: { ws } },
-      body,
-    });
+    const { data, error: apiError } = await wrappedClient.POST(
+      '/api/v2/acta/workspaces/{ws}/property-definitions',
+      {
+        params: { path: { ws } },
+        body,
+      },
+    );
 
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to create custom field');
@@ -60,7 +66,7 @@ export const usePropertyDefinitionsStore = defineStore('propertyDefinitions', ()
     definitions.value = definitions.value.filter((d) => d.id !== id);
 
     const { error: apiError } = await wrappedClient.DELETE(
-      '/api/workspaces/{ws}/property-definitions/{property_definition_id}',
+      '/api/v2/acta/workspaces/{ws}/property-definitions/{property_definition_id}',
       { params: { path: { ws, property_definition_id: id } } },
     );
 

@@ -305,7 +305,7 @@ describe('NotesSpace catalog', () => {
     await flushPromises();
 
     expect(GET).not.toHaveBeenCalledWith(
-      '/api/workspaces/{ws}/projects/{project_slug}/folders',
+      '/api/v2/acta/workspaces/{ws}/projects/{project_slug}/folders',
       expect.objectContaining({
         params: expect.objectContaining({ path: { ws: 'new-workspace', project_slug: 'general' } }),
       }),
@@ -367,7 +367,7 @@ describe('NotesSpace catalog', () => {
     await flushPromises();
 
     expect(GET).toHaveBeenCalledOnce();
-    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/documents/{slug}', {
+    expect(GET).toHaveBeenCalledWith('/api/v2/acta/workspaces/{ws}/documents/{slug}', {
       params: { path: { ws: 'atlas', slug: 'new-document' } },
     });
     expect(docs.summariesFor('sandbox').map((item) => item.id)).toContain('new-document-id');
@@ -422,7 +422,7 @@ describe('NotesSpace catalog', () => {
     await vi.advanceTimersByTimeAsync(2000);
     vi.useRealTimers();
 
-    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/documents/{slug}', {
+    expect(GET).toHaveBeenCalledWith('/api/v2/acta/workspaces/{ws}/documents/{slug}', {
       params: { path: { ws: 'atlas', slug: 'new-document' } },
     });
     expect(docs.summariesFor('sandbox').map((item) => item.id)).not.toContain('new-document-id');
@@ -502,7 +502,7 @@ describe('NotesSpace catalog', () => {
     let resolveSummaries: (value: { data: { items: Catalog['summaries']; has_more: boolean } }) => void =
       () => {};
     GET.mockImplementation(async (path: string) => {
-      if (path === '/api/workspaces/{ws}/documents/{slug}') {
+      if (path === '/api/v2/acta/workspaces/{ws}/documents/{slug}') {
         return {
           data: {
             id: 'new-document-id',
@@ -761,7 +761,7 @@ describe('NotesSpace catalog', () => {
     await flushPromises();
 
     expect(GET).toHaveBeenCalledOnce();
-    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/documents/{slug}', {
+    expect(GET).toHaveBeenCalledWith('/api/v2/acta/workspaces/{ws}/documents/{slug}', {
       params: { path: { ws: 'atlas', slug: 'old-title' } },
     });
     expect(docs.summariesFor('sandbox').map((item) => item.title)).toEqual(['Renamed live']);
@@ -1007,15 +1007,15 @@ describe('NotesSpace catalog', () => {
 
     expect(wrapper.text()).toContain('Loading notes…');
     expect(GET).toHaveBeenCalledWith(
-      '/api/workspaces/{ws}/projects/{project_slug}/folders',
+      '/api/v2/acta/workspaces/{ws}/projects/{project_slug}/folders',
       expect.anything(),
     );
     expect(GET).toHaveBeenCalledWith(
-      '/api/workspaces/{ws}/projects/{project_slug}/documents',
+      '/api/v2/acta/workspaces/{ws}/projects/{project_slug}/documents',
       expect.anything(),
     );
     expect(GET).toHaveBeenCalledWith(
-      '/api/workspaces/{ws}/projects/{project_slug}/boards',
+      '/api/v2/acta/workspaces/{ws}/projects/{project_slug}/boards',
       expect.anything(),
     );
 
@@ -1131,7 +1131,7 @@ describe('NotesSpace catalog', () => {
     await flushPromises();
 
     expect(GET).toHaveBeenCalledWith(
-      '/api/workspaces/{ws}/projects/{project_slug}/documents',
+      '/api/v2/acta/workspaces/{ws}/projects/{project_slug}/documents',
       expect.anything(),
     );
     expect(

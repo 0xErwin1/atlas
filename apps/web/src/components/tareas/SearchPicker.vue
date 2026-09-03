@@ -53,7 +53,7 @@ watch([query, () => props.type], () => {
   debounce = setTimeout(async () => {
     searching.value = true;
     try {
-      const { data } = await wrappedClient.GET('/api/workspaces/{ws}/search', {
+      const { data } = await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/search', {
         params: {
           path: { ws: props.ws },
           query: { q: term, type: props.type, sort: 'relevance', prefix: true },

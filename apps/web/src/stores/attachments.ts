@@ -71,7 +71,7 @@ export const useAttachmentsStore = defineStore('attachments', () => {
       ...(cursor === undefined ? {} : { cursor }),
     };
 
-    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/attachments', {
+    const { data, error: apiError } = await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/attachments', {
       params: { path: { ws }, query },
     });
 
@@ -99,7 +99,7 @@ export const useAttachmentsStore = defineStore('attachments', () => {
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.PATCH(
-      '/api/workspaces/{ws}/attachments/{attachment_id}',
+      '/api/v2/acta/workspaces/{ws}/attachments/{attachment_id}',
       {
         params: { path: { ws, attachment_id: attachmentId } },
         body: { file_name: fileName },
@@ -119,7 +119,7 @@ export const useAttachmentsStore = defineStore('attachments', () => {
     error.value = null;
 
     const { error: apiError } = await wrappedClient.DELETE(
-      '/api/workspaces/{ws}/attachments/{attachment_id}',
+      '/api/v2/acta/workspaces/{ws}/attachments/{attachment_id}',
       { params: { path: { ws, attachment_id: attachmentId } } },
     );
 

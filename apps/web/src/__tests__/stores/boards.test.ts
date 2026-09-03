@@ -997,7 +997,7 @@ describe('useBoardsStore', () => {
 
     expect(ok).toBe(true);
     expect(PATCH).toHaveBeenCalledWith(
-      '/api/workspaces/{ws}/boards/{board_id}/move',
+      '/api/v2/acta/workspaces/{ws}/boards/{board_id}/move',
       expect.objectContaining({
         params: { path: { ws: 'ws', board_id: 'b1' } },
         body: { folder_id: 'folder-x' },
@@ -1017,7 +1017,7 @@ describe('useBoardsStore', () => {
     await store.moveBoard('ws', 'proj-a', 'b1', null);
 
     expect(PATCH).toHaveBeenCalledWith(
-      '/api/workspaces/{ws}/boards/{board_id}/move',
+      '/api/v2/acta/workspaces/{ws}/boards/{board_id}/move',
       expect.objectContaining({ body: { folder_id: null } }),
     );
   });

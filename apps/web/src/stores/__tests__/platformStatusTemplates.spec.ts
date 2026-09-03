@@ -51,7 +51,7 @@ describe('usePlatformStatusTemplatesStore', () => {
     const store = usePlatformStatusTemplatesStore();
     await store.load();
 
-    expect(GET).toHaveBeenCalledWith('/api/admin/status-templates');
+    expect(GET).toHaveBeenCalledWith('/api/v2/acta/admin/status-templates');
     expect(store.templates.map((t) => t.id)).toEqual(['t1', 't2']);
   });
 
@@ -77,7 +77,7 @@ describe('usePlatformStatusTemplatesStore', () => {
 
     const created = await store.create('Done');
 
-    expect(POST).toHaveBeenCalledWith('/api/admin/status-templates', {
+    expect(POST).toHaveBeenCalledWith('/api/v2/acta/admin/status-templates', {
       body: { name: 'Done', before: null, after: null },
     });
     expect(created?.id).toBe('t2');
@@ -97,7 +97,7 @@ describe('usePlatformStatusTemplatesStore', () => {
     const ok = await store.update('t1', { name: 'Backlog' });
 
     expect(ok).toBe(true);
-    expect(PATCH).toHaveBeenCalledWith('/api/admin/status-templates/{template_id}', {
+    expect(PATCH).toHaveBeenCalledWith('/api/v2/acta/admin/status-templates/{template_id}', {
       params: { path: { template_id: 't1' } },
       body: { name: 'Backlog' },
     });
@@ -130,7 +130,7 @@ describe('usePlatformStatusTemplatesStore', () => {
     const ok = await store.remove('t1');
 
     expect(ok).toBe(true);
-    expect(DELETE).toHaveBeenCalledWith('/api/admin/status-templates/{template_id}', {
+    expect(DELETE).toHaveBeenCalledWith('/api/v2/acta/admin/status-templates/{template_id}', {
       params: { path: { template_id: 't1' } },
     });
     expect(store.templates.map((t) => t.id)).toEqual(['t2']);

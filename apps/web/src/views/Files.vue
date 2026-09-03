@@ -103,7 +103,7 @@ async function download(attachment: WorkspaceAttachment): Promise<void> {
 
   downloading.value = new Set(downloading.value).add(attachment.id);
   try {
-    const { data } = await wrappedClient.GET('/api/workspaces/{ws}/attachments/{attachment_id}', {
+    const { data } = await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/attachments/{attachment_id}', {
       params: { path: { ws: ws.value, attachment_id: attachment.id } },
       parseAs: 'blob',
     });

@@ -39,7 +39,7 @@ export const useTaskViewsStore = defineStore('taskViews', () => {
 
   async function fetchTaskViews(ws: string, request: object): Promise<boolean> {
     try {
-      const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/task-views', {
+      const { data, error: apiError } = await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/task-views', {
         params: { path: { ws } },
       });
 
@@ -67,7 +67,7 @@ export const useTaskViewsStore = defineStore('taskViews', () => {
     ws: string,
     payload: { name: string; filters: TaskViewFiltersDto },
   ): Promise<TaskViewDto | null> {
-    const { data, error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/task-views', {
+    const { data, error: apiError } = await wrappedClient.POST('/api/v2/acta/workspaces/{ws}/task-views', {
       params: { path: { ws } },
       body: { name: payload.name, filters: payload.filters },
     });
@@ -86,10 +86,13 @@ export const useTaskViewsStore = defineStore('taskViews', () => {
     id: string,
     payload: { name: string; filters: TaskViewFiltersDto },
   ): Promise<boolean> {
-    const { data, error: apiError } = await wrappedClient.PATCH('/api/workspaces/{ws}/task-views/{id}', {
-      params: { path: { ws, id } },
-      body: { name: payload.name, filters: payload.filters },
-    });
+    const { data, error: apiError } = await wrappedClient.PATCH(
+      '/api/v2/acta/workspaces/{ws}/task-views/{id}',
+      {
+        params: { path: { ws, id } },
+        body: { name: payload.name, filters: payload.filters },
+      },
+    );
 
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to update task view');
@@ -104,7 +107,7 @@ export const useTaskViewsStore = defineStore('taskViews', () => {
   }
 
   async function remove(ws: string, id: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.DELETE('/api/workspaces/{ws}/task-views/{id}', {
+    const { error: apiError } = await wrappedClient.DELETE('/api/v2/acta/workspaces/{ws}/task-views/{id}', {
       params: { path: { ws, id } },
     });
 

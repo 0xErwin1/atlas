@@ -30,6 +30,6 @@ describe('NoteEditor inline images', () => {
     ) => Promise<string | null>;
 
     expect(resolve).toEqual(expect.any(Function));
-    await expect(resolve('/api/workspaces/acme/attachments/att-1')).resolves.toBe('blob:1');
+    await expect(resolve('/api/v2/acta/workspaces/acme/attachments/att-1')).resolves.toBe('blob:1');
   });
 });

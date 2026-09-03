@@ -66,7 +66,7 @@ describe('useCommentDraftAttachments', () => {
 
     await expect(draft.discard()).resolves.toBe(true);
     expect(remove).toHaveBeenCalledWith(
-      '/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}',
+      '/api/v2/acta/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}',
       expect.objectContaining({ params: { path: { ws: 'acme', slug: 'note', draft_id: 'draft-2' } } }),
     );
     expect(draft.draftId.value).toBeNull();
@@ -86,7 +86,7 @@ describe('useCommentDraftAttachments', () => {
 
     await expect(draft.remove(clientId)).resolves.toBe(true);
     expect(remove).toHaveBeenCalledWith(
-      '/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}',
+      '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}',
       expect.objectContaining({
         params: {
           path: { ws: 'acme', readable_id: 'ATL-1', comment_id: 'draft-3', attachment_id: 'attachment-3' },
@@ -119,7 +119,7 @@ describe('useCommentDraftAttachments', () => {
     await expect(queuedUpload).resolves.toBeNull();
     await expect(removal).resolves.toBe(true);
     expect(remove).toHaveBeenCalledWith(
-      '/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}',
+      '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}',
       expect.objectContaining({
         params: {
           path: { ws: 'acme', readable_id: 'ATL-1', comment_id: 'draft-4', attachment_id: 'attachment-4' },
@@ -158,7 +158,7 @@ describe('useCommentDraftAttachments', () => {
       uploadCalls[1]?.[1]?.params.header['x-upload-token'],
     );
     expect(remove).toHaveBeenCalledWith(
-      '/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}',
+      '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}',
       expect.objectContaining({
         params: {
           path: { ws: 'acme', readable_id: 'ATL-1', comment_id: 'draft-4b', attachment_id: 'attachment-4b' },

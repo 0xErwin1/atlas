@@ -61,7 +61,7 @@ describe('useUiStateStore', () => {
     vi.advanceTimersByTime(600);
 
     expect(PUT).toHaveBeenCalledTimes(1);
-    expect(PUT).toHaveBeenCalledWith('/api/me/ui-state', {
+    expect(PUT).toHaveBeenCalledWith('/api/v2/platform/me/ui-state', {
       body: {
         state: {
           sidebarExpansionByWorkspace: {
@@ -149,7 +149,7 @@ describe('useUiStateStore', () => {
     await flushPromises();
 
     expect(PUT).toHaveBeenCalledTimes(2);
-    expect(PUT).toHaveBeenLastCalledWith('/api/me/ui-state', {
+    expect(PUT).toHaveBeenLastCalledWith('/api/v2/platform/me/ui-state', {
       body: {
         state: {
           sidebarExpansionByWorkspace: {
@@ -183,7 +183,7 @@ describe('useUiStateStore', () => {
     await flushPromises();
 
     expect(PUT).toHaveBeenCalledTimes(2);
-    expect(PUT).toHaveBeenLastCalledWith('/api/me/ui-state', {
+    expect(PUT).toHaveBeenLastCalledWith('/api/v2/platform/me/ui-state', {
       body: { state: { defaultBoardView: 'list' } },
     });
   });
@@ -219,7 +219,7 @@ describe('useUiStateStore', () => {
     vi.advanceTimersByTime(600);
 
     expect(PUT).toHaveBeenCalledTimes(1);
-    expect(PUT).toHaveBeenCalledWith('/api/me/ui-state', {
+    expect(PUT).toHaveBeenCalledWith('/api/v2/platform/me/ui-state', {
       body: { state: { boardViews: { b1: 'list', b2: 'table' } } },
     });
   });
@@ -262,7 +262,7 @@ describe('useUiStateStore', () => {
     vi.advanceTimersByTime(600);
 
     expect(PUT).toHaveBeenCalledTimes(1);
-    expect(PUT).toHaveBeenCalledWith('/api/me/ui-state', {
+    expect(PUT).toHaveBeenCalledWith('/api/v2/platform/me/ui-state', {
       body: { state: { defaultBoardView: 'list' } },
     });
   });
@@ -279,7 +279,7 @@ describe('useUiStateStore', () => {
 
     vi.advanceTimersByTime(600);
 
-    expect(PUT).toHaveBeenCalledWith('/api/me/ui-state', {
+    expect(PUT).toHaveBeenCalledWith('/api/v2/platform/me/ui-state', {
       body: { state: { boardViews: { b1: 'table' } } },
     });
   });

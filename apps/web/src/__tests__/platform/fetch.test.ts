@@ -65,7 +65,7 @@ describe('desktop fetch adapter', () => {
       vi.fn().mockResolvedValue(frameDesktopHttpResponse(204, [], new Uint8Array())),
     );
 
-    const response = await desktopFetch(new Request('tauri://localhost/api/workspaces'));
+    const response = await desktopFetch(new Request('tauri://localhost/api/v2/acta/workspaces'));
 
     expect(response.status).toBe(204);
     expect(await response.text()).toBe('');

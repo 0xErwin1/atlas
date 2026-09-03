@@ -43,9 +43,12 @@ export const useStatusTemplatesStore = defineStore('statusTemplates', () => {
 
   async function load(ws: string): Promise<void> {
     const generation = bindWorkspace(ws);
-    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/status-templates', {
-      params: { path: { ws } },
-    });
+    const { data, error: apiError } = await wrappedClient.GET(
+      '/api/v2/acta/workspaces/{ws}/status-templates',
+      {
+        params: { path: { ws } },
+      },
+    );
 
     if (!isCurrentWorkspace(ws, generation)) return;
     if (apiError !== undefined || data === undefined) {
@@ -65,10 +68,13 @@ export const useStatusTemplatesStore = defineStore('statusTemplates', () => {
     const generation = bindWorkspace(ws);
     const last = templates.value.at(-1);
 
-    const { data, error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/status-templates', {
-      params: { path: { ws } },
-      body: { name, before: last?.position_key ?? null, after: null },
-    });
+    const { data, error: apiError } = await wrappedClient.POST(
+      '/api/v2/acta/workspaces/{ws}/status-templates',
+      {
+        params: { path: { ws } },
+        body: { name, before: last?.position_key ?? null, after: null },
+      },
+    );
 
     if (!isCurrentWorkspace(ws, generation)) return data ?? null;
     if (apiError !== undefined || data === undefined) {
@@ -92,7 +98,7 @@ export const useStatusTemplatesStore = defineStore('statusTemplates', () => {
   ): Promise<boolean> {
     const generation = bindWorkspace(ws);
     const { data, error: apiError } = await wrappedClient.PATCH(
-      '/api/workspaces/{ws}/status-templates/{template_id}',
+      '/api/v2/acta/workspaces/{ws}/status-templates/{template_id}',
       {
         params: { path: { ws, template_id: id } },
         body: patch,
@@ -121,7 +127,7 @@ export const useStatusTemplatesStore = defineStore('statusTemplates', () => {
   ): Promise<boolean> {
     const generation = bindWorkspace(ws);
     const { data, error: apiError } = await wrappedClient.PATCH(
-      '/api/workspaces/{ws}/status-templates/{template_id}',
+      '/api/v2/acta/workspaces/{ws}/status-templates/{template_id}',
       {
         params: { path: { ws, template_id: id } },
         body: { before: placement.before, after: placement.after },
@@ -142,7 +148,7 @@ export const useStatusTemplatesStore = defineStore('statusTemplates', () => {
   async function remove(ws: string, id: string): Promise<boolean> {
     const generation = bindWorkspace(ws);
     const { error: apiError } = await wrappedClient.DELETE(
-      '/api/workspaces/{ws}/status-templates/{template_id}',
+      '/api/v2/acta/workspaces/{ws}/status-templates/{template_id}',
       { params: { path: { ws, template_id: id } } },
     );
 
@@ -164,7 +170,7 @@ export const useStatusTemplatesStore = defineStore('statusTemplates', () => {
   async function applyToBoard(ws: string, boardId: string): Promise<boolean> {
     const generation = bindWorkspace(ws);
     const { error: apiError } = await wrappedClient.POST(
-      '/api/workspaces/{ws}/boards/{board_id}/apply-status-templates',
+      '/api/v2/acta/workspaces/{ws}/boards/{board_id}/apply-status-templates',
       { params: { path: { ws, board_id: boardId } } },
     );
 

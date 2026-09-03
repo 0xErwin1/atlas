@@ -190,7 +190,7 @@ describe('workspace live updates broker', () => {
     const secondSubscription = broker.acquire('acme', second);
 
     expect(FakeEventSource.instances).toHaveLength(1);
-    expect(FakeEventSource.instances[0]?.url).toBe('/api/workspaces/acme/events');
+    expect(FakeEventSource.instances[0]?.url).toBe('/api/v2/acta/workspaces/acme/events');
 
     FakeEventSource.instances[0]?.emit('task.created', event('task.created', { task_id: 'task-1' }));
 
@@ -226,7 +226,7 @@ describe('workspace live updates broker', () => {
     const subscription = broker.acquire('acme', handlers());
 
     expect(FakeEventSource.instances).toHaveLength(1);
-    expect(FakeEventSource.instances[0]?.url).toBe('/api/workspaces/acme/events');
+    expect(FakeEventSource.instances[0]?.url).toBe('/api/v2/acta/workspaces/acme/events');
 
     subscription.release();
     vi.advanceTimersByTime(30_000);
@@ -802,7 +802,7 @@ describe('workspace live updates broker', () => {
       await Promise.resolve();
 
       expect(invalidateSession).not.toHaveBeenCalled();
-      expect(FakeEventSource.instances.at(-1)?.url).toBe('/api/workspaces/globex/events');
+      expect(FakeEventSource.instances.at(-1)?.url).toBe('/api/v2/acta/workspaces/globex/events');
       expect(FakeEventSource.instances.at(-1)?.closed).toBe(false);
       acme.release();
       globex.release();

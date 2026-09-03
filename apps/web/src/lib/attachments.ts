@@ -6,7 +6,7 @@
  */
 export function taskAttachmentContentUrl(ws: string, readableId: string, attachmentId: string): string {
   const segments = [ws, readableId, attachmentId].map(encodeURIComponent);
-  return `/api/workspaces/${segments[0]}/tasks/${segments[1]}/attachments/${segments[2]}/content`;
+  return `/api/v2/acta/workspaces/${segments[0]}/tasks/${segments[1]}/attachments/${segments[2]}/content`;
 }
 
 /**

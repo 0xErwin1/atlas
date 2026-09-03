@@ -30,7 +30,7 @@ describe('trash store', () => {
 
     expect(store.items).toEqual([item]);
     expect(store.nextCursor).toBe('next');
-    expect(GET).toHaveBeenCalledWith('/api/admin/trash', {
+    expect(GET).toHaveBeenCalledWith('/api/v2/acta/admin/trash', {
       params: { query: { limit: 50, workspace_id: item.workspace_id, kind: 'project' } },
     });
   });
@@ -46,7 +46,7 @@ describe('trash store', () => {
 
     expect(restored).toBe(true);
     expect(store.items).toEqual([]);
-    expect(POST).toHaveBeenCalledWith('/api/admin/trash/restore', {
+    expect(POST).toHaveBeenCalledWith('/api/v2/acta/admin/trash/restore', {
       body: { kind: item.kind, target_id: item.target_id },
     });
   });
@@ -77,7 +77,7 @@ describe('trash store', () => {
 
     expect(status?.status).toBe('cleanup_pending');
     expect(completed?.status).toBe('complete');
-    expect(POST).toHaveBeenCalledWith('/api/admin/trash/purge', {
+    expect(POST).toHaveBeenCalledWith('/api/v2/acta/admin/trash/purge', {
       body: { kind: item.kind, target_id: item.target_id, confirm: true },
     });
   });

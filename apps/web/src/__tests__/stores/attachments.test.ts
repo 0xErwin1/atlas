@@ -22,7 +22,7 @@ function attachment(overrides: Partial<WorkspaceAttachment> = {}): WorkspaceAtta
     sha256: 'abc',
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
-    content_url: '/api/workspaces/acme/attachments/a1',
+    content_url: '/api/v2/acta/workspaces/acme/attachments/a1',
     owner: { kind: 'document', title: 'Runbook', document_slug: 'runbook' },
     ...overrides,
   } as WorkspaceAttachment;
@@ -44,7 +44,7 @@ describe('useAttachmentsStore', () => {
 
     await store.load('acme', { query: '  policy  ', owner: 'task', type: 'all' });
 
-    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/attachments', {
+    expect(GET).toHaveBeenCalledWith('/api/v2/acta/workspaces/{ws}/attachments', {
       params: { path: { ws: 'acme' }, query: { limit: 50, q: 'policy', owner: 'task' } },
     });
     expect(store.items).toHaveLength(1);
@@ -57,7 +57,7 @@ describe('useAttachmentsStore', () => {
 
     await store.load('acme', { query: '', owner: 'all', type: 'all' });
 
-    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/attachments', {
+    expect(GET).toHaveBeenCalledWith('/api/v2/acta/workspaces/{ws}/attachments', {
       params: { path: { ws: 'acme' }, query: { limit: 50 } },
     });
   });
@@ -72,7 +72,7 @@ describe('useAttachmentsStore', () => {
     const store = useAttachmentsStore();
 
     await store.load('acme', { query: '', owner: 'all', type: 'image' });
-    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/attachments', {
+    expect(GET).toHaveBeenCalledWith('/api/v2/acta/workspaces/{ws}/attachments', {
       params: { path: { ws: 'acme' }, query: { limit: 50, content_type: 'image/' } },
     });
     expect(store.items.map((item) => item.id)).toEqual(['img']);
@@ -104,7 +104,7 @@ describe('useAttachmentsStore', () => {
     const renamed = await store.rename('acme', 'a1', 'new.pdf');
 
     expect(renamed).toBe(true);
-    expect(PATCH).toHaveBeenCalledWith('/api/workspaces/{ws}/attachments/{attachment_id}', {
+    expect(PATCH).toHaveBeenCalledWith('/api/v2/acta/workspaces/{ws}/attachments/{attachment_id}', {
       params: { path: { ws: 'acme', attachment_id: 'a1' } },
       body: { file_name: 'new.pdf' },
     });

@@ -102,9 +102,12 @@ export const useTasksStore = defineStore('tasks', () => {
     }
 
     const load = async (): Promise<TaskDto> => {
-      const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}', {
-        params: { path: { ws, readable_id: readableId } },
-      });
+      const { data, error: apiError } = await wrappedClient.GET(
+        '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}',
+        {
+          params: { path: { ws, readable_id: readableId } },
+        },
+      );
 
       if (apiError !== undefined || data === undefined) {
         throw taskLoadError(apiError);
@@ -192,10 +195,13 @@ export const useTasksStore = defineStore('tasks', () => {
       openTask.value = { ...previous, description };
     }
 
-    const { data, error: apiError } = await wrappedClient.PATCH('/api/workspaces/{ws}/tasks/{readable_id}', {
-      params: { path: { ws, readable_id: readableId } },
-      body: { description },
-    });
+    const { data, error: apiError } = await wrappedClient.PATCH(
+      '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}',
+      {
+        params: { path: { ws, readable_id: readableId } },
+        body: { description },
+      },
+    );
 
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to update description');

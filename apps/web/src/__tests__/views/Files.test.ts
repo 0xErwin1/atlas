@@ -31,7 +31,7 @@ const noteFile = {
   actor: { id: 'u1', type: 'user', display_name: 'Ana Perez' },
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
-  content_url: '/api/workspaces/acme/attachments/a-note',
+  content_url: '/api/v2/acta/workspaces/acme/attachments/a-note',
   owner: { kind: 'document', title: 'Runbook', document_slug: 'runbook' },
 };
 
@@ -99,7 +99,7 @@ describe('Files view', () => {
     await flushPromises();
 
     expect(GET).toHaveBeenLastCalledWith(
-      '/api/workspaces/{ws}/attachments/{attachment_id}',
+      '/api/v2/acta/workspaces/{ws}/attachments/{attachment_id}',
       expect.objectContaining({
         params: { path: { ws: 'acme', attachment_id: 'a-note' } },
         parseAs: 'blob',
@@ -120,7 +120,7 @@ describe('Files view', () => {
     await confirm?.trigger('click');
     await flushPromises();
 
-    expect(PATCH).toHaveBeenCalledWith('/api/workspaces/{ws}/attachments/{attachment_id}', {
+    expect(PATCH).toHaveBeenCalledWith('/api/v2/acta/workspaces/{ws}/attachments/{attachment_id}', {
       params: { path: { ws: 'acme', attachment_id: 'a-note' } },
       body: { file_name: 'renamed.pdf' },
     });
@@ -138,7 +138,7 @@ describe('Files view', () => {
     await wrapper.get('[data-test="confirm"]').trigger('click');
     await flushPromises();
 
-    expect(DELETE).toHaveBeenCalledWith('/api/workspaces/{ws}/attachments/{attachment_id}', {
+    expect(DELETE).toHaveBeenCalledWith('/api/v2/acta/workspaces/{ws}/attachments/{attachment_id}', {
       params: { path: { ws: 'acme', attachment_id: 'a-note' } },
     });
     expect(wrapper.find('[data-attachment-id="a-note"]').exists()).toBe(false);

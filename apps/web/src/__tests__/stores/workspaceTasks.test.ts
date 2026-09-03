@@ -422,7 +422,7 @@ describe('useWorkspaceTasksStore', () => {
     scheduled.at(-1)?.callback();
     await vi.waitFor(() => expect(store.tasks.map((item) => item.id)).toEqual(['a-refreshed']));
 
-    expect(GET).toHaveBeenLastCalledWith('/api/workspaces/{ws}/tasks', {
+    expect(GET).toHaveBeenLastCalledWith('/api/v2/acta/workspaces/{ws}/tasks', {
       params: { path: { ws: 'ws' }, query: { assignee: 'me', limit: 200 } },
     });
   });

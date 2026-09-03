@@ -17,3 +17,4 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @atlas/web build
+      - run: pnpm --filter @atlas/web test

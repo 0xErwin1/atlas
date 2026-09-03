@@ -99,11 +99,11 @@ describe('useAuthStore', () => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
     platformTransport.login.mockImplementation((credentials: { username: string; password: string }) =>
-      wrappedClient.POST('/api/auth/login', { body: credentials }),
+      wrappedClient.POST('/api/v2/custos/auth/login', { body: credentials }),
     );
-    platformTransport.me.mockImplementation(() => wrappedClient.GET('/api/auth/me', {}));
+    platformTransport.me.mockImplementation(() => wrappedClient.GET('/api/v2/custos/auth/me', {}));
     platformTransport.resume.mockImplementation(() => platformTransport.me());
-    platformTransport.logout.mockImplementation(() => wrappedClient.POST('/api/auth/logout', {}));
+    platformTransport.logout.mockImplementation(() => wrappedClient.POST('/api/v2/custos/auth/logout', {}));
   });
 
   afterEach(() => {

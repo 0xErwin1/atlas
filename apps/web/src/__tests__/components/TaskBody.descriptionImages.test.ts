@@ -1,12 +1,14 @@
-import { flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/api/wrapper', () => ({
   wrappedClient: {
     GET: vi.fn().mockResolvedValue({ data: undefined }),
     POST: vi.fn(),
-    PATCH: vi.fn(),
+    // The description auto-save PATCHes through the real store once its debounce
+    // fires; resolve to the shape the store destructures so it settles cleanly.
+    PATCH: vi.fn().mockResolvedValue({ data: undefined }),
     DELETE: vi.fn(),
   },
 }));
@@ -50,10 +52,20 @@ function pasteImage(target: Element, file: File): void {
 }
 
 describe('TaskBody description images', () => {
+  let mounted: VueWrapper | null = null;
+
   beforeEach(() => {
     setActivePinia(createPinia());
     URL.createObjectURL = vi.fn(() => 'blob:1');
     URL.revokeObjectURL = vi.fn();
+  });
+
+  // Unmounting flushes the description's pending debounced save inside the
+  // test, so no timer outlives the test and fires after mocks are torn down.
+  afterEach(async () => {
+    mounted?.unmount();
+    mounted = null;
+    await flushPromises();
   });
 
   async function body() {
@@ -64,6 +76,7 @@ describe('TaskBody description images', () => {
       props: { task, ws: 'acme' },
       global: { stubs: { RouterLink: true } },
     });
+    mounted = wrapper;
     await flushPromises();
     return wrapper;
   }
@@ -90,7 +103,7 @@ describe('TaskBody description images', () => {
     expect(updateDescription).toHaveBeenCalledWith(
       'acme',
       'ATL-1',
-      '![shot](/api/workspaces/acme/tasks/ATL-1/attachments/att-1/content)\n',
+      '![shot](/api/v2/acta/workspaces/acme/tasks/ATL-1/attachments/att-1/content)\n',
     );
   });
 
