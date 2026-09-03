@@ -44,7 +44,7 @@ export const useGroupsStore = defineStore('groups', () => {
     loading.value = true;
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/groups', {
+    const { data, error: apiError } = await wrappedClient.GET('/api/v2/custos/workspaces/{ws}/groups', {
       params: { path: { ws } },
     });
 
@@ -63,7 +63,7 @@ export const useGroupsStore = defineStore('groups', () => {
     const generation = bindWorkspace(ws);
     error.value = null;
 
-    const { error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/groups', {
+    const { error: apiError } = await wrappedClient.POST('/api/v2/custos/workspaces/{ws}/groups', {
       params: { path: { ws } },
       body: { name },
     });
@@ -82,9 +82,12 @@ export const useGroupsStore = defineStore('groups', () => {
     const generation = bindWorkspace(ws);
     error.value = null;
 
-    const { error: apiError } = await wrappedClient.DELETE('/api/workspaces/{ws}/groups/{group_id}', {
-      params: { path: { ws, group_id: groupId } },
-    });
+    const { error: apiError } = await wrappedClient.DELETE(
+      '/api/v2/custos/workspaces/{ws}/groups/{group_id}',
+      {
+        params: { path: { ws, group_id: groupId } },
+      },
+    );
 
     if (!isCurrentWorkspace(ws, generation)) return apiError === undefined;
     if (apiError !== undefined) {
@@ -101,7 +104,7 @@ export const useGroupsStore = defineStore('groups', () => {
     error.value = null;
 
     const { data, error: apiError } = await wrappedClient.GET(
-      '/api/workspaces/{ws}/groups/{group_id}/members',
+      '/api/v2/custos/workspaces/{ws}/groups/{group_id}/members',
       { params: { path: { ws, group_id: groupId } } },
     );
 
@@ -119,10 +122,13 @@ export const useGroupsStore = defineStore('groups', () => {
     const generation = bindWorkspace(ws);
     error.value = null;
 
-    const { error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/groups/{group_id}/members', {
-      params: { path: { ws, group_id: groupId } },
-      body: { user_id: userId },
-    });
+    const { error: apiError } = await wrappedClient.POST(
+      '/api/v2/custos/workspaces/{ws}/groups/{group_id}/members',
+      {
+        params: { path: { ws, group_id: groupId } },
+        body: { user_id: userId },
+      },
+    );
 
     if (!isCurrentWorkspace(ws, generation)) return apiError === undefined;
     if (apiError !== undefined) {
@@ -139,7 +145,7 @@ export const useGroupsStore = defineStore('groups', () => {
     error.value = null;
 
     const { error: apiError } = await wrappedClient.DELETE(
-      '/api/workspaces/{ws}/groups/{group_id}/members/{user_id}',
+      '/api/v2/custos/workspaces/{ws}/groups/{group_id}/members/{user_id}',
       { params: { path: { ws, group_id: groupId, user_id: userId } } },
     );
 

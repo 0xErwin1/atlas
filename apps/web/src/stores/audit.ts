@@ -105,7 +105,7 @@ export const useAuditStore = defineStore('audit', () => {
     ws: string,
     pageCursor?: string,
   ): Promise<{ page: AuditPage | null; error: string | null }> {
-    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/audit', {
+    const { data, error: apiError } = await wrappedClient.GET('/api/v2/custos/workspaces/{ws}/audit', {
       params: {
         path: { ws },
         query: buildQuery(pageCursor),
@@ -122,7 +122,7 @@ export const useAuditStore = defineStore('audit', () => {
   async function fetchPlatformPage(
     pageCursor?: string,
   ): Promise<{ page: AuditPage | null; error: string | null }> {
-    const { data, error: apiError } = await wrappedClient.GET('/api/admin/audit', {
+    const { data, error: apiError } = await wrappedClient.GET('/api/v2/custos/admin/audit', {
       params: {
         query: buildQuery(pageCursor),
       },

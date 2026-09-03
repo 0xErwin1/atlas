@@ -47,7 +47,7 @@ describe('AttachmentList description references', () => {
     await wrapper.get('[aria-label="Reference report.pdf in the description"]').trigger('click');
 
     expect(wrapper.emitted('insert')?.[0]).toEqual([
-      '[report.pdf](/api/workspaces/acme/tasks/ATL-1/attachments/att-1/content)',
+      '[report.pdf](/api/v2/acta/workspaces/acme/tasks/ATL-1/attachments/att-1/content)',
     ]);
   });
 
@@ -57,7 +57,7 @@ describe('AttachmentList description references', () => {
     await wrapper.get('[aria-label="Reference diagram.png in the description"]').trigger('click');
 
     expect(wrapper.emitted('insert')?.[0]).toEqual([
-      '![diagram](/api/workspaces/acme/tasks/ATL-1/attachments/att-2/content)',
+      '![diagram](/api/v2/acta/workspaces/acme/tasks/ATL-1/attachments/att-2/content)',
     ]);
   });
 

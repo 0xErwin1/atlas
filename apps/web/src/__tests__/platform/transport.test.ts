@@ -41,7 +41,7 @@ describe('platform transport', () => {
     const source = getPlatformTransport().createWorkspaceEventSource('acme');
 
     expect(source).toBeInstanceOf(FakeEventSource);
-    expect((source as FakeEventSource).url).toBe('/api/workspaces/acme/events');
+    expect((source as FakeEventSource).url).toBe('/api/v2/acta/workspaces/acme/events');
   });
 
   it('allows the desktop bootstrap to override the browser default and test reset restores it', () => {
@@ -56,7 +56,7 @@ describe('platform transport', () => {
     const browserSource = getPlatformTransport().createWorkspaceEventSource('acme');
 
     expect(browserSource).toBeInstanceOf(FakeEventSource);
-    expect((browserSource as FakeEventSource).url).toBe('/api/workspaces/acme/events');
+    expect((browserSource as FakeEventSource).url).toBe('/api/v2/acta/workspaces/acme/events');
   });
 
   it('returns explicit desktop-unavailable failures for desktop-only preferences in the browser', async () => {

@@ -4,13 +4,13 @@ import { attachmentMarkdown, taskAttachmentContentUrl } from '@/lib/attachments'
 describe('taskAttachmentContentUrl', () => {
   it('addresses the attachment content endpoint for the owning task', () => {
     expect(taskAttachmentContentUrl('acme', 'ATL-1', 'att-1')).toBe(
-      '/api/workspaces/acme/tasks/ATL-1/attachments/att-1/content',
+      '/api/v2/acta/workspaces/acme/tasks/ATL-1/attachments/att-1/content',
     );
   });
 
   it('escapes path segments so a slug with reserved characters cannot alter the path', () => {
     expect(taskAttachmentContentUrl('a/c me', 'ATL-1', 'att-1')).toBe(
-      '/api/workspaces/a%2Fc%20me/tasks/ATL-1/attachments/att-1/content',
+      '/api/v2/acta/workspaces/a%2Fc%20me/tasks/ATL-1/attachments/att-1/content',
     );
   });
 });

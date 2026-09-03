@@ -76,12 +76,15 @@ describe('unauthorized response handling', () => {
     const handler = vi.fn();
     setUnauthorizedHandler(handler);
 
-    await invokeMiddleware('/api/workspaces/acme/documents/note-a', 401);
+    await invokeMiddleware('/api/v2/acta/workspaces/acme/documents/note-a', 401);
 
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
-  it.each(['/api/auth/me', '/api/auth/login'])('ignores auth endpoint 401s from %s', async (path) => {
+  it.each([
+    '/api/v2/custos/auth/me',
+    '/api/v2/custos/auth/login',
+  ])('ignores auth endpoint 401s from %s', async (path) => {
     const { setUnauthorizedHandler } = await import('../api/wrapper');
     const handler = vi.fn();
     setUnauthorizedHandler(handler);
@@ -92,8 +95,8 @@ describe('unauthorized response handling', () => {
   });
 
   it.each([
-    '/api/auth/change-password',
-    '/api/auth/logout',
+    '/api/v2/custos/auth/change-password',
+    '/api/v2/custos/auth/logout',
   ])('notifies the app when protected auth endpoint %s returns 401', async (path) => {
     const { setUnauthorizedHandler } = await import('../api/wrapper');
     const handler = vi.fn();
@@ -109,7 +112,7 @@ describe('unauthorized response handling', () => {
     const handler = vi.fn();
     setUnauthorizedHandler(handler);
 
-    await invokeMiddleware('/api/workspaces/acme/documents/note-a', 404);
+    await invokeMiddleware('/api/v2/acta/workspaces/acme/documents/note-a', 404);
 
     expect(handler).not.toHaveBeenCalled();
   });

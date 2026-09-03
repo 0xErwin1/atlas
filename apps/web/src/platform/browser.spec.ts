@@ -30,3 +30,24 @@ describe('createBrowserPlatformTransport — publicBase', () => {
     expect(transport.publicBase()).toBe(globalThis.location.origin);
   });
 });
+
+describe('createBrowserPlatformTransport — createWorkspaceEventSource', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('constructs an EventSource targeting the V2 acta events route for the given workspace', () => {
+    const captured: string[] = [];
+    class FakeEventSource {
+      constructor(url: string) {
+        captured.push(url);
+      }
+    }
+    vi.stubGlobal('EventSource', FakeEventSource);
+
+    const transport = createBrowserPlatformTransport();
+    transport.createWorkspaceEventSource('acme');
+
+    expect(captured).toEqual(['/api/v2/acta/workspaces/acme/events']);
+  });
+});

@@ -8,7 +8,7 @@ import {
 
 function responseContext(status: number) {
   return {
-    request: new Request('https://atlas.test/api/workspaces/workspace-a/documents/doc-a'),
+    request: new Request('https://atlas.test/api/v2/acta/workspaces/workspace-a/documents/doc-a'),
     response: new Response(null, { status }),
   } as Parameters<NonNullable<typeof cacheInvalidationMiddlewareForTest.onResponse>>[0];
 }
@@ -52,7 +52,7 @@ describe('cache invalidation middleware', () => {
     const invalidate = vi.fn();
     setCacheInvalidationHandler(invalidate);
     const context = {
-      request: new Request(`https://atlas.test/api/workspaces/workspace-a/${collection}`),
+      request: new Request(`https://atlas.test/api/v2/acta/workspaces/workspace-a/${collection}`),
       response: new Response(null, { status: 403 }),
     } as Parameters<NonNullable<typeof cacheInvalidationMiddlewareForTest.onResponse>>[0];
 
@@ -79,7 +79,7 @@ describe('cache invalidation middleware', () => {
     const invalidate = vi.fn();
     setCacheInvalidationHandler(invalidate);
     const context = {
-      request: new Request('https://atlas.test/api/workspaces/workspace-a/unknown-resource/item-a'),
+      request: new Request('https://atlas.test/api/v2/acta/workspaces/workspace-a/unknown-resource/item-a'),
       response: new Response(null, { status: 404 }),
     } as Parameters<NonNullable<typeof cacheInvalidationMiddlewareForTest.onResponse>>[0];
 
@@ -122,9 +122,11 @@ describe('cache invalidation middleware', () => {
     const fetch = vi.fn().mockResolvedValue(new Response(null, { status: 503 }));
     vi.stubGlobal('fetch', fetch);
 
-    await wrappedClient.GET('/api/auth/me');
+    await wrappedClient.GET('/api/v2/custos/auth/me');
 
     expect(fetch).toHaveBeenCalledOnce();
+    const [request] = fetch.mock.calls[0] as [Request];
+    expect(new URL(request.url).pathname).toBe('/api/v2/custos/auth/me');
     expect(outcomes).toEqual(['start', 'failure']);
     vi.unstubAllGlobals();
   });

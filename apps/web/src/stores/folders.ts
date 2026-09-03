@@ -79,7 +79,7 @@ export const useFoldersStore = defineStore('folders', () => {
     }
 
     const { items, error: apiError } = await collectPaged<FolderDto>((cursor) =>
-      wrappedClient.GET('/api/workspaces/{ws}/projects/{project_slug}/folders', {
+      wrappedClient.GET('/api/v2/acta/workspaces/{ws}/projects/{project_slug}/folders', {
         params: {
           path: { ws, project_slug: projectSlug },
           query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) },
@@ -115,7 +115,7 @@ export const useFoldersStore = defineStore('folders', () => {
     parentFolderId?: string,
   ): Promise<boolean> {
     const { error: apiError } = await wrappedClient.POST(
-      '/api/workspaces/{ws}/projects/{project_slug}/folders',
+      '/api/v2/acta/workspaces/{ws}/projects/{project_slug}/folders',
       {
         params: { path: { ws, project_slug: projectSlug } },
         body: { name, parent_folder_id: parentFolderId ?? null },
@@ -132,10 +132,13 @@ export const useFoldersStore = defineStore('folders', () => {
   }
 
   async function rename(ws: string, projectSlug: string, folderId: string, name: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.PATCH('/api/workspaces/{ws}/folders/{folder_id}', {
-      params: { path: { ws, folder_id: folderId } },
-      body: { name },
-    });
+    const { error: apiError } = await wrappedClient.PATCH(
+      '/api/v2/acta/workspaces/{ws}/folders/{folder_id}',
+      {
+        params: { path: { ws, folder_id: folderId } },
+        body: { name },
+      },
+    );
 
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to rename folder');
@@ -147,9 +150,12 @@ export const useFoldersStore = defineStore('folders', () => {
   }
 
   async function remove(ws: string, projectSlug: string, folderId: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.DELETE('/api/workspaces/{ws}/folders/{folder_id}', {
-      params: { path: { ws, folder_id: folderId } },
-    });
+    const { error: apiError } = await wrappedClient.DELETE(
+      '/api/v2/acta/workspaces/{ws}/folders/{folder_id}',
+      {
+        params: { path: { ws, folder_id: folderId } },
+      },
+    );
 
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to delete folder');
@@ -166,10 +172,13 @@ export const useFoldersStore = defineStore('folders', () => {
     folderId: string,
     parentFolderId: string | null,
   ): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.PATCH('/api/workspaces/{ws}/folders/{folder_id}/move', {
-      params: { path: { ws, folder_id: folderId } },
-      body: { parent_folder_id: parentFolderId },
-    });
+    const { error: apiError } = await wrappedClient.PATCH(
+      '/api/v2/acta/workspaces/{ws}/folders/{folder_id}/move',
+      {
+        params: { path: { ws, folder_id: folderId } },
+        body: { parent_folder_id: parentFolderId },
+      },
+    );
 
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to move folder');
@@ -186,10 +195,13 @@ export const useFoldersStore = defineStore('folders', () => {
     folderId: string,
     parentFolderId: string | null,
   ): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/folders/{folder_id}/copy', {
-      params: { path: { ws, folder_id: folderId } },
-      body: { parent_folder_id: parentFolderId },
-    });
+    const { error: apiError } = await wrappedClient.POST(
+      '/api/v2/acta/workspaces/{ws}/folders/{folder_id}/copy',
+      {
+        params: { path: { ws, folder_id: folderId } },
+        body: { parent_folder_id: parentFolderId },
+      },
+    );
 
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to copy folder');

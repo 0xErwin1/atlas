@@ -35,7 +35,7 @@ export const useUiStateStore = defineStore('uiState', () => {
 
   async function load(): Promise<void> {
     const requestGeneration = generation;
-    const { data: res, error: loadError } = await wrappedClient.GET('/api/me/ui-state');
+    const { data: res, error: loadError } = await wrappedClient.GET('/api/v2/platform/me/ui-state');
     if (requestGeneration !== generation) return;
 
     if (loadError !== undefined) {
@@ -82,7 +82,7 @@ export const useUiStateStore = defineStore('uiState', () => {
 
   async function save(state: Record<string, unknown>, requestGeneration: number): Promise<void> {
     try {
-      const { error: saveError } = await wrappedClient.PUT('/api/me/ui-state', {
+      const { error: saveError } = await wrappedClient.PUT('/api/v2/platform/me/ui-state', {
         body: { state: state as unknown as UiStatePayload },
       });
       if (requestGeneration !== generation) return;

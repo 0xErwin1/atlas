@@ -242,7 +242,7 @@ async function onUploadImage(file: File): Promise<string | null> {
     return null;
   }
 
-  return `/api/workspaces/${ws.value}/attachments/${attachment.id}`;
+  return `/api/v2/acta/workspaces/${ws.value}/attachments/${attachment.id}`;
 }
 
 const editorRef = ref<InstanceType<typeof NoteEditor> | null>(null);

@@ -20,7 +20,7 @@ import MarkdownEditor from '@/components/editor/MarkdownEditor.vue';
 
 const comment = {
   id: 'cm-1',
-  body: '![shot](/api/workspaces/acme/tasks/ATL-1/comments/cm-1/attachments/a/content)',
+  body: '![shot](/api/v2/acta/workspaces/acme/tasks/ATL-1/comments/cm-1/attachments/a/content)',
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
   author: { id: 'u1', type: 'user' as const, display_name: 'Ann' },

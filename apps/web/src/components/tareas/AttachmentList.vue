@@ -90,7 +90,7 @@ async function download(att: TaskAttachmentDto): Promise<void> {
   downloading.value = new Set(downloading.value).add(att.id);
   try {
     const { data } = await wrappedClient.GET(
-      '/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content',
+      '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content',
       {
         params: { path: { ws: props.ws, readable_id: props.readableId, attachment_id: att.id } },
         parseAs: 'blob',
@@ -130,7 +130,7 @@ async function loadPreview(attachmentId: string): Promise<void> {
   loadedPreviewIds.add(attachmentId);
 
   const { data } = await wrappedClient.GET(
-    '/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content',
+    '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content',
     {
       params: { path: { ws: props.ws, readable_id: props.readableId, attachment_id: attachmentId } },
       parseAs: 'blob',

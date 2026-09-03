@@ -142,7 +142,7 @@ describe('TaskBody attachment picker', () => {
     await flushPromises();
 
     expect(PATCH).toHaveBeenCalledWith(
-      '/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}',
+      '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}',
       {
         params: {
           path: { ws: 'ws', readable_id: 'ATL-1', attachment_id: 'attachment-1' },

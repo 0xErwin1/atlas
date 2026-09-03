@@ -4,7 +4,7 @@ import { eventString, type LiveEnvelope } from '@/lib/eventTypes';
 import { getPlatformTransport } from '@/platform/transport';
 import type { ActorDto } from '@/stores/boards';
 
-const PRESENCE_PATH = '/api/workspaces/{ws}/boards/{board_id}/presence' as const;
+const PRESENCE_PATH = '/api/v2/acta/workspaces/{ws}/boards/{board_id}/presence' as const;
 
 // The server evicts a presence entry after 45s without a heartbeat; a 20s cadence
 // keeps it alive with margin for a slow request or a briefly backgrounded tab.
@@ -70,7 +70,7 @@ export function useBoardPresence(ws: Ref<string>, boardId: Ref<string | null>): 
         return;
       }
 
-      void fetch(`/api/workspaces/${activeWs}/boards/${activeBoard}/presence`, {
+      void fetch(`/api/v2/acta/workspaces/${activeWs}/boards/${activeBoard}/presence`, {
         method: 'DELETE',
         keepalive: true,
         credentials: 'include',

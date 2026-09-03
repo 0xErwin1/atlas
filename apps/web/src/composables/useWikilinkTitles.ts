@@ -20,7 +20,7 @@ export function useWikilinkTitles(ws: Ref<string>, body: Ref<string>): Ref<Recor
     const readableId = key.startsWith('task:') ? key.slice('task:'.length) : null;
 
     if (readableId !== null) {
-      const { data } = await wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}', {
+      const { data } = await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}', {
         params: { path: { ws: workspace, readable_id: readableId } },
       });
       return data?.title ?? null;
@@ -29,7 +29,7 @@ export function useWikilinkTitles(ws: Ref<string>, body: Ref<string>): Ref<Recor
     // A `note:` key carries the slug; a bare key is a document uuid, and the
     // document route resolves either one.
     const slug = key.startsWith('note:') ? key.slice('note:'.length) : key;
-    const { data } = await wrappedClient.GET('/api/workspaces/{ws}/documents/{slug}', {
+    const { data } = await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/documents/{slug}', {
       params: { path: { ws: workspace, slug } },
     });
     return data?.title ?? null;

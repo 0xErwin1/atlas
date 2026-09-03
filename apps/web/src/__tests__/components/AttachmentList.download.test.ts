@@ -45,7 +45,7 @@ describe('AttachmentList downloads', () => {
     await flushPromises();
 
     expect(GET).toHaveBeenCalledWith(
-      '/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content',
+      '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content',
       expect.objectContaining({
         params: { path: { ws: 'acme', readable_id: 'ATL-1', attachment_id: 'att-1' } },
         parseAs: 'blob',

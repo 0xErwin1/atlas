@@ -286,7 +286,7 @@ export const useBoardsStore = defineStore('boards', () => {
     const generation = catalogGeneration;
     boardSummaryRequest = request;
     const { items, error: apiError } = await collectPaged<BoardSummaryDto>((cursor) =>
-      wrappedClient.GET('/api/workspaces/{ws}/projects/{project_slug}/boards', {
+      wrappedClient.GET('/api/v2/acta/workspaces/{ws}/projects/{project_slug}/boards', {
         params: {
           path: { ws, project_slug: projectSlug },
           query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) },
@@ -327,7 +327,7 @@ export const useBoardsStore = defineStore('boards', () => {
     const generation = catalogGeneration;
     catalogRequests.set(projectSlug, request);
     const { items, error: apiError } = await collectPaged<BoardSummaryDto>((cursor) =>
-      wrappedClient.GET('/api/workspaces/{ws}/projects/{project_slug}/boards', {
+      wrappedClient.GET('/api/v2/acta/workspaces/{ws}/projects/{project_slug}/boards', {
         params: {
           path: { ws, project_slug: projectSlug },
           query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) },
@@ -400,7 +400,7 @@ export const useBoardsStore = defineStore('boards', () => {
     folderId?: string | null,
   ): Promise<string | null> {
     const { data, error: apiError } = await wrappedClient.POST(
-      '/api/workspaces/{ws}/projects/{project_slug}/boards',
+      '/api/v2/acta/workspaces/{ws}/projects/{project_slug}/boards',
       {
         params: { path: { ws, project_slug: projectSlug } },
         body: { name, folder_id: folderId ?? null },
@@ -422,7 +422,7 @@ export const useBoardsStore = defineStore('boards', () => {
     boardId: string,
     name: string,
   ): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.PATCH('/api/workspaces/{ws}/boards/{board_id}', {
+    const { error: apiError } = await wrappedClient.PATCH('/api/v2/acta/workspaces/{ws}/boards/{board_id}', {
       params: { path: { ws, board_id: boardId } },
       body: { name },
     });
@@ -448,10 +448,13 @@ export const useBoardsStore = defineStore('boards', () => {
     boardId: string,
     folderId: string | null,
   ): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.PATCH('/api/workspaces/{ws}/boards/{board_id}/move', {
-      params: { path: { ws, board_id: boardId } },
-      body: { folder_id: folderId },
-    });
+    const { error: apiError } = await wrappedClient.PATCH(
+      '/api/v2/acta/workspaces/{ws}/boards/{board_id}/move',
+      {
+        params: { path: { ws, board_id: boardId } },
+        body: { folder_id: folderId },
+      },
+    );
 
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to move board');
@@ -476,8 +479,8 @@ export const useBoardsStore = defineStore('boards', () => {
     archived: boolean,
   ): Promise<boolean> {
     const path = archived
-      ? '/api/workspaces/{ws}/boards/{board_id}/archive'
-      : '/api/workspaces/{ws}/boards/{board_id}/unarchive';
+      ? '/api/v2/acta/workspaces/{ws}/boards/{board_id}/archive'
+      : '/api/v2/acta/workspaces/{ws}/boards/{board_id}/unarchive';
 
     const { error: apiError } = await wrappedClient.POST(path, {
       params: { path: { ws, board_id: boardId } },
@@ -497,7 +500,7 @@ export const useBoardsStore = defineStore('boards', () => {
   const boardArchived = computed(() => board.value?.archived_at != null);
 
   async function removeBoard(ws: string, projectSlug: string, boardId: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.DELETE('/api/workspaces/{ws}/boards/{board_id}', {
+    const { error: apiError } = await wrappedClient.DELETE('/api/v2/acta/workspaces/{ws}/boards/{board_id}', {
       params: { path: { ws, board_id: boardId } },
     });
 
@@ -517,7 +520,7 @@ export const useBoardsStore = defineStore('boards', () => {
     title: string,
   ): Promise<string | null> {
     const { data, error: apiError } = await wrappedClient.POST(
-      '/api/workspaces/{ws}/boards/{board_id}/tasks',
+      '/api/v2/acta/workspaces/{ws}/boards/{board_id}/tasks',
       { params: { path: { ws, board_id: boardId } }, body: { column_id: columnId, title } },
     );
 
@@ -533,20 +536,20 @@ export const useBoardsStore = defineStore('boards', () => {
   }
 
   function fetchBoard(ws: string, boardId: string) {
-    return wrappedClient.GET('/api/workspaces/{ws}/boards/{board_id}', {
+    return wrappedClient.GET('/api/v2/acta/workspaces/{ws}/boards/{board_id}', {
       params: { path: { ws, board_id: boardId } },
     });
   }
 
   function fetchColumns(ws: string, boardId: string) {
-    return wrappedClient.GET('/api/workspaces/{ws}/boards/{board_id}/columns', {
+    return wrappedClient.GET('/api/v2/acta/workspaces/{ws}/boards/{board_id}/columns', {
       params: { path: { ws, board_id: boardId } },
     });
   }
 
   function fetchTasks(ws: string, boardId: string) {
     return collectPaged<TaskSummaryDto>((cursor) =>
-      wrappedClient.GET('/api/workspaces/{ws}/boards/{board_id}/tasks', {
+      wrappedClient.GET('/api/v2/acta/workspaces/{ws}/boards/{board_id}/tasks', {
         params: {
           path: { ws, board_id: boardId },
           query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) },
@@ -714,7 +717,7 @@ export const useBoardsStore = defineStore('boards', () => {
     const last = columns.value.at(-1);
 
     const { data, error: apiError } = await wrappedClient.POST(
-      '/api/workspaces/{ws}/boards/{board_id}/columns',
+      '/api/v2/acta/workspaces/{ws}/boards/{board_id}/columns',
       {
         params: { path: { ws, board_id: boardId } },
         body: { name, before: last?.position_key ?? null, after: null },
@@ -744,7 +747,7 @@ export const useBoardsStore = defineStore('boards', () => {
     patch: { name?: string; color?: string | null },
   ): Promise<boolean> {
     const { data, error: apiError } = await wrappedClient.PATCH(
-      '/api/workspaces/{ws}/boards/{board_id}/columns/{column_id}',
+      '/api/v2/acta/workspaces/{ws}/boards/{board_id}/columns/{column_id}',
       {
         params: { path: { ws, board_id: boardId, column_id: columnId } },
         body: patch,
@@ -775,7 +778,7 @@ export const useBoardsStore = defineStore('boards', () => {
     placement: { before: string | null; after: string | null },
   ): Promise<boolean> {
     const { data, error: apiError } = await wrappedClient.PATCH(
-      '/api/workspaces/{ws}/boards/{board_id}/columns/{column_id}',
+      '/api/v2/acta/workspaces/{ws}/boards/{board_id}/columns/{column_id}',
       {
         params: { path: { ws, board_id: boardId, column_id: columnId } },
         body: { before: placement.before, after: placement.after },
@@ -797,7 +800,7 @@ export const useBoardsStore = defineStore('boards', () => {
   /** Deletes a column (status) and drops it from the cache. Returns true on success. */
   async function deleteColumn(ws: string, boardId: string, columnId: string): Promise<boolean> {
     const { error: apiError } = await wrappedClient.DELETE(
-      '/api/workspaces/{ws}/boards/{board_id}/columns/{column_id}',
+      '/api/v2/acta/workspaces/{ws}/boards/{board_id}/columns/{column_id}',
       { params: { path: { ws, board_id: boardId, column_id: columnId } } },
     );
 
@@ -1071,7 +1074,7 @@ export const useBoardsStore = defineStore('boards', () => {
     if (boardId === undefined) return;
 
     const { items, error: apiError } = await collectPaged<TaskSummaryDto>((cursor) =>
-      wrappedClient.GET('/api/workspaces/{ws}/boards/{board_id}/tasks', {
+      wrappedClient.GET('/api/v2/acta/workspaces/{ws}/boards/{board_id}/tasks', {
         params: {
           path: { ws, board_id: boardId },
           query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) },
@@ -1131,7 +1134,7 @@ export const useBoardsStore = defineStore('boards', () => {
     const result = await settleRequest(
       Promise.all(
         ids.map((rid) =>
-          wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}', {
+          wrappedClient.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}', {
             params: { path: { ws, readable_id: rid } },
           }),
         ),
@@ -1366,10 +1369,13 @@ export const useBoardsStore = defineStore('boards', () => {
       properties?: Record<string, unknown> | null;
     },
   ): Promise<boolean> {
-    const { data, error: apiError } = await wrappedClient.PATCH('/api/workspaces/{ws}/tasks/{readable_id}', {
-      params: { path: { ws, readable_id: readableId } },
-      body: patch,
-    });
+    const { data, error: apiError } = await wrappedClient.PATCH(
+      '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}',
+      {
+        params: { path: { ws, readable_id: readableId } },
+        body: patch,
+      },
+    );
 
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to update task');
@@ -1397,9 +1403,12 @@ export const useBoardsStore = defineStore('boards', () => {
   async function deleteTask(ws: string, readableId: string): Promise<boolean> {
     const target = findTaskByReadableId(readableId);
 
-    const { error: apiError } = await wrappedClient.DELETE('/api/workspaces/{ws}/tasks/{readable_id}', {
-      params: { path: { ws, readable_id: readableId } },
-    });
+    const { error: apiError } = await wrappedClient.DELETE(
+      '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}',
+      {
+        params: { path: { ws, readable_id: readableId } },
+      },
+    );
 
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to delete task');
@@ -1419,7 +1428,7 @@ export const useBoardsStore = defineStore('boards', () => {
     principalId: string,
   ): Promise<boolean> {
     const { error: apiError } = await wrappedClient.POST(
-      '/api/workspaces/{ws}/tasks/{readable_id}/assignees',
+      '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/assignees',
       {
         params: { path: { ws, readable_id: readableId } },
         body: { assignee_type: principalType, assignee_id: principalId },
@@ -1458,7 +1467,7 @@ export const useBoardsStore = defineStore('boards', () => {
     principalId: string,
   ): Promise<boolean> {
     const { error: apiError } = await wrappedClient.DELETE(
-      '/api/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}',
+      '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}',
       {
         params: {
           path: { ws, readable_id: readableId, assignee_ref: `${principalType}:${principalId}` },
@@ -1489,7 +1498,7 @@ export const useBoardsStore = defineStore('boards', () => {
    */
   async function duplicateTask(ws: string, boardId: string, readableId: string): Promise<string | null> {
     const { data: source, error: getErr } = await wrappedClient.GET(
-      '/api/workspaces/{ws}/tasks/{readable_id}',
+      '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}',
       { params: { path: { ws, readable_id: readableId } } },
     );
 
@@ -1499,7 +1508,7 @@ export const useBoardsStore = defineStore('boards', () => {
     }
 
     const { data: created, error: createErr } = await wrappedClient.POST(
-      '/api/workspaces/{ws}/boards/{board_id}/tasks',
+      '/api/v2/acta/workspaces/{ws}/boards/{board_id}/tasks',
       {
         params: { path: { ws, board_id: boardId } },
         body: {
@@ -1516,7 +1525,7 @@ export const useBoardsStore = defineStore('boards', () => {
     }
 
     if (source.priority !== undefined && source.priority !== null) {
-      await wrappedClient.PATCH('/api/workspaces/{ws}/tasks/{readable_id}', {
+      await wrappedClient.PATCH('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}', {
         params: { path: { ws, readable_id: created.task.readable_id } },
         body: { priority: source.priority },
       });
@@ -1534,10 +1543,13 @@ export const useBoardsStore = defineStore('boards', () => {
    * task lands in its new column or disappears when it left the board entirely.
    */
   async function moveTaskToColumn(ws: string, readableId: string, columnId: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.POST('/api/workspaces/{ws}/tasks/{readable_id}/move', {
-      params: { path: { ws, readable_id: readableId } },
-      body: { column_id: columnId, before: null, after: null },
-    });
+    const { error: apiError } = await wrappedClient.POST(
+      '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/move',
+      {
+        params: { path: { ws, readable_id: readableId } },
+        body: { column_id: columnId, before: null, after: null },
+      },
+    );
 
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to move task');
@@ -1559,7 +1571,7 @@ export const useBoardsStore = defineStore('boards', () => {
    */
   async function moveTaskToBoard(ws: string, readableId: string, targetBoardId: string): Promise<boolean> {
     const { data, error: apiError } = await wrappedClient.GET(
-      '/api/workspaces/{ws}/boards/{board_id}/columns',
+      '/api/v2/acta/workspaces/{ws}/boards/{board_id}/columns',
       { params: { path: { ws, board_id: targetBoardId } } },
     );
 
@@ -1591,7 +1603,7 @@ export const useBoardsStore = defineStore('boards', () => {
     if (cached !== undefined) return cached;
 
     const { data, error: apiError } = await wrappedClient.GET(
-      '/api/workspaces/{ws}/boards/{board_id}/columns',
+      '/api/v2/acta/workspaces/{ws}/boards/{board_id}/columns',
       { params: { path: { ws, board_id: boardId } } },
     );
 
@@ -1611,7 +1623,7 @@ export const useBoardsStore = defineStore('boards', () => {
    */
   async function loadSubtasks(ws: string, readableId: string): Promise<TaskSummaryDto[]> {
     const { data, error: apiError } = await wrappedClient.GET(
-      '/api/workspaces/{ws}/tasks/{readable_id}/subtasks',
+      '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/subtasks',
       { params: { path: { ws, readable_id: readableId } } },
     );
 

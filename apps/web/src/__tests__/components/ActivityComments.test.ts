@@ -496,14 +496,14 @@ describe('ActivityComments feed (ATL-19)', () => {
     expect(draftPost).toHaveBeenCalledTimes(2);
     expect(draftPost).toHaveBeenNthCalledWith(
       1,
-      '/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts',
+      '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comment-drafts',
       expect.objectContaining({
         params: expect.objectContaining({ path: { ws: 'acme', readable_id: 'ATL-1' } }),
       }),
     );
     expect(draftPost).toHaveBeenNthCalledWith(
       2,
-      '/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments',
+      '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments',
       expect.objectContaining({
         params: expect.objectContaining({
           path: { ws: 'acme', readable_id: 'ATL-1', draft_id: 'task-draft' },
@@ -572,7 +572,7 @@ describe('ActivityComments feed (ATL-19)', () => {
     useTaskDetailStore()._setForTest({ comments: [comment('c1', 'Mine', 'me', 'user', 'Me')] });
     commentAttachments.upload.mockResolvedValue({ id: 'image-1' });
     commentAttachments.contentUrl.mockReturnValue(
-      '/api/workspaces/acme/tasks/ATL-1/comments/c1/attachments/image-1/content',
+      '/api/v2/acta/workspaces/acme/tasks/ATL-1/comments/c1/attachments/image-1/content',
     );
     signInAs('me');
 
@@ -583,7 +583,7 @@ describe('ActivityComments feed (ATL-19)', () => {
     const file = new File(['image'], 'diagram.png', { type: 'image/png' });
 
     expect(await uploadImage?.(file)).toBe(
-      '/api/workspaces/acme/tasks/ATL-1/comments/c1/attachments/image-1/content',
+      '/api/v2/acta/workspaces/acme/tasks/ATL-1/comments/c1/attachments/image-1/content',
     );
     expect(commentAttachments.upload).toHaveBeenCalledWith('c1', file);
     expect(commentAttachments.contentUrl).toHaveBeenCalledWith('c1', 'image-1');
@@ -602,7 +602,7 @@ describe('ActivityComments feed (ATL-19)', () => {
     const image = new File(['image'], 'diagram.png', { type: 'image/png' });
     commentAttachments.upload.mockResolvedValue({ id: 'image-1' });
     commentAttachments.contentUrl.mockReturnValue(
-      '/api/workspaces/acme/tasks/ATL-1/comments/c1/attachments/image-1/content',
+      '/api/v2/acta/workspaces/acme/tasks/ATL-1/comments/c1/attachments/image-1/content',
     );
     signInAs('me');
 
@@ -623,7 +623,7 @@ describe('ActivityComments feed (ATL-19)', () => {
     await flushPromises();
 
     const body =
-      '![diagram](/api/workspaces/acme/tasks/ATL-1/comments/c1/attachments/image-1/content)\nOriginal';
+      '![diagram](/api/v2/acta/workspaces/acme/tasks/ATL-1/comments/c1/attachments/image-1/content)\nOriginal';
     expect(commentAttachments.upload).toHaveBeenCalledTimes(1);
     expect(editComment).toHaveBeenNthCalledWith(1, 'acme', 'ATL-1', 'c1', body);
     expect(editComment).toHaveBeenNthCalledWith(2, 'acme', 'ATL-1', 'c1', body);

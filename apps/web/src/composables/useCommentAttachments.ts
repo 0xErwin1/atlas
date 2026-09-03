@@ -97,16 +97,22 @@ export function useCommentAttachments(target: Ref<CommentParentTarget>, entries:
 
   async function listRequest(requestTarget: CommentParentTarget, commentId: string) {
     if (requestTarget.kind === 'task') {
-      return wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments', {
-        params: {
-          path: { ws: requestTarget.ws, readable_id: requestTarget.readableId, comment_id: commentId },
+      return wrappedClient.GET(
+        '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments',
+        {
+          params: {
+            path: { ws: requestTarget.ws, readable_id: requestTarget.readableId, comment_id: commentId },
+          },
         },
-      });
+      );
     }
 
-    return wrappedClient.GET('/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments', {
-      params: { path: { ws: requestTarget.ws, slug: requestTarget.slug, comment_id: commentId } },
-    });
+    return wrappedClient.GET(
+      '/api/v2/acta/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments',
+      {
+        params: { path: { ws: requestTarget.ws, slug: requestTarget.slug, comment_id: commentId } },
+      },
+    );
   }
 
   async function reload(commentId: string): Promise<void> {
@@ -149,7 +155,7 @@ export function useCommentAttachments(target: Ref<CommentParentTarget>, entries:
       const response =
         requestTarget.kind === 'task'
           ? await wrappedClient.POST(
-              '/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments',
+              '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments',
               {
                 params: {
                   path: {
@@ -188,8 +194,8 @@ export function useCommentAttachments(target: Ref<CommentParentTarget>, entries:
   function contentUrl(commentId: string, attachmentId: string): string {
     const requestTarget = target.value;
     return requestTarget.kind === 'task'
-      ? `/api/workspaces/${requestTarget.ws}/tasks/${requestTarget.readableId}/comments/${commentId}/attachments/${attachmentId}/content`
-      : `/api/workspaces/${requestTarget.ws}/documents/${requestTarget.slug}/comments/${commentId}/attachments/${attachmentId}`;
+      ? `/api/v2/acta/workspaces/${requestTarget.ws}/tasks/${requestTarget.readableId}/comments/${commentId}/attachments/${attachmentId}/content`
+      : `/api/v2/acta/workspaces/${requestTarget.ws}/documents/${requestTarget.slug}/comments/${commentId}/attachments/${attachmentId}`;
   }
 
   async function download(commentId: string, attachmentId: string): Promise<Blob | null> {

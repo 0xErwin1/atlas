@@ -118,12 +118,12 @@ export function useCommentFeed() {
     };
 
     if (requestTarget.kind === 'task') {
-      return wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/comments', {
+      return wrappedClient.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments', {
         params: { path: { ws: requestTarget.ws, readable_id: requestTarget.readableId }, query },
       });
     }
 
-    return wrappedClient.GET('/api/workspaces/{ws}/documents/{slug}/comments', {
+    return wrappedClient.GET('/api/v2/acta/workspaces/{ws}/documents/{slug}/comments', {
       params: { path: { ws: requestTarget.ws, slug: requestTarget.slug }, query },
     });
   }

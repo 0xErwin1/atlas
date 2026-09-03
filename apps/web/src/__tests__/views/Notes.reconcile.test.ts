@@ -210,10 +210,10 @@ describe('Notes.vue open-note reconcile wiring', () => {
 
     mockGet.mockReset();
     mockGet.mockImplementation((url: string) => {
-      if (url === '/api/workspaces/{ws}/documents/{slug}/backlinks') {
+      if (url === '/api/v2/acta/workspaces/{ws}/documents/{slug}/backlinks') {
         return Promise.resolve({ data: { items: [], has_more: false }, error: undefined });
       }
-      if (url === '/api/workspaces/{ws}/documents/{slug}') {
+      if (url === '/api/v2/acta/workspaces/{ws}/documents/{slug}') {
         if (docFixture.kind === 'error') {
           return Promise.resolve({
             data: undefined,
@@ -357,10 +357,10 @@ describe('Notes.vue open-note reconcile wiring', () => {
 
     const networkResolvers: Array<(value: unknown) => void> = [];
     mockGet.mockImplementation((url: string) => {
-      if (url === '/api/workspaces/{ws}/documents/{slug}/backlinks') {
+      if (url === '/api/v2/acta/workspaces/{ws}/documents/{slug}/backlinks') {
         return Promise.resolve({ data: { items: [], has_more: false }, error: undefined });
       }
-      if (url === '/api/workspaces/{ws}/documents/{slug}') {
+      if (url === '/api/v2/acta/workspaces/{ws}/documents/{slug}') {
         return new Promise((resolve) => {
           networkResolvers.push(resolve);
         });
@@ -434,10 +434,10 @@ describe('Notes.vue open-note reconcile wiring', () => {
 
     const networkResolvers: Array<(value: unknown) => void> = [];
     mockGet.mockImplementation((url: string) => {
-      if (url === '/api/workspaces/{ws}/documents/{slug}/backlinks') {
+      if (url === '/api/v2/acta/workspaces/{ws}/documents/{slug}/backlinks') {
         return Promise.resolve({ data: { items: [], has_more: false }, error: undefined });
       }
-      if (url === '/api/workspaces/{ws}/documents/{slug}') {
+      if (url === '/api/v2/acta/workspaces/{ws}/documents/{slug}') {
         return new Promise((resolve) => {
           networkResolvers.push(resolve);
         });
@@ -512,7 +512,7 @@ describe('Notes.vue open-note reconcile wiring', () => {
 
     let backlinksAttempt = 0;
     mockGet.mockImplementation((url: string) => {
-      if (url === '/api/workspaces/{ws}/documents/{slug}/backlinks') {
+      if (url === '/api/v2/acta/workspaces/{ws}/documents/{slug}/backlinks') {
         backlinksAttempt += 1;
         return Promise.resolve(
           backlinksAttempt === 1
@@ -533,7 +533,7 @@ describe('Notes.vue open-note reconcile wiring', () => {
               },
         );
       }
-      if (url === '/api/workspaces/{ws}/documents/{slug}') {
+      if (url === '/api/v2/acta/workspaces/{ws}/documents/{slug}') {
         return Promise.resolve({
           data: { id: 'doc-1', slug: 'note-a', content: 'Hello', head_revision_id: 'rev-1' },
           error: undefined,
@@ -600,7 +600,7 @@ describe('Notes.vue open-note reconcile wiring', () => {
 
     expect(mockGet).toHaveBeenCalledTimes(getCallsBefore + 1);
     expect(mockGet).toHaveBeenLastCalledWith(
-      '/api/workspaces/{ws}/documents/{slug}',
+      '/api/v2/acta/workspaces/{ws}/documents/{slug}',
       expect.objectContaining({ params: { path: { ws: 'acme', slug: 'note-a' } } }),
     );
     expect(router.replace).not.toHaveBeenCalled();

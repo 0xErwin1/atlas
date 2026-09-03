@@ -73,7 +73,7 @@ describe('TaskBody attachment references', () => {
     expect(updateDescription).toHaveBeenCalledWith(
       'acme',
       'ATL-1',
-      '![diagram](/api/workspaces/acme/tasks/ATL-1/attachments/att-1/content)\n',
+      '![diagram](/api/v2/acta/workspaces/acme/tasks/ATL-1/attachments/att-1/content)\n',
     );
   });
 });

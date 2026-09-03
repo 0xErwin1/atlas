@@ -5,16 +5,16 @@ export function createBrowserPlatformTransport(): PlatformTransport {
   return {
     isDesktop: false,
     login(credentials) {
-      return wrappedClient.POST('/api/auth/login', { body: credentials });
+      return wrappedClient.POST('/api/v2/custos/auth/login', { body: credentials });
     },
     me() {
-      return wrappedClient.GET('/api/auth/me', {});
+      return wrappedClient.GET('/api/v2/custos/auth/me', {});
     },
     resume() {
-      return wrappedClient.GET('/api/auth/me', {});
+      return wrappedClient.GET('/api/v2/custos/auth/me', {});
     },
     logout() {
-      return wrappedClient.POST('/api/auth/logout', {});
+      return wrappedClient.POST('/api/v2/custos/auth/logout', {});
     },
     getOrigin() {
       return Promise.resolve({ data: { origin: globalThis.location?.origin ?? '' } });
@@ -47,7 +47,7 @@ export function createBrowserPlatformTransport(): PlatformTransport {
       return Promise.resolve({ error: 'System tray settings are available in Atlas Desktop' });
     },
     createWorkspaceEventSource(workspaceSlug) {
-      return new EventSource(`/api/workspaces/${workspaceSlug}/events`);
+      return new EventSource(`/api/v2/acta/workspaces/${workspaceSlug}/events`);
     },
     readClipboardImage() {
       return Promise.resolve(null);

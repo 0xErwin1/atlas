@@ -364,12 +364,12 @@ describe('DocumentComments (ATL-37)', () => {
     expect(draftPost).toHaveBeenCalledTimes(2);
     expect(draftPost).toHaveBeenNthCalledWith(
       1,
-      '/api/workspaces/{ws}/documents/{slug}/comment-drafts',
+      '/api/v2/acta/workspaces/{ws}/documents/{slug}/comment-drafts',
       expect.objectContaining({ params: expect.objectContaining({ path: { ws: 'acme', slug: 'my-doc' } }) }),
     );
     expect(draftPost).toHaveBeenNthCalledWith(
       2,
-      '/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments',
+      '/api/v2/acta/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments',
       expect.objectContaining({
         body: [105, 109, 97, 103, 101],
         headers: { 'Content-Type': 'image/png' },
@@ -436,7 +436,7 @@ describe('DocumentComments (ATL-37)', () => {
     setup([comment('c1', 'Mine', 'me', 'user', 'Me')]);
     commentAttachments.upload.mockResolvedValue({ id: 'image-1' });
     commentAttachments.contentUrl.mockReturnValue(
-      '/api/workspaces/acme/documents/my-doc/comments/c1/attachments/image-1',
+      '/api/v2/acta/workspaces/acme/documents/my-doc/comments/c1/attachments/image-1',
     );
     signInAs('me');
 
@@ -447,7 +447,7 @@ describe('DocumentComments (ATL-37)', () => {
     const file = new File(['image'], 'diagram.png', { type: 'image/png' });
 
     expect(await uploadImage?.(file)).toBe(
-      '/api/workspaces/acme/documents/my-doc/comments/c1/attachments/image-1',
+      '/api/v2/acta/workspaces/acme/documents/my-doc/comments/c1/attachments/image-1',
     );
     expect(commentAttachments.upload).toHaveBeenCalledWith('c1', file);
     expect(commentAttachments.contentUrl).toHaveBeenCalledWith('c1', 'image-1');
@@ -462,7 +462,7 @@ describe('DocumentComments (ATL-37)', () => {
     const image = new File(['image'], 'diagram.png', { type: 'image/png' });
     commentAttachments.upload.mockResolvedValue({ id: 'image-1' });
     commentAttachments.contentUrl.mockReturnValue(
-      '/api/workspaces/acme/documents/my-doc/comments/c1/attachments/image-1',
+      '/api/v2/acta/workspaces/acme/documents/my-doc/comments/c1/attachments/image-1',
     );
     signInAs('me');
     enableCodeMirrorDropCoordinates();
@@ -488,7 +488,7 @@ describe('DocumentComments (ATL-37)', () => {
       'acme',
       'my-doc',
       'c1',
-      '![diagram](/api/workspaces/acme/documents/my-doc/comments/c1/attachments/image-1)\nOriginal',
+      '![diagram](/api/v2/acta/workspaces/acme/documents/my-doc/comments/c1/attachments/image-1)\nOriginal',
     );
     expect(wrapper.get('[data-comment-attachment-announcement]').text()).toBe('Comment saved');
   });

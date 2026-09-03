@@ -86,7 +86,7 @@ export const useActivityStore = defineStore('activity', () => {
     ws: string,
     pageCursor?: string,
   ): Promise<{ page: ActivityPage | null; error: string | null }> {
-    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/activity', {
+    const { data, error: apiError } = await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/activity', {
       params: {
         path: { ws },
         query: buildQuery(pageCursor),

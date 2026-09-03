@@ -378,7 +378,7 @@ describe('useTaskDetailStore', () => {
 
     const commentCall = GET.mock.calls.find(([path]) => path.endsWith('/comments'));
     expect(commentCall).toEqual([
-      '/api/workspaces/{ws}/tasks/{readable_id}/comments',
+      '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments',
       { params: { path: { ws: 'ws', readable_id: 'ATL-1' } } },
     ]);
     expect(store.comments).toEqual([]);
@@ -921,7 +921,7 @@ describe('useTaskDetailStore', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/tasks/{readable_id}/activity', {
+    expect(GET).toHaveBeenCalledWith('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/activity', {
       params: { path: { ws: 'ws', readable_id: 'ATL-1' } },
     });
     expect(store.activity.map((a) => a.kind)).toEqual(['checklist_added']);
@@ -969,7 +969,7 @@ describe('useTaskDetailStore', () => {
     const ok = await store.attachSubtask('ws', 'ATL-1', 'ATL-9');
 
     expect(ok).toBe(true);
-    expect(POST).toHaveBeenCalledWith('/api/workspaces/{ws}/tasks/{readable_id}/parent', {
+    expect(POST).toHaveBeenCalledWith('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/parent', {
       params: { path: { ws: 'ws', readable_id: 'ATL-9' } },
       body: { parent_readable_id: 'ATL-1' },
     });
@@ -1282,7 +1282,7 @@ describe('useTaskDetailStore', () => {
     expect(store.references).toEqual([wikilinkReference('link-1', 'Linked document')]);
     expect(await removing).toBe(true);
     expect(store.references).toEqual([wikilinkReference('link-1', 'Authoritative title')]);
-    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/tasks/{readable_id}/references', {
+    expect(GET).toHaveBeenCalledWith('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/references', {
       params: { path: { ws: 'ws', readable_id: 'ATL-1' } },
     });
   });

@@ -147,7 +147,7 @@ describe('useWorkspaceStore — updateProject', () => {
     const ok = await store.updateProject('ws1', 'atlas', { name: 'Atlas Renamed', task_prefix: 'ATLX' });
 
     expect(ok).toBe(true);
-    expect(PATCH).toHaveBeenCalledWith('/api/workspaces/{ws}/projects/{project_slug}', {
+    expect(PATCH).toHaveBeenCalledWith('/api/v2/acta/workspaces/{ws}/projects/{project_slug}', {
       params: { path: { ws: 'ws1', project_slug: 'atlas' } },
       body: { name: 'Atlas Renamed', task_prefix: 'ATLX' },
     });
@@ -162,7 +162,7 @@ describe('useWorkspaceStore — updateProject', () => {
     const ok = await store.updateProject('ws1', 'atlas', { name: 'New Name' });
 
     expect(ok).toBe(true);
-    expect(PATCH).toHaveBeenCalledWith('/api/workspaces/{ws}/projects/{project_slug}', {
+    expect(PATCH).toHaveBeenCalledWith('/api/v2/acta/workspaces/{ws}/projects/{project_slug}', {
       params: { path: { ws: 'ws1', project_slug: 'atlas' } },
       body: { name: 'New Name' },
     });
@@ -176,7 +176,7 @@ describe('useWorkspaceStore — updateProject', () => {
     const ok = await store.updateProject('ws1', 'atlas', { visibility: 'public' });
 
     expect(ok).toBe(true);
-    expect(PATCH).toHaveBeenCalledWith('/api/workspaces/{ws}/projects/{project_slug}', {
+    expect(PATCH).toHaveBeenCalledWith('/api/v2/acta/workspaces/{ws}/projects/{project_slug}', {
       params: { path: { ws: 'ws1', project_slug: 'atlas' } },
       body: { visibility: 'public' },
     });
@@ -212,7 +212,7 @@ describe('useWorkspaceStore — loadAssignableUsers', () => {
     store.setActiveWorkspace('ws1');
     await store.loadAssignableUsers('ws1');
 
-    expect(GET).toHaveBeenCalledWith('/api/workspaces/{ws}/assignable-users', {
+    expect(GET).toHaveBeenCalledWith('/api/v2/acta/workspaces/{ws}/assignable-users', {
       params: { path: { ws: 'ws1' } },
     });
     expect(store.assignableUsers).toHaveLength(2);
@@ -248,7 +248,7 @@ describe('useWorkspaceStore — addMember', () => {
     const ok = await store.addMember('ws1', 'u1', 'admin');
 
     expect(ok).toBe(true);
-    expect(POST).toHaveBeenCalledWith('/api/workspaces/{ws}/members', {
+    expect(POST).toHaveBeenCalledWith('/api/v2/acta/workspaces/{ws}/members', {
       params: { path: { ws: 'ws1' } },
       body: { user_id: 'u1', role: 'admin' },
     });

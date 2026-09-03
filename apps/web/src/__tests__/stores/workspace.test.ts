@@ -790,11 +790,11 @@ describe('useWorkspaceStore', () => {
     const ok = await store.renameProject('atlas', 'roadmap', 'Roadmap 2');
 
     expect(ok).toBe(true);
-    expect(mockPatch).toHaveBeenCalledWith('/api/workspaces/{ws}/projects/{project_slug}', {
+    expect(mockPatch).toHaveBeenCalledWith('/api/v2/acta/workspaces/{ws}/projects/{project_slug}', {
       params: { path: { ws: 'atlas', project_slug: 'roadmap' } },
       body: { name: 'Roadmap 2' },
     });
-    expect(mockGet).toHaveBeenCalledWith('/api/workspaces/{ws}/projects', {
+    expect(mockGet).toHaveBeenCalledWith('/api/v2/acta/workspaces/{ws}/projects', {
       params: { path: { ws: 'atlas' }, query: { limit: 200 } },
     });
   });
@@ -819,10 +819,10 @@ describe('useWorkspaceStore', () => {
     const ok = await store.deleteProject('atlas', 'roadmap');
 
     expect(ok).toBe(true);
-    expect(mockDelete).toHaveBeenCalledWith('/api/workspaces/{ws}/projects/{project_slug}', {
+    expect(mockDelete).toHaveBeenCalledWith('/api/v2/acta/workspaces/{ws}/projects/{project_slug}', {
       params: { path: { ws: 'atlas', project_slug: 'roadmap' } },
     });
-    expect(mockGet).toHaveBeenCalledWith('/api/workspaces/{ws}/projects', {
+    expect(mockGet).toHaveBeenCalledWith('/api/v2/acta/workspaces/{ws}/projects', {
       params: { path: { ws: 'atlas' }, query: { limit: 200 } },
     });
   });
@@ -884,7 +884,7 @@ describe('useWorkspaceStore', () => {
     const slug = await store.createWorkspace('New WS');
 
     expect(slug).toBe('new-ws');
-    expect(mockPost).toHaveBeenCalledWith('/api/workspaces', { body: { name: 'New WS' } });
+    expect(mockPost).toHaveBeenCalledWith('/api/v2/acta/workspaces', { body: { name: 'New WS' } });
     expect(store.activeWorkspaceSlug).toBe('new-ws');
   });
 
@@ -912,7 +912,7 @@ describe('useWorkspaceStore', () => {
     const ok = await store.renameWorkspace('atlas', 'Atlas Renamed');
 
     expect(ok).toBe(true);
-    expect(mockPatch).toHaveBeenCalledWith('/api/workspaces/{ws}', {
+    expect(mockPatch).toHaveBeenCalledWith('/api/v2/acta/workspaces/{ws}', {
       params: { path: { ws: 'atlas' } },
       body: { name: 'Atlas Renamed' },
     });
@@ -944,7 +944,7 @@ describe('useWorkspaceStore', () => {
     const store = useWorkspaceStore();
     await store.loadAdminWorkspaces();
 
-    expect(mockGet).toHaveBeenCalledWith('/api/admin/workspaces');
+    expect(mockGet).toHaveBeenCalledWith('/api/v2/acta/admin/workspaces');
     expect(store.adminWorkspaces).toHaveLength(2);
     expect(store.adminWorkspaces.at(1)?.slug).toBe('other');
   });

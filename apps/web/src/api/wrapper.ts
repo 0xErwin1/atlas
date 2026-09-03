@@ -3,7 +3,7 @@ import { fetchThroughPlatform } from '@/platform/fetch';
 import type { paths } from './types.d.ts';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'TRACE']);
-const LOCALLY_HANDLED_UNAUTHORIZED_PATHS = new Set(['/api/auth/login', '/api/auth/me']);
+const LOCALLY_HANDLED_UNAUTHORIZED_PATHS = new Set(['/api/v2/custos/auth/login', '/api/v2/custos/auth/me']);
 const CACHEABLE_RESOURCE_TYPES = new Set(['documents', 'folders', 'boards', 'tasks', 'projects']);
 
 let unauthorizedHandler: (() => void | Promise<void>) | undefined;

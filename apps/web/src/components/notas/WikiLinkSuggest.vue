@@ -85,10 +85,10 @@ async function fetchAttachments(term: string): Promise<Suggestion[]> {
 
   const { data, error } =
     owner.kind === 'document'
-      ? await wrappedClient.GET('/api/workspaces/{ws}/documents/{slug}/attachments', {
+      ? await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/documents/{slug}/attachments', {
           params: { path: { ws: props.ws, slug: owner.slug } },
         })
-      : await wrappedClient.GET('/api/workspaces/{ws}/tasks/{readable_id}/attachments', {
+      : await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/attachments', {
           params: { path: { ws: props.ws, readable_id: owner.readableId } },
         });
 
@@ -111,7 +111,7 @@ async function fetchAttachments(term: string): Promise<Suggestion[]> {
 async function fetchSearch(kind: WikilinkKind | null, term: string): Promise<Suggestion[]> {
   const type = kind === null ? 'note,task' : kind;
 
-  const { data, error } = await wrappedClient.GET('/api/workspaces/{ws}/search', {
+  const { data, error } = await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/search', {
     params: {
       path: { ws: props.ws },
       query: { q: term.length > 0 ? term : '*', type, limit: 8 },

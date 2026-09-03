@@ -239,7 +239,7 @@ export const useWorkspaceTasksStore = defineStore('workspaceTasks', () => {
           });
 
     const fetchPage = async (): Promise<WorkspaceTaskPage> => {
-      const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/tasks', {
+      const { data, error: apiError } = await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/tasks', {
         params: {
           path: { ws },
           query: requestParams,

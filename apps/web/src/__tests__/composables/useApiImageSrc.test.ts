@@ -50,10 +50,14 @@ describe('useApiImageSrc', () => {
     platformFetch.mockResolvedValue(imageResponse());
     const { value: resolve } = runInScope(() => useApiImageSrc());
 
-    await expect(resolve('/api/workspaces/acme/tasks/ATL-1/attachments/a/content')).resolves.toBe('blob:1');
+    await expect(resolve('/api/v2/acta/workspaces/acme/tasks/ATL-1/attachments/a/content')).resolves.toBe(
+      'blob:1',
+    );
 
     const request = platformFetch.mock.calls[0]?.[0] as Request;
-    expect(new URL(request.url).pathname).toBe('/api/workspaces/acme/tasks/ATL-1/attachments/a/content');
+    expect(new URL(request.url).pathname).toBe(
+      '/api/v2/acta/workspaces/acme/tasks/ATL-1/attachments/a/content',
+    );
   });
 
   it('fetches each source once and shares the object URL across repeated resolutions', async () => {

@@ -13,192 +13,7 @@
     "version": "0.0.0"
   },
   "paths": {
-    "/api/activate/{token}": {
-      "get": {
-        "tags": [
-          "auth",
-          "custos"
-        ],
-        "operationId": "get_activation_info",
-        "parameters": [
-          {
-            "name": "token",
-            "in": "path",
-            "description": "Activation token",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Token valid — returns display info",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ActivationInfoDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Invalid or expired activation link"
-          },
-          "429": {
-            "description": "Rate limit exceeded"
-          }
-        },
-        "x-atlas-component": "custos"
-      },
-      "post": {
-        "tags": [
-          "auth",
-          "custos"
-        ],
-        "summary": "Completes account activation in a single DB transaction.",
-        "description": "Atomicity invariant: the row lock (`FOR UPDATE` on the token SELECT) combined\nwith the guarded consume (`AND consumed_at IS NULL` on the UPDATE plus a\nrows-affected check) guarantee that exactly one activation succeeds per token\neven under concurrent POST requests. Under READ COMMITTED, two racers that\nreach the SELECT simultaneously will serialize at the lock: the loser blocks\nuntil the winner commits, at which point the loser's `FOR UPDATE` re-read\nsees the now-consumed row, the guarded UPDATE matches 0 rows, and the\ntransaction is rolled back with a 404 — no double-activation, no\ndouble-session.\n\nSteps inside the transaction:\n1. Re-validate and lock the token row (`FOR UPDATE`).\n2. Consume the token (`AND consumed_at IS NULL`); abort if already consumed.\n3. Set the user's `password_hash` and `activated_at`.\n4. Create a new session for the newly activated user.\n\nAny failure rolls back the entire transaction: the user stays pending,\nthe token stays unconsumed, and no session is issued.",
-        "operationId": "post_activate",
-        "parameters": [
-          {
-            "name": "token",
-            "in": "path",
-            "description": "Activation token",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ActivatePasswordRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Activated and logged in",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LoginResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Invalid or expired activation link"
-          },
-          "422": {
-            "description": "Password too short"
-          },
-          "429": {
-            "description": "Rate limit exceeded"
-          }
-        },
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/admin/audit": {
-      "get": {
-        "tags": [
-          "audit",
-          "custos"
-        ],
-        "operationId": "list_platform_audit",
-        "parameters": [
-          {
-            "name": "actor",
-            "in": "query",
-            "description": "Actor type filter: 'user' or 'api_key'",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "action",
-            "in": "query",
-            "description": "Filter by action verb",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "from",
-            "in": "query",
-            "description": "Lower bound on created_at (ISO 8601)",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "to",
-            "in": "query",
-            "description": "Upper bound on created_at (ISO 8601)",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "description": "Keyset pagination cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Page size (max 200, default 50)",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Platform security audit log (workspace_id IS NULL)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Page_AuditEntryDto"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid query parameter"
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Not root or system_admin"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/admin/status-templates": {
+    "/api/v2/acta/admin/status-templates": {
       "get": {
         "tags": [
           "status-templates",
@@ -371,7 +186,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/admin/status-templates/{template_id}": {
+    "/api/v2/acta/admin/status-templates/{template_id}": {
       "delete": {
         "tags": [
           "status-templates",
@@ -473,7 +288,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/admin/trash": {
+    "/api/v2/acta/admin/trash": {
       "get": {
         "tags": [
           "trash",
@@ -546,7 +361,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/admin/trash/purge": {
+    "/api/v2/acta/admin/trash/purge": {
       "post": {
         "tags": [
           "trash",
@@ -716,7 +531,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/admin/trash/purges/{operation_id}": {
+    "/api/v2/acta/admin/trash/purges/{operation_id}": {
       "get": {
         "tags": [
           "trash",
@@ -763,7 +578,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/admin/trash/restore": {
+    "/api/v2/acta/admin/trash/restore": {
       "post": {
         "tags": [
           "trash",
@@ -805,7 +620,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/admin/workspaces": {
+    "/api/v2/acta/admin/workspaces": {
       "get": {
         "tags": [
           "workspaces",
@@ -842,7 +657,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/admin/workspaces/{ws}": {
+    "/api/v2/acta/admin/workspaces/{ws}": {
       "delete": {
         "tags": [
           "workspaces",
@@ -943,964 +758,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/api-keys": {
-      "get": {
-        "tags": [
-          "api-keys",
-          "custos"
-        ],
-        "operationId": "list_user_api_keys",
-        "parameters": [
-          {
-            "name": "cursor",
-            "in": "query",
-            "description": "Pagination cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Page size (max 200)",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Paginated list of the caller's API keys",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Page_ApiKeyDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "API keys cannot list keys"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      },
-      "post": {
-        "tags": [
-          "api-keys",
-          "custos"
-        ],
-        "operationId": "create_user_api_key",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateUserApiKeyRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "API key created (secret shown once)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiKeyCreated"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid key type or role"
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "API keys cannot create keys"
-          },
-          "422": {
-            "description": "Unknown scope value"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/api-keys/{key_id}": {
-      "delete": {
-        "tags": [
-          "api-keys",
-          "custos"
-        ],
-        "operationId": "revoke_user_api_key",
-        "parameters": [
-          {
-            "name": "key_id",
-            "in": "path",
-            "description": "API key id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "API key revoked"
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Cannot revoke another user's key"
-          },
-          "404": {
-            "description": "Key not found or already revoked"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      },
-      "patch": {
-        "tags": [
-          "api-keys",
-          "custos"
-        ],
-        "summary": "Updates a user-owned API key. `is_global` and `scopes` are each PATCH-partial:\nomitting a field leaves it unchanged; both may be set in the same request.",
-        "description": "Any owner of the key may toggle global reach or replace its scope set; the\nagent never gains more than its creator can reach (and stays capped at\neditor) nor more capabilities than the closed catalog allows, so this is\nbounded by the owner's own permissions rather than being a privilege\nescalation.",
-        "operationId": "update_user_api_key",
-        "parameters": [
-          {
-            "name": "key_id",
-            "in": "path",
-            "description": "API key id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateApiKeyRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "API key updated",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiKeyDto"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Scopes present but empty; revoke the key instead"
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "API keys cannot manage API keys"
-          },
-          "404": {
-            "description": "Key not found or not owned by the caller"
-          },
-          "422": {
-            "description": "Unknown scope value"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/api-keys/{key_id}/grants": {
-      "get": {
-        "tags": [
-          "api-keys",
-          "custos"
-        ],
-        "operationId": "list_api_key_grants",
-        "parameters": [
-          {
-            "name": "key_id",
-            "in": "path",
-            "description": "API key id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Grants belonging to this API key",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ApiKeyGrantDto"
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Not the key owner"
-          },
-          "404": {
-            "description": "Key not found"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/api-keys/{key_id}/grants/{grant_id}": {
-      "delete": {
-        "tags": [
-          "api-keys",
-          "custos"
-        ],
-        "operationId": "delete_api_key_grant",
-        "parameters": [
-          {
-            "name": "key_id",
-            "in": "path",
-            "description": "API key id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "grant_id",
-            "in": "path",
-            "description": "Grant id to revoke",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Grant revoked"
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Not the key owner"
-          },
-          "404": {
-            "description": "Key or grant not found"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/auth/change-password": {
-      "post": {
-        "tags": [
-          "auth",
-          "custos"
-        ],
-        "operationId": "change_password",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ChangePasswordRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "Password changed"
-          },
-          "401": {
-            "description": "Unauthenticated or wrong current password"
-          },
-          "403": {
-            "description": "API keys cannot change a user password"
-          },
-          "422": {
-            "description": "New password too short"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/auth/login": {
-      "post": {
-        "tags": [
-          "auth",
-          "custos"
-        ],
-        "operationId": "login",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LoginRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Login successful",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LoginResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Invalid credentials"
-          },
-          "429": {
-            "description": "Rate limit exceeded"
-          }
-        },
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/auth/logout": {
-      "post": {
-        "tags": [
-          "auth",
-          "custos"
-        ],
-        "operationId": "logout",
-        "responses": {
-          "204": {
-            "description": "Logged out"
-          },
-          "401": {
-            "description": "Unauthenticated"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/auth/me": {
-      "get": {
-        "tags": [
-          "auth",
-          "custos"
-        ],
-        "operationId": "me",
-        "responses": {
-          "200": {
-            "description": "Current principal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MeResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/me/ui-state": {
-      "get": {
-        "tags": [
-          "ui-state",
-          "platform"
-        ],
-        "summary": "Returns the authenticated human user's stored UI state.",
-        "description": "The state is an opaque JSON object owned by the client. When the user has no\nrow yet, an empty object `{}` is returned. API keys (agents) are rejected\nwith 403: agents have no UI.",
-        "operationId": "get_ui_state",
-        "responses": {
-          "200": {
-            "description": "The caller's stored UI state, or an empty object",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UiStateDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "API keys have no UI state"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "platform"
-      },
-      "put": {
-        "tags": [
-          "ui-state",
-          "platform"
-        ],
-        "summary": "Inserts or replaces the authenticated human user's UI state.",
-        "description": "The `state` JSON object is stored verbatim; the server does not validate its\ninner shape. The stored value is echoed back. API keys (agents) are rejected\nwith 403: agents have no UI.",
-        "operationId": "set_ui_state",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateUiStateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "The stored UI state, echoed back",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UiStateDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "API keys have no UI state"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "platform"
-      }
-    },
-    "/api/meta": {
-      "get": {
-        "tags": [
-          "meta",
-          "platform"
-        ],
-        "operationId": "meta",
-        "responses": {
-          "200": {
-            "description": "Server build information",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ServerMetaDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "platform"
-      }
-    },
-    "/api/users": {
-      "get": {
-        "tags": [
-          "users",
-          "custos"
-        ],
-        "operationId": "list_users",
-        "responses": {
-          "200": {
-            "description": "All users (active and disabled)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/UserDto"
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Not a root/admin user"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      },
-      "post": {
-        "tags": [
-          "users",
-          "custos"
-        ],
-        "operationId": "create_user",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateUserRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "Pending user created with activation link",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CreateUserResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Not a root/admin user"
-          },
-          "422": {
-            "description": "Workspace not found, or role=owner"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/users/me": {
-      "patch": {
-        "tags": [
-          "users",
-          "custos"
-        ],
-        "operationId": "update_me",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateMeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Updated profile",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "API keys cannot update a user profile"
-          },
-          "422": {
-            "description": "Invalid display_name or email"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/users/{user_id}/activation-link": {
-      "post": {
-        "tags": [
-          "users",
-          "custos"
-        ],
-        "operationId": "regenerate_activation_link",
-        "parameters": [
-          {
-            "name": "user_id",
-            "in": "path",
-            "description": "User ID",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Fresh activation link issued",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ActivationLinkResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Not a root/admin user"
-          },
-          "409": {
-            "description": "User is already activated"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/users/{user_id}/disable": {
-      "post": {
-        "tags": [
-          "users",
-          "custos"
-        ],
-        "operationId": "disable_user",
-        "parameters": [
-          {
-            "name": "user_id",
-            "in": "path",
-            "description": "User ID",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "User disabled"
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Not a root/admin user, or target is protected"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/users/{user_id}/enable": {
-      "post": {
-        "tags": [
-          "users",
-          "custos"
-        ],
-        "operationId": "enable_user",
-        "parameters": [
-          {
-            "name": "user_id",
-            "in": "path",
-            "description": "User ID",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "User enabled"
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Not a root/admin user, or target is protected"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/users/{user_id}/memberships": {
-      "get": {
-        "tags": [
-          "users",
-          "custos"
-        ],
-        "operationId": "list_user_memberships",
-        "parameters": [
-          {
-            "name": "user_id",
-            "in": "path",
-            "description": "User ID",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Workspaces the user belongs to, with role",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/UserMembershipDto"
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Not a root/admin user"
-          },
-          "404": {
-            "description": "User not found"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/users/{user_id}/reset-password": {
-      "post": {
-        "tags": [
-          "users",
-          "custos"
-        ],
-        "operationId": "reset_password",
-        "parameters": [
-          {
-            "name": "user_id",
-            "in": "path",
-            "description": "User ID",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ResetPasswordRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "Password reset and all sessions revoked"
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Not a root/admin user, or target is protected"
-          },
-          "422": {
-            "description": "New password too short"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/users/{user_id}/system-admin": {
-      "post": {
-        "tags": [
-          "users",
-          "custos"
-        ],
-        "operationId": "set_system_admin",
-        "parameters": [
-          {
-            "name": "user_id",
-            "in": "path",
-            "description": "User ID",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetSystemAdminRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "User system-admin status updated",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserDto"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Cannot target self or a root user"
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Root access required"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/workspaces": {
+    "/api/v2/acta/workspaces": {
       "get": {
         "tags": [
           "workspaces",
@@ -2054,7 +912,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}": {
+    "/api/v2/acta/workspaces/{ws}": {
       "get": {
         "tags": [
           "workspaces",
@@ -2155,7 +1013,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/activity": {
+    "/api/v2/acta/workspaces/{ws}/activity": {
       "get": {
         "tags": [
           "tasks",
@@ -2249,7 +1107,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/assignable-users": {
+    "/api/v2/acta/workspaces/{ws}/assignable-users": {
       "get": {
         "tags": [
           "members",
@@ -2301,7 +1159,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/attachments": {
+    "/api/v2/acta/workspaces/{ws}/attachments": {
       "get": {
         "tags": [
           "attachments",
@@ -2475,7 +1333,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/attachments/{attachment_id}": {
+    "/api/v2/acta/workspaces/{ws}/attachments/{attachment_id}": {
       "get": {
         "tags": [
           "documents",
@@ -2640,113 +1498,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/audit": {
-      "get": {
-        "tags": [
-          "audit",
-          "custos"
-        ],
-        "operationId": "list_workspace_audit",
-        "parameters": [
-          {
-            "name": "ws",
-            "in": "path",
-            "description": "Workspace slug",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "actor",
-            "in": "query",
-            "description": "Actor type filter: 'user' or 'api_key'",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "action",
-            "in": "query",
-            "description": "Filter by action verb (e.g. 'membership.role_changed')",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "from",
-            "in": "query",
-            "description": "Lower bound on created_at (ISO 8601)",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "to",
-            "in": "query",
-            "description": "Upper bound on created_at (ISO 8601)",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "description": "Keyset pagination cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Page size (max 200, default 50)",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Workspace security audit log",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Page_AuditEntryDto"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid query parameter"
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Caller is not workspace owner or admin"
-          },
-          "404": {
-            "description": "Workspace not found"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/workspaces/{ws}/automation-rules": {
+    "/api/v2/acta/workspaces/{ws}/automation-rules": {
       "get": {
         "tags": [
           "automation-rules",
@@ -2953,7 +1705,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/automation-rules/{rule_id}": {
+    "/api/v2/acta/workspaces/{ws}/automation-rules/{rule_id}": {
       "get": {
         "tags": [
           "automation-rules",
@@ -3117,7 +1869,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/boards/{board_id}": {
+    "/api/v2/acta/workspaces/{ws}/boards/{board_id}": {
       "get": {
         "tags": [
           "boards",
@@ -3284,7 +2036,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/boards/{board_id}/apply-status-templates": {
+    "/api/v2/acta/workspaces/{ws}/boards/{board_id}/apply-status-templates": {
       "post": {
         "tags": [
           "status-templates",
@@ -3344,7 +2096,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/boards/{board_id}/archive": {
+    "/api/v2/acta/workspaces/{ws}/boards/{board_id}/archive": {
       "post": {
         "tags": [
           "boards",
@@ -3400,7 +2152,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/boards/{board_id}/columns": {
+    "/api/v2/acta/workspaces/{ws}/boards/{board_id}/columns": {
       "get": {
         "tags": [
           "boards",
@@ -3611,7 +2363,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/boards/{board_id}/columns/{column_id}": {
+    "/api/v2/acta/workspaces/{ws}/boards/{board_id}/columns/{column_id}": {
       "delete": {
         "tags": [
           "boards",
@@ -3745,7 +2497,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/boards/{board_id}/move": {
+    "/api/v2/acta/workspaces/{ws}/boards/{board_id}/move": {
       "patch": {
         "tags": [
           "boards",
@@ -3814,7 +2566,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/boards/{board_id}/presence": {
+    "/api/v2/acta/workspaces/{ws}/boards/{board_id}/presence": {
       "post": {
         "tags": [
           "presence",
@@ -3917,7 +2669,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/boards/{board_id}/tasks": {
+    "/api/v2/acta/workspaces/{ws}/boards/{board_id}/tasks": {
       "get": {
         "tags": [
           "tasks",
@@ -4162,7 +2914,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/boards/{board_id}/unarchive": {
+    "/api/v2/acta/workspaces/{ws}/boards/{board_id}/unarchive": {
       "post": {
         "tags": [
           "boards",
@@ -4218,7 +2970,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/documents/moves/batch": {
+    "/api/v2/acta/workspaces/{ws}/documents/moves/batch": {
       "post": {
         "tags": [
           "documents",
@@ -4264,7 +3016,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/documents/{slug}": {
+    "/api/v2/acta/workspaces/{ws}/documents/{slug}": {
       "get": {
         "tags": [
           "documents",
@@ -4434,7 +3186,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/documents/{slug}/attachments": {
+    "/api/v2/acta/workspaces/{ws}/documents/{slug}/attachments": {
       "get": {
         "tags": [
           "documents",
@@ -4551,7 +3303,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/documents/{slug}/backlinks": {
+    "/api/v2/acta/workspaces/{ws}/documents/{slug}/backlinks": {
       "get": {
         "tags": [
           "documents",
@@ -4621,7 +3373,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/documents/{slug}/comment-drafts": {
+    "/api/v2/acta/workspaces/{ws}/documents/{slug}/comment-drafts": {
       "post": {
         "tags": [
           "documents",
@@ -4796,7 +3548,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}": {
+    "/api/v2/acta/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}": {
       "delete": {
         "tags": [
           "documents",
@@ -4851,7 +3603,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments": {
+    "/api/v2/acta/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments": {
       "post": {
         "tags": [
           "documents",
@@ -4962,7 +3714,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/documents/{slug}/comments": {
+    "/api/v2/acta/workspaces/{ws}/documents/{slug}/comments": {
       "get": {
         "tags": [
           "documents",
@@ -5257,7 +4009,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}": {
+    "/api/v2/acta/workspaces/{ws}/documents/{slug}/comments/{comment_id}": {
       "delete": {
         "tags": [
           "documents",
@@ -5391,7 +4143,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments": {
+    "/api/v2/acta/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments": {
       "get": {
         "tags": [
           "documents",
@@ -5537,7 +4289,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}": {
+    "/api/v2/acta/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}": {
       "get": {
         "tags": [
           "documents",
@@ -5678,7 +4430,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/documents/{slug}/compact": {
+    "/api/v2/acta/workspaces/{ws}/documents/{slug}/compact": {
       "get": {
         "tags": [
           "documents",
@@ -5732,7 +4484,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/documents/{slug}/content": {
+    "/api/v2/acta/workspaces/{ws}/documents/{slug}/content": {
       "put": {
         "tags": [
           "documents",
@@ -5801,7 +4553,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/documents/{slug}/content/range": {
+    "/api/v2/acta/workspaces/{ws}/documents/{slug}/content/range": {
       "get": {
         "tags": [
           "documents",
@@ -5980,7 +4732,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/documents/{slug}/content/search": {
+    "/api/v2/acta/workspaces/{ws}/documents/{slug}/content/search": {
       "post": {
         "tags": [
           "documents",
@@ -6053,7 +4805,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/documents/{slug}/copy": {
+    "/api/v2/acta/workspaces/{ws}/documents/{slug}/copy": {
       "post": {
         "tags": [
           "documents",
@@ -6207,7 +4959,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/documents/{slug}/frontmatter": {
+    "/api/v2/acta/workspaces/{ws}/documents/{slug}/frontmatter": {
       "get": {
         "tags": [
           "documents",
@@ -6257,7 +5009,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/documents/{slug}/history": {
+    "/api/v2/acta/workspaces/{ws}/documents/{slug}/history": {
       "get": {
         "tags": [
           "documents",
@@ -6320,7 +5072,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/documents/{slug}/move": {
+    "/api/v2/acta/workspaces/{ws}/documents/{slug}/move": {
       "patch": {
         "tags": [
           "documents",
@@ -6386,7 +5138,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/documents/{slug}/presence": {
+    "/api/v2/acta/workspaces/{ws}/documents/{slug}/presence": {
       "post": {
         "tags": [
           "presence",
@@ -6489,7 +5241,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/documents/{slug}/revisions/{seq}": {
+    "/api/v2/acta/workspaces/{ws}/documents/{slug}/revisions/{seq}": {
       "get": {
         "tags": [
           "documents",
@@ -6549,7 +5301,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/events": {
+    "/api/v2/acta/workspaces/{ws}/events": {
       "get": {
         "tags": [
           "events",
@@ -6595,7 +5347,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/folders/{folder_id}": {
+    "/api/v2/acta/workspaces/{ws}/folders/{folder_id}": {
       "get": {
         "tags": [
           "folders",
@@ -6765,7 +5517,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/folders/{folder_id}/copy": {
+    "/api/v2/acta/workspaces/{ws}/folders/{folder_id}/copy": {
       "post": {
         "tags": [
           "folders",
@@ -6920,7 +5672,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/folders/{folder_id}/move": {
+    "/api/v2/acta/workspaces/{ws}/folders/{folder_id}/move": {
       "patch": {
         "tags": [
           "folders",
@@ -6987,794 +5739,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/grants": {
-      "get": {
-        "tags": [
-          "grants",
-          "custos"
-        ],
-        "operationId": "list_workspace_grants",
-        "parameters": [
-          {
-            "name": "ws",
-            "in": "path",
-            "description": "Workspace slug",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "description": "Pagination cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Page size (max 200)",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Paginated workspace grant list",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Page_GrantDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      },
-      "post": {
-        "tags": [
-          "grants",
-          "custos"
-        ],
-        "operationId": "create_workspace_grant",
-        "parameters": [
-          {
-            "name": "ws",
-            "in": "path",
-            "description": "Workspace slug",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "description": "Client-supplied key used to dedupe a retried request. Optional: a route that honors this header runs and stores its response as usual when the header is absent, and every route that does not honor it ignores the header entirely.",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateGrantRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "Workspace grant created",
-            "headers": {
-              "Idempotency-Degraded": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
-              },
-              "Idempotent-Replayed": {
-                "schema": {
-                  "type": "boolean"
-                },
-                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GrantDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated",
-            "headers": {
-              "Idempotency-Degraded": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
-              },
-              "Idempotent-Replayed": {
-                "schema": {
-                  "type": "boolean"
-                },
-                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
-              }
-            }
-          },
-          "403": {
-            "description": "Insufficient permissions or guardrail violation",
-            "headers": {
-              "Idempotency-Degraded": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
-              },
-              "Idempotent-Replayed": {
-                "schema": {
-                  "type": "boolean"
-                },
-                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
-              }
-            }
-          },
-          "409": {
-            "description": "Returned when the Idempotency-Key was already used for a different request (`urn:atlas:error:idempotency-key-conflict`), or when a request carrying the same Idempotency-Key is still executing concurrently (`urn:atlas:error:idempotency-key-in-flight`). Neither of those two problem types ever carries the `Idempotent-Replayed` or `Idempotency-Degraded` header; a replayed or degraded domain conflict on this operation carries them like any other response. A replayed problem body differs from the original response only by its `request_id` field.",
-            "headers": {
-              "Idempotency-Degraded": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
-              },
-              "Idempotent-Replayed": {
-                "schema": {
-                  "type": "boolean"
-                },
-                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
-              },
-              "Retry-After": {
-                "schema": {
-                  "type": "integer"
-                },
-                "description": "Present with value `1` (seconds) only for the `urn:atlas:error:idempotency-key-in-flight` problem type: the first request for this Idempotency-Key is still executing."
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/workspaces/{ws}/grants/{grant_id}": {
-      "delete": {
-        "tags": [
-          "grants",
-          "custos"
-        ],
-        "operationId": "delete_workspace_grant",
-        "parameters": [
-          {
-            "name": "ws",
-            "in": "path",
-            "description": "Workspace slug",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "grant_id",
-            "in": "path",
-            "description": "Grant id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Workspace grant deleted"
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          },
-          "404": {
-            "description": "Grant not found"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/workspaces/{ws}/groups": {
-      "get": {
-        "tags": [
-          "groups",
-          "custos"
-        ],
-        "operationId": "list_groups",
-        "parameters": [
-          {
-            "name": "ws",
-            "in": "path",
-            "description": "Workspace slug",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Active groups in the workspace",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/GroupDto"
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "404": {
-            "description": "Workspace not found or caller is not a member"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      },
-      "post": {
-        "tags": [
-          "groups",
-          "custos"
-        ],
-        "operationId": "create_group",
-        "parameters": [
-          {
-            "name": "ws",
-            "in": "path",
-            "description": "Workspace slug",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "description": "Client-supplied key used to dedupe a retried request. Optional: a route that honors this header runs and stores its response as usual when the header is absent, and every route that does not honor it ignores the header entirely.",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateGroupRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "Group created",
-            "headers": {
-              "Idempotency-Degraded": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
-              },
-              "Idempotent-Replayed": {
-                "schema": {
-                  "type": "boolean"
-                },
-                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GroupDto"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Malformed JSON body",
-            "headers": {
-              "Idempotency-Degraded": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
-              },
-              "Idempotent-Replayed": {
-                "schema": {
-                  "type": "boolean"
-                },
-                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated",
-            "headers": {
-              "Idempotency-Degraded": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
-              },
-              "Idempotent-Replayed": {
-                "schema": {
-                  "type": "boolean"
-                },
-                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
-              }
-            }
-          },
-          "403": {
-            "description": "Insufficient privileges — owner or admin required",
-            "headers": {
-              "Idempotency-Degraded": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
-              },
-              "Idempotent-Replayed": {
-                "schema": {
-                  "type": "boolean"
-                },
-                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
-              }
-            }
-          },
-          "409": {
-            "description": "A group with this name already exists in the workspace\n\nReturned when the Idempotency-Key was already used for a different request (`urn:atlas:error:idempotency-key-conflict`), or when a request carrying the same Idempotency-Key is still executing concurrently (`urn:atlas:error:idempotency-key-in-flight`). Neither of those two problem types ever carries the `Idempotent-Replayed` or `Idempotency-Degraded` header; a replayed or degraded domain conflict on this operation carries them like any other response. A replayed problem body differs from the original response only by its `request_id` field.",
-            "headers": {
-              "Idempotency-Degraded": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
-              },
-              "Idempotent-Replayed": {
-                "schema": {
-                  "type": "boolean"
-                },
-                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
-              },
-              "Retry-After": {
-                "schema": {
-                  "type": "integer"
-                },
-                "description": "Present with value `1` (seconds) only for the `urn:atlas:error:idempotency-key-in-flight` problem type: the first request for this Idempotency-Key is still executing."
-              }
-            }
-          },
-          "422": {
-            "description": "Missing required fields",
-            "headers": {
-              "Idempotency-Degraded": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
-              },
-              "Idempotent-Replayed": {
-                "schema": {
-                  "type": "boolean"
-                },
-                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/workspaces/{ws}/groups/{group_id}": {
-      "delete": {
-        "tags": [
-          "groups",
-          "custos"
-        ],
-        "operationId": "delete_group",
-        "parameters": [
-          {
-            "name": "ws",
-            "in": "path",
-            "description": "Workspace slug",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "group_id",
-            "in": "path",
-            "description": "Group ID",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Group soft-deleted"
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Insufficient privileges"
-          },
-          "404": {
-            "description": "Group not found"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/workspaces/{ws}/groups/{group_id}/members": {
-      "get": {
-        "tags": [
-          "groups",
-          "custos"
-        ],
-        "operationId": "list_group_members",
-        "parameters": [
-          {
-            "name": "ws",
-            "in": "path",
-            "description": "Workspace slug",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "group_id",
-            "in": "path",
-            "description": "Group ID",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Members of the group",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/GroupMemberDto"
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Insufficient privileges"
-          },
-          "404": {
-            "description": "Group not found"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      },
-      "post": {
-        "tags": [
-          "groups",
-          "custos"
-        ],
-        "operationId": "add_group_member",
-        "parameters": [
-          {
-            "name": "ws",
-            "in": "path",
-            "description": "Workspace slug",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "group_id",
-            "in": "path",
-            "description": "Group ID",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "description": "Client-supplied key used to dedupe a retried request. Optional: a route that honors this header runs and stores its response as usual when the header is absent, and every route that does not honor it ignores the header entirely.",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AddGroupMemberRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "Member added to group",
-            "headers": {
-              "Idempotency-Degraded": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
-              },
-              "Idempotent-Replayed": {
-                "schema": {
-                  "type": "boolean"
-                },
-                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GroupMemberDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated",
-            "headers": {
-              "Idempotency-Degraded": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
-              },
-              "Idempotent-Replayed": {
-                "schema": {
-                  "type": "boolean"
-                },
-                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
-              }
-            }
-          },
-          "403": {
-            "description": "Insufficient privileges",
-            "headers": {
-              "Idempotency-Degraded": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
-              },
-              "Idempotent-Replayed": {
-                "schema": {
-                  "type": "boolean"
-                },
-                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
-              }
-            }
-          },
-          "404": {
-            "description": "Group not found",
-            "headers": {
-              "Idempotency-Degraded": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
-              },
-              "Idempotent-Replayed": {
-                "schema": {
-                  "type": "boolean"
-                },
-                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
-              }
-            }
-          },
-          "409": {
-            "description": "Returned when the Idempotency-Key was already used for a different request (`urn:atlas:error:idempotency-key-conflict`), or when a request carrying the same Idempotency-Key is still executing concurrently (`urn:atlas:error:idempotency-key-in-flight`). Neither of those two problem types ever carries the `Idempotent-Replayed` or `Idempotency-Degraded` header; a replayed or degraded domain conflict on this operation carries them like any other response. A replayed problem body differs from the original response only by its `request_id` field.",
-            "headers": {
-              "Idempotency-Degraded": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
-              },
-              "Idempotent-Replayed": {
-                "schema": {
-                  "type": "boolean"
-                },
-                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
-              },
-              "Retry-After": {
-                "schema": {
-                  "type": "integer"
-                },
-                "description": "Present with value `1` (seconds) only for the `urn:atlas:error:idempotency-key-in-flight` problem type: the first request for this Idempotency-Key is still executing."
-              }
-            }
-          },
-          "422": {
-            "description": "User is not a workspace member",
-            "headers": {
-              "Idempotency-Degraded": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
-              },
-              "Idempotent-Replayed": {
-                "schema": {
-                  "type": "boolean"
-                },
-                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/workspaces/{ws}/groups/{group_id}/members/{user_id}": {
-      "delete": {
-        "tags": [
-          "groups",
-          "custos"
-        ],
-        "operationId": "remove_group_member",
-        "parameters": [
-          {
-            "name": "ws",
-            "in": "path",
-            "description": "Workspace slug",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "group_id",
-            "in": "path",
-            "description": "Group ID",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "user_id",
-            "in": "path",
-            "description": "User ID to remove",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Member removed from group"
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Insufficient privileges"
-          },
-          "404": {
-            "description": "Group or membership not found"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/workspaces/{ws}/integration-configs": {
+    "/api/v2/acta/workspaces/{ws}/integration-configs": {
       "get": {
         "tags": [
           "integrations",
@@ -7876,7 +5841,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/integration-configs/{config_id}": {
+    "/api/v2/acta/workspaces/{ws}/integration-configs/{config_id}": {
       "get": {
         "tags": [
           "integrations",
@@ -8040,7 +6005,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/integrations/{integration}/events": {
+    "/api/v2/acta/workspaces/{ws}/integrations/{integration}/events": {
       "post": {
         "tags": [
           "integrations",
@@ -8086,7 +6051,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/members": {
+    "/api/v2/acta/workspaces/{ws}/members": {
       "get": {
         "tags": [
           "members",
@@ -8295,7 +6260,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/members/{user_id}": {
+    "/api/v2/acta/workspaces/{ws}/members/{user_id}": {
       "delete": {
         "tags": [
           "members",
@@ -8426,7 +6391,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/projects": {
+    "/api/v2/acta/workspaces/{ws}/projects": {
       "get": {
         "tags": [
           "projects",
@@ -8613,7 +6578,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/projects/{project_slug}": {
+    "/api/v2/acta/workspaces/{ws}/projects/{project_slug}": {
       "get": {
         "tags": [
           "projects",
@@ -8780,7 +6745,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/projects/{project_slug}/boards": {
+    "/api/v2/acta/workspaces/{ws}/projects/{project_slug}/boards": {
       "get": {
         "tags": [
           "boards",
@@ -9005,7 +6970,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/projects/{project_slug}/documents": {
+    "/api/v2/acta/workspaces/{ws}/projects/{project_slug}/documents": {
       "get": {
         "tags": [
           "documents",
@@ -9231,7 +7196,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/projects/{project_slug}/folders": {
+    "/api/v2/acta/workspaces/{ws}/projects/{project_slug}/folders": {
       "get": {
         "tags": [
           "folders",
@@ -9456,274 +7421,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/projects/{project_slug}/grants": {
-      "get": {
-        "tags": [
-          "grants",
-          "custos"
-        ],
-        "operationId": "list_project_grants",
-        "parameters": [
-          {
-            "name": "ws",
-            "in": "path",
-            "description": "Workspace slug",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "project_slug",
-            "in": "path",
-            "description": "Project slug",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "description": "Pagination cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Page size (max 200)",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Paginated grant list",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Page_GrantDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      },
-      "post": {
-        "tags": [
-          "grants",
-          "custos"
-        ],
-        "operationId": "create_project_grant",
-        "parameters": [
-          {
-            "name": "ws",
-            "in": "path",
-            "description": "Workspace slug",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "project_slug",
-            "in": "path",
-            "description": "Project slug",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "description": "Client-supplied key used to dedupe a retried request. Optional: a route that honors this header runs and stores its response as usual when the header is absent, and every route that does not honor it ignores the header entirely.",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateGrantRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "Grant created",
-            "headers": {
-              "Idempotency-Degraded": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
-              },
-              "Idempotent-Replayed": {
-                "schema": {
-                  "type": "boolean"
-                },
-                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GrantDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated",
-            "headers": {
-              "Idempotency-Degraded": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
-              },
-              "Idempotent-Replayed": {
-                "schema": {
-                  "type": "boolean"
-                },
-                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
-              }
-            }
-          },
-          "403": {
-            "description": "Insufficient permissions or guardrail violation",
-            "headers": {
-              "Idempotency-Degraded": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
-              },
-              "Idempotent-Replayed": {
-                "schema": {
-                  "type": "boolean"
-                },
-                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
-              }
-            }
-          },
-          "409": {
-            "description": "Returned when the Idempotency-Key was already used for a different request (`urn:atlas:error:idempotency-key-conflict`), or when a request carrying the same Idempotency-Key is still executing concurrently (`urn:atlas:error:idempotency-key-in-flight`). Neither of those two problem types ever carries the `Idempotent-Replayed` or `Idempotency-Degraded` header; a replayed or degraded domain conflict on this operation carries them like any other response. A replayed problem body differs from the original response only by its `request_id` field.",
-            "headers": {
-              "Idempotency-Degraded": {
-                "schema": {
-                  "type": "string"
-                },
-                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
-              },
-              "Idempotent-Replayed": {
-                "schema": {
-                  "type": "boolean"
-                },
-                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
-              },
-              "Retry-After": {
-                "schema": {
-                  "type": "integer"
-                },
-                "description": "Present with value `1` (seconds) only for the `urn:atlas:error:idempotency-key-in-flight` problem type: the first request for this Idempotency-Key is still executing."
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}": {
-      "delete": {
-        "tags": [
-          "grants",
-          "custos"
-        ],
-        "operationId": "delete_project_grant",
-        "parameters": [
-          {
-            "name": "ws",
-            "in": "path",
-            "description": "Workspace slug",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "project_slug",
-            "in": "path",
-            "description": "Project slug",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "grant_id",
-            "in": "path",
-            "description": "Grant id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Grant deleted"
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Insufficient permissions"
-          },
-          "404": {
-            "description": "Grant not found"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ],
-        "x-atlas-component": "custos"
-      }
-    },
-    "/api/workspaces/{ws}/property-definitions": {
+    "/api/v2/acta/workspaces/{ws}/property-definitions": {
       "get": {
         "tags": [
           "property-definitions",
@@ -9925,7 +7623,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/property-definitions/{property_definition_id}": {
+    "/api/v2/acta/workspaces/{ws}/property-definitions/{property_definition_id}": {
       "delete": {
         "tags": [
           "property-definitions",
@@ -9975,7 +7673,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/saved-searches": {
+    "/api/v2/acta/workspaces/{ws}/saved-searches": {
       "get": {
         "tags": [
           "saved-searches",
@@ -10165,7 +7863,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/saved-searches/{id}": {
+    "/api/v2/acta/workspaces/{ws}/saved-searches/{id}": {
       "delete": {
         "tags": [
           "saved-searches",
@@ -10280,7 +7978,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/search": {
+    "/api/v2/acta/workspaces/{ws}/search": {
       "get": {
         "tags": [
           "search",
@@ -10480,7 +8178,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/semantic-search": {
+    "/api/v2/acta/workspaces/{ws}/semantic-search": {
       "get": {
         "tags": [
           "search",
@@ -10645,7 +8343,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/semantic-search/reindex": {
+    "/api/v2/acta/workspaces/{ws}/semantic-search/reindex": {
       "get": {
         "tags": [
           "search",
@@ -10842,7 +8540,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/status-templates": {
+    "/api/v2/acta/workspaces/{ws}/status-templates": {
       "get": {
         "tags": [
           "status-templates",
@@ -11032,7 +8730,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/status-templates/{template_id}": {
+    "/api/v2/acta/workspaces/{ws}/status-templates/{template_id}": {
       "delete": {
         "tags": [
           "status-templates",
@@ -11150,7 +8848,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tags": {
+    "/api/v2/acta/workspaces/{ws}/tags": {
       "get": {
         "tags": [
           "tags",
@@ -11347,7 +9045,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tags/used": {
+    "/api/v2/acta/workspaces/{ws}/tags/used": {
       "get": {
         "tags": [
           "tags",
@@ -11394,7 +9092,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tags/{tag_id}": {
+    "/api/v2/acta/workspaces/{ws}/tags/{tag_id}": {
       "delete": {
         "tags": [
           "tags",
@@ -11515,7 +9213,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/task-views": {
+    "/api/v2/acta/workspaces/{ws}/task-views": {
       "get": {
         "tags": [
           "task-views",
@@ -11705,7 +9403,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/task-views/{id}": {
+    "/api/v2/acta/workspaces/{ws}/task-views/{id}": {
       "get": {
         "tags": [
           "task-views",
@@ -11872,7 +9570,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks": {
+    "/api/v2/acta/workspaces/{ws}/tasks": {
       "get": {
         "tags": [
           "tasks",
@@ -12002,7 +9700,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}": {
       "get": {
         "tags": [
           "tasks",
@@ -12172,7 +9870,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/activity": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/activity": {
       "get": {
         "tags": [
           "tasks",
@@ -12248,7 +9946,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/assignees": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/assignees": {
       "get": {
         "tags": [
           "tasks",
@@ -12459,7 +10157,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}": {
       "delete": {
         "tags": [
           "tasks",
@@ -12517,7 +10215,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/attachments": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/attachments": {
       "get": {
         "tags": [
           "tasks",
@@ -12649,7 +10347,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}": {
       "delete": {
         "tags": [
           "tasks",
@@ -12786,7 +10484,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content": {
       "get": {
         "tags": [
           "tasks",
@@ -12846,7 +10544,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/backlinks": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/backlinks": {
       "get": {
         "tags": [
           "tasks",
@@ -12922,7 +10620,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/checklist": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/checklist": {
       "get": {
         "tags": [
           "tasks",
@@ -13133,7 +10831,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}": {
       "delete": {
         "tags": [
           "tasks",
@@ -13267,7 +10965,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote": {
       "post": {
         "tags": [
           "tasks",
@@ -13430,7 +11128,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comment-drafts": {
       "post": {
         "tags": [
           "tasks",
@@ -13605,7 +11303,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}": {
       "delete": {
         "tags": [
           "tasks",
@@ -13660,7 +11358,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments": {
       "post": {
         "tags": [
           "tasks",
@@ -13757,7 +11455,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/comments": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments": {
       "get": {
         "tags": [
           "tasks",
@@ -14052,7 +11750,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}": {
       "delete": {
         "tags": [
           "tasks",
@@ -14186,7 +11884,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments": {
       "get": {
         "tags": [
           "tasks",
@@ -14321,7 +12019,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}": {
       "delete": {
         "tags": [
           "tasks",
@@ -14381,7 +12079,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content": {
       "get": {
         "tags": [
           "tasks",
@@ -14464,7 +12162,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/graph": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/graph": {
       "get": {
         "tags": [
           "tasks",
@@ -14531,7 +12229,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/move": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/move": {
       "post": {
         "tags": [
           "tasks",
@@ -14600,7 +12298,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/parent": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/parent": {
       "post": {
         "tags": [
           "tasks",
@@ -14669,7 +12367,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/promote": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/promote": {
       "post": {
         "tags": [
           "tasks",
@@ -14813,7 +12511,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/references": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/references": {
       "get": {
         "tags": [
           "tasks",
@@ -15043,7 +12741,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/references/batch": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/references/batch": {
       "post": {
         "tags": [
           "tasks",
@@ -15165,7 +12863,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}": {
       "delete": {
         "tags": [
           "tasks",
@@ -15223,7 +12921,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/tasks/{readable_id}/subtasks": {
+    "/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/subtasks": {
       "get": {
         "tags": [
           "tasks",
@@ -15451,7 +13149,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/webhooks": {
+    "/api/v2/acta/workspaces/{ws}/webhooks": {
       "get": {
         "tags": [
           "webhooks",
@@ -15576,7 +13274,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/webhooks/{webhook_id}": {
+    "/api/v2/acta/workspaces/{ws}/webhooks/{webhook_id}": {
       "get": {
         "tags": [
           "webhooks",
@@ -15749,7 +13447,7 @@
         "x-atlas-component": "acta"
       }
     },
-    "/api/workspaces/{ws}/webhooks/{webhook_id}/deliveries": {
+    "/api/v2/acta/workspaces/{ws}/webhooks/{webhook_id}/deliveries": {
       "get": {
         "tags": [
           "webhooks",
@@ -15824,6 +13522,2308 @@
           }
         ],
         "x-atlas-component": "acta"
+      }
+    },
+    "/api/v2/custos/activate/{token}": {
+      "get": {
+        "tags": [
+          "auth",
+          "custos"
+        ],
+        "operationId": "get_activation_info",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "description": "Activation token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Token valid — returns display info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivationInfoDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invalid or expired activation link"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        },
+        "x-atlas-component": "custos"
+      },
+      "post": {
+        "tags": [
+          "auth",
+          "custos"
+        ],
+        "summary": "Completes account activation in a single DB transaction.",
+        "description": "Atomicity invariant: the row lock (`FOR UPDATE` on the token SELECT) combined\nwith the guarded consume (`AND consumed_at IS NULL` on the UPDATE plus a\nrows-affected check) guarantee that exactly one activation succeeds per token\neven under concurrent POST requests. Under READ COMMITTED, two racers that\nreach the SELECT simultaneously will serialize at the lock: the loser blocks\nuntil the winner commits, at which point the loser's `FOR UPDATE` re-read\nsees the now-consumed row, the guarded UPDATE matches 0 rows, and the\ntransaction is rolled back with a 404 — no double-activation, no\ndouble-session.\n\nSteps inside the transaction:\n1. Re-validate and lock the token row (`FOR UPDATE`).\n2. Consume the token (`AND consumed_at IS NULL`); abort if already consumed.\n3. Set the user's `password_hash` and `activated_at`.\n4. Create a new session for the newly activated user.\n\nAny failure rolls back the entire transaction: the user stays pending,\nthe token stays unconsumed, and no session is issued.",
+        "operationId": "post_activate",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "description": "Activation token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivatePasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Activated and logged in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invalid or expired activation link"
+          },
+          "422": {
+            "description": "Password too short"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        },
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/admin/audit": {
+      "get": {
+        "tags": [
+          "audit",
+          "custos"
+        ],
+        "operationId": "list_platform_audit",
+        "parameters": [
+          {
+            "name": "actor",
+            "in": "query",
+            "description": "Actor type filter: 'user' or 'api_key'",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "description": "Filter by action verb",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Lower bound on created_at (ISO 8601)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Upper bound on created_at (ISO 8601)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Keyset pagination cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (max 200, default 50)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Platform security audit log (workspace_id IS NULL)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_AuditEntryDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Not root or system_admin"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/api-keys": {
+      "get": {
+        "tags": [
+          "api-keys",
+          "custos"
+        ],
+        "operationId": "list_user_api_keys",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Pagination cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (max 200)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of the caller's API keys",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ApiKeyDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "API keys cannot list keys"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      },
+      "post": {
+        "tags": [
+          "api-keys",
+          "custos"
+        ],
+        "operationId": "create_user_api_key",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserApiKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "API key created (secret shown once)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid key type or role"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "API keys cannot create keys"
+          },
+          "422": {
+            "description": "Unknown scope value"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/api-keys/{key_id}": {
+      "delete": {
+        "tags": [
+          "api-keys",
+          "custos"
+        ],
+        "operationId": "revoke_user_api_key",
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "description": "API key id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "API key revoked"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Cannot revoke another user's key"
+          },
+          "404": {
+            "description": "Key not found or already revoked"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      },
+      "patch": {
+        "tags": [
+          "api-keys",
+          "custos"
+        ],
+        "summary": "Updates a user-owned API key. `is_global` and `scopes` are each PATCH-partial:\nomitting a field leaves it unchanged; both may be set in the same request.",
+        "description": "Any owner of the key may toggle global reach or replace its scope set; the\nagent never gains more than its creator can reach (and stays capped at\neditor) nor more capabilities than the closed catalog allows, so this is\nbounded by the owner's own permissions rather than being a privilege\nescalation.",
+        "operationId": "update_user_api_key",
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "description": "API key id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateApiKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "API key updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Scopes present but empty; revoke the key instead"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "API keys cannot manage API keys"
+          },
+          "404": {
+            "description": "Key not found or not owned by the caller"
+          },
+          "422": {
+            "description": "Unknown scope value"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/api-keys/{key_id}/grants": {
+      "get": {
+        "tags": [
+          "api-keys",
+          "custos"
+        ],
+        "operationId": "list_api_key_grants",
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "description": "API key id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Grants belonging to this API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiKeyGrantDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Not the key owner"
+          },
+          "404": {
+            "description": "Key not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/api-keys/{key_id}/grants/{grant_id}": {
+      "delete": {
+        "tags": [
+          "api-keys",
+          "custos"
+        ],
+        "operationId": "delete_api_key_grant",
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "description": "API key id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "grant_id",
+            "in": "path",
+            "description": "Grant id to revoke",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Grant revoked"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Not the key owner"
+          },
+          "404": {
+            "description": "Key or grant not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/auth/change-password": {
+      "post": {
+        "tags": [
+          "auth",
+          "custos"
+        ],
+        "operationId": "change_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Password changed"
+          },
+          "401": {
+            "description": "Unauthenticated or wrong current password"
+          },
+          "403": {
+            "description": "API keys cannot change a user password"
+          },
+          "422": {
+            "description": "New password too short"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/auth/login": {
+      "post": {
+        "tags": [
+          "auth",
+          "custos"
+        ],
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        },
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/auth/logout": {
+      "post": {
+        "tags": [
+          "auth",
+          "custos"
+        ],
+        "operationId": "logout",
+        "responses": {
+          "204": {
+            "description": "Logged out"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/auth/me": {
+      "get": {
+        "tags": [
+          "auth",
+          "custos"
+        ],
+        "operationId": "me",
+        "responses": {
+          "200": {
+            "description": "Current principal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/users": {
+      "get": {
+        "tags": [
+          "users",
+          "custos"
+        ],
+        "operationId": "list_users",
+        "responses": {
+          "200": {
+            "description": "All users (active and disabled)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Not a root/admin user"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      },
+      "post": {
+        "tags": [
+          "users",
+          "custos"
+        ],
+        "operationId": "create_user",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Pending user created with activation link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateUserResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Not a root/admin user"
+          },
+          "422": {
+            "description": "Workspace not found, or role=owner"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/users/me": {
+      "patch": {
+        "tags": [
+          "users",
+          "custos"
+        ],
+        "operationId": "update_me",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "API keys cannot update a user profile"
+          },
+          "422": {
+            "description": "Invalid display_name or email"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/users/{user_id}/activation-link": {
+      "post": {
+        "tags": [
+          "users",
+          "custos"
+        ],
+        "operationId": "regenerate_activation_link",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "description": "User ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Fresh activation link issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivationLinkResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Not a root/admin user"
+          },
+          "409": {
+            "description": "User is already activated"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/users/{user_id}/disable": {
+      "post": {
+        "tags": [
+          "users",
+          "custos"
+        ],
+        "operationId": "disable_user",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "description": "User ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "User disabled"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Not a root/admin user, or target is protected"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/users/{user_id}/enable": {
+      "post": {
+        "tags": [
+          "users",
+          "custos"
+        ],
+        "operationId": "enable_user",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "description": "User ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "User enabled"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Not a root/admin user, or target is protected"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/users/{user_id}/memberships": {
+      "get": {
+        "tags": [
+          "users",
+          "custos"
+        ],
+        "operationId": "list_user_memberships",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "description": "User ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workspaces the user belongs to, with role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserMembershipDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Not a root/admin user"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/users/{user_id}/reset-password": {
+      "post": {
+        "tags": [
+          "users",
+          "custos"
+        ],
+        "operationId": "reset_password",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "description": "User ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Password reset and all sessions revoked"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Not a root/admin user, or target is protected"
+          },
+          "422": {
+            "description": "New password too short"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/users/{user_id}/system-admin": {
+      "post": {
+        "tags": [
+          "users",
+          "custos"
+        ],
+        "operationId": "set_system_admin",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "description": "User ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetSystemAdminRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "User system-admin status updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Cannot target self or a root user"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Root access required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/workspaces/{ws}/audit": {
+      "get": {
+        "tags": [
+          "audit",
+          "custos"
+        ],
+        "operationId": "list_workspace_audit",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "description": "Actor type filter: 'user' or 'api_key'",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "description": "Filter by action verb (e.g. 'membership.role_changed')",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Lower bound on created_at (ISO 8601)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Upper bound on created_at (ISO 8601)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Keyset pagination cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (max 200, default 50)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workspace security audit log",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_AuditEntryDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Caller is not workspace owner or admin"
+          },
+          "404": {
+            "description": "Workspace not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/workspaces/{ws}/grants": {
+      "get": {
+        "tags": [
+          "grants",
+          "custos"
+        ],
+        "operationId": "list_workspace_grants",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Pagination cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (max 200)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated workspace grant list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_GrantDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      },
+      "post": {
+        "tags": [
+          "grants",
+          "custos"
+        ],
+        "operationId": "create_workspace_grant",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-supplied key used to dedupe a retried request. Optional: a route that honors this header runs and stores its response as usual when the header is absent, and every route that does not honor it ignores the header entirely.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGrantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Workspace grant created",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions or guardrail violation",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            }
+          },
+          "409": {
+            "description": "Returned when the Idempotency-Key was already used for a different request (`urn:atlas:error:idempotency-key-conflict`), or when a request carrying the same Idempotency-Key is still executing concurrently (`urn:atlas:error:idempotency-key-in-flight`). Neither of those two problem types ever carries the `Idempotent-Replayed` or `Idempotency-Degraded` header; a replayed or degraded domain conflict on this operation carries them like any other response. A replayed problem body differs from the original response only by its `request_id` field.",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Present with value `1` (seconds) only for the `urn:atlas:error:idempotency-key-in-flight` problem type: the first request for this Idempotency-Key is still executing."
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/workspaces/{ws}/grants/{grant_id}": {
+      "delete": {
+        "tags": [
+          "grants",
+          "custos"
+        ],
+        "operationId": "delete_workspace_grant",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "grant_id",
+            "in": "path",
+            "description": "Grant id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Workspace grant deleted"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Grant not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/workspaces/{ws}/groups": {
+      "get": {
+        "tags": [
+          "groups",
+          "custos"
+        ],
+        "operationId": "list_groups",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active groups in the workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GroupDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "404": {
+            "description": "Workspace not found or caller is not a member"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      },
+      "post": {
+        "tags": [
+          "groups",
+          "custos"
+        ],
+        "operationId": "create_group",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-supplied key used to dedupe a retried request. Optional: a route that honors this header runs and stores its response as usual when the header is absent, and every route that does not honor it ignores the header entirely.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Group created",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed JSON body",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient privileges — owner or admin required",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            }
+          },
+          "409": {
+            "description": "A group with this name already exists in the workspace\n\nReturned when the Idempotency-Key was already used for a different request (`urn:atlas:error:idempotency-key-conflict`), or when a request carrying the same Idempotency-Key is still executing concurrently (`urn:atlas:error:idempotency-key-in-flight`). Neither of those two problem types ever carries the `Idempotent-Replayed` or `Idempotency-Degraded` header; a replayed or degraded domain conflict on this operation carries them like any other response. A replayed problem body differs from the original response only by its `request_id` field.",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Present with value `1` (seconds) only for the `urn:atlas:error:idempotency-key-in-flight` problem type: the first request for this Idempotency-Key is still executing."
+              }
+            }
+          },
+          "422": {
+            "description": "Missing required fields",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/workspaces/{ws}/groups/{group_id}": {
+      "delete": {
+        "tags": [
+          "groups",
+          "custos"
+        ],
+        "operationId": "delete_group",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "group_id",
+            "in": "path",
+            "description": "Group ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Group soft-deleted"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient privileges"
+          },
+          "404": {
+            "description": "Group not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/workspaces/{ws}/groups/{group_id}/members": {
+      "get": {
+        "tags": [
+          "groups",
+          "custos"
+        ],
+        "operationId": "list_group_members",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "group_id",
+            "in": "path",
+            "description": "Group ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Members of the group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GroupMemberDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient privileges"
+          },
+          "404": {
+            "description": "Group not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      },
+      "post": {
+        "tags": [
+          "groups",
+          "custos"
+        ],
+        "operationId": "add_group_member",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "group_id",
+            "in": "path",
+            "description": "Group ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-supplied key used to dedupe a retried request. Optional: a route that honors this header runs and stores its response as usual when the header is absent, and every route that does not honor it ignores the header entirely.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddGroupMemberRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Member added to group",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupMemberDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient privileges",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            }
+          },
+          "404": {
+            "description": "Group not found",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            }
+          },
+          "409": {
+            "description": "Returned when the Idempotency-Key was already used for a different request (`urn:atlas:error:idempotency-key-conflict`), or when a request carrying the same Idempotency-Key is still executing concurrently (`urn:atlas:error:idempotency-key-in-flight`). Neither of those two problem types ever carries the `Idempotent-Replayed` or `Idempotency-Degraded` header; a replayed or degraded domain conflict on this operation carries them like any other response. A replayed problem body differs from the original response only by its `request_id` field.",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Present with value `1` (seconds) only for the `urn:atlas:error:idempotency-key-in-flight` problem type: the first request for this Idempotency-Key is still executing."
+              }
+            }
+          },
+          "422": {
+            "description": "User is not a workspace member",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/workspaces/{ws}/groups/{group_id}/members/{user_id}": {
+      "delete": {
+        "tags": [
+          "groups",
+          "custos"
+        ],
+        "operationId": "remove_group_member",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "group_id",
+            "in": "path",
+            "description": "Group ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "description": "User ID to remove",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Member removed from group"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient privileges"
+          },
+          "404": {
+            "description": "Group or membership not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/workspaces/{ws}/projects/{project_slug}/grants": {
+      "get": {
+        "tags": [
+          "grants",
+          "custos"
+        ],
+        "operationId": "list_project_grants",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_slug",
+            "in": "path",
+            "description": "Project slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Pagination cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (max 200)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated grant list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_GrantDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      },
+      "post": {
+        "tags": [
+          "grants",
+          "custos"
+        ],
+        "operationId": "create_project_grant",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_slug",
+            "in": "path",
+            "description": "Project slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-supplied key used to dedupe a retried request. Optional: a route that honors this header runs and stores its response as usual when the header is absent, and every route that does not honor it ignores the header entirely.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGrantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Grant created",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions or guardrail violation",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            }
+          },
+          "409": {
+            "description": "Returned when the Idempotency-Key was already used for a different request (`urn:atlas:error:idempotency-key-conflict`), or when a request carrying the same Idempotency-Key is still executing concurrently (`urn:atlas:error:idempotency-key-in-flight`). Neither of those two problem types ever carries the `Idempotent-Replayed` or `Idempotency-Degraded` header; a replayed or degraded domain conflict on this operation carries them like any other response. A replayed problem body differs from the original response only by its `request_id` field.",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Present with value `1` (seconds) only for the `urn:atlas:error:idempotency-key-in-flight` problem type: the first request for this Idempotency-Key is still executing."
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}": {
+      "delete": {
+        "tags": [
+          "grants",
+          "custos"
+        ],
+        "operationId": "delete_project_grant",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_slug",
+            "in": "path",
+            "description": "Project slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "grant_id",
+            "in": "path",
+            "description": "Grant id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Grant deleted"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          },
+          "404": {
+            "description": "Grant not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/platform/me/ui-state": {
+      "get": {
+        "tags": [
+          "ui-state",
+          "platform"
+        ],
+        "summary": "Returns the authenticated human user's stored UI state.",
+        "description": "The state is an opaque JSON object owned by the client. When the user has no\nrow yet, an empty object `{}` is returned. API keys (agents) are rejected\nwith 403: agents have no UI.",
+        "operationId": "get_ui_state",
+        "responses": {
+          "200": {
+            "description": "The caller's stored UI state, or an empty object",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UiStateDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "API keys have no UI state"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "platform"
+      },
+      "put": {
+        "tags": [
+          "ui-state",
+          "platform"
+        ],
+        "summary": "Inserts or replaces the authenticated human user's UI state.",
+        "description": "The `state` JSON object is stored verbatim; the server does not validate its\ninner shape. The stored value is echoed back. API keys (agents) are rejected\nwith 403: agents have no UI.",
+        "operationId": "set_ui_state",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUiStateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The stored UI state, echoed back",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UiStateDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "API keys have no UI state"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "platform"
+      }
+    },
+    "/api/v2/platform/meta": {
+      "get": {
+        "tags": [
+          "meta",
+          "platform"
+        ],
+        "operationId": "meta",
+        "responses": {
+          "200": {
+            "description": "Server build information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerMetaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "platform"
       }
     },
     "/health": {

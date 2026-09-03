@@ -89,7 +89,7 @@ export const useSearchStore = defineStore('search', () => {
   }
 
   async function fetchPage(ws: string, pageCursor?: string): Promise<SearchPage | null> {
-    const { data, error: apiError } = await wrappedClient.GET('/api/workspaces/{ws}/search', {
+    const { data, error: apiError } = await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/search', {
       params: {
         path: { ws },
         query: {
