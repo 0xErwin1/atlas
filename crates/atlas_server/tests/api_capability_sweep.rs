@@ -1757,7 +1757,7 @@ async fn invoke(
                 pass,
                 "GET",
                 &support::path::api_path(
-                    "acta",
+                    "custos",
                     &format!("/workspaces/{ws}/projects/{}/grants", fx.project_slug),
                 ),
             )
@@ -1770,7 +1770,7 @@ async fn invoke(
                 token,
                 pass,
                 "GET",
-                &support::path::api_path("acta", &format!("/workspaces/{ws}/grants")),
+                &support::path::api_path("custos", &format!("/workspaces/{ws}/grants")),
             )
             .await
         }
