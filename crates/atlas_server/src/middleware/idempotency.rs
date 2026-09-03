@@ -103,21 +103,24 @@ pub enum OnServerError {
 }
 
 /// The client-supplied header this middleware reads.
-const IDEMPOTENCY_KEY_HEADER: &str = "idempotency-key";
+pub(crate) const IDEMPOTENCY_KEY_HEADER: &str = "idempotency-key";
 
 /// The response header marking a replayed response (D5). Never present on
 /// the original (first) response for a key.
-const IDEMPOTENT_REPLAYED_HEADER: &str = "idempotent-replayed";
+pub(crate) const IDEMPOTENT_REPLAYED_HEADER: &str = "idempotent-replayed";
+
+/// Value of [`IDEMPOTENT_REPLAYED_HEADER`] on a replayed response.
+pub(crate) const IDEMPOTENT_REPLAYED_VALUE: &str = "true";
 
 /// The response header marking a request served without dedup because
 /// `insert_in_flight` itself failed (ORCHESTRATOR RULING, 2026-09-02,
 /// `R4-store-write-is-a-hard-precondition`). Never present alongside
 /// [`IDEMPOTENT_REPLAYED_HEADER`]: a degraded request never wrote a row to
 /// replay from.
-const IDEMPOTENCY_DEGRADED_HEADER: &str = "idempotency-degraded";
+pub(crate) const IDEMPOTENCY_DEGRADED_HEADER: &str = "idempotency-degraded";
 
 /// Value of [`IDEMPOTENCY_DEGRADED_HEADER`] for the store-unavailable case.
-const IDEMPOTENCY_DEGRADED_STORE_UNAVAILABLE: &str = "store-unavailable";
+pub(crate) const IDEMPOTENCY_DEGRADED_STORE_UNAVAILABLE: &str = "store-unavailable";
 
 /// Retention applied to a 5xx response instead of the normal
 /// `idempotency_retention_hours` (`R4-5xx-release-duplicates-one-shot-jobs`,
@@ -276,7 +279,7 @@ fn apply_stored_headers(response: &mut Response, headers: &Option<serde_json::Va
 fn mark_replayed(mut response: Response) -> Response {
     response.headers_mut().insert(
         HeaderName::from_static(IDEMPOTENT_REPLAYED_HEADER),
-        HeaderValue::from_static("true"),
+        HeaderValue::from_static(IDEMPOTENT_REPLAYED_VALUE),
     );
     response
 }

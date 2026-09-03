@@ -90,13 +90,16 @@ fn prefix_document_paths(
 /// ever calls these three named fragment constructors (T2.18). The merged
 /// result's paths are then re-mounted under `/api` (`prefix_document_paths`,
 /// T4.X), since every fragment's own paths are namespace-relative as of
-/// this slice's literal rewrite.
+/// this slice's literal rewrite. The `Idempotency-Key` header set (D8, T6.3)
+/// is derived last, once the document's own path keys already match the
+/// registry's `/api`-mounted form.
 pub(crate) fn document() -> utoipa::openapi::OpenApi {
     let mut doc = ApiDoc::openapi();
     doc.merge(crate::routes::platform::openapi());
     doc.merge(crate::routes::custos::openapi());
     doc.merge(crate::routes::acta::openapi());
-    prefix_document_paths(doc, "/api")
+    let doc = prefix_document_paths(doc, "/api");
+    idempotency::apply_idempotency_annotations(doc, &idempotency::idempotent_route_set())
 }
 
 pub(crate) async fn openapi_json() -> impl IntoResponse {
@@ -113,6 +116,471 @@ where
 /// Expose the assembled `OpenApi` document for test assertions.
 pub fn openapi() -> utoipa::openapi::OpenApi {
     document()
+}
+
+/// D8's post-merge `Idempotency-Key` header derivation (`v2-e3-s4` PR6): a
+/// composition-time modifier over `document()`'s already-built `OpenApi`
+/// value, never a per-operation `#[utoipa::path]` hand-annotation. The
+/// annotated set tracks `RouteDeclaration.idempotent` automatically — a
+/// route's classification changing in `reg5.rs` moves its header annotation
+/// with it, with no second place to edit.
+pub(crate) mod idempotency {
+    use std::collections::HashSet;
+
+    use atlas_core::registry::{HttpMethod, build};
+    use axum::http::header::RETRY_AFTER;
+    use utoipa::openapi::header::{Header, HeaderBuilder};
+    use utoipa::openapi::path::{Operation, Parameter, ParameterIn};
+    use utoipa::openapi::response::Response;
+    use utoipa::openapi::schema::{Object, Type};
+    use utoipa::openapi::{OpenApi, RefOr, Required};
+
+    use crate::error::IDEMPOTENCY_KEY_IN_FLIGHT_RETRY_AFTER;
+    use crate::middleware::idempotency::{
+        IDEMPOTENCY_DEGRADED_HEADER, IDEMPOTENCY_DEGRADED_STORE_UNAVAILABLE,
+        IDEMPOTENCY_KEY_HEADER, IDEMPOTENT_REPLAYED_HEADER, IDEMPOTENT_REPLAYED_VALUE,
+    };
+    use crate::reg5::{StorageBackend, reg5_component_entries};
+
+    /// The one response status the middleware emits on its own, before the
+    /// handler runs, for both idempotency problem types.
+    const CONFLICT_STATUS: &str = "409";
+
+    /// Exact text shared by every one of the 34 annotated operations'
+    /// `409` idempotency-conflict response description (T6.7/T6.13): a
+    /// replayed problem body differs from the original response only by its
+    /// `request_id` field.
+    pub(crate) const REPLAYED_BODY_NOTE: &str = "A replayed problem body differs from the original response only by its `request_id` field.";
+
+    /// `(method, path)` for every registry entry with `idempotent: true`
+    /// (S3's final 34-route split), joined to the same `/api`-mounted form
+    /// `document()`'s own path keys carry (`prefix_document_paths`) — the
+    /// existing prefixing helper, never string surgery of its own.
+    /// `StorageBackend::Filesystem` is the same arbitrary-but-consistent
+    /// choice `document()`'s own tests already make: storage-backend Module
+    /// entries declare zero routes, so neither backend can change this set.
+    #[allow(
+        clippy::expect_used,
+        reason = "the registry is already proven valid by the startup gate (main.rs's \
+                  run_registry_gate) before any request is served; a build() failure here would \
+                  mean the process never should have started serving traffic"
+    )]
+    pub(crate) fn idempotent_route_set() -> HashSet<(HttpMethod, String)> {
+        let registry = build(reg5_component_entries(StorageBackend::Filesystem))
+            .expect("REG-5 entries must satisfy every registry::build() validator");
+
+        let mut routes = HashSet::new();
+        for entry in registry.entries() {
+            for route in &entry.api.routes {
+                if route.idempotent {
+                    let mounted = crate::router_audit::mounted_path("/api", route.path.as_str());
+                    routes.insert((route.method, mounted));
+                }
+            }
+        }
+        routes
+    }
+
+    /// Walks every operation in `doc` and stamps the full `Idempotency-Key`
+    /// annotation set (T6.4–T6.7) onto exactly the operations whose
+    /// `(method, path)` is in `idempotent_routes` — never any other
+    /// operation. `doc`'s path keys are assumed already `/api`-mounted
+    /// (called after `prefix_document_paths` in `document()`).
+    pub(crate) fn apply_idempotency_annotations(
+        mut doc: OpenApi,
+        idempotent_routes: &HashSet<(HttpMethod, String)>,
+    ) -> OpenApi {
+        for (path, item) in doc.paths.paths.iter_mut() {
+            for (method, operation) in [
+                (HttpMethod::Get, item.get.as_mut()),
+                (HttpMethod::Put, item.put.as_mut()),
+                (HttpMethod::Post, item.post.as_mut()),
+                (HttpMethod::Delete, item.delete.as_mut()),
+                (HttpMethod::Options, item.options.as_mut()),
+                (HttpMethod::Head, item.head.as_mut()),
+                (HttpMethod::Patch, item.patch.as_mut()),
+            ] {
+                let Some(operation) = operation else {
+                    continue;
+                };
+                if idempotent_routes.contains(&(method, path.clone())) {
+                    stamp_idempotency_annotations(operation);
+                }
+            }
+        }
+        doc
+    }
+
+    /// Mutates `operation` in place with the full annotation set (T6.4–T6.7):
+    /// the `Idempotency-Key` request header parameter, the
+    /// `Idempotent-Replayed`/`Idempotency-Degraded` response headers on
+    /// every response entry including the `409`, and the `409`
+    /// idempotency-conflict response entry carrying `Retry-After` and the
+    /// replayed-body note. The `409` entry carries the markers because a
+    /// stored domain conflict (a duplicate slug, say) can be replayed or
+    /// produced by a degraded request like any other handler status; only
+    /// the two idempotency problem types themselves, which the middleware
+    /// emits before the handler runs, never carry them, and the entry's
+    /// description says so. A pre-existing `409` entry on the operation has
+    /// this idempotency-specific text and header appended, never silently
+    /// replaced. Every header and parameter name is written in canonical
+    /// HTTP casing derived from the middleware's own constants.
+    fn stamp_idempotency_annotations(operation: &mut Operation) {
+        operation
+            .parameters
+            .get_or_insert_with(Vec::new)
+            .push(idempotency_key_parameter());
+
+        let responses = &mut operation.responses.responses;
+
+        responses
+            .entry(CONFLICT_STATUS.to_string())
+            .or_insert_with(|| RefOr::T(Response::new(String::new())));
+
+        for response in responses.values_mut() {
+            if let RefOr::T(response) = response {
+                response.headers.insert(
+                    canonical_header_name(IDEMPOTENT_REPLAYED_HEADER),
+                    replayed_header(),
+                );
+                response.headers.insert(
+                    canonical_header_name(IDEMPOTENCY_DEGRADED_HEADER),
+                    degraded_header(),
+                );
+            }
+        }
+
+        if let Some(RefOr::T(response)) = responses.get_mut(CONFLICT_STATUS) {
+            response.headers.insert(
+                canonical_header_name(RETRY_AFTER.as_str()),
+                retry_after_header(),
+            );
+
+            response.description = if response.description.is_empty() {
+                conflict_response_description()
+            } else {
+                format!(
+                    "{}\n\n{}",
+                    response.description,
+                    conflict_response_description()
+                )
+            };
+        }
+    }
+
+    /// The `Idempotency-Key` request header parameter (T6.4): optional, since
+    /// an idempotent route ignores a missing key rather than rejecting the
+    /// request (S3 §2).
+    fn idempotency_key_parameter() -> Parameter {
+        let mut parameter = Parameter::new(canonical_header_name(IDEMPOTENCY_KEY_HEADER));
+        parameter.parameter_in = ParameterIn::Header;
+        parameter.required = Required::False;
+        parameter.description = Some(
+            "Client-supplied key used to dedupe a retried request. Optional: a route that \
+             honors this header runs and stores its response as usual when the header is \
+             absent, and every route that does not honor it ignores the header entirely."
+                .to_string(),
+        );
+        parameter.schema = Some(RefOr::T(Object::with_type(Type::String).into()));
+        parameter
+    }
+
+    /// The `Idempotent-Replayed` response header (T6.5): present only when
+    /// the response was served from the idempotency store, never on the
+    /// original response. Any completed status the store holds can be
+    /// replayed, so this header is documented on every handler response.
+    fn replayed_header() -> Header {
+        HeaderBuilder::new()
+            .schema(RefOr::T(Object::with_type(Type::Boolean).into()))
+            .description(Some(format!(
+                "Present with value `{IDEMPOTENT_REPLAYED_VALUE}` when this response was \
+                 served from the idempotency store as a replay of a previously completed \
+                 request carrying the same Idempotency-Key. Absent on the original response."
+            )))
+            .build()
+    }
+
+    /// The `Idempotency-Degraded` response header (T6.5): present only when
+    /// the idempotency store was unavailable and the request executed
+    /// without dedup protection. The handler's own response, whatever its
+    /// status, is what carries it.
+    fn degraded_header() -> Header {
+        HeaderBuilder::new()
+            .schema(RefOr::T(Object::with_type(Type::String).into()))
+            .description(Some(format!(
+                "Present with value `{IDEMPOTENCY_DEGRADED_STORE_UNAVAILABLE}` when the \
+                 idempotency store was unavailable and the request executed without dedup \
+                 protection. Never present together with the replayed marker."
+            )))
+            .build()
+    }
+
+    /// The `Retry-After` response header on the `409` entry: present only
+    /// for the `idempotency-key-in-flight` problem type, with the value the
+    /// error module sets.
+    fn retry_after_header() -> Header {
+        HeaderBuilder::new()
+            .schema(RefOr::T(Object::with_type(Type::Integer).into()))
+            .description(Some(format!(
+                "Present with value `{IDEMPOTENCY_KEY_IN_FLIGHT_RETRY_AFTER}` (seconds) only \
+                 for the `urn:atlas:error:idempotency-key-in-flight` problem type: the first \
+                 request for this Idempotency-Key is still executing."
+            )))
+            .build()
+    }
+
+    /// The `409` idempotency-conflict response description (T6.6/T6.7):
+    /// names both problem types a `409` can carry on an idempotent route,
+    /// states that neither of them ever carries the replay/degrade markers
+    /// while a replayed domain conflict does, and ends with the
+    /// replayed-body note.
+    fn conflict_response_description() -> String {
+        format!(
+            "Returned when the Idempotency-Key was already used for a different request \
+             (`urn:atlas:error:idempotency-key-conflict`), or when a request carrying the \
+             same Idempotency-Key is still executing concurrently \
+             (`urn:atlas:error:idempotency-key-in-flight`). Neither of those two problem \
+             types ever carries the `{replayed}` or `{degraded}` header; a replayed or \
+             degraded domain conflict on this operation carries them like any other \
+             response. {REPLAYED_BODY_NOTE}",
+            replayed = canonical_header_name(IDEMPOTENT_REPLAYED_HEADER),
+            degraded = canonical_header_name(IDEMPOTENCY_DEGRADED_HEADER),
+        )
+    }
+
+    /// Canonical HTTP casing for a lowercase header name: the first letter
+    /// of every `-`-separated segment upper-cased, so `idempotency-key`
+    /// becomes `Idempotency-Key`. The document's header and parameter names
+    /// are derived from the middleware constants through this function,
+    /// never retyped.
+    pub(crate) fn canonical_header_name(name: &str) -> String {
+        name.split('-')
+            .map(|segment| {
+                let mut chars = segment.chars();
+                match chars.next() {
+                    Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+                    None => String::new(),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("-")
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use utoipa::openapi::Paths;
+        use utoipa::openapi::path::{HttpMethod as UtoipaMethod, PathItem};
+
+        fn operation_with_responses(statuses: &[&str]) -> Operation {
+            let mut operation = Operation::new();
+            for status in statuses {
+                operation.responses.responses.insert(
+                    (*status).to_string(),
+                    RefOr::T(Response::new(format!("{status} fixture"))),
+                );
+            }
+            operation
+        }
+
+        fn stub_document() -> OpenApi {
+            let mut paths = Paths::new();
+            paths.paths.insert(
+                "/api/idempotent/route".to_string(),
+                PathItem::new(
+                    UtoipaMethod::Post,
+                    operation_with_responses(&["201", "401", "422"]),
+                ),
+            );
+            paths.paths.insert(
+                "/api/plain/route".to_string(),
+                PathItem::new(UtoipaMethod::Get, operation_with_responses(&["200", "404"])),
+            );
+            OpenApi::new(utoipa::openapi::Info::new("fixture", "0.0.0"), paths)
+        }
+
+        fn inline_response<'a>(operation: &'a Operation, status: &str) -> &'a Response {
+            let RefOr::T(response) = operation
+                .responses
+                .responses
+                .get(status)
+                .unwrap_or_else(|| panic!("{status} response entry must be present"))
+            else {
+                panic!("{status} response must be an inline Response, not a $ref");
+            };
+            response
+        }
+
+        /// Every documented header and parameter name comes out of the
+        /// lowercase middleware constants in canonical HTTP casing.
+        #[test]
+        fn canonical_header_name_upper_cases_each_segment_of_the_constants() {
+            assert_eq!(
+                canonical_header_name(IDEMPOTENCY_KEY_HEADER),
+                "Idempotency-Key"
+            );
+            assert_eq!(
+                canonical_header_name(IDEMPOTENT_REPLAYED_HEADER),
+                "Idempotent-Replayed"
+            );
+            assert_eq!(
+                canonical_header_name(IDEMPOTENCY_DEGRADED_HEADER),
+                "Idempotency-Degraded"
+            );
+            assert_eq!(canonical_header_name(RETRY_AFTER.as_str()), "Retry-After");
+        }
+
+        /// T6.2: the derivation pass mutates in the full annotation set for
+        /// exactly the operations whose `(method, path)` is in the given
+        /// `idempotent: true` set, and touches nothing else. The replay and
+        /// degrade markers land on every response including the `409`,
+        /// which additionally carries `Retry-After`.
+        #[test]
+        fn derivation_annotates_only_the_declared_idempotent_operations() {
+            let mut idempotent_routes = HashSet::new();
+            idempotent_routes.insert((HttpMethod::Post, "/api/idempotent/route".to_string()));
+
+            let annotated = apply_idempotency_annotations(stub_document(), &idempotent_routes);
+
+            let idempotent_op = annotated
+                .paths
+                .paths
+                .get("/api/idempotent/route")
+                .and_then(|item| item.post.as_ref())
+                .expect("post operation present");
+            assert!(
+                idempotent_op
+                    .parameters
+                    .as_ref()
+                    .is_some_and(|params| params
+                        .iter()
+                        .any(|p| p.name == canonical_header_name(IDEMPOTENCY_KEY_HEADER))),
+                "idempotent operation must carry the Idempotency-Key request header parameter"
+            );
+
+            for status in ["201", "401", "422", CONFLICT_STATUS] {
+                let response = inline_response(idempotent_op, status);
+                assert!(
+                    response
+                        .headers
+                        .contains_key(&canonical_header_name(IDEMPOTENT_REPLAYED_HEADER)),
+                    "{status} must document the replayed marker"
+                );
+                assert!(
+                    response
+                        .headers
+                        .contains_key(&canonical_header_name(IDEMPOTENCY_DEGRADED_HEADER)),
+                    "{status} must document the degraded marker"
+                );
+                assert_eq!(
+                    response
+                        .headers
+                        .contains_key(&canonical_header_name(RETRY_AFTER.as_str())),
+                    status == CONFLICT_STATUS,
+                    "only the 409 documents Retry-After ({status})"
+                );
+            }
+
+            let conflict_response = inline_response(idempotent_op, CONFLICT_STATUS);
+            assert!(conflict_response.description.contains(REPLAYED_BODY_NOTE));
+            assert!(
+                conflict_response
+                    .description
+                    .contains("urn:atlas:error:idempotency-key-conflict")
+            );
+            assert!(
+                conflict_response
+                    .description
+                    .contains("urn:atlas:error:idempotency-key-in-flight")
+            );
+
+            let plain_op = annotated
+                .paths
+                .paths
+                .get("/api/plain/route")
+                .and_then(|item| item.get.as_ref())
+                .expect("get operation present");
+            assert!(
+                plain_op.parameters.is_none(),
+                "non-idempotent operation must carry no request header parameter"
+            );
+            assert!(
+                !plain_op.responses.responses.contains_key(CONFLICT_STATUS),
+                "non-idempotent operation must carry no 409 idempotency-conflict entry"
+            );
+            for status in ["200", "404"] {
+                let response = inline_response(plain_op, status);
+                assert!(
+                    response.headers.is_empty(),
+                    "non-idempotent {status} must carry no idempotency response header"
+                );
+            }
+        }
+
+        /// T6.7: a pre-existing `409` entry (e.g. a domain-level conflict
+        /// like `revision-conflict`) keeps its own description first and
+        /// gains the idempotency text as an additional paragraph, never
+        /// overwritten, plus the `Retry-After` header and both markers (a
+        /// stored domain conflict can be replayed).
+        #[test]
+        fn derivation_appends_to_a_pre_existing_409_entry_without_erasing_it() {
+            let mut paths = Paths::new();
+            let mut operation = Operation::new();
+            operation.responses.responses.insert(
+                CONFLICT_STATUS.to_string(),
+                RefOr::T(Response::new("Revision conflict".to_string())),
+            );
+            paths.paths.insert(
+                "/api/conflicting/route".to_string(),
+                PathItem::new(UtoipaMethod::Post, operation),
+            );
+            let doc = OpenApi::new(utoipa::openapi::Info::new("fixture", "0.0.0"), paths);
+
+            let mut idempotent_routes = HashSet::new();
+            idempotent_routes.insert((HttpMethod::Post, "/api/conflicting/route".to_string()));
+
+            let annotated = apply_idempotency_annotations(doc, &idempotent_routes);
+
+            let operation = annotated
+                .paths
+                .paths
+                .get("/api/conflicting/route")
+                .and_then(|item| item.post.as_ref())
+                .expect("post operation present");
+            let response = inline_response(operation, CONFLICT_STATUS);
+
+            assert_eq!(
+                response.description,
+                format!("Revision conflict\n\n{}", conflict_response_description()),
+                "the original description must be kept first, the idempotency text appended"
+            );
+            assert!(
+                response
+                    .description
+                    .contains("urn:atlas:error:idempotency-key-conflict")
+            );
+            assert!(
+                response
+                    .description
+                    .contains("urn:atlas:error:idempotency-key-in-flight")
+            );
+            assert!(
+                response
+                    .headers
+                    .contains_key(&canonical_header_name(RETRY_AFTER.as_str()))
+            );
+            assert!(
+                response
+                    .headers
+                    .contains_key(&canonical_header_name(IDEMPOTENT_REPLAYED_HEADER))
+            );
+            assert!(
+                response
+                    .headers
+                    .contains_key(&canonical_header_name(IDEMPOTENCY_DEGRADED_HEADER))
+            );
+        }
+    }
 }
 
 #[cfg(test)]
@@ -421,10 +889,6 @@ mod tests {
         for (method, path) in [
             (atlas_core::registry::HttpMethod::Get, "/openapi.json"),
             (atlas_core::registry::HttpMethod::Get, "/scalar"),
-            (
-                atlas_core::registry::HttpMethod::Get,
-                "/api/workspaces/{ws}/events",
-            ),
         ] {
             owner_by_route.remove(&(method, path.to_string()));
         }

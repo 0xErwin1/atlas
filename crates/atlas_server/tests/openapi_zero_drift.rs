@@ -28,6 +28,11 @@
 //! this guard to compare against yet. Re-mounting the document's own path
 //! keys under `/api/v2` (and re-scoping this guard to match) is a future
 //! slice's job, not this PR's.
+//!
+//! PR6 update: `GET /api/workspaces/{ws}/events` (`routes::events`) is now
+//! `#[utoipa::path]`-annotated and registered in `acta`'s fragment, so it is
+//! no longer a member of [`UNANNOTATED_ROUTES`] — the unannotated list has
+//! shrunk to exactly `/openapi.json` and `/scalar`.
 
 use std::collections::HashSet;
 use std::fs;
@@ -44,18 +49,9 @@ use atlas_server::routes::openapi::openapi;
 /// - `/openapi.json`/`/scalar` are ordinary `platform`-owned
 ///   `RouteDeclaration` entries (`v2-e3-s4` PR1, D3): the document cannot
 ///   describe its own serving endpoint or the Scalar UI it mounts.
-/// - `GET /api/workspaces/{ws}/events` (`routes::events`, `acta`-owned) is a
-///   Server-Sent Events stream with no OpenAPI documentation at all —
-///   pre-existing V1 drift this PR's new guard surfaces for the first time
-///   (the retired `openapi_drift.rs`'s `EXPECTED_OPENAPI_PATHS` never listed
-///   it either, so it was silently uncovered before this PR, not newly
-///   broken by it). Out of this PR's scope to annotate (D-SHAPE forbids
-///   touching handler/OpenAPI shape here); flagged as a genuine finding, not
-///   silently absorbed.
 const UNANNOTATED_ROUTES: &[(HttpMethod, &str)] = &[
     (HttpMethod::Get, "/openapi.json"),
     (HttpMethod::Get, "/scalar"),
-    (HttpMethod::Get, "/api/workspaces/{ws}/events"),
 ];
 
 fn registry_route_set() -> HashSet<(HttpMethod, String)> {
