@@ -2,7 +2,7 @@
 
 mod support;
 
-use atlas_server::router_audit::{NAMESPACES, mounted_path};
+use atlas_server::router_audit::{mounted_path, namespaces_for};
 
 /// `v2-e3-s2-router-audit` PR3: proves the 35 routes moved out of
 /// `lib.rs::app()` into `routes::custos::router()` keep their pre-refactor
@@ -27,9 +27,10 @@ use atlas_server::router_audit::{NAMESPACES, mounted_path};
 /// a 405 on the PATCH probe proves the path is mounted, independent of
 /// whatever the real method's handler legitimately returns.
 ///
-/// `v2-e3-s4` PR5 (D1): the whole proof runs once per namespace in
-/// `NAMESPACES`, offenders naming the namespace. `lib.rs::app()` mounts one
-/// cloned router at both namespaces, and the clone shares `activate`'s
+/// `v2-e3-s4` PR7 (D10): the whole proof runs once per namespace in
+/// `namespaces_for("custos")` (`/api` and `/api/v2/custos`), offenders
+/// naming the namespace. `lib.rs::app()` mounts one cloned router at both
+/// namespaces, and the clone shares `activate`'s
 /// governor limiter (an `Arc` inside tower_governor's `Governor`, burst 5,
 /// refill 1/s). Each pass sends three `activate` requests, so the second
 /// pass waits one refill period first, keeping the six total under the
@@ -63,7 +64,8 @@ async fn custos_routes_keep_pre_refactor_mount_and_auth_posture() {
         (reqwest::Method::GET, "/workspaces/some-ws/audit"),
     ];
 
-    for (pass, namespace) in NAMESPACES.iter().enumerate() {
+    for (pass, namespace) in namespaces_for("custos").iter().enumerate() {
+        let namespace = namespace.as_str();
         if pass > 0 {
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         }

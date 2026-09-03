@@ -3,7 +3,7 @@
 mod support;
 
 use atlas_core::registry::HttpMethod;
-use atlas_server::router_audit::{NAMESPACES, mounted_path};
+use atlas_server::router_audit::{mounted_path, namespaces_for};
 
 /// `v2-e3-s2-router-audit` PR4 verify gap: proves acta's 169 routes keep
 /// their pre-refactor mount and authentication posture against the
@@ -72,8 +72,9 @@ use atlas_server::router_audit::{NAMESPACES, mounted_path};
 /// (`acta.rs::public::router`), which `lib.rs::app()`'s cloned router
 /// shares across both mounts.
 ///
-/// `v2-e3-s4` PR5 (D1): both proofs run once per namespace in
-/// `NAMESPACES`, offenders naming the namespace.
+/// `v2-e3-s4` PR7 (D10): both proofs run once per namespace in
+/// `namespaces_for("acta")` (`/api` and `/api/v2/acta`), offenders naming
+/// the namespace.
 #[tokio::test]
 async fn acta_protected_routes_reject_unauthenticated_requests() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -106,7 +107,8 @@ async fn acta_protected_routes_reject_unauthenticated_requests() {
         .first()
         .expect("acta has exactly one public route");
 
-    for namespace in NAMESPACES {
+    for namespace in namespaces_for("acta") {
+        let namespace = namespace.as_str();
         for (method, path_template) in &protected_routes {
             let path = mounted_path(namespace, &substitute_placeholders(path_template));
             let status = send(&http, axum_method(*method), server.base_url(), &path).await;

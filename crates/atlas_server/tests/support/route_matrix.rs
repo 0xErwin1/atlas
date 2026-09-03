@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code, clippy::panic)]
 
 use atlas_core::registry::{HttpMethod, build};
 use atlas_server::reg5::{StorageBackend, reg5_component_entries};
@@ -16,6 +16,12 @@ pub(crate) struct RouteMatrixEntry {
     /// promoted that computation into the registry itself, so this field
     /// mirrors the registry's own value rather than re-deriving it.
     pub is_public: bool,
+    /// The owning component's `ComponentEntry.identity.stable_id`
+    /// (`v2-e3-s4` PR7, D10): sourced from the same `registry.entries()`
+    /// loop `route_matrix()` already iterates, never a hand-typed per-path
+    /// lookup table. Drives [`RouteMatrixEntry::namespaces`], so every
+    /// namespace-scoped sweep checks a route at exactly its own two mounts.
+    pub component: String,
 }
 
 impl RouteMatrixEntry {
@@ -28,6 +34,14 @@ impl RouteMatrixEntry {
     pub(crate) fn mounted(&self, namespace: &str) -> String {
         atlas_server::router_audit::mounted_path(namespace, &self.path_template)
     }
+
+    /// This entry's own two mounts (`v2-e3-s4` PR7, D10): `/api` and
+    /// `/api/v2/<component>`, wrapping `router_audit::namespaces_for` with
+    /// this entry's own `component` — the per-component replacement for the
+    /// former flat `router_audit::NAMESPACES` constant.
+    pub(crate) fn namespaces(&self) -> [String; 2] {
+        atlas_server::router_audit::namespaces_for(&self.component)
+    }
 }
 
 /// Builds the full `(method, path)` surface from the live REG-5 registry,
@@ -39,11 +53,141 @@ pub(crate) fn route_matrix() -> Vec<RouteMatrixEntry> {
     registry
         .entries()
         .iter()
-        .flat_map(|entry| entry.api.routes.iter())
-        .map(|route| RouteMatrixEntry {
-            method: route.method,
-            path_template: route.path.as_str().to_string(),
-            is_public: route.is_public,
+        .flat_map(|entry| {
+            let component = entry.identity.stable_id.as_str().to_string();
+            entry.api.routes.iter().map(move |route| RouteMatrixEntry {
+                method: route.method,
+                path_template: route.path.as_str().to_string(),
+                is_public: route.is_public,
+                component: component.clone(),
+            })
         })
         .collect()
+}
+
+/// Resolves a concrete request path (`/workspaces/ws-slug/tasks/ATL-1`) to
+/// the one live `route_matrix()` entry whose template matches it, so a
+/// caller that only has the path it is about to request never compares it
+/// verbatim against a `{placeholder}` template.
+///
+/// Matching is segment by segment: same segment count, literal segments
+/// equal, a `{...}` segment matches any non-empty concrete segment. When a
+/// literal template and a placeholder template both match (`/a/literal` vs.
+/// `/a/{x}`), the literal wins. Panics naming the path and every candidate
+/// when nothing matches or the tie cannot be broken.
+pub(crate) fn find_by_concrete_path(method: HttpMethod, concrete: &str) -> RouteMatrixEntry {
+    resolve_concrete_path(route_matrix(), method, concrete)
+}
+
+fn resolve_concrete_path(
+    entries: Vec<RouteMatrixEntry>,
+    method: HttpMethod,
+    concrete: &str,
+) -> RouteMatrixEntry {
+    let candidates: Vec<RouteMatrixEntry> = entries
+        .into_iter()
+        .filter(|entry| entry.method == method && template_matches(&entry.path_template, concrete))
+        .collect();
+
+    if candidates.is_empty() {
+        panic!("no live route_matrix() entry matches {method} {concrete}");
+    }
+
+    let fewest_placeholders = candidates
+        .iter()
+        .map(|entry| placeholder_count(&entry.path_template))
+        .min()
+        .expect("candidates is non-empty");
+    let mut best: Vec<RouteMatrixEntry> = candidates
+        .into_iter()
+        .filter(|entry| placeholder_count(&entry.path_template) == fewest_placeholders)
+        .collect();
+
+    if best.len() > 1 {
+        let templates: Vec<&str> = best
+            .iter()
+            .map(|entry| entry.path_template.as_str())
+            .collect();
+        panic!("{method} {concrete} is ambiguous between route_matrix() templates {templates:?}");
+    }
+
+    best.remove(0)
+}
+
+fn template_matches(template: &str, concrete: &str) -> bool {
+    let template_segments: Vec<&str> = template.split('/').collect();
+    let concrete_segments: Vec<&str> = concrete.split('/').collect();
+
+    template_segments.len() == concrete_segments.len()
+        && template_segments
+            .iter()
+            .zip(&concrete_segments)
+            .all(|(t, c)| {
+                if is_placeholder(t) {
+                    !c.is_empty()
+                } else {
+                    t == c
+                }
+            })
+}
+
+fn is_placeholder(segment: &str) -> bool {
+    segment.starts_with('{') && segment.ends_with('}')
+}
+
+fn placeholder_count(template: &str) -> usize {
+    template
+        .split('/')
+        .filter(|segment| is_placeholder(segment))
+        .count()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(method: HttpMethod, path_template: &str) -> RouteMatrixEntry {
+        RouteMatrixEntry {
+            method,
+            path_template: path_template.to_string(),
+            is_public: false,
+            component: "acta".to_string(),
+        }
+    }
+
+    fn fixture() -> Vec<RouteMatrixEntry> {
+        vec![
+            entry(HttpMethod::Get, "/workspaces/{ws}/tasks/{readable_id}"),
+            entry(HttpMethod::Get, "/workspaces/{ws}/tasks/views"),
+            entry(HttpMethod::Post, "/workspaces/{ws}/tasks/{readable_id}"),
+        ]
+    }
+
+    #[test]
+    fn parameterized_path_resolves_to_its_template() {
+        let found =
+            resolve_concrete_path(fixture(), HttpMethod::Get, "/workspaces/ws-1/tasks/ATL-1");
+
+        assert_eq!(found.path_template, "/workspaces/{ws}/tasks/{readable_id}");
+    }
+
+    #[test]
+    fn literal_segment_wins_over_placeholder() {
+        let found =
+            resolve_concrete_path(fixture(), HttpMethod::Get, "/workspaces/ws-1/tasks/views");
+
+        assert_eq!(found.path_template, "/workspaces/{ws}/tasks/views");
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "no live route_matrix() entry matches DELETE /workspaces/ws-1/tasks/ATL-1"
+    )]
+    fn unknown_path_panics() {
+        resolve_concrete_path(
+            fixture(),
+            HttpMethod::Delete,
+            "/workspaces/ws-1/tasks/ATL-1",
+        );
+    }
 }

@@ -10,7 +10,7 @@ mod support;
 use std::collections::{BTreeSet, HashMap};
 
 use atlas_core::registry::HttpMethod;
-use atlas_server::router_audit::{NAMESPACES, ROOT_LEVEL_PATHS, mounted_path};
+use atlas_server::router_audit::{ROOT_LEVEL_PATHS, mounted_path};
 use support::route_matrix::route_matrix;
 
 /// T4.9 (`v2-e3-s2-router-audit` PR4, added after PR2's verify — the "MOUNT
@@ -208,8 +208,9 @@ const CANDIDATE_ORDER: [HttpMethod; 7] = [
     HttpMethod::Options,
 ];
 
-/// T5.1/T5.2 (`v2-e3-s4` PR5, D1): every declared route resolves at BOTH
-/// `/api` and `/api/v2`, exhaustively over `route_matrix()` (INV-DATA-DRIVEN,
+/// T5.1/T5.2/T7.6 (`v2-e3-s4` PR5/PR7, D1/D10): every declared route
+/// resolves at BOTH `/api` and its own `/api/v2/<component>`, exhaustively
+/// over `route_matrix()` (INV-DATA-DRIVEN,
 /// not sampled). Mount proof never uses "not 404" (INV-LIVE-PROOF), and it
 /// never uses an unauthenticated 401 either: `lib.rs::app()` merges a
 /// PROTECTED root fallback last, so an unroutable path answers 401 to an
@@ -229,8 +230,9 @@ const CANDIDATE_ORDER: [HttpMethod; 7] = [
 /// `CANDIDATE_ORDER` always yields a foreign method and needs no extension.
 ///
 /// Governor budget: custos's `login`/`activate` governors (burst 5, refill
-/// 1/s, one state shared by both nests because `api_router` is cloned) see
-/// `POST /api/auth/login` once from `login_user_with_workspace`, plus one
+/// 1/s, one state shared by both mounts because `lib.rs::app()` nests a
+/// clone of `custos_router` at `/api/v2/custos` and the original at `/api`)
+/// see `POST /api/auth/login` once from `login_user_with_workspace`, plus one
 /// login probe per namespace (3 total), and two activate probes per
 /// namespace (GET and POST entries share the path; 4 total). Both stay under
 /// the burst, so no sleep is needed. `AppState::for_test` sets
@@ -256,10 +258,11 @@ const CANDIDATE_ORDER: [HttpMethod; 7] = [
 /// (`router_audit::ROOT_LEVEL_PATHS`: `/health`, `/ready`, `/version`,
 /// `/openapi.json`, `/scalar`) and 4 namespaced. `mounted_path` returns a
 /// root-level path unchanged for every namespace, so looping those entries
-/// over `NAMESPACES` would probe the same URL twice and prove nothing about
-/// either mount. They are probed exactly once, outside the namespace loop,
-/// and the set skipped inside it is asserted equal to `ROOT_LEVEL_PATHS`
-/// so the skip cannot grow without that constant growing with it.
+/// over `entry.namespaces()` would probe the same URL twice and prove
+/// nothing about either mount. They are probed exactly once, outside the
+/// namespace loop, and the set skipped inside it is asserted equal to
+/// `ROOT_LEVEL_PATHS` so the skip cannot grow without that constant growing
+/// with it.
 #[tokio::test]
 async fn every_declared_route_resolves_at_both_mounts() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -334,14 +337,15 @@ async fn every_declared_route_resolves_at_both_mounts() {
          every ROOT_LEVEL_PATHS member must still be declared by the registry"
     );
 
-    for namespace in NAMESPACES {
-        for entry in &matrix {
-            if ROOT_LEVEL_PATHS.contains(&entry.path_template.as_str()) {
-                continue;
-            }
+    for entry in &matrix {
+        if ROOT_LEVEL_PATHS.contains(&entry.path_template.as_str()) {
+            continue;
+        }
 
-            let relative = entry.path_template.replace("{ws}", ws_slug);
-            let mounted = mounted_path(namespace, &relative);
+        let relative = entry.path_template.replace("{ws}", ws_slug);
+
+        for namespace in entry.namespaces() {
+            let mounted = mounted_path(&namespace, &relative);
 
             let declared_methods = methods_by_path
                 .get(entry.path_template.as_str())
@@ -443,6 +447,91 @@ async fn a_foreign_prefix_never_matches_any_declared_route() {
                 "foreign prefix {foreign_prefix}: authenticated {} {foreign} must not match any \
                  route and reach the 404 fallback, got {authenticated}",
                 entry.method
+            );
+        }
+    }
+
+    db.teardown().await;
+}
+
+/// The three component ids `lib.rs::app()` nests under `/api/v2` (`v2-e3-s4`
+/// PR7, D10). Kept as a small fixed list rather than derived from the
+/// registry: the registry has no "list every component id" accessor, and
+/// this list is exactly the set `namespaces_for` and `app()`'s three
+/// `.nest("/api/v2/<component>", ...)` calls are also hand-written against.
+const ALL_COMPONENTS: [&str; 3] = ["platform", "custos", "acta"];
+
+/// T7.8/T7.9 (`v2-e3-s4` PR7, D10): a flat `/api/v2/<rel>` (no component
+/// segment) and a wrong-component `/api/v2/<other>/<rel>` both match
+/// nothing, for every declared route — exactly the same protected-fallback
+/// shape `a_foreign_prefix_never_matches_any_declared_route` proves for
+/// `/apiv2` and `/api/v3`: an unauthenticated probe gets 401 from
+/// `require_authn`, and an authenticated one reaches the fallback and gets
+/// 404. `<other>` cycles through the two components that do NOT own the
+/// entry, so a route is never accidentally probed against its own mount.
+#[tokio::test]
+async fn flat_and_wrong_component_v2_forms_never_match_any_declared_route() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let http = reqwest::Client::new();
+    let (client, _, _) =
+        support::login_user_with_workspace(&server, &db, "flat-wrong-component").await;
+    let token = client.token().expect("authenticated token");
+
+    let ws_slug = "flat-wrong-component-no-such-workspace";
+    let matrix = route_matrix();
+
+    for entry in &matrix {
+        let relative = entry.path_template.replace("{ws}", ws_slug);
+
+        let other_components: Vec<&str> = ALL_COMPONENTS
+            .into_iter()
+            .filter(|component| *component != entry.component)
+            .collect();
+        assert_eq!(
+            other_components.len(),
+            2,
+            "{}: entry.component {} must be exactly one of {ALL_COMPONENTS:?}",
+            entry.path_template,
+            entry.component
+        );
+
+        let mut candidates: Vec<String> = vec![format!("/api/v2{relative}")];
+        for other in other_components {
+            candidates.push(format!("/api/v2/{other}{relative}"));
+        }
+
+        for candidate in candidates {
+            let unauthenticated = send(
+                &http,
+                axum_method(entry.method),
+                server.base_url(),
+                &candidate,
+            )
+            .await;
+            assert_eq!(
+                unauthenticated, 401,
+                "{}: unauthenticated {} {candidate} must fall through to the protected \
+                 fallback and get 401, got {unauthenticated}",
+                entry.path_template, entry.method
+            );
+
+            let authenticated = http
+                .request(
+                    axum_method(entry.method),
+                    format!("{}{candidate}", server.base_url()),
+                )
+                .bearer_auth(token)
+                .send()
+                .await
+                .expect("request must not error")
+                .status()
+                .as_u16();
+            assert_eq!(
+                authenticated, 404,
+                "{}: authenticated {} {candidate} must not match any route and reach the 404 \
+                 fallback, got {authenticated}",
+                entry.path_template, entry.method
             );
         }
     }

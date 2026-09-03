@@ -2,7 +2,7 @@
 
 mod support;
 
-use atlas_server::router_audit::{NAMESPACES, mounted_path};
+use atlas_server::router_audit::{mounted_path, namespaces_for};
 
 /// R3 (`v2-e3-s2-pr2-platform-router`): proves the five routes moved out of
 /// `lib.rs::app()` into `routes::platform::router()` keep their pre-refactor
@@ -14,7 +14,8 @@ use atlas_server::router_audit::{NAMESPACES, mounted_path};
 /// (mounted, never 401). They are root-level (`router_audit::ROOT_LEVEL_PATHS`),
 /// served once outside both nests, so they are probed once. `/me/ui-state`
 /// (GET and PUT) and `/meta` must reject an unauthenticated request with
-/// exactly 401 at every namespace in `NAMESPACES` (`v2-e3-s4` PR5, D1),
+/// exactly 401 at every namespace in `namespaces_for("platform")`
+/// (`/api` and `/api/v2/platform`, `v2-e3-s4` PR7, D10),
 /// proving `require_authn` still sits in front of them at both mounts. Both
 /// 404 and 405 count as "not served": a 405 means the path is mounted but
 /// not for this method, which is exactly the kind of drift a
@@ -50,7 +51,8 @@ async fn platform_routes_keep_pre_refactor_mount_and_auth_posture() {
         (reqwest::Method::GET, "/meta"),
     ];
 
-    for namespace in NAMESPACES {
+    for namespace in namespaces_for("platform") {
+        let namespace = namespace.as_str();
         for (method, relative) in PROTECTED_ROUTES {
             let path = mounted_path(namespace, relative);
             let status = send(&http, method.clone(), server.base_url(), &path).await;

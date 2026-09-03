@@ -8,15 +8,17 @@
 //! T2.5-T2.9 (`v2-e3-s3` PR2): `Page<T>` conformance across routes declared
 //! paginated today.
 //!
-//! Namespace scope (`v2-e3-s4` PR5, T5.13/T5.14, D1): every live test in
-//! this file runs against every namespace in `router_audit::NAMESPACES`
-//! from one data source, failures naming the namespace. The generated
-//! `atlas_client` methods are `/api`-absolute (S6's job, not this one), so
-//! the live tests provision through the client and page through raw
-//! authenticated GETs built with `router_audit::joined`: the three cursor
-//! round-trip/opacity tests walk their collection at each namespace with a
-//! cursor minted by that same namespace, and the exhaustive last-page sweep
-//! fetches every classified route at each namespace.
+//! Namespace scope (`v2-e3-s4` PR5/PR7, T5.13/T5.14/T7.12, D1/D10): every
+//! live test in this file runs against each route's own two mounts (`/api`
+//! and that route's owning component's `/api/v2/<component>`, via
+//! `router_audit::namespaces_for`, never a flat `NAMESPACES` pair), failures
+//! naming the namespace. The generated `atlas_client` methods are
+//! `/api`-absolute (S6's job, not this one), so the live tests provision
+//! through the client and page through raw authenticated GETs built with
+//! `router_audit::joined`: the three cursor round-trip/opacity tests walk
+//! their collection at each namespace with a cursor minted by that same
+//! namespace, and the exhaustive last-page sweep fetches every classified
+//! route at each of its own two namespaces.
 //!
 //! Two independent concerns live in this file:
 //!
@@ -74,7 +76,7 @@ use atlas_api::pagination::{Cursor, SearchCursor};
 use atlas_client::AtlasClient;
 use atlas_core::registry::HttpMethod;
 use atlas_server::persistence::repos::ApiKeyRepo;
-use atlas_server::router_audit::{NAMESPACES, joined};
+use atlas_server::router_audit::joined;
 
 // ---------------------------------------------------------------------------
 // T2.5: exhaustive, source-derived Page<T> route classification
@@ -507,16 +509,19 @@ fn page_item_ids(body: &serde_json::Value, path: &str) -> Vec<uuid::Uuid> {
         .collect()
 }
 
-/// T5.13/T5.14 (`v2-e3-s4` PR5, D1): walks the `Page<T>` collection at
-/// `relative_path` once per namespace in `NAMESPACES`, with a cursor minted
-/// by that namespace's page fed back into that same namespace's next
-/// request. At each namespace: the first page holds exactly `limit` items
-/// and `has_more`, every cursor is opaque, no item repeats across pages,
-/// the last page carries `next_cursor: null`, and the pages together cover
-/// `expected_ids` exactly once. Failures name the namespace.
+/// T5.13/T5.14/T7.12 (`v2-e3-s4` PR5/PR7, D1/D10): walks the `Page<T>`
+/// collection at `relative_path` once per mount of `component` (`/api` and
+/// that component's own `/api/v2/<component>`, never a flat `NAMESPACES`
+/// pair), with a cursor minted by that namespace's page fed back into that
+/// same namespace's next request. At each namespace: the first page holds
+/// exactly `limit` items and `has_more`, every cursor is opaque, no item
+/// repeats across pages, the last page carries `next_cursor: null`, and the
+/// pages together cover `expected_ids` exactly once. Failures name the
+/// namespace.
 async fn assert_pagination_round_trips_at_every_namespace(
     client: &AtlasClient,
     relative_path: &str,
+    component: &str,
     expected_ids: &[uuid::Uuid],
     limit: usize,
 ) {
@@ -528,7 +533,8 @@ async fn assert_pagination_round_trips_at_every_namespace(
     let mut expected = expected_ids.to_vec();
     expected.sort_unstable();
 
-    for namespace in NAMESPACES {
+    for namespace in atlas_server::router_audit::namespaces_for(component) {
+        let namespace = namespace.as_str();
         let mut seen: Vec<uuid::Uuid> = Vec::new();
         let mut cursor: Option<String> = None;
         let mut pages_walked = 0;
@@ -652,6 +658,7 @@ async fn list_documents_pagination_round_trips_and_is_opaque() {
             "/workspaces/{}/projects/{}/documents",
             ws.slug, project.slug
         ),
+        "acta",
         &created_ids,
         2,
     )
@@ -721,6 +728,7 @@ async fn list_workspace_grants_pagination_round_trips_and_is_opaque() {
     assert_pagination_round_trips_at_every_namespace(
         &client,
         &format!("/workspaces/{}/grants", ws.slug),
+        "custos",
         &created_ids,
         2,
     )
@@ -806,6 +814,7 @@ async fn list_workspace_tasks_cursor_is_opaque() {
     assert_pagination_round_trips_at_every_namespace(
         &client,
         &format!("/workspaces/{}/tasks", ws.slug),
+        "acta",
         &created_ids,
         2,
     )
@@ -870,20 +879,37 @@ const MINIMAL_NONEMPTY_ROUTES: &[(HttpMethod, &str, usize, &str)] = &[
     ),
 ];
 
-/// Fetches namespace-relative `relative_path_and_query` once per namespace
-/// in `NAMESPACES` (T5.13/T5.14) with raw authenticated GETs, returning each
-/// namespace's decoded JSON body so the last-page assertions below can
-/// inspect the exact wire shape of `next_cursor` (present-and-null vs.
-/// omitted) rather than an `Option<String>` that cannot distinguish the two.
+/// Looks up the owning component (`RouteMatrixEntry::component`, `v2-e3-s4`
+/// PR7, D10) for a live `(method, path_template)` pair, so this file never
+/// hand-guesses which component owns which route — it reads the same fact
+/// `route_matrix()` already carries for every other namespace-scoped sweep
+/// in this crate.
+fn component_for(method: HttpMethod, path_template: &str) -> String {
+    support::route_matrix::route_matrix()
+        .into_iter()
+        .find(|entry| entry.method == method && entry.path_template == path_template)
+        .unwrap_or_else(|| panic!("no live route_matrix() entry for {method:?} {path_template}"))
+        .component
+}
+
+/// Fetches namespace-relative `relative_path_and_query` once per mount of
+/// `component` (`v2-e3-s4` PR7, D10: `/api` and that component's own
+/// `/api/v2/<component>`, never a flat `NAMESPACES` pair) with raw
+/// authenticated GETs, returning each namespace's decoded JSON body so the
+/// last-page assertions below can inspect the exact wire shape of
+/// `next_cursor` (present-and-null vs. omitted) rather than an
+/// `Option<String>` that cannot distinguish the two.
 async fn fetch_page_json(
     client: &AtlasClient,
     relative_path_and_query: &str,
-) -> Vec<(&'static str, serde_json::Value)> {
-    let mut pages = Vec::with_capacity(NAMESPACES.len());
+    component: &str,
+) -> Vec<(String, serde_json::Value)> {
+    let namespaces = atlas_server::router_audit::namespaces_for(component);
+    let mut pages = Vec::with_capacity(namespaces.len());
 
-    for namespace in NAMESPACES {
-        let path = joined(namespace, relative_path_and_query);
-        pages.push((*namespace, fetch_page_json_at(client, &path).await));
+    for namespace in namespaces {
+        let path = joined(&namespace, relative_path_and_query);
+        pages.push((namespace, fetch_page_json_at(client, &path).await));
     }
 
     pages
@@ -900,7 +926,7 @@ async fn fetch_page_json(
 /// Null)` (rather than deserializing into `Page<T>` and checking `Option::
 /// is_none()`) is what actually distinguishes present-null from absent.
 fn assert_is_own_last_page(
-    pages: &[(&'static str, serde_json::Value)],
+    pages: &[(String, serde_json::Value)],
     path: &str,
     expected_items: usize,
 ) {
@@ -966,6 +992,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
             .iter()
             .find(|(m, p, _, _)| *m == route.method && *p == route.path)
             .map(|(_, _, n, _)| *n);
+        let component = component_for(route.method, &route.path);
 
         match route.path.as_str() {
             "/admin/audit" => {
@@ -983,7 +1010,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 let admin_db = support::TestDb::create().await.expect("TestDb::create");
                 let admin_server = support::TestServer::spawn(&admin_db).await;
                 let admin = support::login_root_user(&admin_server, &admin_db).await;
-                let body = fetch_page_json(&admin, "/admin/audit").await;
+                let body = fetch_page_json(&admin, "/admin/audit", &component).await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
                 admin_db.teardown().await;
             }
@@ -998,36 +1025,48 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 let admin_db = support::TestDb::create().await.expect("TestDb::create");
                 let admin_server = support::TestServer::spawn(&admin_db).await;
                 let admin = support::login_root_user(&admin_server, &admin_db).await;
-                let body = fetch_page_json(&admin, "/admin/trash").await;
+                let body = fetch_page_json(&admin, "/admin/trash", &component).await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
                 admin_db.teardown().await;
             }
             "/api-keys" => {
                 let (client, _ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-apikeys").await;
-                let body = fetch_page_json(&client, "/api-keys").await;
+                let body = fetch_page_json(&client, "/api-keys", &component).await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
             "/workspaces/{ws}/activity" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-activity").await;
-                let body =
-                    fetch_page_json(&client, &format!("/workspaces/{}/activity", ws.slug)).await;
+                let body = fetch_page_json(
+                    &client,
+                    &format!("/workspaces/{}/activity", ws.slug),
+                    &component,
+                )
+                .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
             "/workspaces/{ws}/attachments" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-attachments")
                         .await;
-                let body =
-                    fetch_page_json(&client, &format!("/workspaces/{}/attachments", ws.slug)).await;
+                let body = fetch_page_json(
+                    &client,
+                    &format!("/workspaces/{}/attachments", ws.slug),
+                    &component,
+                )
+                .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
             "/workspaces/{ws}/audit" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-audit").await;
-                let body =
-                    fetch_page_json(&client, &format!("/workspaces/{}/audit", ws.slug)).await;
+                let body = fetch_page_json(
+                    &client,
+                    &format!("/workspaces/{}/audit", ws.slug),
+                    &component,
+                )
+                .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
             "/workspaces/{ws}/automation-rules" => {
@@ -1037,6 +1076,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 let body = fetch_page_json(
                     &client,
                     &format!("/workspaces/{}/automation-rules", ws.slug),
+                    &component,
                 )
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
@@ -1072,6 +1112,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 let body = fetch_page_json(
                     &client,
                     &format!("/workspaces/{}/boards/{}/tasks", ws.slug, board.id),
+                    &component,
                 )
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
@@ -1108,6 +1149,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 let body = fetch_page_json(
                     &client,
                     &format!("/workspaces/{}/documents/{}/attachments", ws.slug, doc.id),
+                    &component,
                 )
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
@@ -1144,6 +1186,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 let body = fetch_page_json(
                     &client,
                     &format!("/workspaces/{}/documents/{}/backlinks", ws.slug, doc.id),
+                    &component,
                 )
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
@@ -1180,6 +1223,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 let body = fetch_page_json(
                     &client,
                     &format!("/workspaces/{}/documents/{}/history", ws.slug, doc.id),
+                    &component,
                 )
                 .await;
                 assert_is_own_last_page(
@@ -1191,15 +1235,23 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
             "/workspaces/{ws}/grants" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-grants").await;
-                let body =
-                    fetch_page_json(&client, &format!("/workspaces/{}/grants", ws.slug)).await;
+                let body = fetch_page_json(
+                    &client,
+                    &format!("/workspaces/{}/grants", ws.slug),
+                    &component,
+                )
+                .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
             "/workspaces/{ws}/projects" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-projects").await;
-                let body =
-                    fetch_page_json(&client, &format!("/workspaces/{}/projects", ws.slug)).await;
+                let body = fetch_page_json(
+                    &client,
+                    &format!("/workspaces/{}/projects", ws.slug),
+                    &component,
+                )
+                .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
             "/workspaces/{ws}/projects/{project_slug}/boards" => {
@@ -1222,6 +1274,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 let body = fetch_page_json(
                     &client,
                     &format!("/workspaces/{}/projects/{}/boards", ws.slug, project.slug),
+                    &component,
                 )
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
@@ -1248,6 +1301,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                         "/workspaces/{}/projects/{}/documents",
                         ws.slug, project.slug
                     ),
+                    &component,
                 )
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
@@ -1272,6 +1326,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 let body = fetch_page_json(
                     &client,
                     &format!("/workspaces/{}/projects/{}/folders", ws.slug, project.slug),
+                    &component,
                 )
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
@@ -1296,6 +1351,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 let body = fetch_page_json(
                     &client,
                     &format!("/workspaces/{}/projects/{}/grants", ws.slug, project.slug),
+                    &component,
                 )
                 .await;
                 assert_is_own_last_page(
@@ -1313,6 +1369,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                         "/workspaces/{}/search?q=zzz-sweep-no-such-match-zzz",
                         ws.slug
                     ),
+                    &component,
                 )
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
@@ -1327,6 +1384,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                         "/workspaces/{}/semantic-search?q=zzz-sweep-no-such-match-zzz",
                         ws.slug
                     ),
+                    &component,
                 )
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
@@ -1334,8 +1392,12 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
             "/workspaces/{ws}/tasks" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-tasks").await;
-                let body =
-                    fetch_page_json(&client, &format!("/workspaces/{}/tasks", ws.slug)).await;
+                let body = fetch_page_json(
+                    &client,
+                    &format!("/workspaces/{}/tasks", ws.slug),
+                    &component,
+                )
+                .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
             "/workspaces/{ws}/tasks/{readable_id}/activity" => {
@@ -1401,6 +1463,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                         "/workspaces/{}/tasks/{}/activity",
                         ws.slug, task.readable_id
                     ),
+                    &component,
                 )
                 .await;
                 assert_is_own_last_page(
@@ -1472,6 +1535,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                         "/workspaces/{}/tasks/{}/backlinks",
                         ws.slug, task.readable_id
                     ),
+                    &component,
                 )
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
@@ -1479,8 +1543,12 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
             "/workspaces/{ws}/webhooks" => {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-webhooks").await;
-                let body =
-                    fetch_page_json(&client, &format!("/workspaces/{}/webhooks", ws.slug)).await;
+                let body = fetch_page_json(
+                    &client,
+                    &format!("/workspaces/{}/webhooks", ws.slug),
+                    &component,
+                )
+                .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
             "/workspaces/{ws}/webhooks/{webhook_id}/deliveries" => {
@@ -1503,6 +1571,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 let body = fetch_page_json(
                     &client,
                     &format!("/workspaces/{}/webhooks/{}/deliveries", ws.slug, webhook.id),
+                    &component,
                 )
                 .await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);

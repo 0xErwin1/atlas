@@ -10,7 +10,7 @@ mod support;
 use std::collections::HashSet;
 
 use atlas_core::registry::HttpMethod;
-use atlas_server::router_audit::{NAMESPACES, mounted_path};
+use atlas_server::router_audit::mounted_path;
 use support::route_matrix::route_matrix;
 
 /// See `tests/api_401_sweep.rs`'s identical helper. Exhaustive by
@@ -94,10 +94,15 @@ fn classify(method: HttpMethod, path: &str, is_public: bool) -> Provocation {
 /// `x-request-id` header the test itself sent (proving `problem_stamp`
 /// actually threads the two together, not two independently-generated
 /// values that happen to both exist).
-/// T5.11/T5.12 (`v2-e3-s4` PR5, D1): namespace-parametrized over `NAMESPACES`
-/// from one data source (`route_matrix()`); a conformance failure at one
+/// T5.11/T5.12/T7.12 (`v2-e3-s4` PR5/PR7, D1/D10): namespace-parametrized
+/// over each route's own two mounts (`route_matrix()`'s
+/// `RouteMatrixEntry::namespaces()`, never a flat `NAMESPACES` pair) from
+/// one data source (`route_matrix()`); a conformance failure at one
 /// namespace but not the other names `(namespace, method, path)`, so the
-/// failing mount is never ambiguous.
+/// failing mount is never ambiguous. The outer loop runs exactly two passes
+/// (V1, then each entry's own V2 mount) so the per-pass exhaustiveness
+/// assertions below still cover the whole matrix once per pass, even though
+/// the V2 namespace differs per entry's owning component.
 #[tokio::test]
 async fn every_declared_route_answers_with_a_conformant_problem_body() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -107,11 +112,17 @@ async fn every_declared_route_answers_with_a_conformant_problem_body() {
     let ws_slug = "rfc9457-sweep-no-such-workspace";
     let matrix = route_matrix();
 
-    for namespace in NAMESPACES {
+    for pass in 0..2 {
+        let pass_label = if pass == 0 {
+            "V1 (/api)"
+        } else {
+            "V2 (per-component /api/v2/<component>)"
+        };
         let mut excluded = Vec::new();
         let mut provoked_or_excluded: HashSet<(HttpMethod, String)> = HashSet::new();
 
         for entry in &matrix {
+            let namespace = &entry.namespaces()[pass];
             let path = entry.path_template.replace("{ws}", ws_slug);
             let url = format!("{}{}", server.base_url(), mounted_path(namespace, &path));
 
@@ -261,7 +272,7 @@ async fn every_declared_route_answers_with_a_conformant_problem_body() {
                     "unauthenticated GET, no path parameter, no request body — nothing in the request can be varied to provoke a 4xx/5xx"
                 ),
             ],
-            "namespace {namespace}: the excluded-route set drifted from the expected, hand-justified \
+            "pass {pass_label}: the excluded-route set drifted from the expected, hand-justified \
          five — a new exclusion must be justified here, not silently added"
         );
         // INV-SET: never a `.len()` comparison — assert set equality in both
@@ -286,7 +297,7 @@ async fn every_declared_route_answers_with_a_conformant_problem_body() {
         assert!(
             declared_but_not_provoked_or_excluded.is_empty()
                 && provoked_or_excluded_but_not_declared.is_empty(),
-            "namespace {namespace}: the declared route set and the provoked-or-excluded route set \
+            "pass {pass_label}: the declared route set and the provoked-or-excluded route set \
          disagree; declared but not provoked or excluded: \
          {declared_but_not_provoked_or_excluded:?}; provoked or excluded but not declared: \
          {provoked_or_excluded_but_not_declared:?}"

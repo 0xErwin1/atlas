@@ -156,9 +156,11 @@ appeared in `api.routes`.
    `full_entry()` test fixture models (`/tasks/{task_id}`). This slice's
    Requirement text is explicit ("match the live server exactly ... it only
    describes the router as it exists"; "no route or URL change of any
-   kind"). Deciding what a namespace-relative path means under the future
-   `/api/v2/{component}` mount is router-derivation work (S2/S3), not this
-   slice's to guess.
+   kind"). `v2-e3-s4` PR4 later made `RouteDeclaration.path` namespace-
+   relative, and PR7 landed what a namespace-relative path means under the
+   `/api/v2/{component}` mount: a namespace-relative path `<rel>` is served
+   at `/api/<rel>` (V1, unchanged) and at `/api/v2/<component>/<rel>` (V2),
+   where `<component>` is the owning `ComponentEntry.identity.stable_id`.
 
 ## `idempotent` inference rule
 
