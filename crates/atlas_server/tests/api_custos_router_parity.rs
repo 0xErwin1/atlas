@@ -2,6 +2,8 @@
 
 mod support;
 
+use atlas_server::router_audit::{NAMESPACES, mounted_path};
+
 /// `v2-e3-s2-router-audit` PR3: proves the 35 routes moved out of
 /// `lib.rs::app()` into `routes::custos::router()` keep their pre-refactor
 /// mount and authentication posture against the ASSEMBLED router
@@ -24,6 +26,14 @@ mod support;
 /// Allowed, and answers an unmatched path with 404 regardless of method — so
 /// a 405 on the PATCH probe proves the path is mounted, independent of
 /// whatever the real method's handler legitimately returns.
+///
+/// `v2-e3-s4` PR5 (D1): the whole proof runs once per namespace in
+/// `NAMESPACES`, offenders naming the namespace. `lib.rs::app()` mounts one
+/// cloned router at both namespaces, and the clone shares `activate`'s
+/// governor limiter (an `Arc` inside tower_governor's `Governor`, burst 5,
+/// refill 1/s). Each pass sends three `activate` requests, so the second
+/// pass waits one refill period first, keeping the six total under the
+/// shared budget instead of turning the last mount probe into a 429.
 #[tokio::test]
 async fn custos_routes_keep_pre_refactor_mount_and_auth_posture() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -31,58 +41,70 @@ async fn custos_routes_keep_pre_refactor_mount_and_auth_posture() {
     let http = reqwest::Client::new();
 
     const PUBLIC_ROUTES: [(reqwest::Method, &str); 3] = [
-        (reqwest::Method::POST, "/api/auth/login"),
-        (reqwest::Method::GET, "/api/activate/some-token"),
-        (reqwest::Method::POST, "/api/activate/some-token"),
+        (reqwest::Method::POST, "/auth/login"),
+        (reqwest::Method::GET, "/activate/some-token"),
+        (reqwest::Method::POST, "/activate/some-token"),
     ];
-
-    for (method, path) in PUBLIC_ROUTES {
-        let status = send(&http, method.clone(), server.base_url(), path).await;
-
-        assert_ne!(
-            status, 401,
-            "public route {method} {path} must not require authentication, got 401"
-        );
-    }
-
-    // The mount probe is per path, not per (method, path): activate registers
-    // two methods on one path, and probing it once keeps the request count
-    // per governed route well under the limiter's burst size.
-    let mut probed_paths: Vec<&str> = PUBLIC_ROUTES.iter().map(|(_, path)| *path).collect();
-    probed_paths.dedup();
-
-    for path in probed_paths {
-        let mount_status = send(&http, reqwest::Method::PATCH, server.base_url(), path).await;
-        assert_eq!(
-            mount_status, 405,
-            "public route {path} must be mounted in the assembled router (PATCH probe), got {mount_status}"
-        );
-    }
 
     // One representative route per sub-family behind `require_authn` (D6):
     // auth self-service, users admin, api-keys, grants (the two `Some(_)`
     // capability routes), groups, and the security audit log.
     const PROTECTED_ROUTES: [(reqwest::Method, &str); 8] = [
-        (reqwest::Method::GET, "/api/auth/me"),
-        (reqwest::Method::GET, "/api/users"),
-        (reqwest::Method::GET, "/api/api-keys"),
-        (reqwest::Method::GET, "/api/workspaces/some-ws/grants"),
+        (reqwest::Method::GET, "/auth/me"),
+        (reqwest::Method::GET, "/users"),
+        (reqwest::Method::GET, "/api-keys"),
+        (reqwest::Method::GET, "/workspaces/some-ws/grants"),
         (
             reqwest::Method::GET,
-            "/api/workspaces/some-ws/projects/some-project/grants",
+            "/workspaces/some-ws/projects/some-project/grants",
         ),
-        (reqwest::Method::GET, "/api/workspaces/some-ws/groups"),
-        (reqwest::Method::GET, "/api/admin/audit"),
-        (reqwest::Method::GET, "/api/workspaces/some-ws/audit"),
+        (reqwest::Method::GET, "/workspaces/some-ws/groups"),
+        (reqwest::Method::GET, "/admin/audit"),
+        (reqwest::Method::GET, "/workspaces/some-ws/audit"),
     ];
 
-    for (method, path) in PROTECTED_ROUTES {
-        let status = send(&http, method.clone(), server.base_url(), path).await;
+    for (pass, namespace) in NAMESPACES.iter().enumerate() {
+        if pass > 0 {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        }
 
-        assert_eq!(
-            status, 401,
-            "protected route {method} {path} must reject an unauthenticated request, got {status}"
-        );
+        for (method, relative) in PUBLIC_ROUTES {
+            let path = mounted_path(namespace, relative);
+            let status = send(&http, method.clone(), server.base_url(), &path).await;
+
+            assert_ne!(
+                status, 401,
+                "namespace {namespace}: public route {method} {path} must not require \
+                 authentication, got 401"
+            );
+        }
+
+        // The mount probe is per path, not per (method, path): activate registers
+        // two methods on one path, and probing it once keeps the request count
+        // per governed route well under the limiter's burst size.
+        let mut probed_paths: Vec<&str> = PUBLIC_ROUTES.iter().map(|(_, path)| *path).collect();
+        probed_paths.dedup();
+
+        for relative in probed_paths {
+            let path = mounted_path(namespace, relative);
+            let mount_status = send(&http, reqwest::Method::PATCH, server.base_url(), &path).await;
+            assert_eq!(
+                mount_status, 405,
+                "namespace {namespace}: public route {path} must be mounted in the assembled \
+                 router (PATCH probe), got {mount_status}"
+            );
+        }
+
+        for (method, relative) in PROTECTED_ROUTES {
+            let path = mounted_path(namespace, relative);
+            let status = send(&http, method.clone(), server.base_url(), &path).await;
+
+            assert_eq!(
+                status, 401,
+                "namespace {namespace}: protected route {method} {path} must reject an \
+                 unauthenticated request, got {status}"
+            );
+        }
     }
 
     db.teardown().await;

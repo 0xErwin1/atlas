@@ -140,6 +140,12 @@ where
 /// here, ahead of the mount itself, rather than being duplicated later.
 pub const NAMESPACES: &[&str] = &["/api", "/api/v2"];
 
+/// The namespace whose form the idempotency store keys on, so one logical
+/// operation has one dedup record no matter which mount the client used.
+/// Equal to `NAMESPACES[0]`, the form rows stored before the dual mount
+/// already carry.
+pub const CANONICAL_NAMESPACE: &str = "/api";
+
 /// Joins a mount `namespace` with a namespace-relative `relative_path` (D1).
 /// The single place every consumer in the proposal's blast-radius table
 /// builds a concrete V1/V2 path, so no caller ever hand-concatenates a
@@ -744,6 +750,11 @@ mod tests {
     use axum::body::Body;
     use axum::http::{Method, Request, StatusCode};
     use tower::ServiceExt;
+
+    #[test]
+    fn canonical_namespace_is_the_first_mount() {
+        assert_eq!(NAMESPACES.first().copied(), Some(CANONICAL_NAMESPACE));
+    }
 
     fn declared_set(routes: &[AuditedRoute]) -> HashSet<(HttpMethod, &'static str)> {
         routes

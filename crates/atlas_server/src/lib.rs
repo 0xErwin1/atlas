@@ -133,39 +133,21 @@ use crate::state::AppState;
 
 /// Builds the full application router with all routes and the middleware stack.
 pub fn app(state: AppState) -> Router {
-    // `platform`'s eight routes, `custos`'s 35 routes, and `acta`'s 169 routes
-    // are each assembled by `routes::platform::router` (PR2),
-    // `routes::custos::router` (PR3), and `routes::acta::router` (PR4),
-    // every one of which reproduces the exact public/protected split and
-    // layer stack (including custos's login/activate governors and acta's
-    // seven `DefaultBodyLimit`-layered routes plus its own governed ingest
-    // route) they carried inline here before their respective conversions —
-    // merging an already-layered router is the same operation as merging
-    // two already-layered routers (D6).
-    //
-    // `v2-e3-s4` PR4 (D2): every registry-declared route literal was
-    // rewritten to namespace-relative form, so the `/api` prefix that used
-    // to be baked into each literal is now applied exactly once, here, via
-    // `Router::nest("/api", ...)` — the single mount D1 describes (PR5 adds
-    // a second, `/api/v2`, nest at this same composition root). The five
-    // routes that never carried an `/api` prefix (`/health`, `/ready`,
-    // `/version`, `/openapi.json`, `/scalar`) are NOT part of the nested
-    // router: each component now exposes a `root_router()` for exactly
-    // those routes, built and merged separately, outside the `/api` nest, so
-    // they keep being served at their bare root-level path.
+    // One `api_router` serves both namespaces. `Router` is `Clone`, and the
+    // clone shares every per-route layer's state: tower_governor 0.8.0's
+    // `Governor::clone` (`governor.rs`) clones its `limiter`, an
+    // `Arc<RateLimiter>`, so custos's governed `login`/`activate` routes keep
+    // one brute-force budget across `/api` and `/api/v2` instead of each
+    // mount getting a fresh one. The root-level routes (`/health`, `/ready`,
+    // `/version`, `/openapi.json`, `/scalar`) live in the separately built
+    // `root_router`, outside both nests.
     //
     // Unmatched paths run the protected stack before answering 404, so an
-    // unauthenticated probe of any path that does not exist gets 401 and only
-    // an authenticated one gets 404. Before the `/api` nest this happened by
-    // accident: `Router::merge` keeps whichever side has a non-default
-    // fallback, `Router::layer` also wraps the default fallback, and the last
-    // merged component's protected layers therefore ended up wrapping the
-    // root's default 404. `Router::nest` only carries the inner router's
-    // fallback across when that fallback is not the default one, so the
-    // nested `api_router` loses it and unmatched paths would fall through to
-    // a bare 404. The fallback is now declared explicitly, at the root so
-    // it covers every nest, and merged last: merging a router with a custom
-    // fallback into one with the default fallback adopts the custom one.
+    // unauthenticated probe of a path that does not exist gets 401 and only
+    // an authenticated one gets 404. `Router::nest` drops a nested router's
+    // default fallback, so the fallback is declared explicitly at the root
+    // and merged last: merging a router with a custom fallback into one with
+    // the default fallback adopts the custom one, covering both nests.
     let api_router = routes::platform::router(state.clone())
         .merge(routes::custos::router(state.clone()))
         .merge(routes::acta::router(state.clone()));
@@ -176,7 +158,8 @@ pub fn app(state: AppState) -> Router {
     let fallback_router = routes::protection::protect(Router::new().fallback(not_found), state);
 
     let router = Router::new()
-        .nest("/api", api_router)
+        .nest("/api", api_router.clone())
+        .nest("/api/v2", api_router)
         .merge(root_router)
         .merge(fallback_router);
     apply_layers(router)
