@@ -384,7 +384,18 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
 
     let mut covered: HashSet<Route> = HashSet::new();
 
+    // Every arm logs in at least once against custos's login governor
+    // (burst 5, one token per second, keyed by peer IP). Thirty-six logins
+    // need at least 31 seconds of wall time; a fast runner finished the
+    // arms in under 30 and got a plain-text 429 that the client reports as
+    // an unknown problem. Pacing the arms to the refill keeps admitted
+    // logins ahead of the budget on any runner.
+    let mut last_arm_started = tokio::time::Instant::now();
+
     for route in &true_routes {
+        tokio::time::sleep_until(last_arm_started + std::time::Duration::from_secs(1)).await;
+        last_arm_started = tokio::time::Instant::now();
+
         assert_eq!(
             route.method,
             HttpMethod::Post,
