@@ -39,6 +39,20 @@ pub(crate) fn api_url(base_url: &str, component: &str, relative: &str) -> String
     format!("{base_url}{}", api_path(component, relative))
 }
 
+/// This `(component, relative)` pair's path as the composed OpenAPI document
+/// keys it (`v2-e3-s6` D1.3): always `component`'s own V2 namespace, never
+/// `DEFAULT_NAMESPACE_INDEX`. A document-side audit (comparing against
+/// `atlas_server::routes::openapi::openapi()`'s own path keys) MUST use this,
+/// and MUST NOT use [`api_path`] — the document's mount is not the same fact
+/// as the suite's flippable request mount, and S7's flip of
+/// `DEFAULT_NAMESPACE_INDEX` moves only [`api_path`].
+pub(crate) fn document_path(component: &str, relative: &str) -> String {
+    atlas_server::router_audit::mounted_path(
+        &atlas_server::router_audit::v2_namespace(component),
+        relative,
+    )
+}
+
 /// The canonical idempotency store key for `relative` — always the `/api`
 /// form, never the suite's flippable default. Pinned to
 /// `router_audit::V1_NAMESPACE` by the middleware's own canonicalization,
@@ -122,5 +136,25 @@ mod tests {
             canonical_store_path("/workspaces/ws/tasks"),
             "/api/workspaces/ws/tasks"
         );
+    }
+
+    /// T1.16 (D1.3): `document_path` always resolves at `v2_namespace`,
+    /// independent of `DEFAULT_NAMESPACE_INDEX`'s value — asserted with a
+    /// locally hardcoded alternate index (`1`), never the shipped constant,
+    /// mirroring S5's `root_level_paths_stay_unprefixed_independent_of_
+    /// component_or_index` technique.
+    #[test]
+    fn document_path_always_resolves_at_v2_namespace_independent_of_default_index() {
+        const ALTERNATE_INDEX: usize = 1;
+        let cases = [
+            ("acta", "/workspaces/{ws}/tasks"),
+            ("custos", "/workspaces/{ws}/grants"),
+            ("platform", "/me/ui-state"),
+        ];
+
+        for (component, relative) in cases {
+            let expected = mounted_path(&namespaces_for(component)[ALTERNATE_INDEX], relative);
+            assert_eq!(document_path(component, relative), expected);
+        }
     }
 }

@@ -185,10 +185,6 @@ const ALLOWED: &[Exemption] = &[
         "TRANSIENT: pending v2-e3-s5 PR3",
     ),
     whole_file("grant_hygiene.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
-    whole_file(
-        "openapi_semantic_contracts.rs",
-        "TRANSIENT: pending v2-e3-s5 PR3 (25 doc-key literals)",
-    ),
 ];
 
 const MARKER_OFF: &str = "// api-path-guard:off";

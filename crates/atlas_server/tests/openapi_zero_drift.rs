@@ -5,36 +5,23 @@
 //! literal with a `HashSet`-based, bidirectional, registry-derived
 //! comparison (INV-SET, INV-DATA-DRIVEN).
 //!
-//! Scope note, updated by PR4 (T4.X): PR2's own checkpoint compared two
-//! genuinely `/api`-absolute sets directly, since neither `reg5.rs`'s route
-//! literals nor the `#[utoipa::path(path = "...")]` annotations had been
-//! rewritten yet. PR4's literal rewrite made both populations
-//! namespace-relative, and `document()` (`routes/openapi.rs`) now re-mounts
-//! its merged paths under `/api` at composition time
-//! (`crate::routes::openapi::prefix_document_paths`), so the document's own
-//! path keys stay `/api`-absolute, byte-identical to what they were before
-//! the rewrite. This test's registry side is therefore joined through
-//! `RouteMatrixEntry::mounted(V1_NAMESPACE)` before comparing against the
-//! document, which is the same "root-level routes stay unprefixed, every
-//! other route is `/api`-joined" rule `document()` itself applies. Pinned to
-//! `V1_NAMESPACE`, never the suite's flippable default (`v2-e3-s5`): it is
-//! the document's namespace until S6/PR1 re-keys it.
+//! Scope statement, updated by `v2-e3-s6` PR1 (D1.3): this guard audits the
+//! composed OpenAPI document at its own mount, `/api/v2/<component>` —
+//! `document()` (`routes/openapi.rs`) re-keys each fragment under its owning
+//! component's V2 namespace before merging (`crate::routes::openapi::
+//! mounted_fragment`), so the document's own path keys are V2-form,
+//! independent of the suite's flippable `DEFAULT_NAMESPACE_INDEX`. This
+//! test's registry side is therefore joined through
+//! `RouteMatrixEntry::mounted_document()`, never `mounted_default()` — the
+//! document's mount and the suite's request-building mount are two distinct
+//! facts, and S7's flip of `DEFAULT_NAMESPACE_INDEX` moves only the second
+//! one. Before this PR, this guard ran against the document's `/api`
+//! (V1-form) keys; that scope note is superseded by this one.
 //!
-//! Scope statement, confirmed by PR5 (T5.20): this guard runs against `/api`
-//! only, never `/api/v2` — stated explicitly here rather than left ambiguous
-//! (`v2-e3-s4`'s cross-cutting-audit requirement forbids an unstated scope).
-//! `document()`'s own path keys are `/api`-absolute by construction
-//! (`prefix_document_paths(doc, "/api")`, unchanged by PR5); PR5's own scope
-//! excludes any change to the composed OpenAPI document or its mount
-//! prefix, so there is no `/api/v2`-prefixed rendering of this document for
-//! this guard to compare against yet. Re-mounting the document's own path
-//! keys under `/api/v2` (and re-scoping this guard to match) is a future
-//! slice's job, not this PR's.
-//!
-//! PR6 update: `GET /api/workspaces/{ws}/events` (`routes::events`) is now
-//! `#[utoipa::path]`-annotated and registered in `acta`'s fragment, so it is
-//! no longer a member of [`UNANNOTATED_ROUTES`] — the unannotated list has
-//! shrunk to exactly `/openapi.json` and `/scalar`.
+//! PR6 update: `GET /api/v2/acta/workspaces/{ws}/events` (`routes::events`)
+//! is now `#[utoipa::path]`-annotated and registered in `acta`'s fragment, so
+//! it is no longer a member of [`UNANNOTATED_ROUTES`] — the unannotated list
+//! has shrunk to exactly `/openapi.json` and `/scalar`.
 
 mod support;
 
@@ -44,7 +31,6 @@ use std::path::Path;
 
 use atlas_core::registry::{ComponentKind, HttpMethod, build};
 use atlas_server::reg5::{StorageBackend, reg5_component_entries};
-use atlas_server::router_audit::V1_NAMESPACE;
 use atlas_server::routes::openapi::openapi;
 
 /// Routes with no `#[utoipa::path]` annotation of their own — a
@@ -62,7 +48,7 @@ const UNANNOTATED_ROUTES: &[(HttpMethod, &str)] = &[
 fn registry_route_set() -> HashSet<(HttpMethod, String)> {
     support::route_matrix::route_matrix()
         .into_iter()
-        .map(|entry| (entry.method, entry.mounted(V1_NAMESPACE)))
+        .map(|entry| (entry.method, entry.mounted_document()))
         .collect()
 }
 

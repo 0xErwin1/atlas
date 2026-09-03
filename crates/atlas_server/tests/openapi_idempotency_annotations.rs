@@ -13,12 +13,15 @@
 //! never from a hand-typed literal list (INV-DATA-DRIVEN). Header names are
 //! compared case-insensitively, as HTTP itself does.
 
+mod support;
+
 use std::collections::HashSet;
 
 use atlas_core::registry::HttpMethod;
 use atlas_server::reg5::{StorageBackend, reg5_component_entries};
-use atlas_server::router_audit::{V1_NAMESPACE, diff_route_sets, mounted_path};
+use atlas_server::router_audit::diff_route_sets;
 use atlas_server::routes::openapi::openapi;
+use support::path::document_path;
 use utoipa::openapi::path::Operation;
 use utoipa::openapi::response::Response;
 use utoipa::openapi::{OpenApi, RefOr};
@@ -34,22 +37,22 @@ const REPLAYED_BODY_NOTE: &str =
     "A replayed problem body differs from the original response only by its `request_id` field.";
 
 /// Every `(method, path)` the registry declares with the given `idempotent`
-/// flag, joined to the same `/api`-mounted form the composed document's own
-/// path keys carry. Pinned to `V1_NAMESPACE`, never the suite's flippable
-/// default (`v2-e3-s5`): it is the document's namespace until S6/PR1 re-keys
-/// it.
+/// flag, joined to the same V2-mounted form the composed document's own path
+/// keys carry as of `v2-e3-s6` D1.2 — `document_path`, keyed at each entry's
+/// own component, never a shared `/api` literal. This is the test that
+/// catches a half-moved mount (R1): if the document's re-key and this set's
+/// re-key do not land in the same commit, every one of the 34 annotations
+/// disappears silently.
 fn declared_routes(idempotent: bool) -> HashSet<(HttpMethod, String)> {
     let registry = atlas_core::registry::build(reg5_component_entries(StorageBackend::Filesystem))
         .expect("REG-5 entries must satisfy every registry::build() validator");
 
     let mut routes = HashSet::new();
     for entry in registry.entries() {
+        let component = entry.identity.stable_id.as_str();
         for route in &entry.api.routes {
             if route.idempotent == idempotent {
-                routes.insert((
-                    route.method,
-                    mounted_path(V1_NAMESPACE, route.path.as_str()),
-                ));
+                routes.insert((route.method, document_path(component, route.path.as_str())));
             }
         }
     }
