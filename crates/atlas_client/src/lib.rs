@@ -171,6 +171,33 @@ fn parse_retry_after(raw: Option<&str>) -> Duration {
     Duration::from_secs(secs).clamp(MIN_RETRY_WAIT, MAX_RETRY_WAIT)
 }
 
+/// The three REG-5 components whose routes this client addresses. The
+/// variants' wire strings are the `/api/v2/<component>` mount segments
+/// (`atlas_server::lib::app`); `atlas_server`'s route-contract test asserts
+/// they are exactly the registry's API-declaring stable ids, so this enum
+/// cannot drift from ownership even though this crate cannot see the
+/// registry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Component {
+    Platform,
+    Custos,
+    Acta,
+}
+
+impl Component {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Platform => "platform",
+            Self::Custos => "custos",
+            Self::Acta => "acta",
+        }
+    }
+}
+
+// api-path-guard:off
+const V2_PREFIX: &str = "/api/v2";
+// api-path-guard:on
+
 pub struct AtlasClient {
     base_url: String,
     http: reqwest::Client,
@@ -232,24 +259,43 @@ impl AtlasClient {
         &self.http
     }
 
-    fn get(&self, path: &str) -> Req<'_> {
+    /// Resolves `component`'s `/api/v2/<component>` mount plus `relative`
+    /// into an absolute URL. The only place a component namespace is
+    /// assembled into a concrete URL inside this crate.
+    fn mounted(&self, component: Component, relative: &str) -> String {
+        format!(
+            "{}{V2_PREFIX}/{}{relative}",
+            self.base_url,
+            component.as_str()
+        )
+    }
+
+    fn get(&self, component: Component, relative: &str) -> Req<'_> {
+        self.request(self.http.get(self.mounted(component, relative)))
+    }
+
+    fn post(&self, component: Component, relative: &str) -> Req<'_> {
+        self.request(self.http.post(self.mounted(component, relative)))
+    }
+
+    fn patch(&self, component: Component, relative: &str) -> Req<'_> {
+        self.request(self.http.patch(self.mounted(component, relative)))
+    }
+
+    fn put(&self, component: Component, relative: &str) -> Req<'_> {
+        self.request(self.http.put(self.mounted(component, relative)))
+    }
+
+    fn delete(&self, component: Component, relative: &str) -> Req<'_> {
+        self.request(self.http.delete(self.mounted(component, relative)))
+    }
+
+    /// The one composition-root route this client calls outside every
+    /// component nest (`router_audit::ROOT_LEVEL_PATHS`): `GET /health`.
+    /// Kept as a distinct method rather than a `Component` argument because a
+    /// root-level path has no owning namespace on the wire.
+    fn root_get(&self, path: &str) -> Req<'_> {
         self.request(self.http.get(format!("{}{}", self.base_url, path)))
-    }
-
-    fn post(&self, path: &str) -> Req<'_> {
-        self.request(self.http.post(format!("{}{}", self.base_url, path)))
-    }
-
-    fn patch(&self, path: &str) -> Req<'_> {
-        self.request(self.http.patch(format!("{}{}", self.base_url, path)))
-    }
-
-    fn put(&self, path: &str) -> Req<'_> {
-        self.request(self.http.put(format!("{}{}", self.base_url, path)))
-    }
-
-    fn delete(&self, path: &str) -> Req<'_> {
-        self.request(self.http.delete(format!("{}{}", self.base_url, path)))
     }
 
     /// Wraps a raw `RequestBuilder`, applying bearer auth, into a retry-aware `Req`.
@@ -321,30 +367,34 @@ impl AtlasClient {
 
     /// `GET /health`
     pub async fn health(&self) -> Result<HealthResponse, ClientError> {
-        let response = self.get("/health").send().await?;
+        let response = self.root_get("/health").send().await?;
         self.decode_response(response, "health").await
     }
 
-    /// `POST /api/auth/login`
+    /// `POST /api/v2/custos/auth/login`
     ///
     /// On success, stores the returned session token in `self.token`.
     pub async fn login(&mut self, body: LoginRequest) -> Result<LoginResponse, ClientError> {
-        let response = self.post("/api/auth/login").json(&body).send().await?;
+        let response = self
+            .post(Component::Custos, "/auth/login")
+            .json(&body)
+            .send()
+            .await?;
         let login: LoginResponse = self.decode_response(response, "login").await?;
         self.token = Some(login.token.clone());
         Ok(login)
     }
 
-    /// `GET /api/auth/me`
+    /// `GET /api/v2/custos/auth/me`
     pub async fn me(&self) -> Result<MeResponse, ClientError> {
-        let response = self.get("/api/auth/me").send().await?;
+        let response = self.get(Component::Custos, "/auth/me").send().await?;
         self.decode_response(response, "me").await
     }
 
-    /// `POST /api/auth/change-password`
+    /// `POST /api/v2/custos/auth/change-password`
     pub async fn change_password(&self, body: ChangePasswordRequest) -> Result<(), ClientError> {
         let response = self
-            .post("/api/auth/change-password")
+            .post(Component::Custos, "/auth/change-password")
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -359,10 +409,10 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `PATCH /api/users/me`
+    /// `PATCH /api/v2/custos/users/me`
     pub async fn update_me(&self, body: UpdateMeRequest) -> Result<UserDto, ClientError> {
         let response = self
-            .patch("/api/users/me")
+            .patch(Component::Custos, "/users/me")
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -370,17 +420,17 @@ impl AtlasClient {
         self.decode_response(response, "update_me").await
     }
 
-    /// `GET /api/me/ui-state`
+    /// `GET /api/v2/platform/me/ui-state`
     ///
     /// Returns the current user's stored UI state object (an empty object when
     /// no state has been saved yet).
     pub async fn get_ui_state(&self) -> Result<serde_json::Value, ClientError> {
-        let response = self.get("/api/me/ui-state").send().await?;
+        let response = self.get(Component::Platform, "/me/ui-state").send().await?;
         let dto: UiStateDto = self.decode_response(response, "get_ui_state").await?;
         Ok(dto.state)
     }
 
-    /// `PUT /api/me/ui-state`
+    /// `PUT /api/v2/platform/me/ui-state`
     ///
     /// Upserts the current user's UI state and returns the stored object.
     pub async fn set_ui_state(
@@ -391,7 +441,7 @@ impl AtlasClient {
             state: state.clone(),
         };
         let response = self
-            .put("/api/me/ui-state")
+            .put(Component::Platform, "/me/ui-state")
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -400,25 +450,25 @@ impl AtlasClient {
         Ok(dto.state)
     }
 
-    /// `GET /api/meta`
+    /// `GET /api/v2/platform/meta`
     pub async fn server_meta(&self) -> Result<ServerMetaDto, ClientError> {
-        let response = self.get("/api/meta").send().await?;
+        let response = self.get(Component::Platform, "/meta").send().await?;
         self.decode_response(response, "server_meta").await
     }
 
-    /// `GET /api/users`
+    /// `GET /api/v2/custos/users`
     pub async fn list_users(&self) -> Result<Vec<UserDto>, ClientError> {
-        let response = self.get("/api/users").send().await?;
+        let response = self.get(Component::Custos, "/users").send().await?;
         self.decode_response(response, "list_users").await
     }
 
-    /// `POST /api/users`
+    /// `POST /api/v2/custos/users`
     pub async fn create_user(
         &self,
         body: CreateUserRequest,
     ) -> Result<CreateUserResponse, ClientError> {
         let response = self
-            .post("/api/users")
+            .post(Component::Custos, "/users")
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -426,13 +476,16 @@ impl AtlasClient {
         self.decode_response(response, "create_user").await
     }
 
-    /// `POST /api/users/{user_id}/activation-link`
+    /// `POST /api/v2/custos/users/{user_id}/activation-link`
     pub async fn regenerate_activation_link(
         &self,
         user_id: uuid::Uuid,
     ) -> Result<ActivationLinkResponse, ClientError> {
         let response = self
-            .post(&format!("/api/users/{user_id}/activation-link"))
+            .post(
+                Component::Custos,
+                &format!("/users/{user_id}/activation-link"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -440,10 +493,10 @@ impl AtlasClient {
             .await
     }
 
-    /// `POST /api/users/{user_id}/disable`
+    /// `POST /api/v2/custos/users/{user_id}/disable`
     pub async fn disable_user(&self, user_id: uuid::Uuid) -> Result<(), ClientError> {
         let response = self
-            .post(&format!("/api/users/{user_id}/disable"))
+            .post(Component::Custos, &format!("/users/{user_id}/disable"))
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -457,10 +510,10 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `POST /api/users/{user_id}/enable`
+    /// `POST /api/v2/custos/users/{user_id}/enable`
     pub async fn enable_user(&self, user_id: uuid::Uuid) -> Result<(), ClientError> {
         let response = self
-            .post(&format!("/api/users/{user_id}/enable"))
+            .post(Component::Custos, &format!("/users/{user_id}/enable"))
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -474,14 +527,17 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `POST /api/users/{user_id}/reset-password`
+    /// `POST /api/v2/custos/users/{user_id}/reset-password`
     pub async fn reset_user_password(
         &self,
         user_id: uuid::Uuid,
         new_password: impl Into<String>,
     ) -> Result<(), ClientError> {
         let response = self
-            .post(&format!("/api/users/{user_id}/reset-password"))
+            .post(
+                Component::Custos,
+                &format!("/users/{user_id}/reset-password"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&ResetPasswordRequest {
                 new_password: new_password.into(),
@@ -498,7 +554,7 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `GET /api/users/{user_id}/memberships`
+    /// `GET /api/v2/custos/users/{user_id}/memberships`
     ///
     /// Lists every workspace the target user belongs to, with the membership
     /// role. Requires root/admin privileges.
@@ -507,20 +563,20 @@ impl AtlasClient {
         user_id: uuid::Uuid,
     ) -> Result<Vec<UserMembershipDto>, ClientError> {
         let response = self
-            .get(&format!("/api/users/{user_id}/memberships"))
+            .get(Component::Custos, &format!("/users/{user_id}/memberships"))
             .send()
             .await?;
         self.decode_response(response, "list_user_memberships")
             .await
     }
 
-    /// `POST /api/api-keys`
+    /// `POST /api/v2/custos/api-keys`
     pub async fn create_user_api_key(
         &self,
         body: CreateUserApiKeyRequest,
     ) -> Result<ApiKeyCreated, ClientError> {
         let response = self
-            .post("/api/api-keys")
+            .post(Component::Custos, "/api-keys")
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -528,21 +584,21 @@ impl AtlasClient {
         self.decode_response(response, "create_user_api_key").await
     }
 
-    /// `GET /api/api-keys`
+    /// `GET /api/v2/custos/api-keys`
     pub async fn list_user_api_keys(
         &self,
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<ApiKeyDto>, ClientError> {
-        let path = build_paginated_path("/api/api-keys", cursor, limit);
-        let response = self.get(&path).send().await?;
+        let path = build_paginated_path("/api-keys", cursor, limit);
+        let response = self.get(Component::Custos, &path).send().await?;
         self.decode_response(response, "list_user_api_keys").await
     }
 
-    /// `DELETE /api/api-keys/{key_id}`
+    /// `DELETE /api/v2/custos/api-keys/{key_id}`
     pub async fn revoke_user_api_key(&self, key_id: uuid::Uuid) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!("/api/api-keys/{key_id}"))
+            .delete(Component::Custos, &format!("/api-keys/{key_id}"))
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -556,7 +612,7 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `PATCH /api/api-keys/{key_id}` — toggles the key's global reach.
+    /// `PATCH /api/v2/custos/api-keys/{key_id}`
     pub async fn set_api_key_global(
         &self,
         key_id: uuid::Uuid,
@@ -569,7 +625,7 @@ impl AtlasClient {
             scopes: None,
         };
         let response = self
-            .patch(&format!("/api/api-keys/{key_id}"))
+            .patch(Component::Custos, &format!("/api-keys/{key_id}"))
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -577,7 +633,7 @@ impl AtlasClient {
         self.decode_response(response, "set_api_key_global").await
     }
 
-    /// `PATCH /api/api-keys/{key_id}` — replaces the key's full scope set.
+    /// `PATCH /api/v2/custos/api-keys/{key_id}`
     pub async fn set_api_key_scopes(
         &self,
         key_id: uuid::Uuid,
@@ -590,7 +646,7 @@ impl AtlasClient {
             scopes: Some(scopes),
         };
         let response = self
-            .patch(&format!("/api/api-keys/{key_id}"))
+            .patch(Component::Custos, &format!("/api-keys/{key_id}"))
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -598,26 +654,29 @@ impl AtlasClient {
         self.decode_response(response, "set_api_key_scopes").await
     }
 
-    /// `GET /api/api-keys/{key_id}/grants`
+    /// `GET /api/v2/custos/api-keys/{key_id}/grants`
     pub async fn list_api_key_grants(
         &self,
         key_id: uuid::Uuid,
     ) -> Result<Vec<ApiKeyGrantDto>, ClientError> {
         let response = self
-            .get(&format!("/api/api-keys/{key_id}/grants"))
+            .get(Component::Custos, &format!("/api-keys/{key_id}/grants"))
             .send()
             .await?;
         self.decode_response(response, "list_api_key_grants").await
     }
 
-    /// `DELETE /api/api-keys/{key_id}/grants/{grant_id}`
+    /// `DELETE /api/v2/custos/api-keys/{key_id}/grants/{grant_id}`
     pub async fn delete_api_key_grant(
         &self,
         key_id: uuid::Uuid,
         grant_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!("/api/api-keys/{key_id}/grants/{grant_id}"))
+            .delete(
+                Component::Custos,
+                &format!("/api-keys/{key_id}/grants/{grant_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -631,14 +690,14 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `POST /api/workspaces/{ws}/projects`
+    /// `POST /api/v2/acta/workspaces/{ws}/projects`
     pub async fn create_project(
         &self,
         ws: &str,
         body: CreateProjectRequest,
     ) -> Result<ProjectDto, ClientError> {
         let response = self
-            .post(&format!("/api/workspaces/{ws}/projects"))
+            .post(Component::Acta, &format!("/workspaces/{ws}/projects"))
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -646,28 +705,31 @@ impl AtlasClient {
         self.decode_response(response, "create_project").await
     }
 
-    /// `GET /api/workspaces/{ws}/projects`
+    /// `GET /api/v2/acta/workspaces/{ws}/projects`
     pub async fn list_projects(
         &self,
         ws: &str,
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<ProjectDto>, ClientError> {
-        let path = build_paginated_path(&format!("/api/workspaces/{ws}/projects"), cursor, limit);
-        let response = self.get(&path).send().await?;
+        let path = build_paginated_path(&format!("/workspaces/{ws}/projects"), cursor, limit);
+        let response = self.get(Component::Acta, &path).send().await?;
         self.decode_response(response, "list_projects").await
     }
 
-    /// `GET /api/workspaces/{ws}/projects/{project_slug}`
+    /// `GET /api/v2/acta/workspaces/{ws}/projects/{project_slug}`
     pub async fn get_project(&self, ws: &str, slug: &str) -> Result<ProjectDto, ClientError> {
         let response = self
-            .get(&format!("/api/workspaces/{ws}/projects/{slug}"))
+            .get(
+                Component::Acta,
+                &format!("/workspaces/{ws}/projects/{slug}"),
+            )
             .send()
             .await?;
         self.decode_response(response, "get_project").await
     }
 
-    /// `PATCH /api/workspaces/{ws}/projects/{project_slug}`
+    /// `PATCH /api/v2/acta/workspaces/{ws}/projects/{project_slug}`
     pub async fn update_project(
         &self,
         ws: &str,
@@ -675,7 +737,10 @@ impl AtlasClient {
         body: UpdateProjectRequest,
     ) -> Result<ProjectDto, ClientError> {
         let response = self
-            .patch(&format!("/api/workspaces/{ws}/projects/{slug}"))
+            .patch(
+                Component::Acta,
+                &format!("/workspaces/{ws}/projects/{slug}"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -683,10 +748,13 @@ impl AtlasClient {
         self.decode_response(response, "update_project").await
     }
 
-    /// `DELETE /api/workspaces/{ws}/projects/{project_slug}`
+    /// `DELETE /api/v2/acta/workspaces/{ws}/projects/{project_slug}`
     pub async fn delete_project(&self, ws: &str, slug: &str) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!("/api/workspaces/{ws}/projects/{slug}"))
+            .delete(
+                Component::Acta,
+                &format!("/workspaces/{ws}/projects/{slug}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -700,7 +768,7 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `POST /api/workspaces/{ws}/projects/{slug}/grants`
+    /// `POST /api/v2/custos/workspaces/{ws}/projects/{slug}/grants`
     pub async fn create_project_grant(
         &self,
         ws: &str,
@@ -708,7 +776,10 @@ impl AtlasClient {
         body: CreateGrantRequest,
     ) -> Result<GrantDto, ClientError> {
         let response = self
-            .post(&format!("/api/workspaces/{ws}/projects/{slug}/grants"))
+            .post(
+                Component::Custos,
+                &format!("/workspaces/{ws}/projects/{slug}/grants"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -716,7 +787,7 @@ impl AtlasClient {
         self.decode_response(response, "create_project_grant").await
     }
 
-    /// `GET /api/workspaces/{ws}/projects/{slug}/grants`
+    /// `GET /api/v2/custos/workspaces/{ws}/projects/{slug}/grants`
     pub async fn list_project_grants(
         &self,
         ws: &str,
@@ -725,15 +796,15 @@ impl AtlasClient {
         limit: Option<u32>,
     ) -> Result<Page<GrantDto>, ClientError> {
         let path = build_paginated_path(
-            &format!("/api/workspaces/{ws}/projects/{slug}/grants"),
+            &format!("/workspaces/{ws}/projects/{slug}/grants"),
             cursor,
             limit,
         );
-        let response = self.get(&path).send().await?;
+        let response = self.get(Component::Custos, &path).send().await?;
         self.decode_response(response, "list_project_grants").await
     }
 
-    /// `DELETE /api/workspaces/{ws}/projects/{slug}/grants/{grant_id}`
+    /// `DELETE /api/v2/custos/workspaces/{ws}/projects/{slug}/grants/{grant_id}`
     pub async fn delete_project_grant(
         &self,
         ws: &str,
@@ -741,9 +812,10 @@ impl AtlasClient {
         grant_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!(
-                "/api/workspaces/{ws}/projects/{slug}/grants/{grant_id}"
-            ))
+            .delete(
+                Component::Custos,
+                &format!("/workspaces/{ws}/projects/{slug}/grants/{grant_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -757,14 +829,14 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `POST /api/workspaces/{ws}/grants`
+    /// `POST /api/v2/custos/workspaces/{ws}/grants`
     pub async fn create_workspace_grant(
         &self,
         ws: &str,
         body: CreateGrantRequest,
     ) -> Result<GrantDto, ClientError> {
         let response = self
-            .post(&format!("/api/workspaces/{ws}/grants"))
+            .post(Component::Custos, &format!("/workspaces/{ws}/grants"))
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -773,27 +845,30 @@ impl AtlasClient {
             .await
     }
 
-    /// `GET /api/workspaces/{ws}/grants`
+    /// `GET /api/v2/custos/workspaces/{ws}/grants`
     pub async fn list_workspace_grants(
         &self,
         ws: &str,
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<GrantDto>, ClientError> {
-        let path = build_paginated_path(&format!("/api/workspaces/{ws}/grants"), cursor, limit);
-        let response = self.get(&path).send().await?;
+        let path = build_paginated_path(&format!("/workspaces/{ws}/grants"), cursor, limit);
+        let response = self.get(Component::Custos, &path).send().await?;
         self.decode_response(response, "list_workspace_grants")
             .await
     }
 
-    /// `DELETE /api/workspaces/{ws}/grants/{grant_id}`
+    /// `DELETE /api/v2/custos/workspaces/{ws}/grants/{grant_id}`
     pub async fn delete_workspace_grant(
         &self,
         ws: &str,
         grant_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!("/api/workspaces/{ws}/grants/{grant_id}"))
+            .delete(
+                Component::Custos,
+                &format!("/workspaces/{ws}/grants/{grant_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -807,13 +882,13 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `POST /api/workspaces`
+    /// `POST /api/v2/acta/workspaces`
     pub async fn create_workspace(&self, name: &str) -> Result<WorkspaceDto, ClientError> {
         let body = CreateWorkspaceRequest {
             name: name.to_string(),
         };
         let response = self
-            .post("/api/workspaces")
+            .post(Component::Acta, "/workspaces")
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -821,19 +896,22 @@ impl AtlasClient {
         self.decode_response(response, "create_workspace").await
     }
 
-    /// `GET /api/workspaces`
+    /// `GET /api/v2/acta/workspaces`
     pub async fn list_workspaces(&self) -> Result<Vec<WorkspaceDto>, ClientError> {
-        let response = self.get("/api/workspaces").send().await?;
+        let response = self.get(Component::Acta, "/workspaces").send().await?;
         self.decode_response(response, "list_workspaces").await
     }
 
-    /// `GET /api/workspaces/{ws}`
+    /// `GET /api/v2/acta/workspaces/{ws}`
     pub async fn get_workspace(&self, ws: &str) -> Result<WorkspaceDto, ClientError> {
-        let response = self.get(&format!("/api/workspaces/{ws}")).send().await?;
+        let response = self
+            .get(Component::Acta, &format!("/workspaces/{ws}"))
+            .send()
+            .await?;
         self.decode_response(response, "get_workspace").await
     }
 
-    /// `PATCH /api/workspaces/{ws}`
+    /// `PATCH /api/v2/acta/workspaces/{ws}`
     ///
     /// Renames the workspace display name. The slug is never changed.
     pub async fn update_workspace(
@@ -842,7 +920,7 @@ impl AtlasClient {
         body: UpdateWorkspaceRequest,
     ) -> Result<WorkspaceDto, ClientError> {
         let response = self
-            .patch(&format!("/api/workspaces/{ws}"))
+            .patch(Component::Acta, &format!("/workspaces/{ws}"))
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -850,16 +928,19 @@ impl AtlasClient {
         self.decode_response(response, "update_workspace").await
     }
 
-    /// `GET /api/admin/workspaces`
+    /// `GET /api/v2/acta/admin/workspaces`
     ///
     /// Returns all workspaces in the system. Requires root/admin privileges.
     pub async fn admin_list_workspaces(&self) -> Result<Vec<WorkspaceDto>, ClientError> {
-        let response = self.get("/api/admin/workspaces").send().await?;
+        let response = self
+            .get(Component::Acta, "/admin/workspaces")
+            .send()
+            .await?;
         self.decode_response(response, "admin_list_workspaces")
             .await
     }
 
-    /// `PATCH /api/admin/workspaces/{ws}`
+    /// `PATCH /api/v2/acta/admin/workspaces/{ws}`
     ///
     /// Updates a workspace's name and/or slug. Requires root/admin privileges.
     pub async fn admin_update_workspace(
@@ -868,7 +949,7 @@ impl AtlasClient {
         body: AdminUpdateWorkspaceRequest,
     ) -> Result<WorkspaceDto, ClientError> {
         let response = self
-            .patch(&format!("/api/admin/workspaces/{ws}"))
+            .patch(Component::Acta, &format!("/admin/workspaces/{ws}"))
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -877,12 +958,12 @@ impl AtlasClient {
             .await
     }
 
-    /// `DELETE /api/admin/workspaces/{ws}`
+    /// `DELETE /api/v2/acta/admin/workspaces/{ws}`
     ///
     /// Soft-deletes a workspace. Requires root/admin privileges.
     pub async fn admin_delete_workspace(&self, ws: &str) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!("/api/admin/workspaces/{ws}"))
+            .delete(Component::Acta, &format!("/admin/workspaces/{ws}"))
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -896,17 +977,17 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `GET /api/workspaces/{ws}/members`
+    /// `GET /api/v2/acta/workspaces/{ws}/members`
     pub async fn list_workspace_members(&self, ws: &str) -> Result<Vec<PrincipalDto>, ClientError> {
         let response = self
-            .get(&format!("/api/workspaces/{ws}/members"))
+            .get(Component::Acta, &format!("/workspaces/{ws}/members"))
             .send()
             .await?;
         self.decode_response(response, "list_workspace_members")
             .await
     }
 
-    /// `POST /api/workspaces/{ws}/members`
+    /// `POST /api/v2/acta/workspaces/{ws}/members`
     ///
     /// Adds an existing user to the workspace at `role`. Returns the new member
     /// as a `PrincipalDto` on success (HTTP 201).
@@ -918,7 +999,7 @@ impl AtlasClient {
     ) -> Result<PrincipalDto, ClientError> {
         use atlas_api::dtos::AddMemberRequest;
         let response = self
-            .post(&format!("/api/workspaces/{ws}/members"))
+            .post(Component::Acta, &format!("/workspaces/{ws}/members"))
             .header("x-atlas-csrf", "1")
             .json(&AddMemberRequest {
                 user_id,
@@ -929,20 +1010,23 @@ impl AtlasClient {
         self.decode_response(response, "add_member").await
     }
 
-    /// `GET /api/workspaces/{ws}/assignable-users`
+    /// `GET /api/v2/acta/workspaces/{ws}/assignable-users`
     ///
     /// Lists the active, non-disabled users who are not yet members of the
     /// workspace — the candidates the member picker can add.
     pub async fn list_assignable_users(&self, ws: &str) -> Result<Vec<UserDto>, ClientError> {
         let response = self
-            .get(&format!("/api/workspaces/{ws}/assignable-users"))
+            .get(
+                Component::Acta,
+                &format!("/workspaces/{ws}/assignable-users"),
+            )
             .send()
             .await?;
         self.decode_response(response, "list_assignable_users")
             .await
     }
 
-    /// `PATCH /api/workspaces/{ws}/members/{user_id}`
+    /// `PATCH /api/v2/acta/workspaces/{ws}/members/{user_id}`
     pub async fn update_member_role(
         &self,
         ws: &str,
@@ -951,7 +1035,10 @@ impl AtlasClient {
     ) -> Result<PrincipalDto, ClientError> {
         use atlas_api::dtos::UpdateMemberRoleRequest;
         let response = self
-            .patch(&format!("/api/workspaces/{ws}/members/{user_id}"))
+            .patch(
+                Component::Acta,
+                &format!("/workspaces/{ws}/members/{user_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&UpdateMemberRoleRequest {
                 role: role.to_string(),
@@ -961,12 +1048,15 @@ impl AtlasClient {
         self.decode_response(response, "update_member_role").await
     }
 
-    /// `DELETE /api/workspaces/{ws}/members/{user_id}`
+    /// `DELETE /api/v2/acta/workspaces/{ws}/members/{user_id}`
     ///
     /// Returns the raw HTTP status code so callers can assert on 204.
     pub async fn remove_member(&self, ws: &str, user_id: uuid::Uuid) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!("/api/workspaces/{ws}/members/{user_id}"))
+            .delete(
+                Component::Acta,
+                &format!("/workspaces/{ws}/members/{user_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -980,7 +1070,7 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `GET /api/workspaces/{ws}/search`
+    /// `GET /api/v2/acta/workspaces/{ws}/search`
     ///
     /// Calls the unified full-text search endpoint. `q` is required; the
     /// remaining parameters are optional and map directly to the query-string
@@ -997,11 +1087,11 @@ impl AtlasClient {
         mode: Option<&str>,
     ) -> Result<Page<SearchHitDto>, ClientError> {
         let path = build_search_path(ws, q, type_filter, sort, cursor, limit, mode);
-        let response = self.get(&path).send().await?;
+        let response = self.get(Component::Acta, &path).send().await?;
         self.decode_response(response, "search").await
     }
 
-    /// `GET /api/workspaces/{ws}/semantic-search`
+    /// `GET /api/v2/acta/workspaces/{ws}/semantic-search`
     pub async fn semantic_search(
         &self,
         ws: &str,
@@ -1011,11 +1101,11 @@ impl AtlasClient {
         limit: Option<u32>,
     ) -> Result<Page<SemanticSearchHitDto>, ClientError> {
         let path = build_semantic_search_path(ws, q, type_filter, cursor, limit);
-        let response = self.get(&path).send().await?;
+        let response = self.get(Component::Acta, &path).send().await?;
         self.decode_response(response, "semantic_search").await
     }
 
-    /// `POST /api/workspaces/{ws}/projects/{project_slug}/folders`
+    /// `POST /api/v2/acta/workspaces/{ws}/projects/{project_slug}/folders`
     pub async fn create_folder(
         &self,
         ws: &str,
@@ -1023,9 +1113,10 @@ impl AtlasClient {
         body: CreateFolderRequest,
     ) -> Result<FolderDto, ClientError> {
         let response = self
-            .post(&format!(
-                "/api/workspaces/{ws}/projects/{project_slug}/folders"
-            ))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/projects/{project_slug}/folders"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -1033,7 +1124,7 @@ impl AtlasClient {
         self.decode_response(response, "create_folder").await
     }
 
-    /// `GET /api/workspaces/{ws}/projects/{project_slug}/folders`
+    /// `GET /api/v2/acta/workspaces/{ws}/projects/{project_slug}/folders`
     pub async fn list_folders(
         &self,
         ws: &str,
@@ -1042,28 +1133,31 @@ impl AtlasClient {
         limit: Option<u32>,
     ) -> Result<Page<FolderDto>, ClientError> {
         let path = build_paginated_path(
-            &format!("/api/workspaces/{ws}/projects/{project_slug}/folders"),
+            &format!("/workspaces/{ws}/projects/{project_slug}/folders"),
             cursor,
             limit,
         );
-        let response = self.get(&path).send().await?;
+        let response = self.get(Component::Acta, &path).send().await?;
         self.decode_response(response, "list_folders").await
     }
 
-    /// `GET /api/workspaces/{ws}/folders/{folder_id}`
+    /// `GET /api/v2/acta/workspaces/{ws}/folders/{folder_id}`
     pub async fn get_folder(
         &self,
         ws: &str,
         folder_id: uuid::Uuid,
     ) -> Result<FolderDto, ClientError> {
         let response = self
-            .get(&format!("/api/workspaces/{ws}/folders/{folder_id}"))
+            .get(
+                Component::Acta,
+                &format!("/workspaces/{ws}/folders/{folder_id}"),
+            )
             .send()
             .await?;
         self.decode_response(response, "get_folder").await
     }
 
-    /// `PATCH /api/workspaces/{ws}/folders/{folder_id}`
+    /// `PATCH /api/v2/acta/workspaces/{ws}/folders/{folder_id}`
     pub async fn rename_folder(
         &self,
         ws: &str,
@@ -1071,7 +1165,10 @@ impl AtlasClient {
         body: RenameFolderRequest,
     ) -> Result<FolderDto, ClientError> {
         let response = self
-            .patch(&format!("/api/workspaces/{ws}/folders/{folder_id}"))
+            .patch(
+                Component::Acta,
+                &format!("/workspaces/{ws}/folders/{folder_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -1079,7 +1176,7 @@ impl AtlasClient {
         self.decode_response(response, "rename_folder").await
     }
 
-    /// `PATCH /api/workspaces/{ws}/folders/{folder_id}/move`
+    /// `PATCH /api/v2/acta/workspaces/{ws}/folders/{folder_id}/move`
     pub async fn move_folder(
         &self,
         ws: &str,
@@ -1087,7 +1184,10 @@ impl AtlasClient {
         body: MoveFolderRequest,
     ) -> Result<FolderDto, ClientError> {
         let response = self
-            .patch(&format!("/api/workspaces/{ws}/folders/{folder_id}/move"))
+            .patch(
+                Component::Acta,
+                &format!("/workspaces/{ws}/folders/{folder_id}/move"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -1095,7 +1195,7 @@ impl AtlasClient {
         self.decode_response(response, "move_folder").await
     }
 
-    /// `POST /api/workspaces/{ws}/folders/{folder_id}/copy`
+    /// `POST /api/v2/acta/workspaces/{ws}/folders/{folder_id}/copy`
     pub async fn copy_folder(
         &self,
         ws: &str,
@@ -1103,7 +1203,10 @@ impl AtlasClient {
         parent_folder_id: Option<uuid::Uuid>,
     ) -> Result<FolderDto, ClientError> {
         let response = self
-            .post(&format!("/api/workspaces/{ws}/folders/{folder_id}/copy"))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/folders/{folder_id}/copy"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&CopyFolderRequest { parent_folder_id })
             .send()
@@ -1111,10 +1214,13 @@ impl AtlasClient {
         self.decode_response(response, "copy_folder").await
     }
 
-    /// `DELETE /api/workspaces/{ws}/folders/{folder_id}`
+    /// `DELETE /api/v2/acta/workspaces/{ws}/folders/{folder_id}`
     pub async fn delete_folder(&self, ws: &str, folder_id: uuid::Uuid) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!("/api/workspaces/{ws}/folders/{folder_id}"))
+            .delete(
+                Component::Acta,
+                &format!("/workspaces/{ws}/folders/{folder_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -1128,7 +1234,7 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `POST /api/workspaces/{ws}/projects/{project_slug}/documents`
+    /// `POST /api/v2/acta/workspaces/{ws}/projects/{project_slug}/documents`
     pub async fn create_document(
         &self,
         ws: &str,
@@ -1136,9 +1242,10 @@ impl AtlasClient {
         body: CreateDocumentRequest,
     ) -> Result<DocumentDto, ClientError> {
         let response = self
-            .post(&format!(
-                "/api/workspaces/{ws}/projects/{project_slug}/documents"
-            ))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/projects/{project_slug}/documents"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -1146,7 +1253,7 @@ impl AtlasClient {
         self.decode_response(response, "create_document").await
     }
 
-    /// `GET /api/workspaces/{ws}/projects/{project_slug}/documents`
+    /// `GET /api/v2/acta/workspaces/{ws}/projects/{project_slug}/documents`
     pub async fn list_documents(
         &self,
         ws: &str,
@@ -1158,7 +1265,7 @@ impl AtlasClient {
             .await
     }
 
-    /// `GET /api/workspaces/{ws}/projects/{project_slug}/documents?unfiled={bool}`
+    /// `GET /api/v2/acta/workspaces/{ws}/projects/{project_slug}/documents?unfiled={bool}`
     ///
     /// `None` lists all documents, `Some(true)` only unfiled documents, and
     /// `Some(false)` only filed documents.
@@ -1174,7 +1281,7 @@ impl AtlasClient {
             .await
     }
 
-    /// `GET /api/workspaces/{ws}/projects/{project_slug}/documents?unfiled={bool}&preview={bool}`
+    /// `GET /api/v2/acta/workspaces/{ws}/projects/{project_slug}/documents?unfiled={bool}&preview={bool}`
     ///
     /// `preview` opts every row into a body preview; listings default to omitting
     /// it so bulk reads stay cheap.
@@ -1188,39 +1295,45 @@ impl AtlasClient {
         preview: bool,
     ) -> Result<Page<DocumentSummaryDto>, ClientError> {
         let path = build_document_list_path(
-            &format!("/api/workspaces/{ws}/projects/{project_slug}/documents"),
+            &format!("/workspaces/{ws}/projects/{project_slug}/documents"),
             cursor,
             limit,
             unfiled,
             preview,
         );
-        let response = self.get(&path).send().await?;
+        let response = self.get(Component::Acta, &path).send().await?;
         self.decode_response(response, "list_documents").await
     }
 
-    /// `GET /api/workspaces/{ws}/documents/{slug}`
+    /// `GET /api/v2/acta/workspaces/{ws}/documents/{slug}`
     pub async fn get_document(&self, ws: &str, slug: &str) -> Result<DocumentDto, ClientError> {
         let response = self
-            .get(&format!("/api/workspaces/{ws}/documents/{slug}"))
+            .get(
+                Component::Acta,
+                &format!("/workspaces/{ws}/documents/{slug}"),
+            )
             .send()
             .await?;
         self.decode_response(response, "get_document").await
     }
 
-    /// `GET /api/workspaces/{ws}/documents/{slug}/compact`
+    /// `GET /api/v2/acta/workspaces/{ws}/documents/{slug}/compact`
     pub async fn get_document_compact(
         &self,
         ws: &str,
         slug: &str,
     ) -> Result<DocumentCompactDto, ClientError> {
         let response = self
-            .get(&format!("/api/workspaces/{ws}/documents/{slug}/compact"))
+            .get(
+                Component::Acta,
+                &format!("/workspaces/{ws}/documents/{slug}/compact"),
+            )
             .send()
             .await?;
         self.decode_response(response, "get_document_compact").await
     }
 
-    /// `GET /api/workspaces/{ws}/documents/{slug}/content/range`
+    /// `GET /api/v2/acta/workspaces/{ws}/documents/{slug}/content/range`
     pub async fn get_document_content_range(
         &self,
         ws: &str,
@@ -1228,12 +1341,12 @@ impl AtlasClient {
         query: DocumentContentRangeQuery,
     ) -> Result<DocumentContentRangeDto, ClientError> {
         let path = build_document_range_path(ws, slug, &query);
-        let response = self.get(&path).send().await?;
+        let response = self.get(Component::Acta, &path).send().await?;
         self.decode_response(response, "get_document_content_range")
             .await
     }
 
-    /// `POST /api/workspaces/{ws}/documents/{slug}/content/search`
+    /// `POST /api/v2/acta/workspaces/{ws}/documents/{slug}/content/search`
     pub async fn search_document_content(
         &self,
         ws: &str,
@@ -1241,9 +1354,10 @@ impl AtlasClient {
         body: DocumentContentSearchRequest,
     ) -> Result<DocumentContentSearchDto, ClientError> {
         let response = self
-            .post(&format!(
-                "/api/workspaces/{ws}/documents/{slug}/content/search"
-            ))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/documents/{slug}/content/search"),
+            )
             .json(&body)
             .send()
             .await?;
@@ -1251,7 +1365,7 @@ impl AtlasClient {
             .await
     }
 
-    /// `PATCH /api/workspaces/{ws}/documents/{slug}/content/range`
+    /// `PATCH /api/v2/acta/workspaces/{ws}/documents/{slug}/content/range`
     pub async fn edit_document_content_range(
         &self,
         ws: &str,
@@ -1259,9 +1373,10 @@ impl AtlasClient {
         body: DocumentContentEditRequest,
     ) -> Result<DocumentCompactDto, ClientError> {
         let response = self
-            .patch(&format!(
-                "/api/workspaces/{ws}/documents/{slug}/content/range"
-            ))
+            .patch(
+                Component::Acta,
+                &format!("/workspaces/{ws}/documents/{slug}/content/range"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -1281,7 +1396,7 @@ impl AtlasClient {
             .await
     }
 
-    /// `PATCH /api/workspaces/{ws}/documents/{slug}`
+    /// `PATCH /api/v2/acta/workspaces/{ws}/documents/{slug}`
     pub async fn update_document(
         &self,
         ws: &str,
@@ -1289,7 +1404,10 @@ impl AtlasClient {
         body: UpdateDocumentRequest,
     ) -> Result<DocumentDto, ClientError> {
         let response = self
-            .patch(&format!("/api/workspaces/{ws}/documents/{slug}"))
+            .patch(
+                Component::Acta,
+                &format!("/workspaces/{ws}/documents/{slug}"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -1297,7 +1415,7 @@ impl AtlasClient {
         self.decode_response(response, "update_document").await
     }
 
-    /// `PUT /api/workspaces/{ws}/documents/{slug}/content`
+    /// `PUT /api/v2/acta/workspaces/{ws}/documents/{slug}/content`
     pub async fn update_content(
         &self,
         ws: &str,
@@ -1305,7 +1423,10 @@ impl AtlasClient {
         body: UpdateContentRequest,
     ) -> Result<DocumentDto, ClientError> {
         let response = self
-            .put(&format!("/api/workspaces/{ws}/documents/{slug}/content"))
+            .put(
+                Component::Acta,
+                &format!("/workspaces/{ws}/documents/{slug}/content"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -1324,10 +1445,13 @@ impl AtlasClient {
         self.decode_response(response, "update_content").await
     }
 
-    /// `DELETE /api/workspaces/{ws}/documents/{slug}`
+    /// `DELETE /api/v2/acta/workspaces/{ws}/documents/{slug}`
     pub async fn delete_document(&self, ws: &str, slug: &str) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!("/api/workspaces/{ws}/documents/{slug}"))
+            .delete(
+                Component::Acta,
+                &format!("/workspaces/{ws}/documents/{slug}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -1341,7 +1465,7 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `GET /api/workspaces/{ws}/documents/{slug}/history`
+    /// `GET /api/v2/acta/workspaces/{ws}/documents/{slug}/history`
     pub async fn list_document_history(
         &self,
         ws: &str,
@@ -1350,16 +1474,16 @@ impl AtlasClient {
         limit: Option<u32>,
     ) -> Result<Page<RevisionMetaDto>, ClientError> {
         let path = build_paginated_path(
-            &format!("/api/workspaces/{ws}/documents/{slug}/history"),
+            &format!("/workspaces/{ws}/documents/{slug}/history"),
             cursor,
             limit,
         );
-        let response = self.get(&path).send().await?;
+        let response = self.get(Component::Acta, &path).send().await?;
         self.decode_response(response, "list_document_history")
             .await
     }
 
-    /// `GET /api/workspaces/{ws}/documents/{slug}/revisions/{seq}`
+    /// `GET /api/v2/acta/workspaces/{ws}/documents/{slug}/revisions/{seq}`
     pub async fn get_revision_content(
         &self,
         ws: &str,
@@ -1367,15 +1491,16 @@ impl AtlasClient {
         seq: i64,
     ) -> Result<RevisionContentDto, ClientError> {
         let response = self
-            .get(&format!(
-                "/api/workspaces/{ws}/documents/{slug}/revisions/{seq}"
-            ))
+            .get(
+                Component::Acta,
+                &format!("/workspaces/{ws}/documents/{slug}/revisions/{seq}"),
+            )
             .send()
             .await?;
         self.decode_response(response, "get_revision_content").await
     }
 
-    /// `GET /api/workspaces/{ws}/documents/{slug}/backlinks`
+    /// `GET /api/v2/acta/workspaces/{ws}/documents/{slug}/backlinks`
     pub async fn list_backlinks(
         &self,
         ws: &str,
@@ -1384,30 +1509,31 @@ impl AtlasClient {
         limit: Option<u32>,
     ) -> Result<Page<BacklinkDto>, ClientError> {
         let path = build_paginated_path(
-            &format!("/api/workspaces/{ws}/documents/{slug}/backlinks"),
+            &format!("/workspaces/{ws}/documents/{slug}/backlinks"),
             cursor,
             limit,
         );
-        let response = self.get(&path).send().await?;
+        let response = self.get(Component::Acta, &path).send().await?;
         self.decode_response(response, "list_backlinks").await
     }
 
-    /// `GET /api/workspaces/{ws}/documents/{slug}/frontmatter`
+    /// `GET /api/v2/acta/workspaces/{ws}/documents/{slug}/frontmatter`
     pub async fn get_frontmatter(
         &self,
         ws: &str,
         slug: &str,
     ) -> Result<FrontmatterDto, ClientError> {
         let response = self
-            .get(&format!(
-                "/api/workspaces/{ws}/documents/{slug}/frontmatter"
-            ))
+            .get(
+                Component::Acta,
+                &format!("/workspaces/{ws}/documents/{slug}/frontmatter"),
+            )
             .send()
             .await?;
         self.decode_response(response, "get_frontmatter").await
     }
 
-    /// `POST /api/workspaces/{ws}/documents/{slug}/attachments`
+    /// `POST /api/v2/acta/workspaces/{ws}/documents/{slug}/attachments`
     ///
     /// Uploads raw binary content. Pass `file_name` via the `X-File-Name` header
     /// and the MIME type via `Content-Type`.
@@ -1420,9 +1546,10 @@ impl AtlasClient {
         data: Vec<u8>,
     ) -> Result<AttachmentDto, ClientError> {
         let response = self
-            .post(&format!(
-                "/api/workspaces/{ws}/documents/{slug}/attachments"
-            ))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/documents/{slug}/attachments"),
+            )
             .header("x-atlas-csrf", "1")
             .header("x-file-name", file_name)
             .header("content-type", content_type)
@@ -1433,7 +1560,7 @@ impl AtlasClient {
         self.decode_response(response, "upload_attachment").await
     }
 
-    /// `GET /api/workspaces/{ws}/documents/{slug}/attachments`
+    /// `GET /api/v2/acta/workspaces/{ws}/documents/{slug}/attachments`
     pub async fn list_attachments(
         &self,
         ws: &str,
@@ -1442,15 +1569,15 @@ impl AtlasClient {
         limit: Option<u32>,
     ) -> Result<Page<AttachmentDto>, ClientError> {
         let path = build_paginated_path(
-            &format!("/api/workspaces/{ws}/documents/{slug}/attachments"),
+            &format!("/workspaces/{ws}/documents/{slug}/attachments"),
             cursor,
             limit,
         );
-        let response = self.get(&path).send().await?;
+        let response = self.get(Component::Acta, &path).send().await?;
         self.decode_response(response, "list_attachments").await
     }
 
-    /// `GET /api/workspaces/{ws}/attachments`
+    /// `GET /api/v2/acta/workspaces/{ws}/attachments`
     ///
     /// Lists every attachment in the workspace the principal may see, across
     /// notes, tasks, and the comments of either.
@@ -1460,14 +1587,13 @@ impl AtlasClient {
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<WorkspaceAttachmentDto>, ClientError> {
-        let path =
-            build_paginated_path(&format!("/api/workspaces/{ws}/attachments"), cursor, limit);
-        let response = self.get(&path).send().await?;
+        let path = build_paginated_path(&format!("/workspaces/{ws}/attachments"), cursor, limit);
+        let response = self.get(Component::Acta, &path).send().await?;
         self.decode_response(response, "list_workspace_attachments")
             .await
     }
 
-    /// `PATCH /api/workspaces/{ws}/attachments/{attachment_id}`
+    /// `PATCH /api/v2/acta/workspaces/{ws}/attachments/{attachment_id}`
     ///
     /// Renames the attachment and rewrites the `[[file:…]]` links addressing it.
     pub async fn rename_workspace_attachment(
@@ -1477,7 +1603,10 @@ impl AtlasClient {
         body: RenameAttachmentRequest,
     ) -> Result<WorkspaceAttachmentDto, ClientError> {
         let response = self
-            .patch(&format!("/api/workspaces/{ws}/attachments/{attachment_id}"))
+            .patch(
+                Component::Acta,
+                &format!("/workspaces/{ws}/attachments/{attachment_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -1486,14 +1615,17 @@ impl AtlasClient {
             .await
     }
 
-    /// `GET /api/workspaces/{ws}/attachments/{attachment_id}`
+    /// `GET /api/v2/acta/workspaces/{ws}/attachments/{attachment_id}`
     pub async fn download_attachment(
         &self,
         ws: &str,
         attachment_id: uuid::Uuid,
     ) -> Result<Vec<u8>, ClientError> {
         let response = self
-            .get(&format!("/api/workspaces/{ws}/attachments/{attachment_id}"))
+            .get(
+                Component::Acta,
+                &format!("/workspaces/{ws}/attachments/{attachment_id}"),
+            )
             .timeout(ATTACHMENT_TRANSFER_TIMEOUT)
             .send()
             .await?;
@@ -1508,14 +1640,17 @@ impl AtlasClient {
         Ok(bytes.to_vec())
     }
 
-    /// `DELETE /api/workspaces/{ws}/attachments/{attachment_id}`
+    /// `DELETE /api/v2/acta/workspaces/{ws}/attachments/{attachment_id}`
     pub async fn delete_attachment(
         &self,
         ws: &str,
         attachment_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!("/api/workspaces/{ws}/attachments/{attachment_id}"))
+            .delete(
+                Component::Acta,
+                &format!("/workspaces/{ws}/attachments/{attachment_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -1529,7 +1664,7 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `POST /api/workspaces/{ws}/tasks/{readable_id}/attachments`
+    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/attachments`
     ///
     /// Uploads a file as `multipart/form-data` with a single part named `file`.
     /// The multipart body is assembled by hand so the client does not need
@@ -1555,9 +1690,10 @@ impl AtlasClient {
         body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
 
         let response = self
-            .post(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/attachments"
-            ))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/attachments"),
+            )
             .header("x-atlas-csrf", "1")
             .header(
                 "content-type",
@@ -1571,23 +1707,24 @@ impl AtlasClient {
             .await
     }
 
-    /// `GET /api/workspaces/{ws}/tasks/{readable_id}/attachments`
+    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/attachments`
     pub async fn list_task_attachments(
         &self,
         ws: &str,
         readable_id: &str,
     ) -> Result<Vec<TaskAttachmentDto>, ClientError> {
         let response = self
-            .get(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/attachments"
-            ))
+            .get(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/attachments"),
+            )
             .send()
             .await?;
         self.decode_response(response, "list_task_attachments")
             .await
     }
 
-    /// `GET /api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content`
+    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content`
     ///
     /// Returns the streamed bytes together with the response `Content-Type`, so a
     /// caller can assert the content round-trips.
@@ -1598,9 +1735,12 @@ impl AtlasClient {
         attachment_id: uuid::Uuid,
     ) -> Result<(Vec<u8>, Option<String>), ClientError> {
         let response = self
-            .get(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content"
-            ))
+            .get(
+                Component::Acta,
+                &format!(
+                    "/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content"
+                ),
+            )
             .timeout(ATTACHMENT_TRANSFER_TIMEOUT)
             .send()
             .await?;
@@ -1623,7 +1763,7 @@ impl AtlasClient {
         Ok((bytes.to_vec(), content_type))
     }
 
-    /// `PATCH /api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}`
+    /// `PATCH /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}`
     pub async fn rename_task_attachment(
         &self,
         ws: &str,
@@ -1632,9 +1772,10 @@ impl AtlasClient {
         body: RenameTaskAttachmentRequest,
     ) -> Result<TaskAttachmentDto, ClientError> {
         let response = self
-            .patch(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}"
-            ))
+            .patch(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -1643,7 +1784,7 @@ impl AtlasClient {
             .await
     }
 
-    /// `DELETE /api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}`
+    /// `DELETE /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}`
     pub async fn delete_task_attachment(
         &self,
         ws: &str,
@@ -1651,9 +1792,10 @@ impl AtlasClient {
         attachment_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}"
-            ))
+            .delete(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -1667,7 +1809,7 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `PATCH /api/workspaces/{ws}/documents/{slug}/move`
+    /// `PATCH /api/v2/acta/workspaces/{ws}/documents/{slug}/move`
     pub async fn move_document(
         &self,
         ws: &str,
@@ -1675,7 +1817,10 @@ impl AtlasClient {
         body: MoveDocumentRequest,
     ) -> Result<DocumentDto, ClientError> {
         let response = self
-            .patch(&format!("/api/workspaces/{ws}/documents/{slug}/move"))
+            .patch(
+                Component::Acta,
+                &format!("/workspaces/{ws}/documents/{slug}/move"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -1683,14 +1828,17 @@ impl AtlasClient {
         self.decode_response(response, "move_document").await
     }
 
-    /// `POST /api/workspaces/{ws}/documents/moves/batch`
+    /// `POST /api/v2/acta/workspaces/{ws}/documents/moves/batch`
     pub async fn move_documents_batch(
         &self,
         ws: &str,
         body: DocumentMoveBatchRequest,
     ) -> Result<Vec<DocumentMoveBatchResultDto>, ClientError> {
         let response = self
-            .post(&format!("/api/workspaces/{ws}/documents/moves/batch"))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/documents/moves/batch"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -1698,7 +1846,7 @@ impl AtlasClient {
         self.decode_response(response, "move_documents_batch").await
     }
 
-    /// `POST /api/workspaces/{ws}/documents/{slug}/copy`
+    /// `POST /api/v2/acta/workspaces/{ws}/documents/{slug}/copy`
     pub async fn copy_document(
         &self,
         ws: &str,
@@ -1706,7 +1854,10 @@ impl AtlasClient {
         folder_id: Option<uuid::Uuid>,
     ) -> Result<DocumentDto, ClientError> {
         let response = self
-            .post(&format!("/api/workspaces/{ws}/documents/{slug}/copy"))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/documents/{slug}/copy"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&CopyDocumentRequest { folder_id })
             .send()
@@ -1716,7 +1867,7 @@ impl AtlasClient {
 
     // ---- Admin Trash -----------------------------------------------------------
 
-    /// `GET /api/admin/trash`
+    /// `GET /api/v2/acta/admin/trash`
     ///
     /// This root/system-admin human-only endpoint lists the five recoverable
     /// resource kinds. API keys are rejected by the server.
@@ -1728,11 +1879,11 @@ impl AtlasClient {
         limit: Option<u32>,
     ) -> Result<Page<TrashItemDto>, ClientError> {
         let path = build_trash_list_path(workspace_id, kind, cursor, limit);
-        let response = self.get(&path).send().await?;
+        let response = self.get(Component::Acta, &path).send().await?;
         self.decode_response(response, "list_trash").await
     }
 
-    /// `POST /api/admin/trash/restore`
+    /// `POST /api/v2/acta/admin/trash/restore`
     ///
     /// Restores one recoverably deleted resource. This requires a root or
     /// system-admin human session; API keys are rejected by the server.
@@ -1742,7 +1893,7 @@ impl AtlasClient {
         target_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
         let response = self
-            .post("/api/admin/trash/restore")
+            .post(Component::Acta, "/admin/trash/restore")
             .header("x-atlas-csrf", "1")
             .json(&RestoreTrashItemRequest { kind, target_id })
             .send()
@@ -1750,7 +1901,7 @@ impl AtlasClient {
         decode_empty_response(response).await
     }
 
-    /// `POST /api/admin/trash/purge`
+    /// `POST /api/v2/acta/admin/trash/purge`
     ///
     /// Permanently purges a recoverably deleted resource only when `confirm` is
     /// true. A 204 becomes [`PurgeTrashResult::Complete`]; a 202 carries the
@@ -1762,7 +1913,7 @@ impl AtlasClient {
         confirm: bool,
     ) -> Result<PurgeTrashResult, ClientError> {
         let response = self
-            .post("/api/admin/trash/purge")
+            .post(Component::Acta, "/admin/trash/purge")
             .header("x-atlas-csrf", "1")
             .json(&PurgeTrashItemRequest {
                 kind,
@@ -1780,13 +1931,16 @@ impl AtlasClient {
         Ok(PurgeTrashResult::Pending(status))
     }
 
-    /// `GET /api/admin/trash/purges/{operation_id}`
+    /// `GET /api/v2/acta/admin/trash/purges/{operation_id}`
     pub async fn get_purge_status(
         &self,
         operation_id: uuid::Uuid,
     ) -> Result<PurgeStatusDtoResponse, ClientError> {
         let response = self
-            .get(&format!("/api/admin/trash/purges/{operation_id}"))
+            .get(
+                Component::Acta,
+                &format!("/admin/trash/purges/{operation_id}"),
+            )
             .send()
             .await?;
         self.decode_response(response, "get_purge_status").await
@@ -1794,7 +1948,7 @@ impl AtlasClient {
 
     // ---- Webhooks --------------------------------------------------------------
 
-    /// `POST /api/workspaces/{ws}/webhooks`
+    /// `POST /api/v2/acta/workspaces/{ws}/webhooks`
     ///
     /// Creates a webhook subscription. The response carries the plaintext HMAC
     /// signing secret (`whsec_…`) exactly once; it is never retrievable again.
@@ -1804,7 +1958,7 @@ impl AtlasClient {
         body: CreateWebhookRequest,
     ) -> Result<WebhookCreatedDto, ClientError> {
         let response = self
-            .post(&format!("/api/workspaces/{ws}/webhooks"))
+            .post(Component::Acta, &format!("/workspaces/{ws}/webhooks"))
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -1812,7 +1966,7 @@ impl AtlasClient {
         self.decode_response(response, "create_webhook").await
     }
 
-    /// `GET /api/workspaces/{ws}/webhooks`
+    /// `GET /api/v2/acta/workspaces/{ws}/webhooks`
     ///
     /// The list endpoint pages forward with an opaque `after` cursor (not the
     /// generic `cursor` param used elsewhere), so the query string is built here
@@ -1824,24 +1978,27 @@ impl AtlasClient {
         limit: Option<u32>,
     ) -> Result<Page<WebhookDto>, ClientError> {
         let path = build_webhooks_list_path(ws, after, limit);
-        let response = self.get(&path).send().await?;
+        let response = self.get(Component::Acta, &path).send().await?;
         self.decode_response(response, "list_webhooks").await
     }
 
-    /// `GET /api/workspaces/{ws}/webhooks/{webhook_id}`
+    /// `GET /api/v2/acta/workspaces/{ws}/webhooks/{webhook_id}`
     pub async fn get_webhook(
         &self,
         ws: &str,
         webhook_id: uuid::Uuid,
     ) -> Result<WebhookDto, ClientError> {
         let response = self
-            .get(&format!("/api/workspaces/{ws}/webhooks/{webhook_id}"))
+            .get(
+                Component::Acta,
+                &format!("/workspaces/{ws}/webhooks/{webhook_id}"),
+            )
             .send()
             .await?;
         self.decode_response(response, "get_webhook").await
     }
 
-    /// `PATCH /api/workspaces/{ws}/webhooks/{webhook_id}`
+    /// `PATCH /api/v2/acta/workspaces/{ws}/webhooks/{webhook_id}`
     ///
     /// PATCH semantics: omitted fields are left unchanged. The signing secret is
     /// never rotated through this endpoint.
@@ -1852,7 +2009,10 @@ impl AtlasClient {
         body: UpdateWebhookRequest,
     ) -> Result<WebhookDto, ClientError> {
         let response = self
-            .patch(&format!("/api/workspaces/{ws}/webhooks/{webhook_id}"))
+            .patch(
+                Component::Acta,
+                &format!("/workspaces/{ws}/webhooks/{webhook_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -1860,14 +2020,17 @@ impl AtlasClient {
         self.decode_response(response, "update_webhook").await
     }
 
-    /// `DELETE /api/workspaces/{ws}/webhooks/{webhook_id}`
+    /// `DELETE /api/v2/acta/workspaces/{ws}/webhooks/{webhook_id}`
     pub async fn delete_webhook(
         &self,
         ws: &str,
         webhook_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!("/api/workspaces/{ws}/webhooks/{webhook_id}"))
+            .delete(
+                Component::Acta,
+                &format!("/workspaces/{ws}/webhooks/{webhook_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -1881,7 +2044,7 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `GET /api/workspaces/{ws}/webhooks/{webhook_id}/deliveries`
+    /// `GET /api/v2/acta/workspaces/{ws}/webhooks/{webhook_id}/deliveries`
     ///
     /// Delivery attempts page newest-first with an opaque `before` cursor, so the
     /// query string is built here with the parameter name this route expects.
@@ -1893,14 +2056,14 @@ impl AtlasClient {
         limit: Option<u32>,
     ) -> Result<Page<WebhookDeliveryDto>, ClientError> {
         let path = build_webhook_deliveries_path(ws, webhook_id, before, limit);
-        let response = self.get(&path).send().await?;
+        let response = self.get(Component::Acta, &path).send().await?;
         self.decode_response(response, "list_webhook_deliveries")
             .await
     }
 
     // ---- Boards ----------------------------------------------------------------
 
-    /// `POST /api/workspaces/{ws}/projects/{project_slug}/boards`
+    /// `POST /api/v2/acta/workspaces/{ws}/projects/{project_slug}/boards`
     pub async fn create_board(
         &self,
         ws: &str,
@@ -1908,9 +2071,10 @@ impl AtlasClient {
         body: CreateBoardRequest,
     ) -> Result<BoardDto, ClientError> {
         let response = self
-            .post(&format!(
-                "/api/workspaces/{ws}/projects/{project_slug}/boards"
-            ))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/projects/{project_slug}/boards"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -1918,7 +2082,7 @@ impl AtlasClient {
         self.decode_response(response, "create_board").await
     }
 
-    /// `GET /api/workspaces/{ws}/projects/{project_slug}/boards`
+    /// `GET /api/v2/acta/workspaces/{ws}/projects/{project_slug}/boards`
     pub async fn list_boards(
         &self,
         ws: &str,
@@ -1927,24 +2091,27 @@ impl AtlasClient {
         limit: Option<u32>,
     ) -> Result<Page<BoardSummaryDto>, ClientError> {
         let path = build_paginated_path(
-            &format!("/api/workspaces/{ws}/projects/{project_slug}/boards"),
+            &format!("/workspaces/{ws}/projects/{project_slug}/boards"),
             cursor,
             limit,
         );
-        let response = self.get(&path).send().await?;
+        let response = self.get(Component::Acta, &path).send().await?;
         self.decode_response(response, "list_boards").await
     }
 
-    /// `GET /api/workspaces/{ws}/boards/{board_id}`
+    /// `GET /api/v2/acta/workspaces/{ws}/boards/{board_id}`
     pub async fn get_board(&self, ws: &str, board_id: uuid::Uuid) -> Result<BoardDto, ClientError> {
         let response = self
-            .get(&format!("/api/workspaces/{ws}/boards/{board_id}"))
+            .get(
+                Component::Acta,
+                &format!("/workspaces/{ws}/boards/{board_id}"),
+            )
             .send()
             .await?;
         self.decode_response(response, "get_board").await
     }
 
-    /// `PATCH /api/workspaces/{ws}/boards/{board_id}`
+    /// `PATCH /api/v2/acta/workspaces/{ws}/boards/{board_id}`
     pub async fn update_board(
         &self,
         ws: &str,
@@ -1952,7 +2119,10 @@ impl AtlasClient {
         body: UpdateBoardRequest,
     ) -> Result<BoardDto, ClientError> {
         let response = self
-            .patch(&format!("/api/workspaces/{ws}/boards/{board_id}"))
+            .patch(
+                Component::Acta,
+                &format!("/workspaces/{ws}/boards/{board_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -1960,7 +2130,7 @@ impl AtlasClient {
         self.decode_response(response, "update_board").await
     }
 
-    /// `PATCH /api/workspaces/{ws}/boards/{board_id}/move`
+    /// `PATCH /api/v2/acta/workspaces/{ws}/boards/{board_id}/move`
     pub async fn move_board(
         &self,
         ws: &str,
@@ -1968,7 +2138,10 @@ impl AtlasClient {
         body: MoveBoardRequest,
     ) -> Result<BoardDto, ClientError> {
         let response = self
-            .patch(&format!("/api/workspaces/{ws}/boards/{board_id}/move"))
+            .patch(
+                Component::Acta,
+                &format!("/workspaces/{ws}/boards/{board_id}/move"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -1976,10 +2149,13 @@ impl AtlasClient {
         self.decode_response(response, "move_board").await
     }
 
-    /// `DELETE /api/workspaces/{ws}/boards/{board_id}`
+    /// `DELETE /api/v2/acta/workspaces/{ws}/boards/{board_id}`
     pub async fn delete_board(&self, ws: &str, board_id: uuid::Uuid) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!("/api/workspaces/{ws}/boards/{board_id}"))
+            .delete(
+                Component::Acta,
+                &format!("/workspaces/{ws}/boards/{board_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -1993,7 +2169,7 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `POST /api/workspaces/{ws}/boards/{board_id}/columns`
+    /// `POST /api/v2/acta/workspaces/{ws}/boards/{board_id}/columns`
     pub async fn create_column(
         &self,
         ws: &str,
@@ -2001,7 +2177,10 @@ impl AtlasClient {
         body: CreateColumnRequest,
     ) -> Result<ColumnDto, ClientError> {
         let response = self
-            .post(&format!("/api/workspaces/{ws}/boards/{board_id}/columns"))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/boards/{board_id}/columns"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -2009,20 +2188,23 @@ impl AtlasClient {
         self.decode_response(response, "create_column").await
     }
 
-    /// `GET /api/workspaces/{ws}/boards/{board_id}/columns`
+    /// `GET /api/v2/acta/workspaces/{ws}/boards/{board_id}/columns`
     pub async fn list_columns(
         &self,
         ws: &str,
         board_id: uuid::Uuid,
     ) -> Result<Vec<ColumnDto>, ClientError> {
         let response = self
-            .get(&format!("/api/workspaces/{ws}/boards/{board_id}/columns"))
+            .get(
+                Component::Acta,
+                &format!("/workspaces/{ws}/boards/{board_id}/columns"),
+            )
             .send()
             .await?;
         self.decode_response(response, "list_columns").await
     }
 
-    /// `POST /api/workspaces/{ws}/tags`
+    /// `POST /api/v2/acta/workspaces/{ws}/tags`
     ///
     /// Idempotent by case-insensitive name: an existing tag is returned with 200,
     /// a new one with 201. Both are surfaced as a successful `TagDto`.
@@ -2032,7 +2214,7 @@ impl AtlasClient {
         body: CreateTagRequest,
     ) -> Result<TagDto, ClientError> {
         let response = self
-            .post(&format!("/api/workspaces/{ws}/tags"))
+            .post(Component::Acta, &format!("/workspaces/{ws}/tags"))
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -2040,25 +2222,25 @@ impl AtlasClient {
         self.decode_response(response, "create_tag").await
     }
 
-    /// `GET /api/workspaces/{ws}/tags`
+    /// `GET /api/v2/acta/workspaces/{ws}/tags`
     pub async fn list_tags(&self, ws: &str) -> Result<Vec<TagDto>, ClientError> {
         let response = self
-            .get(&format!("/api/workspaces/{ws}/tags"))
+            .get(Component::Acta, &format!("/workspaces/{ws}/tags"))
             .send()
             .await?;
         self.decode_response(response, "list_tags").await
     }
 
-    /// `GET /api/workspaces/{ws}/tags/used`
+    /// `GET /api/v2/acta/workspaces/{ws}/tags/used`
     pub async fn list_used_labels(&self, ws: &str) -> Result<Vec<String>, ClientError> {
         let response = self
-            .get(&format!("/api/workspaces/{ws}/tags/used"))
+            .get(Component::Acta, &format!("/workspaces/{ws}/tags/used"))
             .send()
             .await?;
         self.decode_response(response, "list_used_labels").await
     }
 
-    /// `PATCH /api/workspaces/{ws}/tags/{tag_id}`
+    /// `PATCH /api/v2/acta/workspaces/{ws}/tags/{tag_id}`
     ///
     /// Updates a tag's name and/or color. Returns the updated tag.
     pub async fn update_tag(
@@ -2068,7 +2250,7 @@ impl AtlasClient {
         body: UpdateTagRequest,
     ) -> Result<TagDto, ClientError> {
         let response = self
-            .patch(&format!("/api/workspaces/{ws}/tags/{tag_id}"))
+            .patch(Component::Acta, &format!("/workspaces/{ws}/tags/{tag_id}"))
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -2076,12 +2258,12 @@ impl AtlasClient {
         self.decode_response(response, "update_tag").await
     }
 
-    /// `DELETE /api/workspaces/{ws}/tags/{tag_id}`
+    /// `DELETE /api/v2/acta/workspaces/{ws}/tags/{tag_id}`
     ///
     /// Soft-deletes a tag. Task label strings are preserved.
     pub async fn delete_tag(&self, ws: &str, tag_id: uuid::Uuid) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!("/api/workspaces/{ws}/tags/{tag_id}"))
+            .delete(Component::Acta, &format!("/workspaces/{ws}/tags/{tag_id}"))
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -2095,7 +2277,7 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `GET /api/workspaces/{ws}/property-definitions`
+    /// `GET /api/v2/acta/workspaces/{ws}/property-definitions`
     ///
     /// Optionally filters by applicability (`task` | `document` | `both`).
     pub async fn list_property_definitions(
@@ -2103,23 +2285,26 @@ impl AtlasClient {
         ws: &str,
         applies_to: Option<&str>,
     ) -> Result<Vec<PropertyDefinitionDto>, ClientError> {
-        let mut path = format!("/api/workspaces/{ws}/property-definitions");
+        let mut path = format!("/workspaces/{ws}/property-definitions");
         if let Some(applies_to) = applies_to {
             path.push_str(&format!("?applies_to={applies_to}"));
         }
-        let response = self.get(&path).send().await?;
+        let response = self.get(Component::Acta, &path).send().await?;
         self.decode_response(response, "list_property_definitions")
             .await
     }
 
-    /// `POST /api/workspaces/{ws}/property-definitions`
+    /// `POST /api/v2/acta/workspaces/{ws}/property-definitions`
     pub async fn create_property_definition(
         &self,
         ws: &str,
         body: CreatePropertyDefinitionRequest,
     ) -> Result<PropertyDefinitionDto, ClientError> {
         let response = self
-            .post(&format!("/api/workspaces/{ws}/property-definitions"))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/property-definitions"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -2128,16 +2313,17 @@ impl AtlasClient {
             .await
     }
 
-    /// `DELETE /api/workspaces/{ws}/property-definitions/{property_definition_id}`
+    /// `DELETE /api/v2/acta/workspaces/{ws}/property-definitions/{property_definition_id}`
     pub async fn delete_property_definition(
         &self,
         ws: &str,
         property_definition_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!(
-                "/api/workspaces/{ws}/property-definitions/{property_definition_id}"
-            ))
+            .delete(
+                Component::Acta,
+                &format!("/workspaces/{ws}/property-definitions/{property_definition_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -2151,14 +2337,14 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `POST /api/workspaces/{ws}/saved-searches`
+    /// `POST /api/v2/acta/workspaces/{ws}/saved-searches`
     pub async fn create_saved_search(
         &self,
         ws: &str,
         body: CreateSavedSearchRequest,
     ) -> Result<SavedSearchDto, ClientError> {
         let response = self
-            .post(&format!("/api/workspaces/{ws}/saved-searches"))
+            .post(Component::Acta, &format!("/workspaces/{ws}/saved-searches"))
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -2166,16 +2352,16 @@ impl AtlasClient {
         self.decode_response(response, "create_saved_search").await
     }
 
-    /// `GET /api/workspaces/{ws}/saved-searches`
+    /// `GET /api/v2/acta/workspaces/{ws}/saved-searches`
     pub async fn list_saved_searches(&self, ws: &str) -> Result<Vec<SavedSearchDto>, ClientError> {
         let response = self
-            .get(&format!("/api/workspaces/{ws}/saved-searches"))
+            .get(Component::Acta, &format!("/workspaces/{ws}/saved-searches"))
             .send()
             .await?;
         self.decode_response(response, "list_saved_searches").await
     }
 
-    /// `PATCH /api/workspaces/{ws}/saved-searches/{id}`
+    /// `PATCH /api/v2/acta/workspaces/{ws}/saved-searches/{id}`
     pub async fn rename_saved_search(
         &self,
         ws: &str,
@@ -2183,7 +2369,10 @@ impl AtlasClient {
         body: RenameSavedSearchRequest,
     ) -> Result<SavedSearchDto, ClientError> {
         let response = self
-            .patch(&format!("/api/workspaces/{ws}/saved-searches/{id}"))
+            .patch(
+                Component::Acta,
+                &format!("/workspaces/{ws}/saved-searches/{id}"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -2191,10 +2380,13 @@ impl AtlasClient {
         self.decode_response(response, "rename_saved_search").await
     }
 
-    /// `DELETE /api/workspaces/{ws}/saved-searches/{id}`
+    /// `DELETE /api/v2/acta/workspaces/{ws}/saved-searches/{id}`
     pub async fn delete_saved_search(&self, ws: &str, id: uuid::Uuid) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!("/api/workspaces/{ws}/saved-searches/{id}"))
+            .delete(
+                Component::Acta,
+                &format!("/workspaces/{ws}/saved-searches/{id}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -2208,23 +2400,23 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `GET /api/workspaces/{ws}/task-views`
+    /// `GET /api/v2/acta/workspaces/{ws}/task-views`
     pub async fn list_task_views(&self, ws: &str) -> Result<Vec<TaskViewDto>, ClientError> {
         let response = self
-            .get(&format!("/api/workspaces/{ws}/task-views"))
+            .get(Component::Acta, &format!("/workspaces/{ws}/task-views"))
             .send()
             .await?;
         self.decode_response(response, "list_task_views").await
     }
 
-    /// `POST /api/workspaces/{ws}/task-views`
+    /// `POST /api/v2/acta/workspaces/{ws}/task-views`
     pub async fn create_task_view(
         &self,
         ws: &str,
         body: CreateTaskViewRequest,
     ) -> Result<TaskViewDto, ClientError> {
         let response = self
-            .post(&format!("/api/workspaces/{ws}/task-views"))
+            .post(Component::Acta, &format!("/workspaces/{ws}/task-views"))
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -2232,20 +2424,23 @@ impl AtlasClient {
         self.decode_response(response, "create_task_view").await
     }
 
-    /// `GET /api/workspaces/{ws}/task-views/{id}`
+    /// `GET /api/v2/acta/workspaces/{ws}/task-views/{id}`
     pub async fn get_task_view(
         &self,
         ws: &str,
         id: uuid::Uuid,
     ) -> Result<TaskViewDto, ClientError> {
         let response = self
-            .get(&format!("/api/workspaces/{ws}/task-views/{id}"))
+            .get(
+                Component::Acta,
+                &format!("/workspaces/{ws}/task-views/{id}"),
+            )
             .send()
             .await?;
         self.decode_response(response, "get_task_view").await
     }
 
-    /// `PATCH /api/workspaces/{ws}/task-views/{id}`
+    /// `PATCH /api/v2/acta/workspaces/{ws}/task-views/{id}`
     pub async fn update_task_view(
         &self,
         ws: &str,
@@ -2253,7 +2448,10 @@ impl AtlasClient {
         body: UpdateTaskViewRequest,
     ) -> Result<TaskViewDto, ClientError> {
         let response = self
-            .patch(&format!("/api/workspaces/{ws}/task-views/{id}"))
+            .patch(
+                Component::Acta,
+                &format!("/workspaces/{ws}/task-views/{id}"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -2261,10 +2459,13 @@ impl AtlasClient {
         self.decode_response(response, "update_task_view").await
     }
 
-    /// `DELETE /api/workspaces/{ws}/task-views/{id}`
+    /// `DELETE /api/v2/acta/workspaces/{ws}/task-views/{id}`
     pub async fn delete_task_view(&self, ws: &str, id: uuid::Uuid) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!("/api/workspaces/{ws}/task-views/{id}"))
+            .delete(
+                Component::Acta,
+                &format!("/workspaces/{ws}/task-views/{id}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -2280,27 +2481,33 @@ impl AtlasClient {
 
     // ---- Status templates -------------------------------------------------------
 
-    /// `GET /api/workspaces/{ws}/status-templates`
+    /// `GET /api/v2/acta/workspaces/{ws}/status-templates`
     pub async fn list_status_templates(
         &self,
         ws: &str,
     ) -> Result<Vec<StatusTemplateDto>, ClientError> {
         let response = self
-            .get(&format!("/api/workspaces/{ws}/status-templates"))
+            .get(
+                Component::Acta,
+                &format!("/workspaces/{ws}/status-templates"),
+            )
             .send()
             .await?;
         self.decode_response(response, "list_status_templates")
             .await
     }
 
-    /// `POST /api/workspaces/{ws}/status-templates`
+    /// `POST /api/v2/acta/workspaces/{ws}/status-templates`
     pub async fn create_status_template(
         &self,
         ws: &str,
         body: CreateStatusTemplateRequest,
     ) -> Result<StatusTemplateDto, ClientError> {
         let response = self
-            .post(&format!("/api/workspaces/{ws}/status-templates"))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/status-templates"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -2309,7 +2516,7 @@ impl AtlasClient {
             .await
     }
 
-    /// `PATCH /api/workspaces/{ws}/status-templates/{template_id}`
+    /// `PATCH /api/v2/acta/workspaces/{ws}/status-templates/{template_id}`
     pub async fn update_status_template(
         &self,
         ws: &str,
@@ -2317,9 +2524,10 @@ impl AtlasClient {
         body: UpdateStatusTemplateRequest,
     ) -> Result<StatusTemplateDto, ClientError> {
         let response = self
-            .patch(&format!(
-                "/api/workspaces/{ws}/status-templates/{template_id}"
-            ))
+            .patch(
+                Component::Acta,
+                &format!("/workspaces/{ws}/status-templates/{template_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -2328,16 +2536,17 @@ impl AtlasClient {
             .await
     }
 
-    /// `DELETE /api/workspaces/{ws}/status-templates/{template_id}`
+    /// `DELETE /api/v2/acta/workspaces/{ws}/status-templates/{template_id}`
     pub async fn delete_status_template(
         &self,
         ws: &str,
         template_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!(
-                "/api/workspaces/{ws}/status-templates/{template_id}"
-            ))
+            .delete(
+                Component::Acta,
+                &format!("/workspaces/{ws}/status-templates/{template_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -2353,22 +2562,25 @@ impl AtlasClient {
 
     // ---- Platform status templates (Atlas-wide defaults, admin-only) -------------
 
-    /// `GET /api/admin/status-templates`
+    /// `GET /api/v2/acta/admin/status-templates`
     pub async fn list_platform_status_templates(
         &self,
     ) -> Result<Vec<PlatformStatusTemplateDto>, ClientError> {
-        let response = self.get("/api/admin/status-templates").send().await?;
+        let response = self
+            .get(Component::Acta, "/admin/status-templates")
+            .send()
+            .await?;
         self.decode_response(response, "list_platform_status_templates")
             .await
     }
 
-    /// `POST /api/admin/status-templates`
+    /// `POST /api/v2/acta/admin/status-templates`
     pub async fn create_platform_status_template(
         &self,
         body: CreateStatusTemplateRequest,
     ) -> Result<PlatformStatusTemplateDto, ClientError> {
         let response = self
-            .post("/api/admin/status-templates")
+            .post(Component::Acta, "/admin/status-templates")
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -2377,14 +2589,17 @@ impl AtlasClient {
             .await
     }
 
-    /// `PATCH /api/admin/status-templates/{template_id}`
+    /// `PATCH /api/v2/acta/admin/status-templates/{template_id}`
     pub async fn update_platform_status_template(
         &self,
         template_id: uuid::Uuid,
         body: UpdateStatusTemplateRequest,
     ) -> Result<PlatformStatusTemplateDto, ClientError> {
         let response = self
-            .patch(&format!("/api/admin/status-templates/{template_id}"))
+            .patch(
+                Component::Acta,
+                &format!("/admin/status-templates/{template_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -2393,13 +2608,16 @@ impl AtlasClient {
             .await
     }
 
-    /// `DELETE /api/admin/status-templates/{template_id}`
+    /// `DELETE /api/v2/acta/admin/status-templates/{template_id}`
     pub async fn delete_platform_status_template(
         &self,
         template_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!("/api/admin/status-templates/{template_id}"))
+            .delete(
+                Component::Acta,
+                &format!("/admin/status-templates/{template_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -2413,16 +2631,17 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `POST /api/workspaces/{ws}/boards/{board_id}/apply-status-templates`
+    /// `POST /api/v2/acta/workspaces/{ws}/boards/{board_id}/apply-status-templates`
     pub async fn apply_status_templates(
         &self,
         ws: &str,
         board_id: uuid::Uuid,
     ) -> Result<Vec<atlas_api::dtos::boards_tasks::ColumnDto>, ClientError> {
         let response = self
-            .post(&format!(
-                "/api/workspaces/{ws}/boards/{board_id}/apply-status-templates"
-            ))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/boards/{board_id}/apply-status-templates"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -2430,7 +2649,7 @@ impl AtlasClient {
             .await
     }
 
-    /// `PATCH /api/workspaces/{ws}/boards/{board_id}/columns/{column_id}`
+    /// `PATCH /api/v2/acta/workspaces/{ws}/boards/{board_id}/columns/{column_id}`
     pub async fn update_column(
         &self,
         ws: &str,
@@ -2439,9 +2658,10 @@ impl AtlasClient {
         body: UpdateColumnRequest,
     ) -> Result<ColumnDto, ClientError> {
         let response = self
-            .patch(&format!(
-                "/api/workspaces/{ws}/boards/{board_id}/columns/{column_id}"
-            ))
+            .patch(
+                Component::Acta,
+                &format!("/workspaces/{ws}/boards/{board_id}/columns/{column_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -2449,7 +2669,7 @@ impl AtlasClient {
         self.decode_response(response, "update_column").await
     }
 
-    /// `DELETE /api/workspaces/{ws}/boards/{board_id}/columns/{column_id}`
+    /// `DELETE /api/v2/acta/workspaces/{ws}/boards/{board_id}/columns/{column_id}`
     pub async fn delete_column(
         &self,
         ws: &str,
@@ -2457,9 +2677,10 @@ impl AtlasClient {
         column_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!(
-                "/api/workspaces/{ws}/boards/{board_id}/columns/{column_id}"
-            ))
+            .delete(
+                Component::Acta,
+                &format!("/workspaces/{ws}/boards/{board_id}/columns/{column_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -2475,7 +2696,7 @@ impl AtlasClient {
 
     // ---- Tasks ----------------------------------------------------------------
 
-    /// `POST /api/workspaces/{ws}/boards/{board_id}/tasks`
+    /// `POST /api/v2/acta/workspaces/{ws}/boards/{board_id}/tasks`
     pub async fn create_task(
         &self,
         ws: &str,
@@ -2488,7 +2709,7 @@ impl AtlasClient {
             .task)
     }
 
-    /// `POST /api/workspaces/{ws}/boards/{board_id}/tasks`
+    /// `POST /api/v2/acta/workspaces/{ws}/boards/{board_id}/tasks`
     pub async fn create_task_with_references(
         &self,
         ws: &str,
@@ -2496,7 +2717,10 @@ impl AtlasClient {
         body: CreateTaskRequest,
     ) -> Result<CreateTaskResponseDto, ClientError> {
         let response = self
-            .post(&format!("/api/workspaces/{ws}/boards/{board_id}/tasks"))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/boards/{board_id}/tasks"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -2504,7 +2728,7 @@ impl AtlasClient {
         self.decode_response(response, "create_task").await
     }
 
-    /// `GET /api/workspaces/{ws}/boards/{board_id}/tasks`
+    /// `GET /api/v2/acta/workspaces/{ws}/boards/{board_id}/tasks`
     pub async fn list_tasks(
         &self,
         ws: &str,
@@ -2513,35 +2737,38 @@ impl AtlasClient {
         limit: Option<u32>,
     ) -> Result<Page<TaskSummaryDto>, ClientError> {
         let path = build_paginated_path(
-            &format!("/api/workspaces/{ws}/boards/{board_id}/tasks"),
+            &format!("/workspaces/{ws}/boards/{board_id}/tasks"),
             cursor,
             limit,
         );
-        let response = self.get(&path).send().await?;
+        let response = self.get(Component::Acta, &path).send().await?;
         self.decode_response(response, "list_tasks").await
     }
 
-    /// `GET /api/workspaces/{ws}/tasks`
+    /// `GET /api/v2/acta/workspaces/{ws}/tasks`
     pub async fn list_workspace_tasks(
         &self,
         ws: &str,
         query: &WorkspaceTaskQueryParams,
     ) -> Result<Page<TaskSummaryDto>, ClientError> {
         let path = build_workspace_tasks_path(ws, query);
-        let response = self.get(&path).send().await?;
+        let response = self.get(Component::Acta, &path).send().await?;
         self.decode_response(response, "list_workspace_tasks").await
     }
 
-    /// `GET /api/workspaces/{ws}/tasks/{readable_id}`
+    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}`
     pub async fn get_task(&self, ws: &str, readable_id: &str) -> Result<TaskDto, ClientError> {
         let response = self
-            .get(&format!("/api/workspaces/{ws}/tasks/{readable_id}"))
+            .get(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}"),
+            )
             .send()
             .await?;
         self.decode_response(response, "get_task").await
     }
 
-    /// `PATCH /api/workspaces/{ws}/tasks/{readable_id}`
+    /// `PATCH /api/v2/acta/workspaces/{ws}/tasks/{readable_id}`
     pub async fn update_task(
         &self,
         ws: &str,
@@ -2549,7 +2776,10 @@ impl AtlasClient {
         body: UpdateTaskRequest,
     ) -> Result<TaskDto, ClientError> {
         let response = self
-            .patch(&format!("/api/workspaces/{ws}/tasks/{readable_id}"))
+            .patch(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -2557,10 +2787,13 @@ impl AtlasClient {
         self.decode_response(response, "update_task").await
     }
 
-    /// `DELETE /api/workspaces/{ws}/tasks/{readable_id}`
+    /// `DELETE /api/v2/acta/workspaces/{ws}/tasks/{readable_id}`
     pub async fn delete_task(&self, ws: &str, readable_id: &str) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!("/api/workspaces/{ws}/tasks/{readable_id}"))
+            .delete(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -2574,7 +2807,7 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `POST /api/workspaces/{ws}/tasks/{readable_id}/move`
+    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/move`
     pub async fn move_task(
         &self,
         ws: &str,
@@ -2582,7 +2815,10 @@ impl AtlasClient {
         body: MoveTaskRequest,
     ) -> Result<TaskDto, ClientError> {
         let response = self
-            .post(&format!("/api/workspaces/{ws}/tasks/{readable_id}/move"))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/move"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -2590,22 +2826,23 @@ impl AtlasClient {
         self.decode_response(response, "move_task").await
     }
 
-    /// `GET /api/workspaces/{ws}/tasks/{readable_id}/assignees`
+    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/assignees`
     pub async fn list_assignees(
         &self,
         ws: &str,
         readable_id: &str,
     ) -> Result<Vec<AssigneeDto>, ClientError> {
         let response = self
-            .get(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/assignees"
-            ))
+            .get(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/assignees"),
+            )
             .send()
             .await?;
         self.decode_response(response, "list_assignees").await
     }
 
-    /// `POST /api/workspaces/{ws}/tasks/{readable_id}/assignees`
+    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/assignees`
     pub async fn add_assignee(
         &self,
         ws: &str,
@@ -2613,9 +2850,10 @@ impl AtlasClient {
         body: AddAssigneeRequest,
     ) -> Result<AssigneeDto, ClientError> {
         let response = self
-            .post(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/assignees"
-            ))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/assignees"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -2623,7 +2861,7 @@ impl AtlasClient {
         self.decode_response(response, "add_assignee").await
     }
 
-    /// `DELETE /api/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}`
+    /// `DELETE /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}`
     pub async fn remove_assignee(
         &self,
         ws: &str,
@@ -2631,9 +2869,10 @@ impl AtlasClient {
         assignee_ref: &str,
     ) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}"
-            ))
+            .delete(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -2647,22 +2886,23 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `GET /api/workspaces/{ws}/tasks/{readable_id}/references`
+    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/references`
     pub async fn list_references(
         &self,
         ws: &str,
         readable_id: &str,
     ) -> Result<Vec<UnifiedReferenceDto>, ClientError> {
         let response = self
-            .get(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/references"
-            ))
+            .get(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/references"),
+            )
             .send()
             .await?;
         self.decode_response(response, "list_references").await
     }
 
-    /// `POST /api/workspaces/{ws}/tasks/{readable_id}/references`
+    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/references`
     pub async fn create_reference(
         &self,
         ws: &str,
@@ -2670,9 +2910,10 @@ impl AtlasClient {
         body: CreateReferenceRequest,
     ) -> Result<ReferenceDto, ClientError> {
         let response = self
-            .post(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/references"
-            ))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/references"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -2680,7 +2921,7 @@ impl AtlasClient {
         self.decode_response(response, "create_reference").await
     }
 
-    /// `POST /api/workspaces/{ws}/tasks/{readable_id}/references/batch`
+    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/references/batch`
     pub async fn create_reference_batch(
         &self,
         ws: &str,
@@ -2688,9 +2929,10 @@ impl AtlasClient {
         body: CreateReferenceBatchRequest,
     ) -> Result<Vec<CreateReferenceBatchResultDto>, ClientError> {
         let response = self
-            .post(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/references/batch"
-            ))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/references/batch"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -2699,7 +2941,7 @@ impl AtlasClient {
             .await
     }
 
-    /// `DELETE /api/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}`
+    /// `DELETE /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}`
     pub async fn delete_reference(
         &self,
         ws: &str,
@@ -2707,9 +2949,10 @@ impl AtlasClient {
         reference_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}"
-            ))
+            .delete(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -2723,50 +2966,57 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `GET /api/workspaces/{ws}/tasks/{readable_id}/backlinks`
+    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/backlinks`
     pub async fn list_task_backlinks(
         &self,
         ws: &str,
         readable_id: &str,
     ) -> Result<Page<TaskBacklinkDto>, ClientError> {
         let response = self
-            .get(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/backlinks"
-            ))
+            .get(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/backlinks"),
+            )
             .send()
             .await?;
         self.decode_response(response, "list_task_backlinks").await
     }
 
-    /// `POST /api/workspaces/{ws}/boards/{board_id}/archive`
+    /// `POST /api/v2/acta/workspaces/{ws}/boards/{board_id}/archive`
     pub async fn archive_board(
         &self,
         ws: &str,
         board_id: uuid::Uuid,
     ) -> Result<BoardDto, ClientError> {
         let response = self
-            .post(&format!("/api/workspaces/{ws}/boards/{board_id}/archive"))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/boards/{board_id}/archive"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
         self.decode_response(response, "archive_board").await
     }
 
-    /// `POST /api/workspaces/{ws}/boards/{board_id}/unarchive`
+    /// `POST /api/v2/acta/workspaces/{ws}/boards/{board_id}/unarchive`
     pub async fn unarchive_board(
         &self,
         ws: &str,
         board_id: uuid::Uuid,
     ) -> Result<BoardDto, ClientError> {
         let response = self
-            .post(&format!("/api/workspaces/{ws}/boards/{board_id}/unarchive"))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/boards/{board_id}/unarchive"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
         self.decode_response(response, "unarchive_board").await
     }
 
-    /// `GET /api/workspaces/{ws}/tasks/{readable_id}/graph`
+    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/graph`
     pub async fn get_task_graph(
         &self,
         ws: &str,
@@ -2774,29 +3024,30 @@ impl AtlasClient {
         depth: Option<u32>,
     ) -> Result<TaskGraphDto, ClientError> {
         let path = match depth {
-            Some(depth) => format!("/api/workspaces/{ws}/tasks/{readable_id}/graph?depth={depth}"),
-            None => format!("/api/workspaces/{ws}/tasks/{readable_id}/graph"),
+            Some(depth) => format!("/workspaces/{ws}/tasks/{readable_id}/graph?depth={depth}"),
+            None => format!("/workspaces/{ws}/tasks/{readable_id}/graph"),
         };
-        let response = self.get(&path).send().await?;
+        let response = self.get(Component::Acta, &path).send().await?;
         self.decode_response(response, "get_task_graph").await
     }
 
-    /// `GET /api/workspaces/{ws}/tasks/{readable_id}/checklist`
+    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/checklist`
     pub async fn list_checklist(
         &self,
         ws: &str,
         readable_id: &str,
     ) -> Result<Vec<ChecklistItemDto>, ClientError> {
         let response = self
-            .get(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/checklist"
-            ))
+            .get(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/checklist"),
+            )
             .send()
             .await?;
         self.decode_response(response, "list_checklist").await
     }
 
-    /// `POST /api/workspaces/{ws}/tasks/{readable_id}/checklist`
+    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/checklist`
     pub async fn create_checklist_item(
         &self,
         ws: &str,
@@ -2804,9 +3055,10 @@ impl AtlasClient {
         body: CreateChecklistItemRequest,
     ) -> Result<ChecklistItemDto, ClientError> {
         let response = self
-            .post(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/checklist"
-            ))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/checklist"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -2815,7 +3067,7 @@ impl AtlasClient {
             .await
     }
 
-    /// `PATCH /api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}`
+    /// `PATCH /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}`
     pub async fn update_checklist_item(
         &self,
         ws: &str,
@@ -2824,9 +3076,10 @@ impl AtlasClient {
         body: UpdateChecklistItemRequest,
     ) -> Result<ChecklistItemDto, ClientError> {
         let response = self
-            .patch(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}"
-            ))
+            .patch(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -2835,7 +3088,7 @@ impl AtlasClient {
             .await
     }
 
-    /// `DELETE /api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}`
+    /// `DELETE /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}`
     pub async fn delete_checklist_item(
         &self,
         ws: &str,
@@ -2843,9 +3096,10 @@ impl AtlasClient {
         item_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}"
-            ))
+            .delete(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -2859,7 +3113,7 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `POST /api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote`
+    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote`
     pub async fn promote_checklist_item(
         &self,
         ws: &str,
@@ -2868,9 +3122,10 @@ impl AtlasClient {
         body: PromoteChecklistItemRequest,
     ) -> Result<PromotionDto, ClientError> {
         let response = self
-            .post(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote"
-            ))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -2879,22 +3134,23 @@ impl AtlasClient {
             .await
     }
 
-    /// `GET /api/workspaces/{ws}/tasks/{readable_id}/subtasks`
+    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/subtasks`
     pub async fn list_subtasks(
         &self,
         ws: &str,
         readable_id: &str,
     ) -> Result<Vec<TaskSummaryDto>, ClientError> {
         let response = self
-            .get(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/subtasks"
-            ))
+            .get(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/subtasks"),
+            )
             .send()
             .await?;
         self.decode_response(response, "list_subtasks").await
     }
 
-    /// `POST /api/workspaces/{ws}/tasks/{readable_id}/subtasks`
+    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/subtasks`
     pub async fn create_subtask(
         &self,
         ws: &str,
@@ -2902,9 +3158,10 @@ impl AtlasClient {
         body: CreateSubtaskRequest,
     ) -> Result<CreateTaskResponseDto, ClientError> {
         let response = self
-            .post(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/subtasks"
-            ))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/subtasks"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -2912,21 +3169,24 @@ impl AtlasClient {
         self.decode_response(response, "create_subtask").await
     }
 
-    /// `POST /api/workspaces/{ws}/tasks/{readable_id}/promote`
+    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/promote`
     pub async fn promote_subtask(
         &self,
         ws: &str,
         readable_id: &str,
     ) -> Result<TaskDto, ClientError> {
         let response = self
-            .post(&format!("/api/workspaces/{ws}/tasks/{readable_id}/promote"))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/promote"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
         self.decode_response(response, "promote_subtask").await
     }
 
-    /// `POST /api/workspaces/{ws}/tasks/{readable_id}/parent`
+    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/parent`
     pub async fn set_task_parent(
         &self,
         ws: &str,
@@ -2934,7 +3194,10 @@ impl AtlasClient {
         body: SetTaskParentRequest,
     ) -> Result<TaskDto, ClientError> {
         let response = self
-            .post(&format!("/api/workspaces/{ws}/tasks/{readable_id}/parent"))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/parent"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -2942,22 +3205,23 @@ impl AtlasClient {
         self.decode_response(response, "set_task_parent").await
     }
 
-    /// `GET /api/workspaces/{ws}/tasks/{readable_id}/activity`
+    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/activity`
     pub async fn list_activity(
         &self,
         ws: &str,
         readable_id: &str,
     ) -> Result<Page<ActivityEntryDto>, ClientError> {
         let response = self
-            .get(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/activity"
-            ))
+            .get(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/activity"),
+            )
             .send()
             .await?;
         self.decode_response(response, "list_activity").await
     }
 
-    /// `GET /api/workspaces/{ws}/tasks/{readable_id}/comments`
+    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments`
     pub async fn list_comments(
         &self,
         ws: &str,
@@ -2966,15 +3230,15 @@ impl AtlasClient {
         limit: Option<u32>,
     ) -> Result<Page<CommentDto>, ClientError> {
         let path = build_paginated_path(
-            &format!("/api/workspaces/{ws}/tasks/{readable_id}/comments"),
+            &format!("/workspaces/{ws}/tasks/{readable_id}/comments"),
             cursor,
             limit,
         );
-        let response = self.get(&path).send().await?;
+        let response = self.get(Component::Acta, &path).send().await?;
         self.decode_response(response, "list_comments").await
     }
 
-    /// `GET /api/workspaces/{ws}/tasks/{readable_id}/comments?feed=full`
+    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments?feed=full`
     pub async fn list_comment_feed(
         &self,
         ws: &str,
@@ -2983,15 +3247,15 @@ impl AtlasClient {
         limit: Option<u32>,
     ) -> Result<Page<CommentFeedEntryDto>, ClientError> {
         let path = build_comment_feed_path(
-            &format!("/api/workspaces/{ws}/tasks/{readable_id}/comments"),
+            &format!("/workspaces/{ws}/tasks/{readable_id}/comments"),
             cursor,
             limit,
         );
-        let response = self.get(&path).send().await?;
+        let response = self.get(Component::Acta, &path).send().await?;
         self.decode_response(response, "list_comment_feed").await
     }
 
-    /// `POST /api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments`
+    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments`
     pub async fn upload_task_comment_attachment(
         &self,
         ws: &str,
@@ -3013,9 +3277,10 @@ impl AtlasClient {
         body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
 
         let response = self
-            .post(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments"
-            ))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments"),
+            )
             .header("x-atlas-csrf", "1")
             .header(
                 "content-type",
@@ -3028,7 +3293,7 @@ impl AtlasClient {
             .await
     }
 
-    /// `POST /api/workspaces/{ws}/tasks/{readable_id}/comment-drafts`
+    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comment-drafts`
     pub async fn create_task_comment_draft(
         &self,
         ws: &str,
@@ -3036,9 +3301,10 @@ impl AtlasClient {
         create_token: uuid::Uuid,
     ) -> Result<CommentDraftDto, ClientError> {
         let response = self
-            .post(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts"
-            ))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/comment-drafts"),
+            )
             .header("x-atlas-csrf", "1")
             .header("x-create-token", create_token.to_string())
             .send()
@@ -3047,7 +3313,7 @@ impl AtlasClient {
             .await
     }
 
-    /// `POST /api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments`
+    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments`
     #[allow(clippy::too_many_arguments)]
     pub async fn upload_task_draft_attachment(
         &self,
@@ -3071,9 +3337,12 @@ impl AtlasClient {
         body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
 
         let response = self
-            .post(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments"
-            ))
+            .post(
+                Component::Acta,
+                &format!(
+                    "/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments"
+                ),
+            )
             .header("x-atlas-csrf", "1")
             .header("x-upload-token", upload_token.to_string())
             .header(
@@ -3087,7 +3356,7 @@ impl AtlasClient {
             .await
     }
 
-    /// `DELETE /api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}`
+    /// `DELETE /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}`
     pub async fn cancel_task_comment_draft(
         &self,
         ws: &str,
@@ -3095,16 +3364,17 @@ impl AtlasClient {
         draft_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}"
-            ))
+            .delete(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
         decode_empty_response(response).await
     }
 
-    /// `GET /api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments`
+    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments`
     pub async fn list_task_comment_attachments(
         &self,
         ws: &str,
@@ -3112,16 +3382,17 @@ impl AtlasClient {
         comment_id: uuid::Uuid,
     ) -> Result<Vec<CommentAttachmentDto>, ClientError> {
         let response = self
-            .get(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments"
-            ))
+            .get(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments"),
+            )
             .send()
             .await?;
         self.decode_response(response, "list_task_comment_attachments")
             .await
     }
 
-    /// `GET /api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content`
+    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content`
     pub async fn download_task_comment_attachment(
         &self,
         ws: &str,
@@ -3130,15 +3401,15 @@ impl AtlasClient {
         attachment_id: uuid::Uuid,
     ) -> Result<(Vec<u8>, Option<String>), ClientError> {
         let response = self
-            .get(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content"
+            .get(Component::Acta, &format!(
+                "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content"
             ))
             .send()
             .await?;
         decode_attachment_content(response).await
     }
 
-    /// `DELETE /api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}`
+    /// `DELETE /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}`
     pub async fn delete_task_comment_attachment(
         &self,
         ws: &str,
@@ -3147,8 +3418,8 @@ impl AtlasClient {
         attachment_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}"
+            .delete(Component::Acta, &format!(
+                "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}"
             ))
             .header("x-atlas-csrf", "1")
             .send()
@@ -3156,7 +3427,7 @@ impl AtlasClient {
         decode_empty_response(response).await
     }
 
-    /// `POST /api/workspaces/{ws}/tasks/{readable_id}/comments`
+    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments`
     pub async fn add_comment(
         &self,
         ws: &str,
@@ -3164,9 +3435,10 @@ impl AtlasClient {
         body: CreateCommentRequest,
     ) -> Result<CommentDto, ClientError> {
         let response = self
-            .post(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/comments"
-            ))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/comments"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -3174,7 +3446,7 @@ impl AtlasClient {
         self.decode_response(response, "add_comment").await
     }
 
-    /// `PATCH /api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}`
+    /// `PATCH /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}`
     pub async fn update_comment(
         &self,
         ws: &str,
@@ -3183,9 +3455,10 @@ impl AtlasClient {
         body: UpdateCommentRequest,
     ) -> Result<CommentDto, ClientError> {
         let response = self
-            .patch(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}"
-            ))
+            .patch(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -3193,7 +3466,7 @@ impl AtlasClient {
         self.decode_response(response, "update_comment").await
     }
 
-    /// `DELETE /api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}`
+    /// `DELETE /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}`
     pub async fn delete_comment(
         &self,
         ws: &str,
@@ -3201,9 +3474,10 @@ impl AtlasClient {
         comment_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!(
-                "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}"
-            ))
+            .delete(
+                Component::Acta,
+                &format!("/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -3217,7 +3491,7 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `GET /api/workspaces/{ws}/documents/{slug}/comments`
+    /// `GET /api/v2/acta/workspaces/{ws}/documents/{slug}/comments`
     pub async fn list_document_comments(
         &self,
         ws: &str,
@@ -3226,16 +3500,16 @@ impl AtlasClient {
         limit: Option<u32>,
     ) -> Result<Page<CommentDto>, ClientError> {
         let path = build_paginated_path(
-            &format!("/api/workspaces/{ws}/documents/{slug}/comments"),
+            &format!("/workspaces/{ws}/documents/{slug}/comments"),
             cursor,
             limit,
         );
-        let response = self.get(&path).send().await?;
+        let response = self.get(Component::Acta, &path).send().await?;
         self.decode_response(response, "list_document_comments")
             .await
     }
 
-    /// `GET /api/workspaces/{ws}/documents/{slug}/comments?feed=full`
+    /// `GET /api/v2/acta/workspaces/{ws}/documents/{slug}/comments?feed=full`
     pub async fn list_document_comment_feed(
         &self,
         ws: &str,
@@ -3244,16 +3518,16 @@ impl AtlasClient {
         limit: Option<u32>,
     ) -> Result<Page<CommentFeedEntryDto>, ClientError> {
         let path = build_comment_feed_path(
-            &format!("/api/workspaces/{ws}/documents/{slug}/comments"),
+            &format!("/workspaces/{ws}/documents/{slug}/comments"),
             cursor,
             limit,
         );
-        let response = self.get(&path).send().await?;
+        let response = self.get(Component::Acta, &path).send().await?;
         self.decode_response(response, "list_document_comment_feed")
             .await
     }
 
-    /// `POST /api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments`
+    /// `POST /api/v2/acta/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments`
     pub async fn upload_document_comment_attachment(
         &self,
         ws: &str,
@@ -3264,9 +3538,10 @@ impl AtlasClient {
         data: Vec<u8>,
     ) -> Result<CommentAttachmentDto, ClientError> {
         let response = self
-            .post(&format!(
-                "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments"
-            ))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments"),
+            )
             .header("x-atlas-csrf", "1")
             .header("x-file-name", file_name)
             .header("content-type", content_type)
@@ -3277,7 +3552,7 @@ impl AtlasClient {
             .await
     }
 
-    /// `POST /api/workspaces/{ws}/documents/{slug}/comment-drafts`
+    /// `POST /api/v2/acta/workspaces/{ws}/documents/{slug}/comment-drafts`
     pub async fn create_document_comment_draft(
         &self,
         ws: &str,
@@ -3285,9 +3560,10 @@ impl AtlasClient {
         create_token: uuid::Uuid,
     ) -> Result<CommentDraftDto, ClientError> {
         let response = self
-            .post(&format!(
-                "/api/workspaces/{ws}/documents/{slug}/comment-drafts"
-            ))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/documents/{slug}/comment-drafts"),
+            )
             .header("x-atlas-csrf", "1")
             .header("x-create-token", create_token.to_string())
             .send()
@@ -3296,7 +3572,7 @@ impl AtlasClient {
             .await
     }
 
-    /// `POST /api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments`
+    /// `POST /api/v2/acta/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments`
     #[allow(clippy::too_many_arguments)]
     pub async fn upload_document_draft_attachment(
         &self,
@@ -3309,9 +3585,10 @@ impl AtlasClient {
         data: Vec<u8>,
     ) -> Result<CommentAttachmentDto, ClientError> {
         let response = self
-            .post(&format!(
-                "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments"
-            ))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments"),
+            )
             .header("x-atlas-csrf", "1")
             .header("x-upload-token", upload_token.to_string())
             .header("x-file-name", file_name)
@@ -3323,7 +3600,7 @@ impl AtlasClient {
             .await
     }
 
-    /// `DELETE /api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}`
+    /// `DELETE /api/v2/acta/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}`
     pub async fn cancel_document_comment_draft(
         &self,
         ws: &str,
@@ -3331,16 +3608,17 @@ impl AtlasClient {
         draft_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!(
-                "/api/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}"
-            ))
+            .delete(
+                Component::Acta,
+                &format!("/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
         decode_empty_response(response).await
     }
 
-    /// `GET /api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments`
+    /// `GET /api/v2/acta/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments`
     pub async fn list_document_comment_attachments(
         &self,
         ws: &str,
@@ -3348,16 +3626,17 @@ impl AtlasClient {
         comment_id: uuid::Uuid,
     ) -> Result<Vec<CommentAttachmentDto>, ClientError> {
         let response = self
-            .get(&format!(
-                "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments"
-            ))
+            .get(
+                Component::Acta,
+                &format!("/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments"),
+            )
             .send()
             .await?;
         self.decode_response(response, "list_document_comment_attachments")
             .await
     }
 
-    /// `GET /api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}`
+    /// `GET /api/v2/acta/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}`
     pub async fn download_document_comment_attachment(
         &self,
         ws: &str,
@@ -3366,15 +3645,15 @@ impl AtlasClient {
         attachment_id: uuid::Uuid,
     ) -> Result<(Vec<u8>, Option<String>), ClientError> {
         let response = self
-            .get(&format!(
-                "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}"
+            .get(Component::Acta, &format!(
+                "/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}"
             ))
             .send()
             .await?;
         decode_attachment_content(response).await
     }
 
-    /// `DELETE /api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}`
+    /// `DELETE /api/v2/acta/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}`
     pub async fn delete_document_comment_attachment(
         &self,
         ws: &str,
@@ -3383,8 +3662,8 @@ impl AtlasClient {
         attachment_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!(
-                "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}"
+            .delete(Component::Acta, &format!(
+                "/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}"
             ))
             .header("x-atlas-csrf", "1")
             .send()
@@ -3392,7 +3671,7 @@ impl AtlasClient {
         decode_empty_response(response).await
     }
 
-    /// `POST /api/workspaces/{ws}/documents/{slug}/comments`
+    /// `POST /api/v2/acta/workspaces/{ws}/documents/{slug}/comments`
     pub async fn add_document_comment(
         &self,
         ws: &str,
@@ -3400,7 +3679,10 @@ impl AtlasClient {
         body: CreateCommentRequest,
     ) -> Result<CommentDto, ClientError> {
         let response = self
-            .post(&format!("/api/workspaces/{ws}/documents/{slug}/comments"))
+            .post(
+                Component::Acta,
+                &format!("/workspaces/{ws}/documents/{slug}/comments"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -3408,7 +3690,7 @@ impl AtlasClient {
         self.decode_response(response, "add_document_comment").await
     }
 
-    /// `PATCH /api/workspaces/{ws}/documents/{slug}/comments/{comment_id}`
+    /// `PATCH /api/v2/acta/workspaces/{ws}/documents/{slug}/comments/{comment_id}`
     pub async fn update_document_comment(
         &self,
         ws: &str,
@@ -3417,9 +3699,10 @@ impl AtlasClient {
         body: UpdateCommentRequest,
     ) -> Result<CommentDto, ClientError> {
         let response = self
-            .patch(&format!(
-                "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}"
-            ))
+            .patch(
+                Component::Acta,
+                &format!("/workspaces/{ws}/documents/{slug}/comments/{comment_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -3428,7 +3711,7 @@ impl AtlasClient {
             .await
     }
 
-    /// `DELETE /api/workspaces/{ws}/documents/{slug}/comments/{comment_id}`
+    /// `DELETE /api/v2/acta/workspaces/{ws}/documents/{slug}/comments/{comment_id}`
     pub async fn delete_document_comment(
         &self,
         ws: &str,
@@ -3436,9 +3719,10 @@ impl AtlasClient {
         comment_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!(
-                "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}"
-            ))
+            .delete(
+                Component::Acta,
+                &format!("/workspaces/{ws}/documents/{slug}/comments/{comment_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -3452,7 +3736,7 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `GET /api/workspaces/{ws}/activity`
+    /// `GET /api/v2/acta/workspaces/{ws}/activity`
     pub async fn list_workspace_activity(
         &self,
         ws: &str,
@@ -3462,12 +3746,12 @@ impl AtlasClient {
         limit: Option<u32>,
     ) -> Result<Page<ActivityEntryDto>, ClientError> {
         let path = build_workspace_activity_path(ws, actor, from, to, None, limit);
-        let response = self.get(&path).send().await?;
+        let response = self.get(Component::Acta, &path).send().await?;
         self.decode_response(response, "list_workspace_activity")
             .await
     }
 
-    /// `GET /api/workspaces/{ws}/activity` with explicit cursor
+    /// `GET /api/v2/acta/workspaces/{ws}/activity`
     pub async fn list_workspace_activity_with_cursor(
         &self,
         ws: &str,
@@ -3477,12 +3761,12 @@ impl AtlasClient {
         limit: Option<u32>,
     ) -> Result<Page<ActivityEntryDto>, ClientError> {
         let path = build_workspace_activity_path(ws, actor, from, None, cursor, limit);
-        let response = self.get(&path).send().await?;
+        let response = self.get(Component::Acta, &path).send().await?;
         self.decode_response(response, "list_workspace_activity_with_cursor")
             .await
     }
 
-    /// `GET /api/workspaces/{ws}/audit`
+    /// `GET /api/v2/custos/workspaces/{ws}/audit`
     pub async fn list_workspace_audit(
         &self,
         ws: &str,
@@ -3493,7 +3777,7 @@ impl AtlasClient {
         limit: Option<u32>,
     ) -> Result<Page<atlas_api::dtos::audit::AuditEntryDto>, ClientError> {
         let path = build_audit_path(
-            &format!("/api/workspaces/{ws}/audit"),
+            &format!("/workspaces/{ws}/audit"),
             actor,
             action,
             from,
@@ -3501,11 +3785,11 @@ impl AtlasClient {
             None,
             limit,
         );
-        let response = self.get(&path).send().await?;
+        let response = self.get(Component::Custos, &path).send().await?;
         self.decode_response(response, "list_workspace_audit").await
     }
 
-    /// `GET /api/workspaces/{ws}/audit` with explicit cursor
+    /// `GET /api/v2/custos/workspaces/{ws}/audit`
     pub async fn list_workspace_audit_with_cursor(
         &self,
         ws: &str,
@@ -3516,7 +3800,7 @@ impl AtlasClient {
         limit: Option<u32>,
     ) -> Result<Page<atlas_api::dtos::audit::AuditEntryDto>, ClientError> {
         let path = build_audit_path(
-            &format!("/api/workspaces/{ws}/audit"),
+            &format!("/workspaces/{ws}/audit"),
             actor,
             action,
             from,
@@ -3524,12 +3808,12 @@ impl AtlasClient {
             cursor,
             limit,
         );
-        let response = self.get(&path).send().await?;
+        let response = self.get(Component::Custos, &path).send().await?;
         self.decode_response(response, "list_workspace_audit_with_cursor")
             .await
     }
 
-    /// `GET /api/admin/audit`
+    /// `GET /api/v2/custos/admin/audit`
     pub async fn list_platform_audit(
         &self,
         actor: Option<&str>,
@@ -3538,12 +3822,12 @@ impl AtlasClient {
         to: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<atlas_api::dtos::audit::AuditEntryDto>, ClientError> {
-        let path = build_audit_path("/api/admin/audit", actor, action, from, to, None, limit);
-        let response = self.get(&path).send().await?;
+        let path = build_audit_path("/admin/audit", actor, action, from, to, None, limit);
+        let response = self.get(Component::Custos, &path).send().await?;
         self.decode_response(response, "list_platform_audit").await
     }
 
-    /// `GET /api/admin/audit` with explicit cursor
+    /// `GET /api/v2/custos/admin/audit`
     pub async fn list_platform_audit_with_cursor(
         &self,
         actor: Option<&str>,
@@ -3552,16 +3836,16 @@ impl AtlasClient {
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<atlas_api::dtos::audit::AuditEntryDto>, ClientError> {
-        let path = build_audit_path("/api/admin/audit", actor, action, from, None, cursor, limit);
-        let response = self.get(&path).send().await?;
+        let path = build_audit_path("/admin/audit", actor, action, from, None, cursor, limit);
+        let response = self.get(Component::Custos, &path).send().await?;
         self.decode_response(response, "list_platform_audit_with_cursor")
             .await
     }
 
-    /// `POST /api/auth/logout`
+    /// `POST /api/v2/custos/auth/logout`
     pub async fn logout(&self) -> Result<(), ClientError> {
         let response = self
-            .post("/api/auth/logout")
+            .post(Component::Custos, "/auth/logout")
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -3579,14 +3863,14 @@ impl AtlasClient {
 
     // ---- Groups ----------------------------------------------------------------
 
-    /// `POST /api/workspaces/{ws}/groups`
+    /// `POST /api/v2/custos/workspaces/{ws}/groups`
     pub async fn create_group(
         &self,
         ws: &str,
         body: CreateGroupRequest,
     ) -> Result<GroupDto, ClientError> {
         let response = self
-            .post(&format!("/api/workspaces/{ws}/groups"))
+            .post(Component::Custos, &format!("/workspaces/{ws}/groups"))
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -3594,19 +3878,22 @@ impl AtlasClient {
         self.decode_response(response, "create_group").await
     }
 
-    /// `GET /api/workspaces/{ws}/groups`
+    /// `GET /api/v2/custos/workspaces/{ws}/groups`
     pub async fn list_groups(&self, ws: &str) -> Result<Vec<GroupDto>, ClientError> {
         let response = self
-            .get(&format!("/api/workspaces/{ws}/groups"))
+            .get(Component::Custos, &format!("/workspaces/{ws}/groups"))
             .send()
             .await?;
         self.decode_response(response, "list_groups").await
     }
 
-    /// `DELETE /api/workspaces/{ws}/groups/{group_id}`
+    /// `DELETE /api/v2/custos/workspaces/{ws}/groups/{group_id}`
     pub async fn delete_group(&self, ws: &str, group_id: uuid::Uuid) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!("/api/workspaces/{ws}/groups/{group_id}"))
+            .delete(
+                Component::Custos,
+                &format!("/workspaces/{ws}/groups/{group_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -3620,7 +3907,7 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `POST /api/workspaces/{ws}/groups/{group_id}/members`
+    /// `POST /api/v2/custos/workspaces/{ws}/groups/{group_id}/members`
     pub async fn add_group_member(
         &self,
         ws: &str,
@@ -3628,7 +3915,10 @@ impl AtlasClient {
         body: AddGroupMemberRequest,
     ) -> Result<GroupMemberDto, ClientError> {
         let response = self
-            .post(&format!("/api/workspaces/{ws}/groups/{group_id}/members"))
+            .post(
+                Component::Custos,
+                &format!("/workspaces/{ws}/groups/{group_id}/members"),
+            )
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
@@ -3636,7 +3926,7 @@ impl AtlasClient {
         self.decode_response(response, "add_group_member").await
     }
 
-    /// `DELETE /api/workspaces/{ws}/groups/{group_id}/members/{user_id}`
+    /// `DELETE /api/v2/custos/workspaces/{ws}/groups/{group_id}/members/{user_id}`
     pub async fn remove_group_member(
         &self,
         ws: &str,
@@ -3644,9 +3934,10 @@ impl AtlasClient {
         user_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
         let response = self
-            .delete(&format!(
-                "/api/workspaces/{ws}/groups/{group_id}/members/{user_id}"
-            ))
+            .delete(
+                Component::Custos,
+                &format!("/workspaces/{ws}/groups/{group_id}/members/{user_id}"),
+            )
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -3660,14 +3951,17 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `GET /api/workspaces/{ws}/groups/{group_id}/members`
+    /// `GET /api/v2/custos/workspaces/{ws}/groups/{group_id}/members`
     pub async fn list_group_members(
         &self,
         ws: &str,
         group_id: uuid::Uuid,
     ) -> Result<Vec<GroupMemberDto>, ClientError> {
         let response = self
-            .get(&format!("/api/workspaces/{ws}/groups/{group_id}/members"))
+            .get(
+                Component::Custos,
+                &format!("/workspaces/{ws}/groups/{group_id}/members"),
+            )
             .send()
             .await?;
         self.decode_response(response, "list_group_members").await
@@ -3691,11 +3985,11 @@ fn build_search_path(
         params.push(format!("mode={mode}"));
     }
 
-    format!("/api/workspaces/{ws}/search?{}", params.join("&"))
+    format!("/workspaces/{ws}/search?{}", params.join("&"))
 }
 
 fn build_document_range_path(ws: &str, slug: &str, query: &DocumentContentRangeQuery) -> String {
-    let base = format!("/api/workspaces/{ws}/documents/{slug}/content/range");
+    let base = format!("/workspaces/{ws}/documents/{slug}/content/range");
     let mut params = Vec::new();
 
     if let Some(start_line) = query.start_line {
@@ -3729,7 +4023,7 @@ fn build_semantic_search_path(
     limit: Option<u32>,
 ) -> String {
     format!(
-        "/api/workspaces/{ws}/semantic-search?{}",
+        "/workspaces/{ws}/semantic-search?{}",
         search_params(q, type_filter, cursor, limit).join("&")
     )
 }
@@ -3780,7 +4074,7 @@ fn encode_query_value(s: &str) -> String {
 }
 
 fn build_workspace_tasks_path(ws: &str, q: &WorkspaceTaskQueryParams) -> String {
-    let base = format!("/api/workspaces/{ws}/tasks");
+    let base = format!("/workspaces/{ws}/tasks");
     let mut params: Vec<String> = Vec::new();
 
     if let Some(a) = &q.assignee {
@@ -3861,7 +4155,7 @@ fn build_workspace_activity_path(
     cursor: Option<&str>,
     limit: Option<u32>,
 ) -> String {
-    let base = format!("/api/workspaces/{ws}/activity");
+    let base = format!("/workspaces/{ws}/activity");
     let mut params: Vec<String> = Vec::new();
     if let Some(a) = actor {
         params.push(format!("actor={a}"));
@@ -3947,9 +4241,9 @@ fn build_trash_list_path(
     }
 
     if params.is_empty() {
-        "/api/admin/trash".to_string()
+        "/admin/trash".to_string()
     } else {
-        format!("/api/admin/trash?{}", params.join("&"))
+        format!("/admin/trash?{}", params.join("&"))
     }
 }
 
@@ -4005,12 +4299,12 @@ async fn decode_attachment_content(
     Ok((bytes.to_vec(), content_type))
 }
 
-/// Builds the `GET /api/workspaces/{ws}/webhooks` path.
+/// Builds the `GET /api/v2/acta/workspaces/{ws}/webhooks` path.
 ///
 /// The webhook list route paginates on `after` (forward cursor) rather than the
 /// generic `cursor` param, so it cannot reuse [`build_paginated_path`].
 fn build_webhooks_list_path(ws: &str, after: Option<&str>, limit: Option<u32>) -> String {
-    let base = format!("/api/workspaces/{ws}/webhooks");
+    let base = format!("/workspaces/{ws}/webhooks");
 
     let mut params: Vec<String> = Vec::new();
     if let Some(a) = after {
@@ -4027,7 +4321,7 @@ fn build_webhooks_list_path(ws: &str, after: Option<&str>, limit: Option<u32>) -
     }
 }
 
-/// Builds the `GET /api/workspaces/{ws}/webhooks/{webhook_id}/deliveries` path.
+/// Builds the `GET /api/v2/acta/workspaces/{ws}/webhooks/{webhook_id}/deliveries` path.
 ///
 /// Delivery attempts paginate newest-first on `before`, so this route also
 /// cannot reuse [`build_paginated_path`].
@@ -4037,7 +4331,7 @@ fn build_webhook_deliveries_path(
     before: Option<&str>,
     limit: Option<u32>,
 ) -> String {
-    let base = format!("/api/workspaces/{ws}/webhooks/{webhook_id}/deliveries");
+    let base = format!("/workspaces/{ws}/webhooks/{webhook_id}/deliveries");
 
     let mut params: Vec<String> = Vec::new();
     if let Some(b) = before {
@@ -4063,6 +4357,85 @@ mod tests {
     fn construction_stores_base_url() {
         let client = AtlasClient::new("http://localhost:8080");
         assert_eq!(client.base_url(), "http://localhost:8080");
+    }
+
+    #[test]
+    fn component_as_str_matches_the_registrys_stable_ids() {
+        assert_eq!(Component::Platform.as_str(), "platform");
+        assert_eq!(Component::Custos.as_str(), "custos");
+        assert_eq!(Component::Acta.as_str(), "acta");
+    }
+
+    #[test]
+    fn mounted_joins_base_url_v2_prefix_component_and_relative_path() {
+        let client = AtlasClient::new("http://localhost:8080");
+        assert_eq!(
+            client.mounted(Component::Acta, "/workspaces/{ws}/tasks"),
+            "http://localhost:8080/api/v2/acta/workspaces/{ws}/tasks"
+        );
+        assert_eq!(
+            client.mounted(Component::Custos, "/users"),
+            "http://localhost:8080/api/v2/custos/users"
+        );
+        assert_eq!(
+            client.mounted(Component::Platform, "/meta"),
+            "http://localhost:8080/api/v2/platform/meta"
+        );
+    }
+
+    #[tokio::test]
+    async fn verb_methods_resolve_addresses_through_the_component_seam() {
+        let (base_url, requests) = serve_once_observing("200 OK", "{}");
+        let client = AtlasClient::new(base_url);
+        let _ = client.get(Component::Acta, "/x").send().await;
+        let raw = requests.recv().expect("mock server received request");
+        assert!(
+            raw.starts_with("GET /api/v2/acta/x "),
+            "expected V2-mounted request, got `{raw}`"
+        );
+    }
+
+    #[tokio::test]
+    async fn root_get_addresses_the_root_level_mount_with_no_component_or_api_prefix() {
+        let (base_url, requests) = serve_once_observing("200 OK", "{}");
+        let client = AtlasClient::new(base_url);
+        let _ = client.root_get("/health").send().await;
+        let raw = requests.recv().expect("mock server received request");
+        assert!(
+            raw.starts_with("GET /health "),
+            "expected an unprefixed root-level request, got `{raw}`"
+        );
+    }
+
+    /// D2.6 — one runtime proof of the seam: five methods (one per verb),
+    /// proving the seam mechanism rather than enumerating the client's
+    /// surface (the source-walking contract test in `atlas_server` owns
+    /// that).
+    #[tokio::test]
+    async fn every_verb_resolves_its_predicted_v2_mounted_url() {
+        for (verb, expected_line) in [
+            ("get", "GET /api/v2/acta/x "),
+            ("post", "POST /api/v2/custos/y "),
+            ("patch", "PATCH /api/v2/platform/z "),
+            ("put", "PUT /api/v2/acta/w "),
+            ("delete", "DELETE /api/v2/custos/q "),
+        ] {
+            let (base_url, requests) = serve_once_observing("200 OK", "{}");
+            let client = AtlasClient::new(base_url);
+            let _ = match verb {
+                "get" => client.get(Component::Acta, "/x").send().await,
+                "post" => client.post(Component::Custos, "/y").send().await,
+                "patch" => client.patch(Component::Platform, "/z").send().await,
+                "put" => client.put(Component::Acta, "/w").send().await,
+                "delete" => client.delete(Component::Custos, "/q").send().await,
+                _ => unreachable!(),
+            };
+            let raw = requests.recv().expect("mock server received request");
+            assert!(
+                raw.starts_with(expected_line),
+                "verb `{verb}`: expected `{expected_line}`, got `{raw}`"
+            );
+        }
     }
 
     #[test]
@@ -4111,7 +4484,7 @@ mod tests {
     #[test]
     fn build_search_path_includes_required_q() {
         let path = build_search_path("my-ws", "hello world", None, None, None, None, None);
-        assert!(path.starts_with("/api/workspaces/my-ws/search?q="));
+        assert!(path.starts_with("/workspaces/my-ws/search?q="));
         assert!(
             path.contains("hello%20world")
                 || path.contains("hello+world")
@@ -4182,8 +4555,8 @@ mod tests {
             Some("cur"),
             Some(25),
         );
-        assert!(path.starts_with("/api/workspaces/ws1/semantic-search?q="));
-        assert!(!path.starts_with("/api/workspaces/ws1/search"));
+        assert!(path.starts_with("/workspaces/ws1/semantic-search?q="));
+        assert!(!path.starts_with("/workspaces/ws1/search"));
         assert!(path.contains("concept%20drift"));
         assert!(path.contains("type=document"));
         assert!(path.contains("cursor=cur"));
@@ -4193,19 +4566,19 @@ mod tests {
     #[test]
     fn build_semantic_search_path_omits_optional_params_when_none() {
         let path = build_semantic_search_path("ws1", "query", None, None, None);
-        assert_eq!(path, "/api/workspaces/ws1/semantic-search?q=query");
+        assert_eq!(path, "/workspaces/ws1/semantic-search?q=query");
     }
 
     #[test]
     fn build_webhooks_list_path_uses_after_cursor() {
         let path = build_webhooks_list_path("ws1", Some("cur0"), Some(25));
-        assert_eq!(path, "/api/workspaces/ws1/webhooks?after=cur0&limit=25");
+        assert_eq!(path, "/workspaces/ws1/webhooks?after=cur0&limit=25");
     }
 
     #[test]
     fn build_webhooks_list_path_omits_params_when_none() {
         let path = build_webhooks_list_path("ws1", None, None);
-        assert_eq!(path, "/api/workspaces/ws1/webhooks");
+        assert_eq!(path, "/workspaces/ws1/webhooks");
         assert!(!path.contains("cursor="));
         assert!(!path.contains("after="));
     }
@@ -4216,7 +4589,7 @@ mod tests {
         let path = build_webhook_deliveries_path("ws1", id, Some("cur9"), Some(10));
         assert_eq!(
             path,
-            format!("/api/workspaces/ws1/webhooks/{id}/deliveries?before=cur9&limit=10")
+            format!("/workspaces/ws1/webhooks/{id}/deliveries?before=cur9&limit=10")
         );
     }
 
@@ -4224,10 +4597,7 @@ mod tests {
     fn build_webhook_deliveries_path_omits_params_when_none() {
         let id = uuid::Uuid::nil();
         let path = build_webhook_deliveries_path("ws1", id, None, None);
-        assert_eq!(
-            path,
-            format!("/api/workspaces/ws1/webhooks/{id}/deliveries")
-        );
+        assert_eq!(path, format!("/workspaces/ws1/webhooks/{id}/deliveries"));
         assert!(!path.contains("before="));
     }
 
@@ -4235,19 +4605,19 @@ mod tests {
     fn build_comment_feed_path_keeps_feed_before_pagination() {
         assert_eq!(
             build_comment_feed_path(
-                "/api/workspaces/ws/tasks/ATL-1/comments",
+                "/workspaces/ws/tasks/ATL-1/comments",
                 Some("cursor"),
                 Some(25)
             ),
-            "/api/workspaces/ws/tasks/ATL-1/comments?feed=full&cursor=cursor&limit=25"
+            "/workspaces/ws/tasks/ATL-1/comments?feed=full&cursor=cursor&limit=25"
         );
     }
 
     #[test]
     fn build_comment_feed_path_always_requests_full_feed() {
         assert_eq!(
-            build_comment_feed_path("/api/workspaces/ws/documents/doc/comments", None, None),
-            "/api/workspaces/ws/documents/doc/comments?feed=full"
+            build_comment_feed_path("/workspaces/ws/documents/doc/comments", None, None),
+            "/workspaces/ws/documents/doc/comments?feed=full"
         );
     }
 
@@ -4469,7 +4839,7 @@ mod tests {
 
         let raw = requests.recv().expect("mock server received request");
         assert!(raw.starts_with(
-            "POST /api/workspaces/ws/boards/00000000-0000-0000-0000-000000000010/tasks "
+            "POST /api/v2/acta/workspaces/ws/boards/00000000-0000-0000-0000-000000000010/tasks "
         ));
         assert!(raw.contains("\"target_task_readable_id\":\"ATL-2\""));
         assert!(raw.contains("\"target_document_id\":\"00000000-0000-0000-0000-000000000020\""));
@@ -4493,7 +4863,7 @@ mod tests {
         let client = AtlasClient::new(base_url);
         let attachment = assert_comment_attachment_request(
             requests,
-            "POST /api/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments ",
+            "POST /api/v2/acta/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments ",
             client.upload_task_comment_attachment("ws", "ATL-1", COMMENT_ID, "note.txt", "text/plain", b"ok".to_vec()),
         )
         .await;
@@ -4503,7 +4873,7 @@ mod tests {
         let client = AtlasClient::new(base_url);
         let attachments = assert_comment_attachment_request(
             requests,
-            "GET /api/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments ",
+            "GET /api/v2/acta/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments ",
             client.list_task_comment_attachments("ws", "ATL-1", COMMENT_ID),
         )
         .await;
@@ -4517,7 +4887,7 @@ mod tests {
         let client = AtlasClient::new(base_url);
         let (data, _) = assert_comment_attachment_request(
             requests,
-            "GET /api/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002/content ",
+            "GET /api/v2/acta/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002/content ",
             client.download_task_comment_attachment("ws", "ATL-1", COMMENT_ID, ATTACHMENT_ID),
         )
         .await;
@@ -4527,7 +4897,7 @@ mod tests {
         let client = AtlasClient::new(base_url);
         assert_comment_attachment_request(
             requests,
-            "DELETE /api/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002 ",
+            "DELETE /api/v2/acta/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002 ",
             client.delete_task_comment_attachment("ws", "ATL-1", COMMENT_ID, ATTACHMENT_ID),
         )
         .await;
@@ -4536,7 +4906,7 @@ mod tests {
         let client = AtlasClient::new(base_url);
         assert_comment_attachment_request(
             requests,
-            "POST /api/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments ",
+            "POST /api/v2/acta/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments ",
             client.upload_document_comment_attachment("ws", "note", COMMENT_ID, "note.txt", "text/plain", b"ok".to_vec()),
         )
         .await;
@@ -4545,7 +4915,7 @@ mod tests {
         let client = AtlasClient::new(base_url);
         assert_comment_attachment_request(
             requests,
-            "GET /api/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments ",
+            "GET /api/v2/acta/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments ",
             client.list_document_comment_attachments("ws", "note", COMMENT_ID),
         )
         .await;
@@ -4554,7 +4924,7 @@ mod tests {
         let client = AtlasClient::new(base_url);
         assert_comment_attachment_request(
             requests,
-            "GET /api/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002 ",
+            "GET /api/v2/acta/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002 ",
             client.download_document_comment_attachment("ws", "note", COMMENT_ID, ATTACHMENT_ID),
         )
         .await;
@@ -4563,7 +4933,7 @@ mod tests {
         let client = AtlasClient::new(base_url);
         assert_comment_attachment_request(
             requests,
-            "DELETE /api/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002 ",
+            "DELETE /api/v2/acta/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002 ",
             client.delete_document_comment_attachment("ws", "note", COMMENT_ID, ATTACHMENT_ID),
         )
         .await;
@@ -4582,7 +4952,7 @@ mod tests {
         let client = AtlasClient::new(base_url);
         let task_draft = assert_comment_attachment_request_with_headers(
             requests,
-            "POST /api/workspaces/ws/tasks/ATL-1/comment-drafts ",
+            "POST /api/v2/acta/workspaces/ws/tasks/ATL-1/comment-drafts ",
             &["x-create-token: 00000000-0000-0000-0000-000000000002"],
             client.create_task_comment_draft("ws", "ATL-1", CREATE_TOKEN),
         )
@@ -4593,7 +4963,7 @@ mod tests {
         let client = AtlasClient::new(base_url);
         let document_draft = assert_comment_attachment_request_with_headers(
             requests,
-            "POST /api/workspaces/ws/documents/note/comment-drafts ",
+            "POST /api/v2/acta/workspaces/ws/documents/note/comment-drafts ",
             &["x-create-token: 00000000-0000-0000-0000-000000000002"],
             client.create_document_comment_draft("ws", "note", CREATE_TOKEN),
         )
@@ -4607,7 +4977,7 @@ mod tests {
         let client = AtlasClient::new(base_url);
         let attachment = assert_comment_attachment_request_with_headers(
             requests,
-            "POST /api/workspaces/ws/tasks/ATL-1/comment-drafts/00000000-0000-0000-0000-000000000001/attachments ",
+            "POST /api/v2/acta/workspaces/ws/tasks/ATL-1/comment-drafts/00000000-0000-0000-0000-000000000001/attachments ",
             &[
                 "x-upload-token: 00000000-0000-0000-0000-000000000003",
                 "multipart/form-data; boundary=atlasboundary",
@@ -4626,7 +4996,7 @@ mod tests {
         let client = AtlasClient::new(base_url);
         assert_comment_attachment_request_with_headers(
             requests,
-            "POST /api/workspaces/ws/documents/note/comment-drafts/00000000-0000-0000-0000-000000000001/attachments ",
+            "POST /api/v2/acta/workspaces/ws/documents/note/comment-drafts/00000000-0000-0000-0000-000000000001/attachments ",
             &[
                 "x-upload-token: 00000000-0000-0000-0000-000000000003",
                 "x-file-name: note.txt",
@@ -4642,7 +5012,7 @@ mod tests {
         let client = AtlasClient::new(base_url);
         assert_comment_attachment_request(
             requests,
-            "DELETE /api/workspaces/ws/tasks/ATL-1/comment-drafts/00000000-0000-0000-0000-000000000001 ",
+            "DELETE /api/v2/acta/workspaces/ws/tasks/ATL-1/comment-drafts/00000000-0000-0000-0000-000000000001 ",
             client.cancel_task_comment_draft("ws", "ATL-1", DRAFT_ID),
         )
         .await;
@@ -4651,7 +5021,7 @@ mod tests {
         let client = AtlasClient::new(base_url);
         assert_comment_attachment_request(
             requests,
-            "DELETE /api/workspaces/ws/documents/note/comment-drafts/00000000-0000-0000-0000-000000000001 ",
+            "DELETE /api/v2/acta/workspaces/ws/documents/note/comment-drafts/00000000-0000-0000-0000-000000000001 ",
             client.cancel_document_comment_draft("ws", "note", DRAFT_ID),
         )
         .await;
@@ -4713,7 +5083,7 @@ mod tests {
         let client = AtlasClient::new(base_url);
         let page = assert_comment_attachment_request(
             requests,
-            "GET /api/admin/trash?workspace_id=00000000-0000-0000-0000-000000000003&kind=document&cursor=next&limit=20 ",
+            "GET /api/v2/acta/admin/trash?workspace_id=00000000-0000-0000-0000-000000000003&kind=document&cursor=next&limit=20 ",
             client.list_trash(
                 Some(uuid::uuid!("00000000-0000-0000-0000-000000000003")),
                 Some(TrashKindDto::Document),
@@ -4731,7 +5101,7 @@ mod tests {
         let client = AtlasClient::new(base_url);
         assert_comment_attachment_request(
             requests,
-            "POST /api/admin/trash/restore ",
+            "POST /api/v2/acta/admin/trash/restore ",
             client.restore_trash(TrashKindDto::Document, TARGET_ID),
         )
         .await;
@@ -4740,7 +5110,7 @@ mod tests {
         let client = AtlasClient::new(base_url);
         let response = assert_comment_attachment_request(
             requests,
-            "POST /api/admin/trash/purge ",
+            "POST /api/v2/acta/admin/trash/purge ",
             client.purge_trash(TrashKindDto::Document, TARGET_ID, true),
         )
         .await;
@@ -4756,7 +5126,7 @@ mod tests {
         let client = AtlasClient::new(base_url);
         let status = assert_comment_attachment_request(
             requests,
-            "GET /api/admin/trash/purges/00000000-0000-0000-0000-000000000002 ",
+            "GET /api/v2/acta/admin/trash/purges/00000000-0000-0000-0000-000000000002 ",
             client.get_purge_status(OPERATION_ID),
         )
         .await;
@@ -4766,7 +5136,7 @@ mod tests {
         let client = AtlasClient::new(base_url);
         let complete = assert_comment_attachment_request(
             requests,
-            "POST /api/admin/trash/purge ",
+            "POST /api/v2/acta/admin/trash/purge ",
             client.purge_trash(TrashKindDto::Document, TARGET_ID, true),
         )
         .await;
@@ -4799,7 +5169,7 @@ mod tests {
             requests
                 .recv()
                 .expect("mock server received compact request")
-                .starts_with("GET /api/workspaces/ws/documents/note/compact ")
+                .starts_with("GET /api/v2/acta/workspaces/ws/documents/note/compact ")
         );
 
         let (base_url, requests) = serve_once_observing("200 OK", RANGE);
@@ -4821,7 +5191,7 @@ mod tests {
         assert_eq!(range.continuation.as_deref(), Some("range-next"));
         let range_request = requests.recv().expect("mock server received range request");
         assert!(range_request.starts_with(
-            "GET /api/workspaces/ws/documents/note/content/range?start_line=3&end_line=8&line_limit=2&byte_limit=64&continuation=range%20token "
+            "GET /api/v2/acta/workspaces/ws/documents/note/content/range?start_line=3&end_line=8&line_limit=2&byte_limit=64&continuation=range%20token "
         ));
 
         let (base_url, requests) = serve_once_observing("200 OK", SEARCH);
@@ -4853,7 +5223,8 @@ mod tests {
             .recv()
             .expect("mock server received search request");
         assert!(
-            search_request.starts_with("POST /api/workspaces/ws/documents/note/content/search ")
+            search_request
+                .starts_with("POST /api/v2/acta/workspaces/ws/documents/note/content/search ")
         );
         assert!(search_request.contains("\"query\":\"a+b\""));
         assert!(search_request.contains("\"mode\":\"pattern\""));
@@ -4875,7 +5246,7 @@ mod tests {
             requests
                 .recv()
                 .expect("mock server received range request")
-                .starts_with("GET /api/workspaces/ws/documents/note/content/range ")
+                .starts_with("GET /api/v2/acta/workspaces/ws/documents/note/content/range ")
         );
     }
 
@@ -4905,7 +5276,7 @@ mod tests {
         );
 
         let sent = requests.recv().expect("mock server received edit request");
-        assert!(sent.starts_with("PATCH /api/workspaces/ws/documents/note/content/range "));
+        assert!(sent.starts_with("PATCH /api/v2/acta/workspaces/ws/documents/note/content/range "));
         assert!(sent.contains("\"base_revision_id\":\"00000000-0000-0000-0000-000000000003\""));
         assert!(sent.contains("\"operation\":\"replace\""));
         assert!(sent.contains("\"start\":2"));

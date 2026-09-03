@@ -204,6 +204,77 @@ fn no_unallowlisted_api_literal_exists_outside_the_helper() {
     );
 }
 
+/// `v2-e3-s6` D2.4 — the guard's scan root extends to `../atlas_client/src`
+/// (production code): the only file exempt is `lib.rs`'s own `V2_PREFIX`
+/// literal, marked with `// api-path-guard:off`/`:on` rather than
+/// `WholeFile`, so a reintroduced V1-form literal anywhere else in the crate
+/// still fails. `#[cfg(test)] mod tests` fixture literals (D2.4, 7 sites)
+/// are not scanned here — the boundary rule only ever sees production code
+/// because those literals carry no `/api` prefix in the first place after
+/// their own V2 rewrite (they were rewritten for honesty, not because the
+/// gate requires it).
+const CLIENT_ALLOWED: &[Exemption] = &[marked_spans(
+    "lib.rs",
+    "the seam's own V2_PREFIX construction (AtlasClient::mounted)",
+)];
+
+fn atlas_client_src_dir() -> PathBuf {
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    Path::new(manifest_dir).join("../atlas_client/src")
+}
+
+#[test]
+fn no_unallowlisted_api_literal_exists_in_atlas_client_src() {
+    let violations = violations_with(
+        &atlas_client_src_dir(),
+        CLIENT_ALLOWED,
+        production_file_literals,
+    );
+
+    assert!(
+        violations.is_empty(),
+        "atlas_client api-path guard violations:\n{}",
+        violations.join("\n")
+    );
+}
+
+/// A hypothetical new `atlas_client/src` method with a hardcoded `/api/foo`
+/// literal outside `mounted` is flagged by name (spec: "A new V1 literal
+/// outside the seam fails the gate").
+#[test]
+fn a_new_atlas_client_literal_outside_the_seam_fails_the_gate() {
+    let probe_content = format!(
+        "fn regression(base: &str) -> String {{\n    format!(\"{{base}}{}\")\n}}\n",
+        api_literal("/foo")
+    );
+
+    let literal_files = scan_scratch_probe("atlas_client_regression", &probe_content);
+
+    assert_eq!(
+        literal_files,
+        vec![("probe.rs".to_string(), 2)],
+        "expected the gate to flag the reintroduced atlas_client literal"
+    );
+}
+
+/// A stale allowlist entry — naming a file with no remaining matching
+/// literal — fails, mirroring the existing bidirectional discipline (spec:
+/// "A stale allowlist entry fails the gate").
+#[test]
+fn a_stale_atlas_client_allowlist_entry_fails_the_gate() {
+    let probe_content = "fn clean() -> &'static str {\n    \"/clean\"\n}\n".to_string();
+    let allowed = [marked_spans("probe.rs", "no longer needed")];
+
+    let violations = probe_violations("stale_client_allowlist", &probe_content, &allowed);
+
+    assert_eq!(
+        violations,
+        vec![
+            "probe.rs: stale MarkedSpans entry (no longer needed), no marked span contains a matching literal"
+        ]
+    );
+}
+
 /// A `MarkedSpans` entry exempts only the span: the literal outside it is a
 /// hit naming its line, while the one inside keeps the entry from being
 /// stale.
@@ -550,7 +621,19 @@ fn with_scratch_probe<T>(name: &str, probe_content: &str, run: impl FnOnce(&Path
 /// outside a span, a `WholeFile` entry whose file has no matching literal
 /// left, and a `MarkedSpans` entry with no span containing one.
 fn violations(root: &Path, allowed: &[Exemption]) -> Vec<String> {
-    let files = relative_paths(root, |path| Some(file_literals(path)));
+    violations_with(root, allowed, file_literals)
+}
+
+/// Like [`violations`], but with the file-to-literals extraction supplied by
+/// the caller — used by the `atlas_client` scan to exclude `#[cfg(test)]`
+/// fixture content from the production-only boundary check (D2.4: the
+/// client's `mod tests` is out of the production scan).
+fn violations_with(
+    root: &Path,
+    allowed: &[Exemption],
+    literals_of: impl Fn(&Path) -> FileLiterals,
+) -> Vec<String> {
+    let files = relative_paths(root, |path| Some(literals_of(path)));
     let mut violations = Vec::new();
 
     for (file, literals) in &files {
@@ -622,13 +705,29 @@ struct FileLiterals {
 
 fn file_literals(path: &Path) -> FileLiterals {
     let content = fs::read_to_string(path).expect("read source file");
-    let marked_lines = marked_lines(&content);
+    literals_in_content(&content)
+}
+
+/// Like [`file_literals`], but truncates the content at a top-level
+/// `#[cfg(test)]` marker before scanning, so a crate whose entire test
+/// module is nested at the bottom of one file (`atlas_client/src/lib.rs`'s
+/// `mod tests`) is checked as production code only.
+fn production_file_literals(path: &Path) -> FileLiterals {
+    let content = fs::read_to_string(path).expect("read source file");
+    let production = content
+        .find("#[cfg(test)]")
+        .map_or(content.as_str(), |index| &content[..index]);
+    literals_in_content(production)
+}
+
+fn literals_in_content(content: &str) -> FileLiterals {
+    let marked_lines = marked_lines(content);
     let mut found = FileLiterals {
         unmarked: Vec::new(),
         marked: Vec::new(),
     };
 
-    for literal in &scan(&content).literals {
+    for literal in &scan(content).literals {
         if !literal_matches_boundary_pattern(&literal.text) {
             continue;
         }
