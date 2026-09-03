@@ -6441,18 +6441,18 @@ mod tests {
             .map(|_| requests.recv().expect("Atlas received request"))
             .collect();
         let expected_paths = [
-            "GET /api/workspaces/ws/tasks/ATL-1/comments?feed=full&limit=50 ",
-            "GET /api/workspaces/ws/documents/note/comments?feed=full&limit=50 ",
-            "GET /api/meta ",
-            "POST /api/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments ",
-            "GET /api/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments ",
-            "GET /api/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002/content ",
-            "DELETE /api/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002 ",
-            "GET /api/meta ",
-            "POST /api/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments ",
-            "GET /api/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments ",
-            "GET /api/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002 ",
-            "DELETE /api/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002 ",
+            "GET /api/v2/acta/workspaces/ws/tasks/ATL-1/comments?feed=full&limit=50 ",
+            "GET /api/v2/acta/workspaces/ws/documents/note/comments?feed=full&limit=50 ",
+            "GET /api/v2/platform/meta ",
+            "POST /api/v2/acta/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments ",
+            "GET /api/v2/acta/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments ",
+            "GET /api/v2/acta/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002/content ",
+            "DELETE /api/v2/acta/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002 ",
+            "GET /api/v2/platform/meta ",
+            "POST /api/v2/acta/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments ",
+            "GET /api/v2/acta/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments ",
+            "GET /api/v2/acta/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002 ",
+            "DELETE /api/v2/acta/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002 ",
         ];
         assert_eq!(requests.len(), expected_paths.len());
         for (request, expected_path) in requests.iter().zip(expected_paths) {
@@ -6533,11 +6533,17 @@ mod tests {
         let requests: Vec<_> = (0..4)
             .map(|_| requests.recv().expect("Atlas received request"))
             .collect();
-        assert!(requests[0].starts_with("GET /api/workspaces/ws/documents/note/compact "));
-        assert!(requests[1].starts_with("GET /api/workspaces/ws/documents/note/content/range?start_line=4&end_line=8&line_limit=2&byte_limit=32 "));
-        assert!(requests[2].starts_with("POST /api/workspaces/ws/documents/note/content/search "));
+        assert!(requests[0].starts_with("GET /api/v2/acta/workspaces/ws/documents/note/compact "));
+        assert!(requests[1].starts_with("GET /api/v2/acta/workspaces/ws/documents/note/content/range?start_line=4&end_line=8&line_limit=2&byte_limit=32 "));
+        assert!(
+            requests[2]
+                .starts_with("POST /api/v2/acta/workspaces/ws/documents/note/content/search ")
+        );
         assert!(requests[2].contains("\"mode\":\"pattern\""));
-        assert!(requests[3].starts_with("PATCH /api/workspaces/ws/documents/note/content/range "));
+        assert!(
+            requests[3]
+                .starts_with("PATCH /api/v2/acta/workspaces/ws/documents/note/content/range ")
+        );
         assert!(requests[3].contains("\"operation\":\"replace\""));
         assert!(requests[3].contains("\"content\":\"updated\""));
     }
@@ -6566,7 +6572,7 @@ mod tests {
             requests
                 .recv()
                 .expect("Atlas received edit request")
-                .starts_with("PATCH /api/workspaces/ws/documents/note/content/range ")
+                .starts_with("PATCH /api/v2/acta/workspaces/ws/documents/note/content/range ")
         );
     }
 
@@ -6601,7 +6607,7 @@ mod tests {
             requests
                 .recv()
                 .expect("Atlas received edit request")
-                .starts_with("PATCH /api/workspaces/ws/documents/note/content/range ")
+                .starts_with("PATCH /api/v2/acta/workspaces/ws/documents/note/content/range ")
         );
     }
 
@@ -6637,7 +6643,7 @@ mod tests {
                 requests
                     .recv()
                     .expect("metadata request is recorded")
-                    .starts_with("GET /api/meta ")
+                    .starts_with("GET /api/v2/platform/meta ")
             );
             assert!(
                 requests
@@ -6663,7 +6669,7 @@ mod tests {
             requests
                 .recv()
                 .expect("metadata request is recorded")
-                .starts_with("GET /api/meta ")
+                .starts_with("GET /api/v2/platform/meta ")
         );
         assert!(
             requests
@@ -8265,16 +8271,15 @@ mod tests {
 
         let columns_request = requests.recv().expect("Atlas received columns request");
         assert!(columns_request.starts_with(&format!(
-            "GET /api/workspaces/ws/boards/{BOARD_ID}/columns "
+            "GET /api/v2/acta/workspaces/ws/boards/{BOARD_ID}/columns "
         )));
 
         let create_request = requests
             .recv()
             .expect("Atlas received task creation request");
-        assert!(
-            create_request
-                .starts_with(&format!("POST /api/workspaces/ws/boards/{BOARD_ID}/tasks "))
-        );
+        assert!(create_request.starts_with(&format!(
+            "POST /api/v2/acta/workspaces/ws/boards/{BOARD_ID}/tasks "
+        )));
         assert!(create_request.contains(&format!("\"column_id\":\"{COLUMN_ID}\"")));
         assert!(create_request.contains("\"target_task_readable_id\":\"ATL-2\""));
         assert!(create_request.contains(&format!("\"target_document_id\":\"{DOCUMENT_ID}\"")));
@@ -8327,7 +8332,9 @@ mod tests {
         );
 
         let request = requests.recv().expect("Atlas received batch request");
-        assert!(request.starts_with("POST /api/workspaces/ws/tasks/ATL-1/references/batch "));
+        assert!(
+            request.starts_with("POST /api/v2/acta/workspaces/ws/tasks/ATL-1/references/batch ")
+        );
         assert!(request.contains("\"target_task_readable_id\":\"ATL-2\""));
         assert!(request.contains("\"target_task_readable_id\":\"ATL-3\""));
         assert!(
@@ -8402,7 +8409,7 @@ mod tests {
         assert_eq!(output[2]["document"]["folder_id"], serde_json::Value::Null);
 
         let request = requests.recv().expect("Atlas received batch move request");
-        assert!(request.starts_with("POST /api/workspaces/ws/documents/moves/batch "));
+        assert!(request.starts_with("POST /api/v2/acta/workspaces/ws/documents/moves/batch "));
         assert!(request.contains("\"source_document\":\"first\""));
         assert!(request.contains("\"source_document\":\"missing\""));
         assert!(request.contains("\"folder_id\":null"));

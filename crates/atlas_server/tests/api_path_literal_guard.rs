@@ -7,9 +7,10 @@
 //! namespace, instead of hand-typing a literal that S7's namespace cutover
 //! would otherwise leave stranded.
 //!
-//! **Scope**: `crates/atlas_server/tests/**/*.rs` only — never
-//! `crates/atlas_server/src`, `atlas_client`, or `atlas_mcp`, which are out
-//! of this slice's authority (S6/S7's scope).
+//! **Scope**: `crates/atlas_server/tests/**/*.rs` production code, plus the
+//! `v2-e3-s6` extension to `atlas_client/src`, `atlas_mcp/src`, and
+//! `atlas_cli/src` production code — never `crates/atlas_server/src`, which
+//! is out of this guard's authority.
 //!
 //! **Match rule**: the file is tokenized (see [`scan`]) so that only the
 //! contents of string literals — normal `"…"` and raw `r"…"`/`r#"…"#` — are
@@ -1029,6 +1030,46 @@ impl Scanner {
             _ => None,
         }
     }
+}
+
+/// `v2-e3-s6` D3 — the guard's scan roots extend to `../atlas_mcp/src` and
+/// `../atlas_cli/src` (production code). Both allowlists are empty: an
+/// empty allowlist checked bidirectionally is the assertion that these
+/// crates are, and stay, free of a hand-built `/api` request path — every
+/// request either crate sends goes through `AtlasClient`'s own seam.
+const MCP_ALLOWED: &[Exemption] = &[];
+const CLI_ALLOWED: &[Exemption] = &[];
+
+fn atlas_mcp_src_dir() -> PathBuf {
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    Path::new(manifest_dir).join("../atlas_mcp/src")
+}
+
+fn atlas_cli_src_dir() -> PathBuf {
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    Path::new(manifest_dir).join("../atlas_cli/src")
+}
+
+#[test]
+fn no_unallowlisted_api_literal_exists_in_atlas_mcp_src() {
+    let violations = violations_with(&atlas_mcp_src_dir(), MCP_ALLOWED, production_file_literals);
+
+    assert!(
+        violations.is_empty(),
+        "atlas_mcp api-path guard violations:\n{}",
+        violations.join("\n")
+    );
+}
+
+#[test]
+fn no_unallowlisted_api_literal_exists_in_atlas_cli_src() {
+    let violations = violations_with(&atlas_cli_src_dir(), CLI_ALLOWED, production_file_literals);
+
+    assert!(
+        violations.is_empty(),
+        "atlas_cli api-path guard violations:\n{}",
+        violations.join("\n")
+    );
 }
 
 /// The files permitted to call `router_audit::namespaces_for` or
