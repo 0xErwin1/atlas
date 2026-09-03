@@ -83,22 +83,44 @@ fn prefix_document_paths(
     doc
 }
 
+/// Re-keys one fragment's own paths under its owning component's V2
+/// namespace (`v2-e3-s6` D1), before that fragment is merged into the
+/// composed document. `stable_id` is the same string
+/// `stamp_component_ownership` already uses for `tag` and
+/// `x-atlas-component` on this fragment's operations — never a second,
+/// independently maintained mapping.
+fn mounted_fragment(doc: utoipa::openapi::OpenApi, stable_id: &str) -> utoipa::openapi::OpenApi {
+    prefix_document_paths(doc, &crate::router_audit::v2_namespace(stable_id))
+}
+
 /// Composes the full OpenAPI document from each component's own fragment
 /// (D4): `ApiDoc` contributes only `info(...)`, then `platform`'s,
 /// `custos`'s, and `acta`'s fragments are merged in, in this fixed order.
 /// No other component can structurally contribute — this function only
-/// ever calls these three named fragment constructors (T2.18). The merged
-/// result's paths are then re-mounted under `/api` (`prefix_document_paths`,
-/// T4.X), since every fragment's own paths are namespace-relative as of
-/// this slice's literal rewrite. The `Idempotency-Key` header set (D8, T6.3)
-/// is derived last, once the document's own path keys already match the
-/// registry's `/api`-mounted form.
+/// ever calls these three named fragment constructors (T2.18). Each
+/// fragment is re-mounted under its own `/api/v2/<component>` namespace
+/// (`mounted_fragment`, `v2-e3-s6` D1) BEFORE it merges into `ApiDoc`, since
+/// the owning component is known unambiguously per fragment and would
+/// otherwise have to be recovered from the `x-atlas-component` stamp the
+/// same fragment just wrote — a circular derivation the ownership tests
+/// refuse. Root-level paths (`crate::router_audit::ROOT_LEVEL_PATHS`) stay
+/// unprefixed through `prefix_document_paths`' existing exemption. The
+/// `Idempotency-Key` header set (D8, T6.3) is derived last, once the
+/// document's own path keys already match their final V2-mounted form.
 pub(crate) fn document() -> utoipa::openapi::OpenApi {
     let mut doc = ApiDoc::openapi();
-    doc.merge(crate::routes::platform::openapi());
-    doc.merge(crate::routes::custos::openapi());
-    doc.merge(crate::routes::acta::openapi());
-    let doc = prefix_document_paths(doc, "/api");
+    doc.merge(mounted_fragment(
+        crate::routes::platform::openapi(),
+        crate::routes::platform::OPENAPI_STABLE_ID,
+    ));
+    doc.merge(mounted_fragment(
+        crate::routes::custos::openapi(),
+        crate::routes::custos::OPENAPI_STABLE_ID,
+    ));
+    doc.merge(mounted_fragment(
+        crate::routes::acta::openapi(),
+        crate::routes::acta::OPENAPI_STABLE_ID,
+    ));
     idempotency::apply_idempotency_annotations(doc, &idempotency::idempotent_route_set())
 }
 
@@ -153,9 +175,13 @@ pub(crate) mod idempotency {
     pub(crate) const REPLAYED_BODY_NOTE: &str = "A replayed problem body differs from the original response only by its `request_id` field.";
 
     /// `(method, path)` for every registry entry with `idempotent: true`
-    /// (S3's final 34-route split), joined to the same `/api`-mounted form
-    /// `document()`'s own path keys carry (`prefix_document_paths`) — the
-    /// existing prefixing helper, never string surgery of its own.
+    /// (S3's final 34-route split), joined to the same V2-mounted form
+    /// `document()`'s own path keys carry as of `v2-e3-s6` D1.2 — each
+    /// entry's own `v2_namespace`, never a shared `/api` literal. Both this
+    /// set and `document()`'s path keys MUST move together: joining at the
+    /// wrong namespace makes `apply_idempotency_annotations`' `(method,
+    /// path)` lookup miss every operation with no error
+    /// (`openapi_idempotency_annotations.rs` is what catches this).
     /// `StorageBackend::Filesystem` is the same arbitrary-but-consistent
     /// choice `document()`'s own tests already make: storage-backend Module
     /// entries declare zero routes, so neither backend can change this set.
@@ -171,9 +197,11 @@ pub(crate) mod idempotency {
 
         let mut routes = HashSet::new();
         for entry in registry.entries() {
+            let namespace = crate::router_audit::v2_namespace(entry.identity.stable_id.as_str());
             for route in &entry.api.routes {
                 if route.idempotent {
-                    let mounted = crate::router_audit::mounted_path("/api", route.path.as_str());
+                    let mounted =
+                        crate::router_audit::mounted_path(&namespace, route.path.as_str());
                     routes.insert((route.method, mounted));
                 }
             }
@@ -580,6 +608,39 @@ pub(crate) mod idempotency {
                     .contains_key(&canonical_header_name(IDEMPOTENCY_DEGRADED_HEADER))
             );
         }
+
+        /// T1.10/T1.11 (D1.2): every entry in `idempotent_route_set()` is
+        /// joined at that entry's OWN component V2 namespace, never a shared
+        /// `/api` literal — the failure mode that silently drops all 34
+        /// annotations if the document keys move to V2 while this set stays
+        /// at V1.
+        #[test]
+        fn idempotent_route_set_joins_at_each_entrys_own_v2_namespace() {
+            let registry = build(reg5_component_entries(StorageBackend::Filesystem))
+                .expect("REG-5 entries must satisfy every registry::build() validator");
+
+            let mut expected = HashSet::new();
+            for entry in registry.entries() {
+                let namespace =
+                    crate::router_audit::v2_namespace(entry.identity.stable_id.as_str());
+                for route in &entry.api.routes {
+                    if route.idempotent {
+                        expected.insert((
+                            route.method,
+                            crate::router_audit::mounted_path(&namespace, route.path.as_str()),
+                        ));
+                    }
+                }
+            }
+
+            assert_eq!(idempotent_route_set(), expected);
+            assert!(
+                idempotent_route_set()
+                    .iter()
+                    .all(|(_, path)| path.starts_with("/api/v2/")),
+                "every idempotent route must be joined at its V2 namespace, not /api"
+            );
+        }
     }
 }
 
@@ -875,8 +936,9 @@ mod tests {
             let entry = registry
                 .get(&component(component_id))
                 .unwrap_or_else(|| panic!("{component_id} must be a registered REG-5 component"));
+            let namespace = crate::router_audit::v2_namespace(component_id);
             for route in &entry.api.routes {
-                let mounted = crate::router_audit::mounted_path("/api", route.path.as_str());
+                let mounted = crate::router_audit::mounted_path(&namespace, route.path.as_str());
                 owner_by_route.insert((route.method, mounted), stable_id);
             }
         }
@@ -1009,5 +1071,104 @@ mod tests {
             )),
             "ConflictProblemDto's allOf must reference ProblemDetails first (the flattened field)"
         );
+    }
+
+    /// T1.3/T1.4 (D1): `mounted_fragment` re-keys a fabricated single-operation
+    /// fragment under `stable_id`'s own V2 namespace, reusing
+    /// `prefix_document_paths` — no separate string-building logic of its
+    /// own.
+    #[test]
+    fn mounted_fragment_prefixes_paths_under_the_stable_ids_own_v2_namespace() {
+        use utoipa::openapi::path::{HttpMethod as UtoipaMethod, Operation, PathItem};
+        use utoipa::openapi::{Info, Paths};
+
+        let mut paths = Paths::new();
+        paths.paths.insert(
+            "/x".to_string(),
+            PathItem::new(UtoipaMethod::Get, Operation::new()),
+        );
+        let fragment = utoipa::openapi::OpenApi::new(Info::new("fixture", "0.0.0"), paths);
+
+        let mounted = mounted_fragment(fragment, "acta");
+
+        assert!(
+            mounted.paths.paths.contains_key("/api/v2/acta/x"),
+            "expected /api/v2/acta/x, got keys: {:?}",
+            mounted.paths.paths.keys().collect::<Vec<_>>()
+        );
+    }
+
+    /// T1.5/T1.6 (D1): the real, merged `document()` keys every operation
+    /// under its owning component's own V2 namespace and carries no bare
+    /// `/api/...` (V1-form) key.
+    #[test]
+    fn document_paths_are_keyed_under_each_components_own_v2_namespace() {
+        let doc = document();
+
+        for prefix in ["/api/v2/acta/", "/api/v2/custos/", "/api/v2/platform/"] {
+            assert!(
+                doc.paths.paths.keys().any(|key| key.starts_with(prefix)),
+                "expected at least one document key starting with {prefix}"
+            );
+        }
+
+        let bare_v1_keys: Vec<&String> = doc
+            .paths
+            .paths
+            .keys()
+            .filter(|key| {
+                key.starts_with("/api/")
+                    && !key.starts_with("/api/v2/")
+                    && !crate::router_audit::ROOT_LEVEL_PATHS.contains(&key.as_str())
+            })
+            .collect();
+        assert!(
+            bare_v1_keys.is_empty(),
+            "no document key should still carry the bare /api (V1) form: {bare_v1_keys:?}"
+        );
+    }
+
+    /// T1.7/T1.8 (D1): `/health`, `/ready`, and `/version` stay unprefixed on
+    /// the real document, even after the per-fragment V2 prefixing —
+    /// inherited from `prefix_document_paths`'s existing `ROOT_LEVEL_PATHS`
+    /// exemption, not a separate implementation. `/openapi.json` and
+    /// `/scalar` are also `ROOT_LEVEL_PATHS` members but, per
+    /// `openapi_zero_drift.rs`'s `UNANNOTATED_ROUTES`, carry no
+    /// `#[utoipa::path]` annotation of their own and so never produce a
+    /// document operation to inspect here.
+    #[test]
+    fn root_level_paths_stay_unprefixed_on_the_real_document() {
+        let doc = document();
+
+        for path in ["/health", "/ready", "/version"] {
+            assert!(
+                doc.paths.paths.contains_key(path),
+                "expected root-level path {path} to appear unprefixed in the document"
+            );
+        }
+    }
+
+    /// T1.24: after this slice, no document path key begins with the V1
+    /// form (`/api/<rel>` where `<rel>` is not `v2/<component>/...`) — the
+    /// same check as `document_paths_are_keyed_under_each_components_own_v2_namespace`'s
+    /// negative assertion, restated as its own named scenario per the spec's
+    /// acceptance gate.
+    #[test]
+    fn document_contains_no_v1_form_path_key() {
+        let doc = document();
+
+        for key in doc.paths.paths.keys() {
+            if key.starts_with("/api/") {
+                assert!(
+                    key.starts_with("/api/v2/"),
+                    "document key {key} is neither V2-form nor a root-level exemption"
+                );
+            } else {
+                assert!(
+                    crate::router_audit::ROOT_LEVEL_PATHS.contains(&key.as_str()),
+                    "document key {key} carries no /api prefix and is not a root-level path"
+                );
+            }
+        }
     }
 }

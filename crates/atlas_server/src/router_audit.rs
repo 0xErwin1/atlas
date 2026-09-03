@@ -163,6 +163,15 @@ pub fn namespaces_for(component: &str) -> [String; 2] {
     [V1_NAMESPACE.to_string(), format!("{V2_PREFIX}/{component}")]
 }
 
+/// The `/api/v2/<component>` mount `component`'s routes are served at
+/// (`lib.rs::app`'s per-component nest) and, from `v2-e3-s6`, the namespace
+/// the composed OpenAPI document keys them under. Reads
+/// [`namespaces_for`]'s second element rather than re-deriving the prefix.
+pub fn v2_namespace(component: &str) -> String {
+    let [_v1, v2] = namespaces_for(component);
+    v2
+}
+
 /// Joins a mount `namespace` with a namespace-relative `relative_path` (D1).
 /// The single place every consumer in the proposal's blast-radius table
 /// builds a concrete V1/V2 path, so no caller ever hand-concatenates a
@@ -780,6 +789,14 @@ mod tests {
                 namespaces_for(component),
                 [V1_NAMESPACE.to_string(), format!("{V2_PREFIX}/{component}")]
             );
+        }
+    }
+
+    #[test]
+    fn v2_namespace_reads_namespaces_fors_second_element() {
+        for component in ["platform", "custos", "acta"] {
+            let [_v1, v2] = namespaces_for(component);
+            assert_eq!(v2_namespace(component), v2);
         }
     }
 

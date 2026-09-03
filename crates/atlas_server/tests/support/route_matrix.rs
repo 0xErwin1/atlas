@@ -55,6 +55,18 @@ impl RouteMatrixEntry {
     pub(crate) fn mounted_default(&self) -> String {
         crate::support::path::api_path(&self.component, &self.path_template)
     }
+
+    /// This entry's path as the composed OpenAPI document keys it
+    /// (`v2-e3-s6` D1): always the owning component's V2 namespace, never
+    /// `DEFAULT_NAMESPACE_INDEX`. A document-side audit MUST use this and a
+    /// request-building test MUST NOT — they are different facts, and S7's
+    /// flip of `DEFAULT_NAMESPACE_INDEX` moves only [`Self::mounted_default`].
+    pub(crate) fn mounted_document(&self) -> String {
+        atlas_server::router_audit::mounted_path(
+            &atlas_server::router_audit::v2_namespace(&self.component),
+            &self.path_template,
+        )
+    }
 }
 
 /// One `route_matrix()` snapshot, built once per test binary (`v2-e3-s5`
@@ -259,6 +271,23 @@ mod tests {
             assert_eq!(
                 entry.mounted_default(),
                 crate::support::path::api_path(&entry.component, &entry.path_template)
+            );
+        }
+    }
+
+    /// T1.14 (D1.3): exhaustive over every live `route_matrix()` entry, not
+    /// sampled (INV-SET precedent from S5's `mounted_default_matches_api_path_
+    /// for_every_live_entry`) — `mounted_document()` always resolves at the
+    /// entry's own V2 namespace, independent of `DEFAULT_NAMESPACE_INDEX`.
+    #[test]
+    fn mounted_document_resolves_at_the_entrys_own_v2_namespace_for_every_live_entry() {
+        for entry in route_matrix() {
+            assert_eq!(
+                entry.mounted_document(),
+                atlas_server::router_audit::mounted_path(
+                    &atlas_server::router_audit::v2_namespace(&entry.component),
+                    &entry.path_template
+                )
             );
         }
     }

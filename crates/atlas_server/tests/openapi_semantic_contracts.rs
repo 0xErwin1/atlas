@@ -10,9 +10,18 @@
 //! document itself can state — so they are preserved verbatim, unchanged in
 //! substance, just relocated out of the file that also carried the retired
 //! literals.
+//!
+//! Path-key update, `v2-e3-s6` PR1 (D1.3): every document-key literal below
+//! is built through `support::path::document_path("acta", "<rel>")`, never a
+//! hand-typed `/api/...` string — all 24 relative paths this file names are
+//! `acta`-owned, unchanged from before this slice; only how each key is
+//! built changed, to track `document()`'s V2 re-key.
+
+mod support;
 
 use atlas_server::routes::openapi::openapi;
 use serde_json::Value;
+use support::path::document_path;
 
 #[test]
 fn openapi_document_has_correct_info() {
@@ -34,8 +43,9 @@ fn trash_operations_document_lifecycle_statuses_and_admin_scope() {
         "OpenAPI must describe the root/system-admin Trash tag"
     );
 
-    assert_operation_statuses(&document, "/api/admin/trash", "get", &[200, 400, 401, 403]);
-    let list = operation(&document, "/api/admin/trash", "get");
+    let trash_path = document_path("acta", "/admin/trash");
+    assert_operation_statuses(&document, &trash_path, "get", &[200, 400, 401, 403]);
+    let list = operation(&document, &trash_path, "get");
     let kind_parameter = list
         .get("parameters")
         .and_then(Value::as_array)
@@ -53,19 +63,19 @@ fn trash_operations_document_lifecycle_statuses_and_admin_scope() {
     );
     assert_operation_statuses(
         &document,
-        "/api/admin/trash/restore",
+        &document_path("acta", "/admin/trash/restore"),
         "post",
         &[204, 401, 403, 404, 409],
     );
     assert_operation_statuses(
         &document,
-        "/api/admin/trash/purge",
+        &document_path("acta", "/admin/trash/purge"),
         "post",
         &[202, 204, 400, 401, 403, 404],
     );
     assert_operation_statuses(
         &document,
-        "/api/admin/trash/purges/{operation_id}",
+        &document_path("acta", "/admin/trash/purges/{operation_id}"),
         "get",
         &[200, 401, 403, 404],
     );
@@ -74,10 +84,13 @@ fn trash_operations_document_lifecycle_statuses_and_admin_scope() {
 #[test]
 fn task_attachment_rename_operation_documents_typed_contract() {
     let document = serde_json::to_value(openapi()).expect("serialize OpenAPI document");
-    let path = "/api/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}";
+    let path = document_path(
+        "acta",
+        "/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}",
+    );
 
-    assert_operation_statuses(&document, path, "patch", &[200, 401, 403, 404, 422]);
-    let patch = operation(&document, path, "patch");
+    assert_operation_statuses(&document, &path, "patch", &[200, 401, 403, 404, 422]);
+    let patch = operation(&document, &path, "patch");
     assert_eq!(
         patch.pointer("/requestBody/content/application~1json/schema/$ref"),
         Some(&Value::String(
@@ -97,7 +110,7 @@ fn compact_document_operation_documents_the_metadata_only_contract() {
     let document = serde_json::to_value(openapi()).expect("serialize OpenAPI document");
     let compact = operation(
         &document,
-        "/api/workspaces/{ws}/documents/{slug}/compact",
+        &document_path("acta", "/workspaces/{ws}/documents/{slug}/compact"),
         "get",
     );
 
@@ -118,18 +131,13 @@ fn compact_document_operation_documents_the_metadata_only_contract() {
 #[test]
 fn reference_batch_operation_documents_its_bounded_result_contract() {
     let document = serde_json::to_value(openapi()).expect("serialize OpenAPI document");
-    let batch = operation(
-        &document,
-        "/api/workspaces/{ws}/tasks/{readable_id}/references/batch",
-        "post",
+    let path = document_path(
+        "acta",
+        "/workspaces/{ws}/tasks/{readable_id}/references/batch",
     );
+    let batch = operation(&document, &path, "post");
 
-    assert_operation_statuses(
-        &document,
-        "/api/workspaces/{ws}/tasks/{readable_id}/references/batch",
-        "post",
-        &[200, 413, 422],
-    );
+    assert_operation_statuses(&document, &path, "post", &[200, 413, 422]);
     assert_eq!(
         batch.pointer("/requestBody/content/application~1json/schema/$ref"),
         Some(&Value::String(
@@ -147,10 +155,10 @@ fn reference_batch_operation_documents_its_bounded_result_contract() {
 #[test]
 fn document_move_batch_operation_documents_its_bounded_result_contract() {
     let document = serde_json::to_value(openapi()).expect("serialize OpenAPI document");
-    let path = "/api/workspaces/{ws}/documents/moves/batch";
-    let batch = operation(&document, path, "post");
+    let path = document_path("acta", "/workspaces/{ws}/documents/moves/batch");
+    let batch = operation(&document, &path, "post");
 
-    assert_operation_statuses(&document, path, "post", &[200, 413, 422]);
+    assert_operation_statuses(&document, &path, "post", &[200, 413, 422]);
     assert_eq!(
         batch.pointer("/requestBody/content/application~1json/schema/$ref"),
         Some(&Value::String(
@@ -169,19 +177,32 @@ fn document_move_batch_operation_documents_its_bounded_result_contract() {
 fn comment_draft_attachment_operations_document_routes_statuses_and_binary_headers() {
     let document = serde_json::to_value(openapi()).expect("serialize OpenAPI document");
 
-    for (parent_path, attachment_path) in [
+    for (parent_relative, attachment_relative) in [
         (
-            "/api/workspaces/{ws}/tasks/{readable_id}",
-            "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content",
+            "/workspaces/{ws}/tasks/{readable_id}",
+            "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content",
         ),
         (
-            "/api/workspaces/{ws}/documents/{slug}",
-            "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
+            "/workspaces/{ws}/documents/{slug}",
+            "/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
         ),
     ] {
-        let draft_path = format!("{parent_path}/comment-drafts");
-        let upload_path = format!("{draft_path}/{{draft_id}}/attachments");
-        let cancel_path = format!("{draft_path}/{{draft_id}}");
+        let draft_relative = format!("{parent_relative}/comment-drafts");
+        let upload_relative = format!("{draft_relative}/{{draft_id}}/attachments");
+        let cancel_relative = format!("{draft_relative}/{{draft_id}}");
+        let comments_relative = format!("{parent_relative}/comments");
+        let comment_attachments_relative =
+            format!("{parent_relative}/comments/{{comment_id}}/attachments");
+        let comment_attachment_item_relative =
+            format!("{parent_relative}/comments/{{comment_id}}/attachments/{{attachment_id}}");
+
+        let draft_path = document_path("acta", &draft_relative);
+        let upload_path = document_path("acta", &upload_relative);
+        let cancel_path = document_path("acta", &cancel_relative);
+        let comments_path = document_path("acta", &comments_relative);
+        let comment_attachments_path = document_path("acta", &comment_attachments_relative);
+        let comment_attachment_item_path = document_path("acta", &comment_attachment_item_relative);
+        let attachment_path = document_path("acta", attachment_relative);
 
         assert_operation_statuses(
             &document,
@@ -198,36 +219,36 @@ fn comment_draft_attachment_operations_document_routes_statuses_and_binary_heade
         assert_operation_statuses(&document, &cancel_path, "delete", &[204, 404, 409, 410]);
         assert_operation_statuses(
             &document,
-            &format!("{parent_path}/comments"),
+            &comments_path,
             "post",
             &[200, 201, 404, 409, 410, 422],
         );
         assert_operation_statuses(
             &document,
-            &format!("{parent_path}/comments/{{comment_id}}/attachments"),
+            &comment_attachments_path,
             "get",
             &[200, 404, 410],
         );
         assert_operation_statuses(
             &document,
-            &format!("{parent_path}/comments/{{comment_id}}/attachments/{{attachment_id}}"),
+            &comment_attachment_item_path,
             "delete",
             &[204, 404, 410],
         );
-        assert_operation_statuses(&document, attachment_path, "get", &[200, 404, 410]);
+        assert_operation_statuses(&document, &attachment_path, "get", &[200, 404, 410]);
 
         assert_header_parameter(operation(&document, &draft_path, "post"), "x-create-token");
         assert_header_parameter(operation(&document, &upload_path, "post"), "x-upload-token");
 
-        let create = operation(&document, &format!("{parent_path}/comments"), "post");
+        let create = operation(&document, &comments_path, "post");
         assert!(
             create
                 .pointer("/requestBody/content/application~1json/schema/$ref")
                 .is_some_and(|schema| schema == "#/components/schemas/CreateCommentRequest"),
-            "{parent_path} comment creation must use the shared CreateCommentRequest schema"
+            "{parent_relative} comment creation must use the shared CreateCommentRequest schema"
         );
 
-        let get = operation(&document, attachment_path, "get");
+        let get = operation(&document, &attachment_path, "get");
         for header in [
             "Content-Type",
             "Content-Disposition",
@@ -236,7 +257,7 @@ fn comment_draft_attachment_operations_document_routes_statuses_and_binary_heade
             assert!(
                 get.pointer(&format!("/responses/200/headers/{header}"))
                     .is_some(),
-                "{attachment_path} must document its {header} response header"
+                "{attachment_relative} must document its {header} response header"
             );
         }
     }
@@ -306,8 +327,8 @@ fn full_comment_feed_query_is_documented_for_both_parent_routes() {
     let document = serde_json::to_value(openapi()).expect("serialize OpenAPI document");
 
     for path in [
-        "/api/workspaces/{ws}/tasks/{readable_id}/comments",
-        "/api/workspaces/{ws}/documents/{slug}/comments",
+        document_path("acta", "/workspaces/{ws}/tasks/{readable_id}/comments"),
+        document_path("acta", "/workspaces/{ws}/documents/{slug}/comments"),
     ] {
         let pointer = format!("/paths/{}/get/parameters", path.replace('/', "~1"));
         let parameters = document.pointer(&pointer).and_then(Value::as_array);
@@ -326,10 +347,10 @@ fn comment_freedom_contract_is_exact_for_feeds_backlinks_attachments_and_metadat
     let document = serde_json::to_value(openapi()).expect("serialize OpenAPI document");
 
     for path in [
-        "/api/workspaces/{ws}/tasks/{readable_id}/comments",
-        "/api/workspaces/{ws}/documents/{slug}/comments",
+        document_path("acta", "/workspaces/{ws}/tasks/{readable_id}/comments"),
+        document_path("acta", "/workspaces/{ws}/documents/{slug}/comments"),
     ] {
-        let get = operation(&document, path, "get");
+        let get = operation(&document, &path, "get");
 
         assert_eq!(
             get.pointer("/responses/200/content/application~1json/schema/$ref"),
@@ -350,20 +371,41 @@ fn comment_freedom_contract_is_exact_for_feeds_backlinks_attachments_and_metadat
 
     assert_attachment_lifecycle(
         &document,
-        "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",
-        "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}",
-        "/api/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content",
+        &document_path(
+            "acta",
+            "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments",
+        ),
+        &document_path(
+            "acta",
+            "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}",
+        ),
+        &document_path(
+            "acta",
+            "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content",
+        ),
     );
     assert_attachment_lifecycle(
         &document,
-        "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
-        "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
-        "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
+        &document_path(
+            "acta",
+            "/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
+        ),
+        &document_path(
+            "acta",
+            "/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
+        ),
+        &document_path(
+            "acta",
+            "/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}",
+        ),
     );
 
     let document_upload = operation(
         &document,
-        "/api/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
+        &document_path(
+            "acta",
+            "/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments",
+        ),
         "post",
     );
     assert_eq!(
