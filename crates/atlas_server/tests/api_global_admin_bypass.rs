@@ -166,7 +166,7 @@ async fn create_api_key(
 }
 
 fn search_url(base: &str, ws: &str, q: &str) -> String {
-    format!("{base}/api/workspaces/{ws}/search?q={q}")
+    support::path::api_url(base, "acta", &format!("/workspaces/{ws}/search?q={q}"))
 }
 
 async fn search_hits(
@@ -560,10 +560,10 @@ async fn api_key_without_grants_gets_404_on_workspace_route() {
     let (_key_id, raw_token) = create_api_key(&db, &target_ws, &owner, "nobypass-ws-key").await;
 
     let resp = reqwest::Client::new()
-        .get(format!(
-            "{}/api/workspaces/{}/members",
+        .get(support::path::api_url(
             server.base_url(),
-            target_ws.slug
+            "acta",
+            &format!("/workspaces/{}/members", target_ws.slug),
         ))
         .bearer_auth(&raw_token)
         .send()

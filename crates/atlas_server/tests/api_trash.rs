@@ -83,7 +83,11 @@ async fn restore(
     target_id: uuid::Uuid,
 ) -> reqwest::Response {
     reqwest::Client::new()
-        .post(format!("{}/api/admin/trash/restore", server.base_url()))
+        .post(support::path::api_url(
+            server.base_url(),
+            "acta",
+            "/admin/trash/restore",
+        ))
         .bearer_auth(client.token().expect("authenticated client token"))
         .json(&json!({ "kind": kind, "target_id": target_id }))
         .send()
@@ -99,7 +103,11 @@ async fn purge(
     confirm: bool,
 ) -> reqwest::Response {
     reqwest::Client::new()
-        .post(format!("{}/api/admin/trash/purge", server.base_url()))
+        .post(support::path::api_url(
+            server.base_url(),
+            "acta",
+            "/admin/trash/purge",
+        ))
         .bearer_auth(client.token().expect("authenticated client token"))
         .json(&json!({
             "kind": kind,
@@ -131,7 +139,11 @@ async fn list_trash(
     query: &str,
 ) -> Value {
     let response = reqwest::Client::new()
-        .get(format!("{}/api/admin/trash{query}", server.base_url()))
+        .get(support::path::api_url(
+            server.base_url(),
+            "acta",
+            &format!("/admin/trash{query}"),
+        ))
         .bearer_auth(client.token().expect("authenticated client token"))
         .send()
         .await
@@ -930,9 +942,14 @@ async fn trash_allows_only_root_and_system_admin_humans() {
 
     for client in [&root, &system_admin] {
         assert_eq!(
-            trash_response(client, &server, reqwest::Method::GET, "/api/admin/trash")
-                .await
-                .status(),
+            trash_response(
+                client,
+                &server,
+                reqwest::Method::GET,
+                &support::path::api_path("acta", "/admin/trash"),
+            )
+            .await
+            .status(),
             reqwest::StatusCode::OK
         );
     }
@@ -1247,10 +1264,10 @@ async fn restoring_one_document_restores_its_normal_route_without_reviving_anoth
         assert_eq!(
             client
                 .http_client()
-                .get(format!(
-                    "{}/api/workspaces/{}/documents/{slug}",
+                .get(support::path::api_url(
                     server.base_url(),
-                    workspace.slug
+                    "acta",
+                    &format!("/workspaces/{}/documents/{slug}", workspace.slug)
                 ))
                 .bearer_auth(client.token().expect("client token"))
                 .send()
@@ -1444,7 +1461,7 @@ async fn confirmed_purge_removes_the_five_kinds_and_reuses_its_pending_operation
             &admin,
             &server,
             reqwest::Method::GET,
-            &format!("/api/admin/trash/purges/{operation_id}"),
+            &support::path::api_path("acta", &format!("/admin/trash/purges/{operation_id}")),
         )
         .await;
         assert_eq!(status.status(), reqwest::StatusCode::OK, "{kind} status");
@@ -1524,10 +1541,13 @@ async fn purge_removes_active_draft_dependencies_and_retains_all_closure_digests
         .await
         .expect("create document");
     let slug = document.slug.expect("document slug");
-    let draft_url = format!(
-        "{}/api/workspaces/{}/documents/{slug}/comment-drafts",
+    let draft_url = support::path::api_url(
         server.base_url(),
-        workspace.slug
+        "acta",
+        &format!(
+            "/workspaces/{}/documents/{slug}/comment-drafts",
+            workspace.slug
+        ),
     );
     let draft_response = owner_client
         .http_client()
@@ -1590,7 +1610,7 @@ async fn purge_removes_active_draft_dependencies_and_retains_all_closure_digests
         &admin,
         &restarted_server,
         reqwest::Method::GET,
-        &format!("/api/admin/trash/purges/{operation_id}"),
+        &support::path::api_path("acta", &format!("/admin/trash/purges/{operation_id}")),
     )
     .await;
     assert_eq!(status.status(), reqwest::StatusCode::OK);

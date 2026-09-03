@@ -101,12 +101,13 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
     assert_eq!(uploaded.size_bytes, payload.len() as i64);
 
     let token = client.token().expect("authenticated token");
-    let attachment_url = format!(
-        "{}/api/workspaces/{}/tasks/{}/attachments/{}",
+    let attachment_url = support::path::api_url(
         server.base_url(),
-        ws.slug,
-        task.readable_id,
-        uploaded.id
+        "acta",
+        &format!(
+            "/workspaces/{}/tasks/{}/attachments/{}",
+            ws.slug, task.readable_id, uploaded.id
+        ),
     );
 
     let renamed = client
@@ -256,12 +257,13 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
         .await
         .expect("create other task");
     let mismatch_response = reqwest::Client::new()
-        .patch(format!(
-            "{}/api/workspaces/{}/tasks/{}/attachments/{}",
+        .patch(support::path::api_url(
             server.base_url(),
-            ws.slug,
-            second_task.readable_id,
-            uploaded.id
+            "acta",
+            &format!(
+                "/workspaces/{}/tasks/{}/attachments/{}",
+                ws.slug, second_task.readable_id, uploaded.id
+            ),
         ))
         .bearer_auth(token)
         .header("x-atlas-csrf", "1")
@@ -272,12 +274,15 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
     assert_eq!(mismatch_response.status(), reqwest::StatusCode::NOT_FOUND);
 
     let missing_response = reqwest::Client::new()
-        .patch(format!(
-            "{}/api/workspaces/{}/tasks/{}/attachments/{}",
+        .patch(support::path::api_url(
             server.base_url(),
-            ws.slug,
-            task.readable_id,
-            uuid::Uuid::now_v7()
+            "acta",
+            &format!(
+                "/workspaces/{}/tasks/{}/attachments/{}",
+                ws.slug,
+                task.readable_id,
+                uuid::Uuid::now_v7()
+            ),
         ))
         .bearer_auth(token)
         .header("x-atlas-csrf", "1")
@@ -345,12 +350,13 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
         .expect("upload other workspace attachment");
 
     let cross_workspace_response = reqwest::Client::new()
-        .patch(format!(
-            "{}/api/workspaces/{}/tasks/{}/attachments/{}",
+        .patch(support::path::api_url(
             server.base_url(),
-            ws.slug,
-            task.readable_id,
-            other_attachment.id
+            "acta",
+            &format!(
+                "/workspaces/{}/tasks/{}/attachments/{}",
+                ws.slug, task.readable_id, other_attachment.id
+            ),
         ))
         .bearer_auth(token)
         .header("x-atlas-csrf", "1")
@@ -534,12 +540,13 @@ async fn task_attachment_rename_respects_configured_extension_allowlist() {
         .expect("upload allowed attachment");
 
     let response = reqwest::Client::new()
-        .patch(format!(
-            "{}/api/workspaces/{}/tasks/{}/attachments/{}",
+        .patch(support::path::api_url(
             server.base_url(),
-            ws.slug,
-            task.readable_id,
-            attachment.id
+            "acta",
+            &format!(
+                "/workspaces/{}/tasks/{}/attachments/{}",
+                ws.slug, task.readable_id, attachment.id
+            ),
         ))
         .bearer_auth(client.token().expect("authenticated token"))
         .header("x-atlas-csrf", "1")

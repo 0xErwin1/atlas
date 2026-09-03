@@ -99,7 +99,11 @@ async fn e2e_webhook_dispatched_on_task_creation() {
     let (mock_url, mock_state, _abort) = spawn_mock_receiver().await;
 
     let create_resp = reqwest::Client::new()
-        .post(format!("{base_url}/api/workspaces/{ws_slug}/webhooks"))
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/webhooks"),
+        ))
         .bearer_auth(token)
         .json(&serde_json::json!({
             "target_url": mock_url,
@@ -164,8 +168,10 @@ async fn e2e_webhook_dispatched_on_task_creation() {
 
     let board_id = board.id;
     let task_resp = reqwest::Client::new()
-        .post(format!(
-            "{base_url}/api/workspaces/{ws_slug}/boards/{board_id}/tasks"
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/boards/{board_id}/tasks"),
         ))
         .bearer_auth(token)
         .json(&serde_json::json!({

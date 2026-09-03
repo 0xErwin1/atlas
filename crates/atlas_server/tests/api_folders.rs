@@ -696,10 +696,10 @@ async fn get_folder_non_uuid_returns_422() {
 
     let response = client
         .http_client()
-        .get(format!(
-            "{}/api/workspaces/{}/folders/not-a-uuid",
+        .get(support::path::api_url(
             client.base_url(),
-            ws.slug
+            "acta",
+            &format!("/workspaces/{}/folders/not-a-uuid", ws.slug),
         ))
         .bearer_auth(client.token().unwrap_or(""))
         .send()

@@ -728,26 +728,29 @@ async fn owner_chain_download_visibility() {
         .expect("delete project");
 
     for url in [
-        format!(
-            "{}/api/workspaces/{}/attachments/{}",
+        support::path::api_url(
             server.base_url(),
-            ws.slug,
-            document_attachment.id.0
+            "acta",
+            &format!(
+                "/workspaces/{}/attachments/{}",
+                ws.slug, document_attachment.id.0
+            ),
         ),
-        format!(
-            "{}/api/workspaces/{}/tasks/{}/attachments/{}/content",
+        support::path::api_url(
             server.base_url(),
-            ws.slug,
-            task.readable_id,
-            task_attachment.id.0
+            "acta",
+            &format!(
+                "/workspaces/{}/tasks/{}/attachments/{}/content",
+                ws.slug, task.readable_id, task_attachment.id.0
+            ),
         ),
-        format!(
-            "{}/api/workspaces/{}/tasks/{}/comments/{}/attachments/{}/content",
+        support::path::api_url(
             server.base_url(),
-            ws.slug,
-            task.readable_id,
-            comment.id.0,
-            comment_attachment.id.0
+            "acta",
+            &format!(
+                "/workspaces/{}/tasks/{}/comments/{}/attachments/{}/content",
+                ws.slug, task.readable_id, comment.id.0, comment_attachment.id.0
+            ),
         ),
     ] {
         let response = client

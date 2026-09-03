@@ -966,10 +966,10 @@ async fn set_system_admin_raw(
 ) -> Result<(), reqwest::StatusCode> {
     let resp = client
         .http_client()
-        .post(format!(
-            "{}/api/users/{}/system-admin",
+        .post(support::path::api_url(
             client.base_url(),
-            user_id
+            "custos",
+            &format!("/users/{}/system-admin", user_id),
         ))
         .bearer_auth(client.token().unwrap_or(""))
         .header("x-atlas-csrf", "1")
@@ -988,7 +988,11 @@ async fn set_system_admin_raw(
 /// Calls `POST /api/activate/:token` to activate an account.
 async fn activate_account(server: &TestServer, token: &str) -> Result<(), reqwest::StatusCode> {
     let resp = reqwest::Client::new()
-        .post(format!("{}/api/activate/{}", server.base_url(), token))
+        .post(support::path::api_url(
+            server.base_url(),
+            "custos",
+            &format!("/activate/{}", token),
+        ))
         .header("x-atlas-csrf", "1")
         .json(&serde_json::json!({ "password": "ActivationPw1!" }))
         .send()

@@ -61,9 +61,14 @@ pub(crate) fn canonical_store_path(relative: &str) -> String {
     atlas_server::router_audit::mounted_path(atlas_server::router_audit::V1_NAMESPACE, relative)
 }
 
+/// Validates the path part of `relative` against the registry. A query string
+/// is not part of any route template, so it is stripped before matching and
+/// passes through the composed path untouched.
 fn assert_declares(component: &str, relative: &str) {
+    let path_only = relative.split('?').next().unwrap_or(relative);
+
     assert!(
-        component_declares(component, relative),
+        component_declares(component, path_only),
         "api_path: component `{component}` does not declare a route matching `{relative}` — \
          check the (component, relative) pair against the live registry"
     );
@@ -120,6 +125,19 @@ mod tests {
         assert_eq!(
             api_path("acta", "/workspaces/{ws}/tasks"),
             "/api/workspaces/{ws}/tasks"
+        );
+    }
+
+    #[test]
+    fn api_path_accepts_a_query_string_after_a_declared_route() {
+        let composed = api_path("acta", "/workspaces/{ws}/tasks?feed=full");
+
+        assert_eq!(
+            composed,
+            mounted_path(
+                &namespaces_for("acta")[DEFAULT_NAMESPACE_INDEX],
+                "/workspaces/{ws}/tasks?feed=full"
+            )
         );
     }
 

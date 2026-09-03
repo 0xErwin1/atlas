@@ -680,10 +680,10 @@ async fn a_request_that_fails_authn_leaves_no_row_in_the_store() {
 
     let http = client.http_client();
     let response = http
-        .post(format!(
-            "{}/api/workspaces/{}/tags",
+        .post(support::path::api_url(
             server.base_url(),
-            ws.slug
+            "acta",
+            &format!("/workspaces/{}/tags", ws.slug),
         ))
         .header("authorization", "Bearer atlas_this-token-does-not-exist")
         .header("idempotency-key", "authn-fail-key")

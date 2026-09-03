@@ -50,9 +50,10 @@ async fn post_document_moves_batch(
     body: serde_json::Value,
 ) -> reqwest::Response {
     reqwest::Client::new()
-        .post(format!(
-            "{}/api/workspaces/{workspace}/documents/moves/batch",
-            server.base_url()
+        .post(support::path::api_url(
+            server.base_url(),
+            "acta",
+            &format!("/workspaces/{workspace}/documents/moves/batch"),
         ))
         .bearer_auth(client.token().expect("authenticated token"))
         .json(&body)
@@ -63,11 +64,13 @@ async fn post_document_moves_batch(
 macro_rules! edit_content_range {
     ($server:expr, $client:expr, $workspace:expr, $slug:expr, $base:expr, $edit:expr $(,)?) => {
         reqwest::Client::new()
-            .patch(format!(
-                "{}/api/workspaces/{}/documents/{}/content/range",
+            .patch(support::path::api_url(
                 $server.base_url(),
-                $workspace,
-                $slug
+                "acta",
+                &format!(
+                    "/workspaces/{}/documents/{}/content/range",
+                    $workspace, $slug
+                ),
             ))
             .bearer_auth($client.token().expect("authenticated token"))
             .json(&DocumentContentEditRequest {
@@ -248,10 +251,10 @@ async fn compact_document_read_omits_content_and_does_not_leak_across_workspaces
     let http = reqwest::Client::new();
 
     let compact = http
-        .get(format!(
-            "{}/api/workspaces/{}/documents/{slug}/compact",
+        .get(support::path::api_url(
             server.base_url(),
-            ws.slug
+            "acta",
+            &format!("/workspaces/{}/documents/{slug}/compact", ws.slug),
         ))
         .bearer_auth(token)
         .send()
@@ -268,10 +271,10 @@ async fn compact_document_read_omits_content_and_does_not_leak_across_workspaces
     let (_other_client, other_ws, _) =
         support::login_user_with_workspace(&server, &db, "doc-compact-other").await;
     let hidden = http
-        .get(format!(
-            "{}/api/workspaces/{}/documents/{slug}/compact",
+        .get(support::path::api_url(
             server.base_url(),
-            other_ws.slug
+            "acta",
+            &format!("/workspaces/{}/documents/{slug}/compact", other_ws.slug),
         ))
         .bearer_auth(client.token().expect("authenticated token"))
         .send()
@@ -355,10 +358,10 @@ async fn compact_document_read_previews_the_body_without_frontmatter() {
 
     let empty_slug = empty.slug.as_deref().expect("slug");
     let empty_compact = reqwest::Client::new()
-        .get(format!(
-            "{}/api/workspaces/{}/documents/{empty_slug}/compact",
+        .get(support::path::api_url(
             server.base_url(),
-            ws.slug
+            "acta",
+            &format!("/workspaces/{}/documents/{empty_slug}/compact", ws.slug),
         ))
         .bearer_auth(client.token().expect("authenticated token"))
         .send()
@@ -467,10 +470,10 @@ async fn range_read_pages_losslessly_and_rejects_too_small_or_stale_continuation
         .expect("create document");
     let slug = doc.slug.as_deref().expect("slug");
     let token = client.token().expect("authenticated token");
-    let url = format!(
-        "{}/api/workspaces/{}/documents/{slug}/content/range",
+    let url = support::path::api_url(
         server.base_url(),
-        ws.slug
+        "acta",
+        &format!("/workspaces/{}/documents/{slug}/content/range", ws.slug),
     );
     let http = reqwest::Client::new();
 
@@ -576,10 +579,10 @@ async fn content_search_enforces_scan_and_utf8_page_boundaries() {
         .await
         .expect("create document");
     let slug = doc.slug.as_deref().expect("slug");
-    let url = format!(
-        "{}/api/workspaces/{}/documents/{slug}/content/search",
+    let url = support::path::api_url(
         server.base_url(),
-        ws.slug
+        "acta",
+        &format!("/workspaces/{}/documents/{slug}/content/search", ws.slug),
     );
     let http = reqwest::Client::new();
     let first = http
@@ -687,15 +690,15 @@ async fn tampered_document_continuations_are_rejected_without_leaking_or_mutatin
     let slug = doc.slug.as_deref().expect("slug");
     let token = client.token().expect("authenticated token");
     let http = reqwest::Client::new();
-    let range_url = format!(
-        "{}/api/workspaces/{}/documents/{slug}/content/range",
+    let range_url = support::path::api_url(
         server.base_url(),
-        ws.slug
+        "acta",
+        &format!("/workspaces/{}/documents/{slug}/content/range", ws.slug),
     );
-    let search_url = format!(
-        "{}/api/workspaces/{}/documents/{slug}/content/search",
+    let search_url = support::path::api_url(
         server.base_url(),
-        ws.slug
+        "acta",
+        &format!("/workspaces/{}/documents/{slug}/content/search", ws.slug),
     );
 
     let range = http
@@ -834,10 +837,10 @@ async fn invalid_pattern_search_returns_problem_details_without_partial_results(
         .await
         .expect("create document");
     let slug = doc.slug.as_deref().expect("slug");
-    let url = format!(
-        "{}/api/workspaces/{}/documents/{slug}/content/search",
+    let url = support::path::api_url(
         server.base_url(),
-        ws.slug
+        "acta",
+        &format!("/workspaces/{}/documents/{slug}/content/search", ws.slug),
     );
 
     let response = reqwest::Client::new()
@@ -973,8 +976,12 @@ async fn list_documents_distinguishes_unfiled_from_filed_documents() {
                 None => String::new(),
             };
             let response = reqwest::Client::new()
-                .get(format!(
-                    "{base_url}/api/workspaces/{workspace_slug}/projects/{project_slug}/documents{suffix}",
+                .get(support::path::api_url(
+                    &base_url,
+                    "acta",
+                    &format!(
+                        "/workspaces/{workspace_slug}/projects/{project_slug}/documents{suffix}"
+                    ),
                 ))
                 .bearer_auth(token)
                 .send()
@@ -3158,10 +3165,10 @@ async fn document_moves_batch_rejects_an_oversized_envelope_before_processing() 
     .expect("serialize oversized body");
 
     let response = reqwest::Client::new()
-        .post(format!(
-            "{}/api/workspaces/{}/documents/moves/batch",
+        .post(support::path::api_url(
             server.base_url(),
-            ws.slug
+            "acta",
+            &format!("/workspaces/{}/documents/moves/batch", ws.slug),
         ))
         .bearer_auth(client.token().expect("authenticated token"))
         .header("content-type", "application/json")
@@ -4064,11 +4071,10 @@ async fn conflict_409_body_carries_conflict_fields() {
 
     let token = client.token().expect("session token").to_string();
     let http = reqwest::Client::new();
-    let url = format!(
-        "{}/api/workspaces/{}/documents/{}/content",
+    let url = support::path::api_url(
         server.base_url(),
-        ws.slug,
-        slug
+        "acta",
+        &format!("/workspaces/{}/documents/{}/content", ws.slug, slug),
     );
     let body = serde_json::json!({
         "content": "concurrent update",
@@ -4146,11 +4152,10 @@ async fn download_attachment_sets_nosniff_header() {
 
     let token = client.token().expect("session token").to_string();
     let http = reqwest::Client::new();
-    let url = format!(
-        "{}/api/workspaces/{}/attachments/{}",
+    let url = support::path::api_url(
         server.base_url(),
-        ws.slug,
-        att.id
+        "acta",
+        &format!("/workspaces/{}/attachments/{}", ws.slug, att.id),
     );
 
     let response = http

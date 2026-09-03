@@ -28,7 +28,7 @@ async fn login_burst_is_rate_limited_and_activate_is_not() {
     // any token-bucket refill can happen (burst_size(5), per_second(1)).
     let login_futures: Vec<_> = (0..10)
         .map(|_| {
-            http.post(format!("{base_url}/api/auth/login"))
+            http.post(support::path::api_url(&base_url, "custos", "/auth/login"))
                 .json(&LoginRequest {
                     username: "no-such-user".to_string(),
                     password: "wrong-password".to_string(),
@@ -86,7 +86,11 @@ async fn login_burst_is_rate_limited_and_activate_is_not() {
     // route entirely, not the same limiter instance, and definitely not a
     // router-wide layer.
     let activate_response = http
-        .get(format!("{base_url}/api/activate/bogus-token"))
+        .get(support::path::api_url(
+            &base_url,
+            "custos",
+            "/activate/bogus-token",
+        ))
         .send()
         .await
         .expect("activate request must not error transport-wise");

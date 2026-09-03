@@ -92,10 +92,11 @@ const fn marked_spans(path: &'static str, reason: &'static str) -> Exemption {
 
 /// Every file permitted to contain a matching `/api` literal, and why. No
 /// current entry is `MarkedSpans`: none of these files carries a marker
-/// pair, so each is exempt as a whole. Entries marked `TRANSIENT` are
-/// removed by PR2/PR3 as their file is migrated onto `api_path`/`api_url`;
-/// the bidirectional check's stale-entry direction is what keeps that debt
-/// visible if a later PR forgets one (design R6).
+/// pair, so each is exempt as a whole. This is `v2-e3-s5`'s final,
+/// permanent allowlist: PR1's Class-C fold and PR2/PR3's Class-A/Class-B
+/// migrations removed every transient entry that named a not-yet-migrated
+/// file, and the bidirectional check's stale-entry direction is what would
+/// have kept that debt visible had a PR forgotten one (design R6).
 const ALLOWED: &[Exemption] = &[
     whole_file(
         "support/path.rs",
@@ -120,61 +121,6 @@ const ALLOWED: &[Exemption] = &[
         "idempotency_repo.rs",
         "a canonical store-key row, not a request path",
     ),
-    // TRANSIENT — not yet migrated onto api_path/api_url; removed
-    // file-by-file as PR3 lands (design R6, spec "counts are a review
-    // aid, the gate is the guard's zero-unallowlisted-literal property").
-    whole_file("api_comments.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
-    whole_file("api_documents.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
-    whole_file(
-        "api_capability_sweep.rs",
-        "TRANSIENT: pending v2-e3-s5 PR3 (Class-B relative-path literals handed to \
-         AtlasClient)",
-    ),
-    whole_file("api_csrf_ratelimit.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
-    whole_file("api_task_attachments.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
-    whole_file("api_trash.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
-    whole_file("api_boards_tasks.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
-    whole_file("api_semantic_search.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
-    whole_file(
-        "e2e_incoming_automation.rs",
-        "TRANSIENT: pending v2-e3-s5 PR3",
-    ),
-    whole_file("visibility_ancestors.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
-    whole_file("api_audit_writes.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
-    whole_file(
-        "api_global_admin_bypass.rs",
-        "TRANSIENT: pending v2-e3-s5 PR3",
-    ),
-    whole_file("api_login_rate_limit.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
-    whole_file("api_presence.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
-    whole_file(
-        "api_presence_document.rs",
-        "TRANSIENT: pending v2-e3-s5 PR3",
-    ),
-    whole_file("api_rate_limit.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
-    whole_file("api_search.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
-    whole_file(
-        "api_search_permissions.rs",
-        "TRANSIENT: pending v2-e3-s5 PR3",
-    ),
-    whole_file("e2e_webhooks.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
-    whole_file("api_events_stream.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
-    whole_file("api_folders.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
-    whole_file("api_members.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
-    whole_file("api_permissions.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
-    whole_file("api_presence_agent.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
-    whole_file(
-        "api_search_pagination.rs",
-        "TRANSIENT: pending v2-e3-s5 PR3",
-    ),
-    whole_file("api_self_protection.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
-    whole_file("api_system_admin.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
-    whole_file("api_user_api_keys.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
-    whole_file(
-        "api_workspace_activity.rs",
-        "TRANSIENT: pending v2-e3-s5 PR3",
-    ),
-    whole_file("grant_hygiene.rs", "TRANSIENT: pending v2-e3-s5 PR3"),
 ];
 
 const MARKER_OFF: &str = "// api-path-guard:off";
