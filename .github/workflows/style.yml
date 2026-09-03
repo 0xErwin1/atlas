@@ -37,7 +37,7 @@ jobs:
           cache-on-failure: true
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
-  schema-gate:
+  source-gates:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -52,10 +52,11 @@ jobs:
             libsoup-3.0-dev libssl-dev libdbus-1-dev
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ci-schema-gate
+          shared-key: ci-source-gates
           cache-targets: true
           cache-on-failure: true
       - run: cargo test -p atlas_server --test schema_qualification_gate
+      - run: cargo test -p atlas_server --test api_path_literal_guard
 
   biome:
     runs-on: ubuntu-latest

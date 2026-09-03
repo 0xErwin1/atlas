@@ -14,9 +14,11 @@
 //! (`crate::routes::openapi::prefix_document_paths`), so the document's own
 //! path keys stay `/api`-absolute, byte-identical to what they were before
 //! the rewrite. This test's registry side is therefore joined through
-//! [`atlas_server::router_audit::mounted_path`] before comparing against the
+//! `RouteMatrixEntry::mounted(V1_NAMESPACE)` before comparing against the
 //! document, which is the same "root-level routes stay unprefixed, every
-//! other route is `/api`-joined" rule `document()` itself applies.
+//! other route is `/api`-joined" rule `document()` itself applies. Pinned to
+//! `V1_NAMESPACE`, never the suite's flippable default (`v2-e3-s5`): it is
+//! the document's namespace until S6/PR1 re-keys it.
 //!
 //! Scope statement, confirmed by PR5 (T5.20): this guard runs against `/api`
 //! only, never `/api/v2` — stated explicitly here rather than left ambiguous
@@ -34,12 +36,15 @@
 //! no longer a member of [`UNANNOTATED_ROUTES`] — the unannotated list has
 //! shrunk to exactly `/openapi.json` and `/scalar`.
 
+mod support;
+
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
-use atlas_core::registry::{ComponentId, ComponentKind, HttpMethod, build};
+use atlas_core::registry::{ComponentKind, HttpMethod, build};
 use atlas_server::reg5::{StorageBackend, reg5_component_entries};
+use atlas_server::router_audit::V1_NAMESPACE;
 use atlas_server::routes::openapi::openapi;
 
 /// Routes with no `#[utoipa::path]` annotation of their own — a
@@ -55,21 +60,10 @@ const UNANNOTATED_ROUTES: &[(HttpMethod, &str)] = &[
 ];
 
 fn registry_route_set() -> HashSet<(HttpMethod, String)> {
-    let registry = build(reg5_component_entries(StorageBackend::Filesystem))
-        .expect("REG-5 entries must satisfy every registry::build() validator");
-
-    let mut routes = HashSet::new();
-    for component_id in ["platform", "custos", "acta"] {
-        let entry = registry
-            .get(&ComponentId::new(component_id).expect("valid component id"))
-            .unwrap_or_else(|| panic!("{component_id} must be a registered REG-5 component"));
-
-        for route in &entry.api.routes {
-            let mounted = atlas_server::router_audit::mounted_path("/api", route.path.as_str());
-            routes.insert((route.method, mounted));
-        }
-    }
-    routes
+    support::route_matrix::route_matrix()
+        .into_iter()
+        .map(|entry| (entry.method, entry.mounted(V1_NAMESPACE)))
+        .collect()
 }
 
 fn document_operation_set() -> HashSet<(HttpMethod, String)> {
