@@ -827,7 +827,12 @@ async fn a_post_execution_404_is_stored_and_replayed_like_any_completed_response
 
     let nonexistent_user_id = uuid::Uuid::now_v7();
     let key = "post-exec-404-key";
-    let path = format!("/api/workspaces/{}/members", ws.slug);
+    let relative = format!("/workspaces/{}/members", ws.slug);
+    let path = support::path::api_path("acta", &relative);
+    let store_path = format!(
+        "{}{relative}",
+        atlas_server::middleware::idempotency::IDEMPOTENCY_STORE_PATH_PREFIX
+    );
     let token = client.token().expect("session token").to_string();
 
     let send_request = || {
@@ -934,7 +939,7 @@ async fn a_post_execution_404_is_stored_and_replayed_like_any_completed_response
             [
                 user.id.0.into(),
                 "POST".into(),
-                path.clone().into(),
+                store_path.clone().into(),
                 key.into(),
             ],
         ),
