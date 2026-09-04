@@ -10,6 +10,7 @@ pub struct Registry {
     entries: Vec<ComponentEntry>,
     index: BTreeMap<ComponentId, usize>,
     migration_order: Vec<ComponentId>,
+    startup_order: Vec<ComponentId>,
 }
 
 impl Registry {
@@ -17,11 +18,13 @@ impl Registry {
         entries: Vec<ComponentEntry>,
         index: BTreeMap<ComponentId, usize>,
         migration_order: Vec<ComponentId>,
+        startup_order: Vec<ComponentId>,
     ) -> Self {
         Self {
             entries,
             index,
             migration_order,
+            startup_order,
         }
     }
 
@@ -40,6 +43,14 @@ impl Registry {
     /// Returns the migration order computed by `validate_migration_order`.
     pub fn migration_order(&self) -> &[ComponentId] {
         &self.migration_order
+    }
+
+    /// Returns the worker startup order: a topological sort over dependency
+    /// edges merged with capability provider→consumer edges, restricted to
+    /// components that declare at least one worker (E11-S2 design D2.1).
+    /// Drain order is this slice's exact reverse, computed by the caller.
+    pub fn startup_order(&self) -> &[ComponentId] {
+        &self.startup_order
     }
 }
 
@@ -106,8 +117,9 @@ mod tests {
             .iter()
             .map(|entry| entry.identity.stable_id.clone())
             .collect();
+        let startup_order = Vec::new();
 
-        Registry::new(entries, index, migration_order)
+        Registry::new(entries, index, migration_order, startup_order)
     }
 
     #[test]

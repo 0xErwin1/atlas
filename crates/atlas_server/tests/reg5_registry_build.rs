@@ -14,11 +14,15 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use atlas_core::registry::{ComponentId, build};
+use atlas_core::registry::{ComponentEntry, ComponentId, WorkerId, build};
 use atlas_server::reg5::{StorageBackend, reg5_component_entries};
 
 fn component(value: &str) -> ComponentId {
     ComponentId::new(value).expect("valid component id")
+}
+
+fn worker(value: &str) -> WorkerId {
+    WorkerId::new(value).expect("valid worker id")
 }
 
 #[test]
@@ -126,4 +130,115 @@ fn declared_route_count_matches_the_live_router_enumeration() {
         declared_route_count, 212,
         "platform + custos + acta declared routes must equal the live router's 212 representable (method, path) pairs"
     );
+}
+
+/// The six E11-S2 PR1 worker declarations: `acta`'s five workers plus
+/// `search.pgvector_embeddings`'s one, all `critical: false` (SH3 forces the
+/// dispatcher to be, and no other worker has a stated readiness
+/// consequence). Run for both storage backends since neither declares a
+/// worker — a non-vacuous, real-data proof (design D5's non-vacuity note).
+#[test]
+fn reg5_declares_exactly_six_workers_all_non_critical() {
+    for backend in [StorageBackend::Filesystem, StorageBackend::S3] {
+        let entries = reg5_component_entries(backend);
+
+        let mut worker_ids: Vec<&str> = entries
+            .iter()
+            .flat_map(|entry: &ComponentEntry| entry.workers.iter())
+            .map(|declaration| declaration.id.as_str())
+            .collect();
+        worker_ids.sort_unstable();
+
+        assert_eq!(
+            worker_ids,
+            vec![
+                "acta.attachment_reconciler",
+                "acta.live_listener",
+                "acta.presence_agent",
+                "acta.presence_sweeper",
+                "acta.webhook_dispatcher",
+                "search.pgvector_embeddings.index_worker",
+            ],
+            "REG-5 must declare exactly these six workers for {backend:?}"
+        );
+
+        assert!(
+            entries
+                .iter()
+                .flat_map(|entry| entry.workers.iter())
+                .all(|declaration| !declaration.critical()),
+            "every REG-5 worker must be critical: false for {backend:?}"
+        );
+
+        build(entries).unwrap_or_else(|errors| {
+            panic!("REG-5 entries with their six workers must build for {backend:?}: {errors:?}")
+        });
+    }
+}
+
+/// The design's headline measured regression (§0.5): a dependency-only sort
+/// puts `acta` before `search.pgvector_embeddings` (both are ready at the
+/// same step once `platform`/`custos` are processed, since Modules declare
+/// no `dependencies`, and `"acta" < "search.pgvector_embeddings"`
+/// lexicographically). `Registry::startup_order()` merges capability edges
+/// (`acta` optionally requires `search.semantic`, provided by
+/// `search.pgvector_embeddings`), which reverses that and puts the provider
+/// first — SHELL-OPS-6's "Custos antes que Acta" restated through the merged
+/// sort, on the one pair `startup_order()`'s worker-bearing filter still
+/// makes observable in real REG-5 data (`storage.filesystem`/`storage.s3`
+/// and `custos` decare no worker in this PR, per spec's "computed only over
+/// components that declare at least one worker", so neither appears in the
+/// filtered result at all — the full, unfiltered merge is exercised by the
+/// synthetic tests in `atlas_core::registry::build::tests::startup_order`).
+#[test]
+fn startup_order_places_search_pgvector_embeddings_before_acta() {
+    for backend in [StorageBackend::Filesystem, StorageBackend::S3] {
+        let registry = build(reg5_component_entries(backend)).unwrap_or_else(|errors| {
+            panic!("REG-5 entries must build for {backend:?}: {errors:?}")
+        });
+
+        let order: Vec<&str> = registry
+            .startup_order()
+            .iter()
+            .map(ComponentId::as_str)
+            .collect();
+
+        assert_eq!(
+            order,
+            vec!["search.pgvector_embeddings", "acta"],
+            "REG-5's only two worker-bearing components for {backend:?} must start in this order"
+        );
+    }
+}
+
+/// Proves `BoundWorkers::bind` refuses at startup when the runtime
+/// implementation set drifts from REG-5's six declarations (design D1, R1).
+#[test]
+fn bind_refuses_when_a_declared_worker_has_no_implementation() {
+    use atlas_core::registry::BoundWorkers;
+
+    let registry = build(reg5_component_entries(StorageBackend::Filesystem))
+        .expect("REG-5 entries must build");
+
+    let errors = BoundWorkers::bind(&registry, vec![]).expect_err("no implementations bound");
+
+    assert_eq!(
+        errors.len(),
+        6,
+        "all six declared workers must be reported unbound"
+    );
+    for id in [
+        "acta.webhook_dispatcher",
+        "acta.attachment_reconciler",
+        "acta.live_listener",
+        "acta.presence_sweeper",
+        "acta.presence_agent",
+        "search.pgvector_embeddings.index_worker",
+    ] {
+        assert!(
+            errors
+                .iter()
+                .any(|error| matches!(error, atlas_core::registry::WorkerBindError::UnboundWorker { worker } if *worker == self::worker(id)))
+        );
+    }
 }

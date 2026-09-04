@@ -25,7 +25,8 @@ use atlas_core::ids::ActionId;
 use atlas_core::registry::{
     Api, Authorization, Capabilities, CapabilityId, ComponentEntry, ComponentId, ComponentKind,
     ConfigDeclaration, ContractVersion, Dependency, Diagnostics, Experience, HttpMethod, Identity,
-    Persistence, RouteDeclaration, RoutePath, SchemaContractId, SchemaId,
+    Persistence, RouteDeclaration, RoutePath, SchemaContractId, SchemaId, WorkerDeclaration,
+    WorkerId,
 };
 
 /// Selects which storage backend Module contributes the mandatory
@@ -97,6 +98,11 @@ fn config_with_mandatory(
 #[allow(clippy::expect_used)]
 fn route_path(value: &str) -> RoutePath {
     RoutePath::new(value).expect("valid route path")
+}
+
+#[allow(clippy::expect_used)]
+fn worker(value: &str) -> WorkerId {
+    WorkerId::new(value).expect("valid worker id")
 }
 
 /// Platform: health/ready/version, server meta, self-service UI state, and
@@ -2036,7 +2042,28 @@ fn acta_entry() -> ComponentEntry {
             ],
         }),
         config: Some(config("ActaConfig", "ATLAS_ACTA_")),
-        workers: vec![],
+        workers: vec![
+            WorkerDeclaration {
+                id: worker("acta.webhook_dispatcher"),
+                critical: false,
+            },
+            WorkerDeclaration {
+                id: worker("acta.attachment_reconciler"),
+                critical: false,
+            },
+            WorkerDeclaration {
+                id: worker("acta.live_listener"),
+                critical: false,
+            },
+            WorkerDeclaration {
+                id: worker("acta.presence_sweeper"),
+                critical: false,
+            },
+            WorkerDeclaration {
+                id: worker("acta.presence_agent"),
+                critical: false,
+            },
+        ],
         satellites: vec![],
     }
 }
@@ -2048,6 +2075,7 @@ fn storage_filesystem_entry() -> ComponentEntry {
         "storage.filesystem",
         vec![capability("storage.blob")],
         Some(config("StorageConfig", "ATLAS_STORAGE_")),
+        vec![],
     )
 }
 
@@ -2059,6 +2087,7 @@ fn storage_s3_entry() -> ComponentEntry {
         "storage.s3",
         vec![capability("storage.blob")],
         Some(config("StorageConfig", "ATLAS_STORAGE_")),
+        vec![],
     )
 }
 
@@ -2069,6 +2098,7 @@ fn search_postgres_fts_entry() -> ComponentEntry {
         "search.postgres_fts",
         vec![capability("search.lexical")],
         Some(config("SearchLexicalConfig", "ATLAS_SEARCH_")),
+        vec![],
     )
 }
 
@@ -2077,6 +2107,7 @@ fn search_postgres_fts_entry() -> ComponentEntry {
 /// HTTP surface (Module, SHELL-REG-5). `mandatory: false` matches
 /// SHELL-REG-5's "optional": the Module is present in this release, but no
 /// startup gate requires its variables to be set.
+/// Declares the one search worker (E11-S2 PR1).
 fn search_pgvector_embeddings_entry() -> ComponentEntry {
     minimal_module(
         "search.pgvector_embeddings",
@@ -2086,18 +2117,24 @@ fn search_pgvector_embeddings_entry() -> ComponentEntry {
             "ATLAS_EMBEDDINGS_",
             false,
         )),
+        vec![WorkerDeclaration {
+            id: worker("search.pgvector_embeddings.index_worker"),
+            critical: false,
+        }],
     )
 }
 
 /// Shared shape for a capability/persistence-only Module: no HTTP surface,
 /// no persistence, no authorization (mirrors `entry.rs`'s own
 /// `minimal_module_entry()` fixture, which this spec's Module requirement is
-/// grounded in). `config` is a parameter (not always `None`) since the four
-/// Module entries above each declare their own `ConfigDeclaration`.
+/// grounded in). `config` is a parameter since the four Module entries
+/// above each declare their own `ConfigDeclaration`; `workers` is threaded
+/// through so only `search.pgvector_embeddings` declares one.
 fn minimal_module(
     stable_id: &str,
     provided: Vec<CapabilityId>,
     config: Option<ConfigDeclaration>,
+    workers: Vec<WorkerDeclaration>,
 ) -> ComponentEntry {
     ComponentEntry {
         identity: Identity {
@@ -2134,7 +2171,7 @@ fn minimal_module(
         },
         persistence: None,
         config,
-        workers: vec![],
+        workers,
         satellites: vec![],
     }
 }

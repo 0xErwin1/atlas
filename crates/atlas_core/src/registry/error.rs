@@ -1,6 +1,6 @@
 use super::{
     CapabilityId, ComponentId, ContractVersion, ContractVersionRange, HttpMethod, RoutePath,
-    SchemaContractId, SchemaId,
+    SchemaContractId, SchemaId, WorkerId,
 };
 use crate::ids::ActionId;
 
@@ -106,6 +106,21 @@ pub enum RegistryBuildError {
         protocol_version: ContractVersion,
         compatible_range: ContractVersionRange,
     },
+
+    #[error("worker id `{worker}` is declared by {}", join_ids(.components))]
+    DuplicateWorkerId {
+        worker: WorkerId,
+        components: Vec<ComponentId>,
+    },
+    #[error(
+        "critical worker `{worker}` declared by `{component}` has no diagnostics readiness surface"
+    )]
+    CriticalWorkerWithoutReadiness {
+        component: ComponentId,
+        worker: WorkerId,
+    },
+    #[error("startup order cycle: {}", join_chain(.chain))]
+    StartupOrderCycle { chain: Vec<ComponentId> },
 }
 
 /// Formats component ids as a comma-separated list: `"acta, custos"`.
@@ -357,6 +372,42 @@ mod tests {
             error.to_string(),
             "satellite of `acta` declares protocol_version 4 outside compatible_range 1..=3"
         );
+    }
+
+    fn worker(value: &str) -> WorkerId {
+        WorkerId::new(value).expect("valid worker id")
+    }
+
+    #[test]
+    fn duplicate_worker_id_message() {
+        let error = RegistryBuildError::DuplicateWorkerId {
+            worker: worker("acta.reindex"),
+            components: vec![component("acta"), component("custos")],
+        };
+        assert_eq!(
+            error.to_string(),
+            "worker id `acta.reindex` is declared by acta, custos"
+        );
+    }
+
+    #[test]
+    fn critical_worker_without_readiness_message() {
+        let error = RegistryBuildError::CriticalWorkerWithoutReadiness {
+            component: component("acta"),
+            worker: worker("acta.reindex"),
+        };
+        assert_eq!(
+            error.to_string(),
+            "critical worker `acta.reindex` declared by `acta` has no diagnostics readiness surface"
+        );
+    }
+
+    #[test]
+    fn startup_order_cycle_message() {
+        let error = RegistryBuildError::StartupOrderCycle {
+            chain: vec![component("a"), component("b")],
+        };
+        assert_eq!(error.to_string(), "startup order cycle: a -> b -> a");
     }
 
     #[test]
