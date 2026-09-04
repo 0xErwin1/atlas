@@ -491,6 +491,19 @@ async fn flat_and_wrong_component_v2_forms_never_match_any_declared_route() {
     let ws_slug = "flat-wrong-component-no-such-workspace";
     let matrix = route_matrix();
 
+    let declared_mounts: std::collections::HashSet<(HttpMethod, String)> = matrix
+        .iter()
+        .map(|entry| {
+            let namespace = atlas_server::router_audit::v2_namespace(&entry.component);
+            let relative = entry.path_template.replace("{ws}", ws_slug);
+
+            (
+                entry.method,
+                atlas_server::router_audit::mounted_path(&namespace, &relative),
+            )
+        })
+        .collect();
+
     for entry in &matrix {
         let relative = entry.path_template.replace("{ws}", ws_slug);
 
@@ -512,6 +525,10 @@ async fn flat_and_wrong_component_v2_forms_never_match_any_declared_route() {
         }
 
         for candidate in candidates {
+            if declared_mounts.contains(&(entry.method, candidate.clone())) {
+                continue;
+            }
+
             let unauthenticated = send(
                 &http,
                 axum_method(entry.method),
