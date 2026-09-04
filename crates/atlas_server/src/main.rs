@@ -1,5 +1,5 @@
 use anyhow::Result;
-use migration::Migrator;
+use atlas_server::persistence::migrator::ComposedMigrator;
 use sea_orm_migration::prelude::MigratorTrait;
 use std::future::IntoFuture;
 use std::net::SocketAddr;
@@ -45,7 +45,7 @@ async fn main() -> Result<()> {
     let db = atlas_postgres::connect(&cfg.platform.postgres).await?;
 
     info!("applying migrations");
-    Migrator::up(&db, None).await?;
+    ComposedMigrator::up(&db, None).await?;
 
     info!("running bootstrap");
     atlas_server::persistence::bootstrap::run_bootstrap(

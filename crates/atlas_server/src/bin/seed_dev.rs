@@ -1,5 +1,5 @@
 use anyhow::Result;
-use migration::Migrator;
+use atlas_server::persistence::migrator::ComposedMigrator;
 use sea_orm::Database;
 use sea_orm_migration::prelude::MigratorTrait;
 use tracing::info;
@@ -25,7 +25,7 @@ async fn main() -> Result<()> {
 
     let db = Database::connect(cfg.platform.postgres.database_url.expose().clone()).await?;
 
-    Migrator::up(&db, None).await?;
+    ComposedMigrator::up(&db, None).await?;
     info!("migrations applied");
 
     atlas_server::persistence::bootstrap::run_dev_seed(
