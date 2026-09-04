@@ -53,7 +53,7 @@ async fn meta_response_carries_no_secret_field_names() {
     ] {
         assert!(
             !body.contains(forbidden),
-            "/api/meta response must never carry a `{forbidden}` field: {body}"
+            "/api/v2/platform/meta response must never carry a `{forbidden}` field: {body}"
         );
     }
 

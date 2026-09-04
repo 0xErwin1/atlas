@@ -56,8 +56,8 @@ Each variable's **Owner** names the typed config struct that reads it after
 | `ATLAS_ROOT_PASSWORD` | custos | First boot only | used by bootstrap when no users exist yet |
 | `ATLAS_PORT` | platform | No | `8080`; server binds `0.0.0.0:<port>` |
 | `RUST_LOG` | — | No | `info,atlas_server=debug,tower_http=info` |
-| `ATLAS_SERVER_URL` | platform | No | public base URL reported by `/api/meta` and used in activation links |
-| `ATLAS_BUILD` | platform | No | build identifier surfaced by `/api/meta` |
+| `ATLAS_SERVER_URL` | platform | No | public base URL reported by `/api/v2/platform/meta` and used in activation links |
+| `ATLAS_BUILD` | platform | No | build identifier surfaced by `/api/v2/platform/meta` |
 
 ### Sessions, cookies, and document internals
 
