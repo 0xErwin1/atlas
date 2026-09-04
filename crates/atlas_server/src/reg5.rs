@@ -2131,8 +2131,10 @@ pub fn reg5_component_entries(storage_backend: StorageBackend) -> Vec<ComponentE
 /// same environment variable `state::build_attachment_store` reads to
 /// construct the live attachment store, so the startup registry gate and the
 /// attachment store always agree on which backend is active.
-pub fn storage_backend_from_env() -> Result<StorageBackend, String> {
-    let value = crate::config::env_var_nonempty("ATLAS_ATTACHMENT_BACKEND");
+pub fn storage_backend_from_env(
+    source: &dyn atlas_core::config::EnvSource,
+) -> Result<StorageBackend, String> {
+    let value = crate::config::env_var_nonempty(source, "ATLAS_ATTACHMENT_BACKEND");
     storage_backend_from_value(value.as_deref())
 }
 

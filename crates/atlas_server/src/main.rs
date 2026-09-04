@@ -22,7 +22,8 @@ async fn main() -> Result<()> {
     // `stable_id` reintroduced by a future change — must never get the
     // chance to serve traffic; the process exits non-zero here instead.
     let storage_backend =
-        atlas_server::reg5::storage_backend_from_env().map_err(|e| anyhow::anyhow!("{e}"))?;
+        atlas_server::reg5::storage_backend_from_env(&atlas_core::config::ProcessEnv)
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     if let Some(exit_code) = atlas_server::startup::run_registry_gate(
         atlas_server::reg5::reg5_component_entries(storage_backend),
@@ -31,7 +32,8 @@ async fn main() -> Result<()> {
         std::process::exit(exit_code);
     }
 
-    let cfg = atlas_server::config::ServerConfig::from_env().map_err(|e| anyhow::anyhow!("{e}"))?;
+    let cfg = atlas_server::config::ServerConfig::from_env(&atlas_core::config::ProcessEnv)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     info!("connecting to database");
     let db = atlas_postgres::connect(&cfg.postgres).await?;
@@ -49,18 +51,16 @@ async fn main() -> Result<()> {
     .await
     .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    let port: u16 = std::env::var("ATLAS_PORT")
-        .ok()
-        .and_then(|p| p.parse().ok())
-        .unwrap_or(8080);
+    let port: u16 = atlas_server::startup::read_port(&atlas_core::config::ProcessEnv, 8080);
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
     info!("atlas_server listening on {addr}");
 
-    let state = atlas_server::state::AppState::new(db.clone(), &cfg)
-        .await
-        .map_err(|e| anyhow::anyhow!("AppState::new: {e}"))?;
+    let state =
+        atlas_server::state::AppState::new(db.clone(), &cfg, &atlas_core::config::ProcessEnv)
+            .await
+            .map_err(|e| anyhow::anyhow!("AppState::new: {e}"))?;
 
     // Spawn the webhook dispatcher as a background task.
     //

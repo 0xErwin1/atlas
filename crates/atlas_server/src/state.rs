@@ -1,3 +1,4 @@
+use atlas_core::config::EnvSource;
 use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement};
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -6,7 +7,7 @@ use atlas_acta::ports::attachment_store::AttachmentStore;
 use atlas_acta::semantic_search::EmbeddingProvider;
 
 use crate::config::{
-    DispatcherConfig, EmbeddingProviderKind, SearchConfig, ServerConfig, env_var_nonempty,
+    DispatcherConfig, EmbeddingProviderKind, SearchConfig, ServerConfig, env_var_nonempty, read_env,
 };
 use crate::crypto::WebhookCrypto;
 use crate::embeddings::{DeterministicEmbeddingProvider, OpenAiCompatibleEmbeddingProvider};
@@ -51,18 +52,20 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub async fn new(db: DatabaseConnection, cfg: &ServerConfig) -> Result<Self, anyhow::Error> {
-        let session_ttl_hours = read_env_i64("ATLAS_SESSION_TTL_HOURS", 168);
-        let session_max_ttl_hours = read_env_i64("ATLAS_SESSION_MAX_TTL_HOURS", 720);
-        let idempotency_retention_hours = read_env_i64("ATLAS_IDEMPOTENCY_RETENTION_HOURS", 24);
+    pub async fn new(
+        db: DatabaseConnection,
+        cfg: &ServerConfig,
+        source: &dyn EnvSource,
+    ) -> Result<Self, anyhow::Error> {
+        let session_ttl_hours = read_env(source, "ATLAS_SESSION_TTL_HOURS", 168);
+        let session_max_ttl_hours = read_env(source, "ATLAS_SESSION_MAX_TTL_HOURS", 720);
+        let idempotency_retention_hours = read_env(source, "ATLAS_IDEMPOTENCY_RETENTION_HOURS", 24);
 
-        let cookie_secure = std::env::var("ATLAS_COOKIE_SECURE")
-            .map(|s| s != "false" && s != "0")
-            .unwrap_or(true);
+        let cookie_secure = resolve_cookie_secure(source);
 
-        let anchor_interval = read_env_u32("ATLAS_ANCHOR_INTERVAL", 50).max(2);
+        let anchor_interval = read_env::<u32>(source, "ATLAS_ANCHOR_INTERVAL", 50).max(2);
 
-        let attachments = build_attachment_store().await?;
+        let attachments = build_attachment_store(source).await?;
         let webhook_crypto = Arc::new(WebhookCrypto::new(&cfg.webhook_enc_key));
 
         let rate_limiter = cfg.rate_limit.enabled.then(|| {
@@ -75,7 +78,7 @@ impl AppState {
         let embedding_provider = build_embedding_provider(cfg)?;
 
         let upload_allowed_extensions =
-            parse_upload_allowed_extensions(std::env::var("ATLAS_UPLOAD_ALLOWED_EXTENSIONS").ok());
+            parse_upload_allowed_extensions(source.get("ATLAS_UPLOAD_ALLOWED_EXTENSIONS"));
 
         Ok(Self {
             db: Arc::new(db),
@@ -104,14 +107,16 @@ impl AppState {
     /// `ATLAS_WEBHOOK_ENC_KEY` set. The attachment store uses a temp directory
     /// unless `ATLAS_ATTACHMENT_ROOT` is set.
     pub async fn for_test(db: DatabaseConnection) -> Result<Self, anyhow::Error> {
-        let anchor_interval = read_env_u32("ATLAS_ANCHOR_INTERVAL", 50).max(2);
+        let source = atlas_core::config::ProcessEnv;
+        let anchor_interval = read_env::<u32>(&source, "ATLAS_ANCHOR_INTERVAL", 50).max(2);
 
-        let attachment_root = env_var_nonempty("ATLAS_ATTACHMENT_ROOT").unwrap_or_else(|| {
-            std::env::temp_dir()
-                .join("atlas-test-attachments")
-                .to_string_lossy()
-                .to_string()
-        });
+        let attachment_root =
+            env_var_nonempty(&source, "ATLAS_ATTACHMENT_ROOT").unwrap_or_else(|| {
+                std::env::temp_dir()
+                    .join("atlas-test-attachments")
+                    .to_string_lossy()
+                    .to_string()
+            });
 
         let attachments = DiskAttachmentStore::new(&attachment_root)
             .await
@@ -250,32 +255,94 @@ fn build_embedding_provider(
     Ok(Some(provider))
 }
 
-async fn build_attachment_store() -> Result<Arc<dyn AttachmentStore>, anyhow::Error> {
+/// Resolves `ATLAS_COOKIE_SECURE` through `source`, matching V1's exact
+/// truthiness rule: any value other than `"false"`/`"0"` (including a set but
+/// empty string) counts as secure, and an unset variable defaults to secure.
+pub fn resolve_cookie_secure(source: &dyn EnvSource) -> bool {
+    source
+        .get("ATLAS_COOKIE_SECURE")
+        .map(|s| s != "false" && s != "0")
+        .unwrap_or(true)
+}
+
+/// The resolved attachment-backend choice and its settings, read from
+/// `ATLAS_ATTACHMENT_BACKEND` and its dependent variables.
+///
+/// Split out of [`build_attachment_store`] so each variable's binding is
+/// provable — by the by-name environment-binding characterization test
+/// (`tests/env_binding.rs`) — without touching the filesystem or building a
+/// network client.
+#[derive(Debug, PartialEq, Eq)]
+pub enum AttachmentBackendChoice {
+    Disk {
+        root: String,
+    },
+    S3 {
+        bucket: String,
+        endpoint: String,
+        access_key_id: String,
+        secret_access_key: String,
+        region: String,
+    },
+}
+
+/// Reads `ATLAS_ATTACHMENT_BACKEND` and its dependent variables through
+/// `source`, without touching the filesystem or a network client.
+pub fn resolve_attachment_backend(
+    source: &dyn EnvSource,
+) -> Result<AttachmentBackendChoice, anyhow::Error> {
     let backend =
-        env_var_nonempty("ATLAS_ATTACHMENT_BACKEND").unwrap_or_else(|| "disk".to_string());
+        env_var_nonempty(source, "ATLAS_ATTACHMENT_BACKEND").unwrap_or_else(|| "disk".to_string());
 
     match backend.as_str() {
-        "disk" => {
-            let attachment_root = env_var_nonempty("ATLAS_ATTACHMENT_ROOT")
-                .unwrap_or_else(|| "./data/attachments".to_string());
+        "disk" => Ok(AttachmentBackendChoice::Disk {
+            root: env_var_nonempty(source, "ATLAS_ATTACHMENT_ROOT")
+                .unwrap_or_else(|| "./data/attachments".to_string()),
+        }),
+        "s3" => Ok(AttachmentBackendChoice::S3 {
+            bucket: require_env(source, "ATLAS_S3_BUCKET")?,
+            endpoint: require_env(source, "ATLAS_S3_ENDPOINT")?,
+            access_key_id: require_env(source, "ATLAS_S3_ACCESS_KEY_ID")?,
+            secret_access_key: require_env(source, "ATLAS_S3_SECRET_ACCESS_KEY")?,
+            region: env_var_nonempty(source, "ATLAS_S3_REGION")
+                .unwrap_or_else(|| "auto".to_string()),
+        }),
+        other => Err(anyhow::anyhow!(
+            "unknown ATLAS_ATTACHMENT_BACKEND '{other}'; expected 'disk' or 's3'"
+        )),
+    }
+}
 
-            let store = DiskAttachmentStore::new(&attachment_root)
-                .await
-                .map_err(|e| {
-                    anyhow::anyhow!(
-                        "cannot initialise attachment store at {attachment_root}: {e:?}"
-                    )
-                })?;
+/// Builds the attachment store selected by `ATLAS_ATTACHMENT_BACKEND`.
+///
+/// Defaults to the filesystem backend (`disk`) so an unconfigured deployment keeps
+/// working. The `s3` backend targets any S3-compatible object store (e.g. Cloudflare
+/// R2) and requires its connection variables; a missing required variable fails
+/// startup with a message that names the variable but never echoes a secret value.
+async fn build_attachment_store(
+    source: &dyn EnvSource,
+) -> Result<Arc<dyn AttachmentStore>, anyhow::Error> {
+    match resolve_attachment_backend(source)? {
+        AttachmentBackendChoice::Disk { root } => {
+            let store = DiskAttachmentStore::new(&root).await.map_err(|e| {
+                anyhow::anyhow!("cannot initialise attachment store at {root}: {e:?}")
+            })?;
 
             Ok(Arc::new(store))
         }
-        "s3" => {
+        AttachmentBackendChoice::S3 {
+            bucket,
+            endpoint,
+            access_key_id,
+            secret_access_key,
+            region,
+        } => {
             let config = S3Config {
-                bucket: require_env("ATLAS_S3_BUCKET")?,
-                endpoint: require_env("ATLAS_S3_ENDPOINT")?,
-                access_key_id: require_env("ATLAS_S3_ACCESS_KEY_ID")?,
-                secret_access_key: require_env("ATLAS_S3_SECRET_ACCESS_KEY")?,
-                region: env_var_nonempty("ATLAS_S3_REGION").unwrap_or_else(|| "auto".to_string()),
+                bucket,
+                endpoint,
+                access_key_id,
+                secret_access_key,
+                region,
             };
 
             let store = S3AttachmentStore::new(config)
@@ -283,32 +350,16 @@ async fn build_attachment_store() -> Result<Arc<dyn AttachmentStore>, anyhow::Er
 
             Ok(Arc::new(store))
         }
-        other => Err(anyhow::anyhow!(
-            "unknown ATLAS_ATTACHMENT_BACKEND '{other}'; expected 'disk' or 's3'"
-        )),
     }
 }
 
-/// Reads a required environment variable, failing with a message that names the
-/// variable. The variable's value is never included in the error so a missing
-/// secret cannot leak through startup logs.
-fn require_env(var: &str) -> Result<String, anyhow::Error> {
-    std::env::var(var)
-        .map_err(|_| anyhow::anyhow!("ATLAS_ATTACHMENT_BACKEND=s3 requires {var} to be set"))
-}
-
-fn read_env_i64(var: &str, default: i64) -> i64 {
-    std::env::var(var)
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(default)
-}
-
-fn read_env_u32(var: &str, default: u32) -> u32 {
-    std::env::var(var)
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(default)
+/// Reads a required environment variable through `source`, failing with a
+/// message that names the variable. The variable's value is never included
+/// in the error so a missing secret cannot leak through startup logs.
+fn require_env(source: &dyn EnvSource, var: &str) -> Result<String, anyhow::Error> {
+    source
+        .get(var)
+        .ok_or_else(|| anyhow::anyhow!("ATLAS_ATTACHMENT_BACKEND=s3 requires {var} to be set"))
 }
 
 /// Normalizes a single extension entry: trims surrounding whitespace, strips a
@@ -329,7 +380,7 @@ fn normalize_extension(raw: &str) -> Option<String> {
 /// Splits on `,`, normalizes each entry (trim, strip one leading `.`, lowercase),
 /// and drops empties. Returns `None` when the raw value is absent or the
 /// resulting set is empty, so an unset or blank value applies no positive gate.
-fn parse_upload_allowed_extensions(raw: Option<String>) -> Option<Arc<HashSet<String>>> {
+pub fn parse_upload_allowed_extensions(raw: Option<String>) -> Option<Arc<HashSet<String>>> {
     let raw = raw?;
 
     let set: HashSet<String> = raw.split(',').filter_map(normalize_extension).collect();
