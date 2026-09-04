@@ -16,7 +16,11 @@ thiserror.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+atlas_core = { path = ".", features = ["test-support"] }
 serde_json.workspace = true
+
+[features]
+test-support = []
 
 [lints]
 workspace = true

@@ -679,6 +679,7 @@ name = "atlas_core"
 version = "0.0.0"
 dependencies = [
  "async-trait",
+ "atlas_core",
  "bytes",
  "chrono",
  "fractional_index",

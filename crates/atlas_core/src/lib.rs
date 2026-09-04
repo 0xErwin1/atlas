@@ -13,6 +13,7 @@ pub mod capabilities;
 pub mod config;
 pub mod error;
 pub mod ids;
+pub mod ops;
 pub mod position;
 pub mod principal;
 pub mod registry;

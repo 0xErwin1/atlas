@@ -14,7 +14,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use atlas_core::registry::{ComponentEntry, ComponentId, WorkerId, build};
+use atlas_core::registry::{ComponentEntry, ComponentId, ComponentKind, WorkerId, build};
 use atlas_server::reg5::{StorageBackend, reg5_component_entries};
 
 fn component(value: &str) -> ComponentId {
@@ -240,5 +240,62 @@ fn bind_refuses_when_a_declared_worker_has_no_implementation() {
                 .iter()
                 .any(|error| matches!(error, atlas_core::registry::WorkerBindError::UnboundWorker { worker } if *worker == self::worker(id)))
         );
+    }
+}
+
+/// `Registry::readiness_components()` (E11-S2/PR2 design D4.2) derives the
+/// mandatory readiness set from `diagnostics.readiness == true` over the
+/// real REG-5 entries, for both storage backends — a non-vacuous, real-data
+/// proof (spec Acceptance item 8) alongside the synthetic tests in
+/// `atlas_core::registry::validated::tests`.
+#[test]
+fn readiness_components_returns_platform_custos_and_acta() {
+    for backend in [StorageBackend::Filesystem, StorageBackend::S3] {
+        let registry = build(reg5_component_entries(backend)).unwrap_or_else(|errors| {
+            panic!("REG-5 entries must build for {backend:?}: {errors:?}")
+        });
+
+        let mandatory: Vec<String> = registry
+            .readiness_components()
+            .into_iter()
+            .map(|id| id.as_str().to_string())
+            .collect();
+
+        assert_eq!(
+            mandatory,
+            vec!["platform", "custos", "acta"],
+            "REG-5's readiness-mandatory set for {backend:?} must be exactly platform, custos, acta"
+        );
+    }
+}
+
+/// The optional-Module readiness pin (E11-S2/PR2 design R6): every optional
+/// Module in REG-5 declares `diagnostics.readiness == false`. Deriving the
+/// readiness-mandatory set from `diagnostics.readiness` would silently
+/// admit an optional Module the moment one flips this flag — this test pins
+/// today's state against that regression, revisitable in E8 rather than a
+/// permanent structural guarantee.
+#[test]
+fn every_optional_module_declares_no_readiness() {
+    for backend in [StorageBackend::Filesystem, StorageBackend::S3] {
+        let entries = reg5_component_entries(backend);
+
+        let modules: Vec<&ComponentEntry> = entries
+            .iter()
+            .filter(|entry| entry.identity.kind == ComponentKind::Module)
+            .collect();
+        assert!(
+            !modules.is_empty(),
+            "REG-5 for {backend:?} must declare at least one Module for this pin to be non-vacuous"
+        );
+
+        for module in modules {
+            assert!(
+                !module.diagnostics.readiness,
+                "optional Module `{}` must declare diagnostics.readiness == false for {backend:?} \
+                 — otherwise it would silently join the readiness-mandatory set",
+                module.identity.stable_id.as_str()
+            );
+        }
     }
 }
