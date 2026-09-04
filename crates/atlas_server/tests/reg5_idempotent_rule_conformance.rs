@@ -910,11 +910,12 @@ fn true_and_false_counts_match_the_pr4_grounding() {
     let false_count = live.len() - true_count;
 
     // `v2-e3-s4` D3 added two more `idempotent: false` entries
-    // (`/openapi.json`, `/scalar`), so the pre-S4 176 grew to 178; the
-    // `true` count (34) is unaffected — neither new route is a POST.
+    // (`/openapi.json`, `/scalar`), so the pre-S4 176 grew to 178, and
+    // E11-S3a added custos's and acta's own `/health` and `/ready`, so 178
+    // grew to 182; the `true` count (34) is unaffected — none is a POST.
     assert_eq!(true_count, 34, "expected exactly 34 idempotent:true routes");
     assert_eq!(
-        false_count, 178,
-        "expected exactly 178 idempotent:false routes"
+        false_count, 182,
+        "expected exactly 182 idempotent:false routes"
     );
 }
