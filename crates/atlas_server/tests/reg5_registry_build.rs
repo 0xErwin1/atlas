@@ -301,3 +301,37 @@ fn every_optional_module_declares_no_readiness() {
         }
     }
 }
+
+/// A pin, not a fix (E11-S3b design D1.2, T1.42): `acta`'s `workers`
+/// declaration vec already mirrors today's spawn order exactly (dispatcher,
+/// reconciler, listener, sweeper, agent), so the supervisor's intra-component
+/// start order is byte-identical to `main.rs`'s original hand-spawns with no
+/// `reg5.rs` change required.
+#[test]
+fn acta_workers_declaration_order_mirrors_todays_spawn_order() {
+    for backend in [StorageBackend::Filesystem, StorageBackend::S3] {
+        let entries = reg5_component_entries(backend);
+        let acta = entries
+            .iter()
+            .find(|entry| entry.identity.stable_id.as_str() == "acta")
+            .expect("REG-5 must declare an acta entry");
+
+        let ids: Vec<&str> = acta
+            .workers
+            .iter()
+            .map(|declaration| declaration.id.as_str())
+            .collect();
+
+        assert_eq!(
+            ids,
+            vec![
+                "acta.webhook_dispatcher",
+                "acta.attachment_reconciler",
+                "acta.live_listener",
+                "acta.presence_sweeper",
+                "acta.presence_agent",
+            ],
+            "acta's workers declaration order for {backend:?} must mirror today's spawn order"
+        );
+    }
+}

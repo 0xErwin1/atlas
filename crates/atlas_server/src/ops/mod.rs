@@ -12,6 +12,8 @@ pub mod deadline;
 pub mod meta;
 pub mod modules;
 pub mod platform;
+pub mod supervisor;
+pub mod workers;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;

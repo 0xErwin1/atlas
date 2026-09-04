@@ -22,7 +22,9 @@ use crate::registry::{ComponentId, Worker, WorkerId};
 
 /// Polls `future` to completion using a no-op waker, without spawning a
 /// runtime. Only valid for futures that never actually suspend — every
-/// future produced by the fakes in this module resolves on its first poll.
+/// future produced by the fakes in this module resolves on its first poll,
+/// except a `FakeWorker::stalls_at_start` start, which must not be driven
+/// through this helper.
 /// Crate-internal only: this slice's own `#[cfg(test)]` modules use it to
 /// drive `Readiness`/`Doctor`/`Worker` futures without `tokio`; an external
 /// `test-support` consumer (e.g. E11-S3b's `atlas_server`) already owns a
@@ -40,13 +42,26 @@ pub(crate) fn block_on<F: Future>(future: F) -> F::Output {
     }
 }
 
+/// What `FakeWorker::start` does once polled. `Completes` and `Fails`
+/// resolve on the first poll; `Stalls` never resolves (a `std::future::pending`
+/// with no runtime or timer behind it), which is how a consumer with a real
+/// runtime models a worker that ignores cancellation; `Panics` unwinds on the
+/// first poll, which models a worker whose task resolves with a panic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StartBehavior {
+    Completes,
+    Fails,
+    Stalls,
+    Panics,
+}
+
 /// A controllable `Worker`, recording an ordered `(WorkerId, event)` log so
 /// a caller (this slice's own tests, or E11-S3b's supervisor tests) can
 /// assert start/drain order and outcomes without a real runtime.
 pub struct FakeWorker {
     id: WorkerId,
     critical: bool,
-    fails_at_start: bool,
+    start_behavior: StartBehavior,
     events: Arc<Mutex<Vec<(WorkerId, &'static str)>>>,
 }
 
@@ -55,7 +70,7 @@ impl FakeWorker {
         Self {
             id,
             critical: false,
-            fails_at_start: false,
+            start_behavior: StartBehavior::Completes,
             events: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -65,8 +80,30 @@ impl FakeWorker {
         self
     }
 
+    /// `start` resolves on its first poll and records `start_failed`
+    /// instead of `started`. `false` restores the default completing start.
     pub fn fails_at_start(mut self, fails_at_start: bool) -> Self {
-        self.fails_at_start = fails_at_start;
+        self.start_behavior = if fails_at_start {
+            StartBehavior::Fails
+        } else {
+            StartBehavior::Completes
+        };
+        self
+    }
+
+    /// `start` records `start_stalled` and then never resolves, so a
+    /// supervisor draining it must cut it off at its budget. Only drive this
+    /// future from a runtime that bounds it; a no-op-waker `block_on` would
+    /// spin forever.
+    pub fn stalls_at_start(mut self) -> Self {
+        self.start_behavior = StartBehavior::Stalls;
+        self
+    }
+
+    /// `start` records `start_panicked` and then panics on its first poll,
+    /// so a supervisor observes its task resolving with a panic.
+    pub fn panics_at_start(mut self) -> Self {
+        self.start_behavior = StartBehavior::Panics;
         self
     }
 
@@ -94,13 +131,23 @@ impl Worker for FakeWorker {
         &self.id
     }
 
+    /// The `Panics` arm exists so a consumer can exercise its panic-handling
+    /// path; the panic is the fake's whole contract there, not an error case.
+    #[allow(clippy::panic)]
     async fn start(&self) {
-        let event = if self.fails_at_start {
-            "start_failed"
-        } else {
-            "started"
+        let event = match self.start_behavior {
+            StartBehavior::Completes => "started",
+            StartBehavior::Fails => "start_failed",
+            StartBehavior::Stalls => "start_stalled",
+            StartBehavior::Panics => "start_panicked",
         };
         self.lock_events().push((self.id.clone(), event));
+
+        match self.start_behavior {
+            StartBehavior::Completes | StartBehavior::Fails => {}
+            StartBehavior::Stalls => std::future::pending().await,
+            StartBehavior::Panics => panic!("fake worker panicked at start"),
+        }
     }
 
     async fn drain(&self, _remaining_budget: Duration) {
@@ -242,6 +289,50 @@ mod tests {
             vec![(
                 WorkerId::new("acta.reindex").expect("valid worker id"),
                 "start_failed"
+            )]
+        );
+    }
+
+    #[test]
+    fn fake_worker_configured_to_stall_records_the_stall_and_never_resolves_on_a_poll() {
+        let worker = FakeWorker::new(WorkerId::new("acta.reindex").expect("valid worker id"))
+            .stalls_at_start();
+        let waker = Waker::noop();
+        let mut context = Context::from_waker(waker);
+        let mut start = Box::pin(worker.start());
+
+        assert!(start.as_mut().poll(&mut context).is_pending());
+        assert!(start.as_mut().poll(&mut context).is_pending());
+        assert_eq!(
+            worker.events(),
+            vec![(
+                WorkerId::new("acta.reindex").expect("valid worker id"),
+                "start_stalled"
+            )]
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "fake worker panicked at start")]
+    fn fake_worker_configured_to_panic_panics_on_its_first_poll() {
+        let worker = FakeWorker::new(WorkerId::new("acta.reindex").expect("valid worker id"))
+            .panics_at_start();
+
+        block_on(worker.start());
+    }
+
+    #[test]
+    fn fake_worker_still_drains_on_first_poll_whatever_its_start_behavior() {
+        let worker = FakeWorker::new(WorkerId::new("acta.reindex").expect("valid worker id"))
+            .stalls_at_start();
+
+        block_on(worker.drain(Duration::from_secs(1)));
+
+        assert_eq!(
+            worker.events(),
+            vec![(
+                WorkerId::new("acta.reindex").expect("valid worker id"),
+                "drained"
             )]
         );
     }
