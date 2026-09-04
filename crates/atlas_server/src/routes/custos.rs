@@ -147,6 +147,21 @@ mod public {
     }
 }
 
+/// `GET /health`/`GET /ready` (E11-S3a design D2): custos's own diagnostics
+/// probe, unreinterpreted (SHELL-OPS-3). No auth layer, no per-route
+/// governor — a plain `component_routes!` pair, same shape as `platform`'s
+/// own `public` module.
+mod diagnostics {
+    use crate::routes::diagnostics::{custos_health, custos_ready};
+    use crate::state::AppState;
+
+    crate::component_routes! {
+        state: AppState;
+        "/health" => [ get(custos_health, exempt) ];
+        "/ready" => [ get(custos_ready, exempt) ];
+    }
+}
+
 /// Every other custos route: behind `require_authn` → `require_rate_limit` →
 /// CSRF-for-cookie-mutations today (`lib.rs`'s `protected` router, pre-PR3).
 ///
@@ -235,9 +250,10 @@ mod protected {
 /// today (see the module doc).
 pub fn router(state: AppState) -> Router {
     let public = public::router(state.clone());
+    let diagnostics = diagnostics::router(state.clone());
     let protected = super::protection::protect(protected::router(state.clone()), state);
 
-    public.merge(protected)
+    public.merge(diagnostics).merge(protected)
 }
 
 /// The union of both sub-routers' declared routes. Order-independent: the
@@ -254,19 +270,22 @@ pub fn router(state: AppState) -> Router {
 )]
 pub(crate) fn declared_routes() -> Vec<AuditedRoute> {
     let mut routes = public::declared_routes();
+    routes.extend(diagnostics::declared_routes());
     routes.extend(protected::declared_routes());
     routes
 }
 
-/// Just `login`/`activate` (`public`, above), read by
-/// `router_audit::custos_route_paths()` for T4.9's per-component mount
-/// assertion: unlike the full `declared_routes()` union, every route here is
-/// safe to probe with an unauthenticated request and a foreign method,
-/// since neither sits behind `require_authn` — a probe against a
-/// `protected` route would get 401 from that layer before ever reaching the
-/// method dispatch that would otherwise answer 405.
+/// `login`/`activate` (`public`, above) plus `health`/`ready`
+/// (`diagnostics`, above), read by `router_audit::custos_route_paths()` for
+/// T4.9's per-component mount assertion: unlike the full `declared_routes()`
+/// union, every route here is safe to probe with an unauthenticated request
+/// and a foreign method, since none sit behind `require_authn` — a probe
+/// against a `protected` route would get 401 from that layer before ever
+/// reaching the method dispatch that would otherwise answer 405.
 pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
-    public::declared_routes()
+    let mut routes = public::declared_routes();
+    routes.extend(diagnostics::declared_routes());
+    routes
 }
 
 /// `custos`'s own OpenAPI fragment (D4): exactly the paths/schemas this
@@ -275,6 +294,8 @@ pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
 #[derive(utoipa::OpenApi)]
 #[openapi(
     paths(
+        crate::routes::diagnostics::custos_health,
+        crate::routes::diagnostics::custos_ready,
         crate::routes::activate::get_activation_info,
         crate::routes::activate::post_activate,
         crate::routes::auth::login,
@@ -312,6 +333,7 @@ pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
         crate::routes::groups::list_group_members,
     ),
     components(schemas(
+        atlas_api::dtos::ComponentProbeDto,
         atlas_api::dtos::audit::AuditEntryDto,
         atlas_api::dtos::groups::AddGroupMemberRequest,
         atlas_api::dtos::groups::CreateGroupRequest,
@@ -425,13 +447,14 @@ mod tests {
         );
         assert_eq!(
             router_set.len(),
-            35,
-            "custos owns exactly 35 routes per docs/registry-route-ownership.md"
+            37,
+            "custos owns exactly 35 docs/registry-route-ownership.md routes plus the 2 \
+             health/ready probes E11-S3a design D2 added"
         );
     }
 
     /// T3.7 (declare-and-verify, D5): exhaustive over every one of custos's
-    /// 35 routes, not a curated subset (R4). Two routes
+    /// 37 routes, not a curated subset (R4). Two routes
     /// (`list_project_grants`, `list_workspace_grants`) declare
     /// `action: Some(custos::grants::read)` — the first real, non-degenerate
     /// exercise of `capability_from_action_id` (platform declared zero

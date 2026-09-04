@@ -84,7 +84,8 @@ async fn acta_protected_routes_reject_unauthenticated_requests() {
     assert_eq!(
         protected_routes.len(),
         168,
-        "acta owns 169 routes total, 1 of which (the GitHub ingest webhook) is public; \
+        "acta owns 171 routes total (169 pre-E11-S3a plus the 2 health/ready probes design \
+         D2 added), 3 of which are public (the GitHub ingest webhook and the two probes); \
          this sweep must cover all 168 protected routes, not a sample"
     );
 
@@ -99,12 +100,14 @@ async fn acta_protected_routes_reject_unauthenticated_requests() {
     let public_routes = atlas_server::router_audit::acta_route_paths();
     assert_eq!(
         public_routes.len(),
-        1,
-        "acta has exactly one public route (the GitHub ingest webhook)"
+        3,
+        "acta has 3 public routes: the GitHub ingest webhook plus the two E11-S3a \
+         health/ready probes (design D2)"
     );
     let (_, public_path_template) = *public_routes
-        .first()
-        .expect("acta has exactly one public route");
+        .iter()
+        .find(|(_, path)| *path == "/workspaces/{ws}/integrations/{integration}/events")
+        .expect("acta's GitHub ingest webhook must still be public");
 
     let namespace = v2_namespace("acta");
     let namespace = namespace.as_str();

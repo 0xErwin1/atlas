@@ -67,6 +67,7 @@ chrono.workspace = true
 futures.workspace = true
 
 [dev-dependencies]
+atlas_core = { workspace = true, features = ["test-support"] }
 atlas_test_db = { path = "../atlas_test_db" }
 atlas_client.workspace = true
 tempfile.workspace = true

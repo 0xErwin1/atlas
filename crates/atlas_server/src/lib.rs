@@ -17,6 +17,7 @@ pub mod error;
 pub mod hybrid_search;
 pub mod live;
 pub mod middleware;
+pub mod ops;
 pub mod persistence;
 pub mod platform;
 pub mod presence;

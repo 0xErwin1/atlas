@@ -143,6 +143,20 @@ mod public {
     }
 }
 
+/// `GET /health`/`GET /ready` (E11-S3a design D2): acta's own diagnostics
+/// probe, unreinterpreted (SHELL-OPS-3). No auth layer — a plain
+/// `component_routes!` pair, same shape as `custos::diagnostics`.
+mod diagnostics {
+    use crate::routes::diagnostics::{acta_health, acta_ready};
+    use crate::state::AppState;
+
+    crate::component_routes! {
+        state: AppState;
+        "/health" => [ get(acta_health, exempt) ];
+        "/ready" => [ get(acta_ready, exempt) ];
+    }
+}
+
 /// Workspace/project administration, tags, status templates, property
 /// definitions, saved searches, and task views: 47 routes, none carrying a
 /// per-route layer.
@@ -731,6 +745,7 @@ pub fn root_router() -> Router {
 /// as of PR4's `/api`-nest — see [`root_router`].
 pub fn router(state: AppState) -> Router {
     let public = public::router(state.clone());
+    let diagnostics = diagnostics::router(state.clone());
     let protected = workspace_admin::router(state.clone())
         .merge(boards_tasks::router(state.clone()))
         .merge(documents_folders::router(state.clone()))
@@ -739,7 +754,7 @@ pub fn router(state: AppState) -> Router {
         .merge(layered::router(state.clone()));
     let protected = super::protection::protect(protected, state);
 
-    public.merge(protected)
+    public.merge(diagnostics).merge(protected)
 }
 
 /// The union of every sub-router's declared routes. Order-independent: the
@@ -756,6 +771,7 @@ pub fn router(state: AppState) -> Router {
 )]
 pub(crate) fn declared_routes() -> Vec<AuditedRoute> {
     let mut routes = public::declared_routes();
+    routes.extend(diagnostics::declared_routes());
     routes.extend(workspace_admin::declared_routes());
     routes.extend(boards_tasks::declared_routes());
     routes.extend(documents_folders::declared_routes());
@@ -776,7 +792,9 @@ pub(crate) fn declared_routes() -> Vec<AuditedRoute> {
 /// entry at all (see the module doc), so they are not candidates here
 /// either way.
 pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
-    public::declared_routes()
+    let mut routes = public::declared_routes();
+    routes.extend(diagnostics::declared_routes());
+    routes
 }
 
 /// The declared routes behind `require_authn` (D6): every sub-router's
@@ -801,6 +819,8 @@ pub(crate) fn protected_declared_routes() -> Vec<AuditedRoute> {
 #[derive(utoipa::OpenApi)]
 #[openapi(
     paths(
+        crate::routes::diagnostics::acta_health,
+        crate::routes::diagnostics::acta_ready,
         crate::routes::workspaces::create_workspace,
         crate::routes::workspaces::list_workspaces,
         crate::routes::workspaces::get_workspace,
@@ -972,6 +992,7 @@ pub(crate) fn protected_declared_routes() -> Vec<AuditedRoute> {
         crate::routes::integrations_ingest::ingest_github_event,
     ),
     components(schemas(
+        atlas_api::dtos::ComponentProbeDto,
         atlas_api::dtos::boards_tasks::ActivityEntryDto,
         atlas_api::dtos::documents::ActorDto,
         atlas_api::dtos::boards_tasks::AddAssigneeRequest,
@@ -1187,8 +1208,9 @@ mod tests {
         );
         assert_eq!(
             router_set.len(),
-            169,
-            "acta owns exactly 169 routes per docs/registry-route-ownership.md"
+            171,
+            "acta owns exactly 169 docs/registry-route-ownership.md routes plus the 2 \
+             health/ready probes E11-S3a design D2 added"
         );
     }
 
@@ -1273,7 +1295,7 @@ mod tests {
         let routes = declared_routes();
         assert_eq!(
             routes.len(),
-            169,
+            171,
             "T4.7 must audit every acta route, not a sample"
         );
 

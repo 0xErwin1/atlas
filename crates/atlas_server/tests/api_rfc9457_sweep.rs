@@ -269,9 +269,31 @@ async fn every_declared_route_answers_with_a_conformant_problem_body() {
                     "/scalar".to_string(),
                     "unauthenticated GET, no path parameter, no request body — nothing in the request can be varied to provoke a 4xx/5xx"
                 ),
+                (
+                    HttpMethod::Get,
+                    "/health".to_string(),
+                    "unauthenticated GET, no path parameter, no request body — nothing in the request can be varied to provoke a 4xx/5xx"
+                ),
+                (
+                    HttpMethod::Get,
+                    "/ready".to_string(),
+                    "unauthenticated GET, no path parameter, no request body — nothing in the request can be varied to provoke a 4xx/5xx"
+                ),
+                (
+                    HttpMethod::Get,
+                    "/health".to_string(),
+                    "unauthenticated GET, no path parameter, no request body — nothing in the request can be varied to provoke a 4xx/5xx"
+                ),
+                (
+                    HttpMethod::Get,
+                    "/ready".to_string(),
+                    "unauthenticated GET, no path parameter, no request body — nothing in the request can be varied to provoke a 4xx/5xx"
+                ),
             ],
             "the excluded-route set drifted from the expected, hand-justified \
-         five — a new exclusion must be justified here, not silently added"
+         nine (platform's five root probes, then custos's and acta's own \
+         `/health` and `/ready`) — a new exclusion must be justified here, \
+         not silently added"
         );
         // INV-SET: never a `.len()` comparison — assert set equality in both
         // directions and name the offending `(method, path)` entries on failure.

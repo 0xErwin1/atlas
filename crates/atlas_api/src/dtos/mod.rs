@@ -135,6 +135,43 @@ pub struct UserMembershipDto {
     pub role: String,
 }
 
+/// Response from root `GET /ready` (E11-S3a design D3): the aggregate result
+/// of `atlas_core::ops::readiness::aggregate_readiness` over the mandatory
+/// component set. `ready: false` names every not-ready component, not just
+/// the first (SH2).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct ReadinessReportDto {
+    pub ready: bool,
+    pub not_ready: Vec<NotReadyComponentDto>,
+}
+
+/// One not-ready mandatory component and the short, component-authored
+/// cause SHELL-OPS-2 requires. Never a raw error `Display`, which can carry
+/// a connection string (SHELL-CFG-2).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct NotReadyComponentDto {
+    pub component: String,
+    pub reason: String,
+}
+
+/// Response from `GET /api/v2/{component}/health` and
+/// `GET /api/v2/{component}/ready` (custos/acta, E11-S3a design D3): that
+/// component's own `Health`/`Readiness` result, rendered exactly — the
+/// Shell never reinterprets or aggregates it (SHELL-OPS-3,
+/// INV-NO-REINTERPRET). `status` is one of `"ready"`, `"not_ready"` (the
+/// readiness probe) or `"ok"`, `"degraded"`, `"down"` (the health probe);
+/// `reason` is present only for `"not_ready"`, `"degraded"` and `"down"`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct ComponentProbeDto {
+    pub component: String,
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
 /// Request body for `POST /api/users/{user_id}/system-admin`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
@@ -587,6 +624,86 @@ pub struct ApiKeyGrantDto {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn readiness_report_dto_serializes_to_the_exact_sh2_shape() {
+        let report = ReadinessReportDto {
+            ready: false,
+            not_ready: vec![NotReadyComponentDto {
+                component: "custos".to_string(),
+                reason: "database is unreachable".to_string(),
+            }],
+        };
+
+        let json = serde_json::to_string(&report).expect("serialize");
+
+        assert_eq!(
+            json,
+            r#"{"ready":false,"not_ready":[{"component":"custos","reason":"database is unreachable"}]}"#
+        );
+    }
+
+    #[test]
+    fn component_probe_dto_omits_reason_when_ready() {
+        let probe = ComponentProbeDto {
+            component: "acta".to_string(),
+            status: "ready".to_string(),
+            reason: None,
+        };
+
+        let json = serde_json::to_string(&probe).expect("serialize");
+
+        assert_eq!(json, r#"{"component":"acta","status":"ready"}"#);
+    }
+
+    #[test]
+    fn component_probe_dto_carries_a_reason_when_not_ready() {
+        let probe = ComponentProbeDto {
+            component: "acta".to_string(),
+            status: "not_ready".to_string(),
+            reason: Some("mandatory storage module is not ready".to_string()),
+        };
+
+        let json = serde_json::to_string(&probe).expect("serialize");
+
+        assert_eq!(
+            json,
+            r#"{"component":"acta","status":"not_ready","reason":"mandatory storage module is not ready"}"#
+        );
+    }
+
+    #[test]
+    fn component_probe_dto_omits_reason_when_health_is_ok() {
+        let probe = ComponentProbeDto {
+            component: "custos".to_string(),
+            status: "ok".to_string(),
+            reason: None,
+        };
+
+        let json = serde_json::to_string(&probe).expect("serialize");
+
+        assert_eq!(json, r#"{"component":"custos","status":"ok"}"#);
+    }
+
+    #[test]
+    fn component_probe_dto_carries_a_reason_for_degraded_and_down_health() {
+        for status in ["degraded", "down"] {
+            let probe = ComponentProbeDto {
+                component: "custos".to_string(),
+                status: status.to_string(),
+                reason: Some("pool exhausted".to_string()),
+            };
+
+            let json = serde_json::to_string(&probe).expect("serialize");
+
+            assert_eq!(
+                json,
+                format!(
+                    r#"{{"component":"custos","status":"{status}","reason":"pool exhausted"}}"#
+                )
+            );
+        }
+    }
 
     #[test]
     fn lifecycle_statuses_are_closed_wire_values() {
