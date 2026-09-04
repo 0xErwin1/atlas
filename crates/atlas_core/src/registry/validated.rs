@@ -52,6 +52,38 @@ impl Registry {
     pub fn startup_order(&self) -> &[ComponentId] {
         &self.startup_order
     }
+
+    /// The readiness-mandatory component set (E11-S2 design D4.2, §0.6):
+    /// every entry with `diagnostics.readiness == true`. Ordered by
+    /// `startup_order()` for the components present in it (worker-bearing
+    /// components respect dependency/capability order); every other
+    /// mandatory component — one that declares no worker yet, such as
+    /// today's `platform`/`custos` — is placed ahead of them, in
+    /// `entries()` insertion order. This split is a stated scope note, not
+    /// a permanent rule: once every mandatory component declares a worker,
+    /// `startup_order()` alone determines the whole result.
+    pub fn readiness_components(&self) -> Vec<ComponentId> {
+        let mandatory: Vec<&ComponentId> = self
+            .entries
+            .iter()
+            .filter(|entry| entry.diagnostics.readiness)
+            .map(|entry| &entry.identity.stable_id)
+            .collect();
+
+        let mut ordered: Vec<ComponentId> = mandatory
+            .iter()
+            .filter(|id| !self.startup_order.contains(id))
+            .map(|id| (*id).clone())
+            .collect();
+
+        for id in &self.startup_order {
+            if mandatory.contains(&id) {
+                ordered.push(id.clone());
+            }
+        }
+
+        ordered
+    }
 }
 
 #[cfg(test)]
@@ -161,5 +193,100 @@ mod tests {
             .map(ComponentId::as_str)
             .collect();
         assert_eq!(order, vec!["platform", "custos", "acta"]);
+    }
+
+    fn readiness_entry(stable_id: &str, readiness: bool) -> ComponentEntry {
+        let mut entry = minimal_entry(stable_id);
+        entry.diagnostics.readiness = readiness;
+        entry
+    }
+
+    #[test]
+    fn readiness_components_uses_startup_order_when_every_mandatory_component_declares_a_worker() {
+        // "reg5-shaped synthetic entries": platform, custos and acta all
+        // declare a worker and are all readiness-mandatory, inserted out of
+        // dependency order to prove the result is derived from
+        // `startup_order()`, not from insertion order.
+        let entries = vec![
+            readiness_entry("acta", true),
+            readiness_entry("custos", true),
+            readiness_entry("platform", true),
+        ];
+        let index: BTreeMap<ComponentId, usize> = entries
+            .iter()
+            .enumerate()
+            .map(|(position, entry)| (entry.identity.stable_id.clone(), position))
+            .collect();
+        let migration_order = vec![
+            ComponentId::new("platform").expect("valid component id"),
+            ComponentId::new("custos").expect("valid component id"),
+            ComponentId::new("acta").expect("valid component id"),
+        ];
+        let startup_order = migration_order.clone();
+
+        let registry = Registry::new(entries, index, migration_order, startup_order);
+
+        let mandatory: Vec<String> = registry
+            .readiness_components()
+            .into_iter()
+            .map(|id| id.as_str().to_string())
+            .collect();
+        assert_eq!(mandatory, vec!["platform", "custos", "acta"]);
+    }
+
+    #[test]
+    fn readiness_components_places_workerless_mandatory_components_ahead_of_worker_bearing_ones() {
+        // Today's real REG-5 shape: `platform`/`custos` are
+        // readiness-mandatory but declare no worker (absent from
+        // `startup_order()`), while `acta` declares one.
+        let entries = vec![
+            readiness_entry("platform", true),
+            readiness_entry("custos", true),
+            readiness_entry("acta", true),
+        ];
+        let index: BTreeMap<ComponentId, usize> = entries
+            .iter()
+            .enumerate()
+            .map(|(position, entry)| (entry.identity.stable_id.clone(), position))
+            .collect();
+        let migration_order = vec![
+            ComponentId::new("platform").expect("valid component id"),
+            ComponentId::new("custos").expect("valid component id"),
+            ComponentId::new("acta").expect("valid component id"),
+        ];
+        let startup_order = vec![ComponentId::new("acta").expect("valid component id")];
+
+        let registry = Registry::new(entries, index, migration_order, startup_order);
+
+        let mandatory: Vec<String> = registry
+            .readiness_components()
+            .into_iter()
+            .map(|id| id.as_str().to_string())
+            .collect();
+        assert_eq!(mandatory, vec!["platform", "custos", "acta"]);
+    }
+
+    #[test]
+    fn readiness_components_excludes_non_mandatory_entries() {
+        let entries = vec![
+            readiness_entry("platform", true),
+            readiness_entry("storage.filesystem", false),
+        ];
+        let index: BTreeMap<ComponentId, usize> = entries
+            .iter()
+            .enumerate()
+            .map(|(position, entry)| (entry.identity.stable_id.clone(), position))
+            .collect();
+        let migration_order = vec![ComponentId::new("platform").expect("valid component id")];
+        let startup_order = Vec::new();
+
+        let registry = Registry::new(entries, index, migration_order, startup_order);
+
+        let mandatory: Vec<String> = registry
+            .readiness_components()
+            .into_iter()
+            .map(|id| id.as_str().to_string())
+            .collect();
+        assert_eq!(mandatory, vec!["platform"]);
     }
 }

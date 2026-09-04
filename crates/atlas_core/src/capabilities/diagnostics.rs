@@ -61,10 +61,12 @@ pub struct DoctorFinding {
 }
 
 /// Reports whether a component is operational, never failing (SHELL-OPS-1).
-#[async_trait]
+/// Synchronous by construction: health MUST NOT perform I/O
+/// (SHELL-OPS-1/SHELL-OPS-3), so no implementation can `await` a database
+/// round-trip, an HTTP call, or a timer from inside `health()`.
 pub trait Health: Send + Sync {
     /// Returns the current health status.
-    async fn health(&self) -> HealthStatus;
+    fn health(&self) -> HealthStatus;
 }
 
 /// Reports whether a component is ready to serve traffic, never failing.
@@ -132,9 +134,8 @@ mod tests {
 
     struct StubComponent;
 
-    #[async_trait]
     impl Health for StubComponent {
-        async fn health(&self) -> HealthStatus {
+        fn health(&self) -> HealthStatus {
             HealthStatus::Down {
                 reason: "internal check failed".to_string(),
             }
@@ -179,7 +180,7 @@ mod tests {
     fn health_degrades_instead_of_erroring_on_internal_failure() {
         let component: Box<dyn Health> = Box::new(StubComponent);
 
-        let status = block_on(component.health());
+        let status = component.health();
 
         assert_eq!(
             status,
