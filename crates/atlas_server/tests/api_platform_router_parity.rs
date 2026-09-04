@@ -2,7 +2,7 @@
 
 mod support;
 
-use atlas_server::router_audit::{mounted_path, namespaces_for};
+use atlas_server::router_audit::{mounted_path, v2_namespace};
 
 /// R3 (`v2-e3-s2-pr2-platform-router`): proves the five routes moved out of
 /// `lib.rs::app()` into `routes::platform::router()` keep their pre-refactor
@@ -12,14 +12,14 @@ use atlas_server::router_audit::{mounted_path, namespaces_for};
 ///
 /// `/health`, `/ready`, `/version` must answer without authentication
 /// (mounted, never 401). They are root-level (`router_audit::ROOT_LEVEL_PATHS`),
-/// served once outside both nests, so they are probed once. `/me/ui-state`
+/// served once outside the nest, so they are probed once. `/me/ui-state`
 /// (GET and PUT) and `/meta` must reject an unauthenticated request with
-/// exactly 401 at every namespace in `namespaces_for("platform")`
-/// (`/api` and `/api/v2/platform`, `v2-e3-s4` PR7, D10),
-/// proving `require_authn` still sits in front of them at both mounts. Both
-/// 404 and 405 count as "not served": a 405 means the path is mounted but
-/// not for this method, which is exactly the kind of drift a
-/// hand-reconstructed layer stack could introduce silently.
+/// exactly 401 at platform's own `/api/v2/platform` mount (`v2-e3-s4` PR7,
+/// D10, collapsed to one mount by `v2-e3-s7` D1/U2), proving `require_authn`
+/// still sits in front of them. Both 404 and 405 count as "not served": a
+/// 405 means the path is mounted but not for this method, which is exactly
+/// the kind of drift a hand-reconstructed layer stack could introduce
+/// silently.
 #[tokio::test]
 async fn platform_routes_keep_pre_refactor_mount_and_auth_posture() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -51,19 +51,26 @@ async fn platform_routes_keep_pre_refactor_mount_and_auth_posture() {
         (reqwest::Method::GET, "/meta"),
     ];
 
-    for namespace in namespaces_for("platform") {
-        let namespace = namespace.as_str();
-        for (method, relative) in PROTECTED_ROUTES {
-            let path = mounted_path(namespace, relative);
-            let status = send(&http, method.clone(), server.base_url(), &path).await;
+    let namespace = v2_namespace("platform");
+    let mut examined_protected_routes = 0usize;
 
-            assert_eq!(
-                status, 401,
-                "namespace {namespace}: protected route {method} {path} must reject an \
-                 unauthenticated request, got {status}"
-            );
-        }
+    for (method, relative) in PROTECTED_ROUTES {
+        let path = mounted_path(&namespace, relative);
+        let status = send(&http, method.clone(), server.base_url(), &path).await;
+
+        assert_eq!(
+            status, 401,
+            "namespace {namespace}: protected route {method} {path} must reject an \
+             unauthenticated request, got {status}"
+        );
+        examined_protected_routes += 1;
     }
+
+    assert!(
+        examined_protected_routes > 0,
+        "platform_routes_keep_pre_refactor_mount_and_auth_posture must examine at least one \
+         protected route at {namespace}, or its assertions pass vacuously"
+    );
 
     db.teardown().await;
 }

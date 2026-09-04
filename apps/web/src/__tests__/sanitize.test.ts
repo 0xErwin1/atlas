@@ -142,4 +142,13 @@ describe('safeUrl (ATL-83)', () => {
     expect(safeUrl('   ')).toBeNull();
     expect(safeUrl('\t\n')).toBeNull();
   });
+
+  it('rewrites a validated V1 attachment path to its V2 form and keeps V2 paths as they are', () => {
+    expect(safeUrl('/api/workspaces/acme/attachments/a/content')).toBe(
+      '/api/v2/acta/workspaces/acme/attachments/a/content',
+    );
+    expect(safeUrl('/api/v2/acta/workspaces/acme/attachments/a/content')).toBe(
+      '/api/v2/acta/workspaces/acme/attachments/a/content',
+    );
+  });
 });

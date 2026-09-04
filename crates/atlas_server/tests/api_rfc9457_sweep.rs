@@ -10,7 +10,6 @@ mod support;
 use std::collections::HashSet;
 
 use atlas_core::registry::HttpMethod;
-use atlas_server::router_audit::mounted_path;
 use support::route_matrix::route_matrix;
 
 /// See `tests/api_401_sweep.rs`'s identical helper. Exhaustive by
@@ -94,15 +93,11 @@ fn classify(method: HttpMethod, path: &str, is_public: bool) -> Provocation {
 /// `x-request-id` header the test itself sent (proving `problem_stamp`
 /// actually threads the two together, not two independently-generated
 /// values that happen to both exist).
-/// T5.11/T5.12/T7.12 (`v2-e3-s4` PR5/PR7, D1/D10): namespace-parametrized
-/// over each route's own two mounts (`route_matrix()`'s
-/// `RouteMatrixEntry::namespaces()`, never a flat `NAMESPACES` pair) from
-/// one data source (`route_matrix()`); a conformance failure at one
-/// namespace but not the other names `(namespace, method, path)`, so the
-/// failing mount is never ambiguous. The outer loop runs exactly two passes
-/// (V1, then each entry's own V2 mount) so the per-pass exhaustiveness
-/// assertions below still cover the whole matrix once per pass, even though
-/// the V2 namespace differs per entry's owning component.
+/// T5.11/T5.12/T7.12 (`v2-e3-s4` PR5/PR7, D1/D10), collapsed to one mount by
+/// `v2-e3-s7` (D1/U2): data-driven over `route_matrix()`, each entry probed
+/// at its own `mounted()` (`/api/v2/<component>`) mount; `INV-NONVACUOUS`
+/// (gate 7) asserts the matrix examined is non-empty, so a degenerate
+/// collapse that iterated zero routes would fail loudly.
 #[tokio::test]
 async fn every_declared_route_answers_with_a_conformant_problem_body() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -111,20 +106,23 @@ async fn every_declared_route_answers_with_a_conformant_problem_body() {
 
     let ws_slug = "rfc9457-sweep-no-such-workspace";
     let matrix = route_matrix();
+    assert!(
+        !matrix.is_empty(),
+        "the sweep must examine at least one declared route, or its assertions pass vacuously"
+    );
 
-    for pass in 0..2 {
-        let pass_label = if pass == 0 {
-            "V1 (canonical namespace)"
-        } else {
-            "V2 (per-component namespace)"
-        };
+    {
         let mut excluded = Vec::new();
         let mut provoked_or_excluded: HashSet<(HttpMethod, String)> = HashSet::new();
 
         for entry in &matrix {
-            let namespace = &entry.namespaces()[pass];
+            let namespace = atlas_server::router_audit::v2_namespace(&entry.component);
             let path = entry.path_template.replace("{ws}", ws_slug);
-            let url = format!("{}{}", server.base_url(), mounted_path(namespace, &path));
+            let url = format!(
+                "{}{}",
+                server.base_url(),
+                atlas_server::router_audit::mounted_path(&namespace, &path)
+            );
 
             let provocation = classify(entry.method, &path, entry.is_public);
 
@@ -272,7 +270,7 @@ async fn every_declared_route_answers_with_a_conformant_problem_body() {
                     "unauthenticated GET, no path parameter, no request body — nothing in the request can be varied to provoke a 4xx/5xx"
                 ),
             ],
-            "pass {pass_label}: the excluded-route set drifted from the expected, hand-justified \
+            "the excluded-route set drifted from the expected, hand-justified \
          five — a new exclusion must be justified here, not silently added"
         );
         // INV-SET: never a `.len()` comparison — assert set equality in both
@@ -297,7 +295,7 @@ async fn every_declared_route_answers_with_a_conformant_problem_body() {
         assert!(
             declared_but_not_provoked_or_excluded.is_empty()
                 && provoked_or_excluded_but_not_declared.is_empty(),
-            "pass {pass_label}: the declared route set and the provoked-or-excluded route set \
+            "the declared route set and the provoked-or-excluded route set \
          disagree; declared but not provoked or excluded: \
          {declared_but_not_provoked_or_excluded:?}; provoked or excluded but not declared: \
          {provoked_or_excluded_but_not_declared:?}"

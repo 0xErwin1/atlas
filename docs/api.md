@@ -266,7 +266,7 @@ Most list endpoints return:
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/v1/workspaces/{ws}/search` | Unified lexical note/task search. |
-| GET | `/api/workspaces/{ws}/semantic-search` | Optional embedding-backed document/task discovery with compact hits; requires embeddings to be enabled. |
+| GET | `/api/v2/acta/workspaces/{ws}/semantic-search` | Optional embedding-backed document/task discovery with compact hits; requires embeddings to be enabled. |
 | GET | `/v1/workspaces/{ws}/tags` | List tags. |
 | POST | `/v1/workspaces/{ws}/tags` | Create tag. |
 | GET | `/v1/workspaces/{ws}/tags/used` | List task label strings currently in use. |

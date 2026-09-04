@@ -8,17 +8,16 @@
 //! T2.5-T2.9 (`v2-e3-s3` PR2): `Page<T>` conformance across routes declared
 //! paginated today.
 //!
-//! Namespace scope (`v2-e3-s4` PR5/PR7, T5.13/T5.14/T7.12, D1/D10): every
-//! live test in this file runs against each route's own two mounts (`/api`
-//! and that route's owning component's `/api/v2/<component>`, via
-//! `router_audit::namespaces_for`, never a flat `NAMESPACES` pair), failures
-//! naming the namespace. The generated `atlas_client` methods are
-//! `/api`-absolute (S6's job, not this one), so the live tests provision
-//! through the client and page through raw authenticated GETs built with
-//! `router_audit::joined`: the three cursor round-trip/opacity tests walk
-//! their collection at each namespace with a cursor minted by that same
-//! namespace, and the exhaustive last-page sweep fetches every classified
-//! route at each of its own two namespaces.
+//! Namespace scope (`v2-e3-s4` PR5/PR7, T5.13/T5.14/T7.12, D1/D10, collapsed
+//! to one mount by `v2-e3-s7` D1/U2): every live test in this file runs
+//! against its route's owning component's `/api/v2/<component>` mount, via
+//! `router_audit::v2_namespace`, failures naming the namespace. The
+//! generated `atlas_client` methods are `/api/v2`-absolute (S6's job, not
+//! this one), so the live tests provision through the client and page
+//! through raw authenticated GETs built with `router_audit::joined`: the
+//! three cursor round-trip/opacity tests walk their collection at that
+//! namespace with a cursor minted by it, and the exhaustive last-page sweep
+//! fetches every classified route at its own namespace.
 //!
 //! Two independent concerns live in this file:
 //!
@@ -509,15 +508,14 @@ fn page_item_ids(body: &serde_json::Value, path: &str) -> Vec<uuid::Uuid> {
         .collect()
 }
 
-/// T5.13/T5.14/T7.12 (`v2-e3-s4` PR5/PR7, D1/D10): walks the `Page<T>`
-/// collection at `relative_path` once per mount of `component` (`/api` and
-/// that component's own `/api/v2/<component>`, never a flat `NAMESPACES`
-/// pair), with a cursor minted by that namespace's page fed back into that
-/// same namespace's next request. At each namespace: the first page holds
-/// exactly `limit` items and `has_more`, every cursor is opaque, no item
-/// repeats across pages, the last page carries `next_cursor: null`, and the
-/// pages together cover `expected_ids` exactly once. Failures name the
-/// namespace.
+/// T5.13/T5.14/T7.12 (`v2-e3-s4` PR5/PR7, D1/D10), collapsed to one mount by
+/// `v2-e3-s7` (D1/U2): walks the `Page<T>` collection at `relative_path`
+/// once, at `component`'s own `/api/v2/<component>` mount, with a cursor
+/// minted by that namespace's page fed back into that same namespace's next
+/// request. The first page holds exactly `limit` items and `has_more`,
+/// every cursor is opaque, no item repeats across pages, the last page
+/// carries `next_cursor: null`, and the pages together cover `expected_ids`
+/// exactly once. Failures name the namespace.
 async fn assert_pagination_round_trips_at_every_namespace(
     client: &AtlasClient,
     relative_path: &str,
@@ -533,7 +531,8 @@ async fn assert_pagination_round_trips_at_every_namespace(
     let mut expected = expected_ids.to_vec();
     expected.sort_unstable();
 
-    for namespace in atlas_server::router_audit::namespaces_for(component) {
+    {
+        let namespace = atlas_server::router_audit::v2_namespace(component);
         let namespace = namespace.as_str();
         let mut seen: Vec<uuid::Uuid> = Vec::new();
         let mut cursor: Option<String> = None;
@@ -892,32 +891,27 @@ fn component_for(method: HttpMethod, path_template: &str) -> String {
         .component
 }
 
-/// Fetches namespace-relative `relative_path_and_query` once per mount of
-/// `component` (`v2-e3-s4` PR7, D10: `/api` and that component's own
-/// `/api/v2/<component>`, never a flat `NAMESPACES` pair) with raw
-/// authenticated GETs, returning each namespace's decoded JSON body so the
-/// last-page assertions below can inspect the exact wire shape of
-/// `next_cursor` (present-and-null vs. omitted) rather than an
+/// Fetches namespace-relative `relative_path_and_query` at `component`'s own
+/// `/api/v2/<component>` mount (`v2-e3-s4` PR7, D10, collapsed to one mount
+/// by `v2-e3-s7` D1/U2) with a raw authenticated GET, returning the decoded
+/// JSON body so the last-page assertions below can inspect the exact wire
+/// shape of `next_cursor` (present-and-null vs. omitted) rather than an
 /// `Option<String>` that cannot distinguish the two.
 async fn fetch_page_json(
     client: &AtlasClient,
     relative_path_and_query: &str,
     component: &str,
-) -> Vec<(String, serde_json::Value)> {
-    let namespaces = atlas_server::router_audit::namespaces_for(component);
-    let mut pages = Vec::with_capacity(namespaces.len());
+) -> (String, serde_json::Value) {
+    let namespace = atlas_server::router_audit::v2_namespace(component);
+    let path = joined(&namespace, relative_path_and_query);
+    let body = fetch_page_json_at(client, &path).await;
 
-    for namespace in namespaces {
-        let path = joined(&namespace, relative_path_and_query);
-        pages.push((namespace, fetch_page_json_at(client, &path).await));
-    }
-
-    pages
+    (namespace, body)
 }
 
-/// Asserts every per-namespace `body` in `pages` is a `Page<T>` JSON object
-/// representing its own last page with exactly `expected_items` rows,
-/// failures naming the namespace.
+/// Asserts `page`'s body is a `Page<T>` JSON object representing its own
+/// last page with exactly `expected_items` rows, failures naming the
+/// namespace.
 ///
 /// `next_cursor` must be present with value `null`, not omitted: `Page<T>`
 /// (`crates/atlas_api/src/pagination.rs:142-146`) carries no `#[serde(skip_
@@ -925,31 +919,26 @@ async fn fetch_page_json(
 /// present `null` key. Asserting `body.get("next_cursor") == Some(&Value::
 /// Null)` (rather than deserializing into `Page<T>` and checking `Option::
 /// is_none()`) is what actually distinguishes present-null from absent.
-fn assert_is_own_last_page(
-    pages: &[(String, serde_json::Value)],
-    path: &str,
-    expected_items: usize,
-) {
-    for (namespace, body) in pages {
-        let items = page_item_ids(body, path);
-        assert_eq!(
-            items.len(),
-            expected_items,
-            "namespace {namespace}: GET {path}: expected {expected_items} item(s), got {}: {body}",
-            items.len()
-        );
-        assert_eq!(
-            body.get("has_more"),
-            Some(&serde_json::Value::Bool(false)),
-            "namespace {namespace}: GET {path}: has_more must be false on the last page: {body}"
-        );
-        assert_eq!(
-            body.get("next_cursor"),
-            Some(&serde_json::Value::Null),
-            "namespace {namespace}: GET {path}: next_cursor must be present in the body with \
-             value null on the last page, never omitted: {body}"
-        );
-    }
+fn assert_is_own_last_page(page: &(String, serde_json::Value), path: &str, expected_items: usize) {
+    let (namespace, body) = page;
+    let items = page_item_ids(body, path);
+    assert_eq!(
+        items.len(),
+        expected_items,
+        "namespace {namespace}: GET {path}: expected {expected_items} item(s), got {}: {body}",
+        items.len()
+    );
+    assert_eq!(
+        body.get("has_more"),
+        Some(&serde_json::Value::Bool(false)),
+        "namespace {namespace}: GET {path}: has_more must be false on the last page: {body}"
+    );
+    assert_eq!(
+        body.get("next_cursor"),
+        Some(&serde_json::Value::Null),
+        "namespace {namespace}: GET {path}: next_cursor must be present in the body with \
+         value null on the last page, never omitted: {body}"
+    );
 }
 
 /// T2.6-T2.9 follow-up (data-driven, self-checking): every route the
@@ -984,6 +973,10 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
     // reproducible route instead of depending on hash-iteration luck.
     let mut sorted_page_routes: Vec<ClassifiedRoute> = page_routes.iter().cloned().collect();
     sorted_page_routes.sort_by_key(|route| (format!("{:?}", route.method), route.path.clone()));
+    assert!(
+        !sorted_page_routes.is_empty(),
+        "the sweep must examine at least one Page<T> route, or its assertions pass vacuously"
+    );
 
     let mut covered: HashSet<ClassifiedRoute> = HashSet::new();
 

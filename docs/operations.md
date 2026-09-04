@@ -79,7 +79,7 @@ and unchanged when embeddings are disabled.
 
 | Variable | Default | Notes |
 |---|---|---|
-| `ATLAS_EMBEDDINGS_ENABLED` | `false` | Enables `/api/workspaces/{ws}/semantic-search` and the `semantic`/`hybrid` search modes. Disabled returns `503` on semantic search only; `mode=hybrid` degrades to lexical. |
+| `ATLAS_EMBEDDINGS_ENABLED` | `false` | Enables `/api/v2/acta/workspaces/{ws}/semantic-search` and the `semantic`/`hybrid` search modes. Disabled returns `503` on semantic search only; `mode=hybrid` degrades to lexical. |
 | `ATLAS_EMBEDDINGS_PROVIDER` | — | Required when `ATLAS_EMBEDDINGS_ENABLED=true`. `openai_compatible` for an OpenAI-compatible embeddings API, or `deterministic`/`test` for offline development — the latter hashes text into a valid-looking vector that encodes no meaning, so it must be asked for by name and is never inherited. |
 | `ATLAS_EMBEDDINGS_MODEL` | `atlas-test-embedding` | Stored with each embedding row; changing it requires re-indexing content for the new model. |
 | `ATLAS_EMBEDDINGS_DIMENSIONS` | `1536` | Must match the provider output. The `search_embeddings.embedding` column is declared `vector(1536)`, so any other value fails startup with an explicit error instead of failing on the first insert. |
@@ -97,7 +97,7 @@ Backfill/indexing behavior:
 - Document indexing includes title, content, visible comments, and attachment file names.
 - Deferred scope: HNSW tuning is not part of this slice.
 
-Workspace backfill (`/api/workspaces/{ws}/semantic-search/reindex`, workspace admin or owner):
+Workspace backfill (`/api/v2/acta/workspaces/{ws}/semantic-search/reindex`, workspace admin or owner):
 
 - `GET` returns what a reindex would embed — documents, tasks, characters, estimated chunks and tokens — plus how far the workspace already is (`indexed_resources`, `queued_resources`). It queues nothing, so it is the read to take before paying a provider to embed a corpus. The chunk and token figures are approximations from stored character counts (~4 characters per token), not a provider quote.
 - `POST` queues every live document and task, then returns the same plan alongside how many resources were newly queued. The running indexer worker drains the queue; content whose hash is unchanged is not re-embedded, so re-running the backfill costs queue rows rather than embeddings, and an interrupted run resumes by simply running it again.
@@ -106,7 +106,7 @@ Workspace backfill (`/api/workspaces/{ws}/semantic-search/reindex`, workspace ad
 
 ### Hybrid search
 
-`GET /api/workspaces/{ws}/search` takes `mode`: `lexical` (default), `semantic`, or `hybrid`.
+`GET /api/v2/acta/workspaces/{ws}/search` takes `mode`: `lexical` (default), `semantic`, or `hybrid`.
 Hybrid fuses the two arms with Reciprocal Rank Fusion, combining them by rank rather than by
 score — a `ts_rank_cd` value and a cosine distance are not comparable quantities. It is the mode
 that answers both "how do we authenticate" against a document that only says "OAuth flow" and a

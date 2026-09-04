@@ -1783,8 +1783,12 @@ pub(crate) async fn list_comment_attachments(
                     .into_iter()
                     .map(|attachment| {
                         let url = format!(
-                            "/api/workspaces/{}/documents/{}/comments/{}/attachments/{}",
-                            auth.workspace.slug, slug, draft_id.0, attachment.id.0,
+                            "{}/workspaces/{}/documents/{}/comments/{}/attachments/{}",
+                            crate::router_audit::v2_namespace("acta"),
+                            auth.workspace.slug,
+                            slug,
+                            draft_id.0,
+                            attachment.id.0,
                         );
                         comment_attachment_to_dto_with_url(attachment, draft_id.0, url)
                     })
@@ -1808,8 +1812,12 @@ pub(crate) async fn list_comment_attachments(
             .into_iter()
             .map(|attachment| {
                 let url = format!(
-                    "/api/workspaces/{}/documents/{}/comments/{}/attachments/{}",
-                    auth.workspace.slug, slug, comment_id.0, attachment.id.0,
+                    "{}/workspaces/{}/documents/{}/comments/{}/attachments/{}",
+                    crate::router_audit::v2_namespace("acta"),
+                    auth.workspace.slug,
+                    slug,
+                    comment_id.0,
+                    attachment.id.0,
                 );
                 comment_attachment_to_dto_with_url(attachment, comment_id.0, url)
             })
@@ -2657,7 +2665,8 @@ pub(crate) async fn upload_comment_draft_attachment(
     let mut dto = comment_attachment_to_dto(attachment);
     dto.comment_id = draft.id.0;
     dto.url = Some(format!(
-        "/api/workspaces/{}/documents/{}/comments/{}/attachments/{attachment_id}",
+        "{}/workspaces/{}/documents/{}/comments/{}/attachments/{attachment_id}",
+        crate::router_audit::v2_namespace("acta"),
         auth.workspace.slug,
         path.slug,
         draft.id.0,

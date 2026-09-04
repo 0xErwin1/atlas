@@ -121,8 +121,8 @@ async fn apply_fault_control(
     next: Next,
 ) -> Response {
     let control = match request.uri().path() {
-        "/api/auth/me" => Some(&faults.rest),
-        path if path.starts_with("/api/workspaces/") && path.ends_with("/events") => {
+        "/api/v2/custos/auth/me" => Some(&faults.rest),
+        path if path.starts_with("/api/v2/acta/workspaces/") && path.ends_with("/events") => {
             Some(&faults.workspace_sse)
         }
         _ => None,
@@ -225,7 +225,7 @@ impl TlsGateServer {
 
     pub async fn login(&self, client: reqwest::Client) -> Result<GateSession, GateServerError> {
         let response = client
-            .post(format!("{}/api/auth/login", self.origin))
+            .post(format!("{}/api/v2/custos/auth/login", self.origin))
             .json(&serde_json::json!({
                 "username": self.identity.username,
                 "password": self.identity.password,
@@ -1308,7 +1308,7 @@ impl GateSession {
     pub async fn me_status(&self) -> Result<reqwest::StatusCode, GateServerError> {
         let response = self
             .client
-            .get(format!("{}/api/auth/me", self.origin))
+            .get(format!("{}/api/v2/custos/auth/me", self.origin))
             .bearer_auth(&self.bearer)
             .send()
             .await
@@ -1328,7 +1328,7 @@ impl GateSession {
             FAULT_TIMEOUT + Duration::from_secs(1),
             self.client
                 .get(format!(
-                    "{}/api/workspaces/{}/events",
+                    "{}/api/v2/acta/workspaces/{}/events",
                     self.origin, self.workspace_slug
                 ))
                 .bearer_auth(&self.bearer)

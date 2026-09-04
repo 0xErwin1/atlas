@@ -64,7 +64,7 @@ use atlas_server::{
     crypto::WebhookCrypto,
     persistence::repos::{ApiKeyRepo, NewApiKey},
     reg5::{StorageBackend, reg5_component_entries},
-    router_audit::{V1_NAMESPACE, capability_from_action_id, mounted_path},
+    router_audit::capability_from_action_id,
 };
 use support::{TestDb, TestServer, login_user_with_workspace};
 
@@ -754,7 +754,6 @@ async fn invoke(
     client: &AtlasClient,
     http: &reqwest::Client,
     base_url: &str,
-    pass: usize,
     token: &str,
     fx: &Fixtures,
 ) -> Result<(), ClientError> {
@@ -845,7 +844,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "POST",
                 &support::path::api_path(
                     "acta",
@@ -995,7 +993,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "POST",
                 &support::path::api_path(
                     "acta",
@@ -1012,7 +1009,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "DELETE",
                 &support::path::api_path(
                     "acta",
@@ -1029,7 +1025,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "POST",
                 &support::path::api_path(
                     "acta",
@@ -1098,7 +1093,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "GET",
                 &support::path::api_path(
                     "acta",
@@ -1112,7 +1106,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "GET",
                 &support::path::api_path(
                     "acta",
@@ -1129,7 +1122,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "POST",
                 &support::path::api_path(
                     "acta",
@@ -1150,7 +1142,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "PATCH",
                 &support::path::api_path(
                     "acta",
@@ -1238,7 +1229,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "POST",
                 &support::path::api_path(
                     "acta",
@@ -1255,7 +1245,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "DELETE",
                 &support::path::api_path(
                     "acta",
@@ -1283,7 +1272,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "POST",
                 &support::path::api_path(
                     "acta",
@@ -1323,7 +1311,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "POST",
                 &support::path::api_path(
                     "acta",
@@ -1337,7 +1324,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "DELETE",
                 &support::path::api_path(
                     "acta",
@@ -1351,7 +1337,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "POST",
                 &support::path::api_path(
                     "acta",
@@ -1422,7 +1407,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "POST",
                 &support::path::api_path(
                     "acta",
@@ -1436,7 +1420,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "DELETE",
                 &support::path::api_path(
                     "acta",
@@ -1528,7 +1511,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "POST",
                 &support::path::api_path("acta", &format!("/workspaces/{ws}/webhooks")),
             )
@@ -1539,7 +1521,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "GET",
                 &support::path::api_path("acta", &format!("/workspaces/{ws}/webhooks")),
             )
@@ -1550,7 +1531,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "GET",
                 &support::path::api_path(
                     "acta",
@@ -1564,7 +1544,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "PATCH",
                 &support::path::api_path(
                     "acta",
@@ -1578,7 +1557,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "DELETE",
                 &support::path::api_path(
                     "acta",
@@ -1596,7 +1574,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "GET",
                 &support::path::api_path(
                     "acta",
@@ -1617,7 +1594,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "GET",
                 &support::path::api_path(
                     "acta",
@@ -1631,7 +1607,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "POST",
                 &support::path::api_path(
                     "acta",
@@ -1645,7 +1620,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "GET",
                 &support::path::api_path("acta", &format!("/workspaces/{ws}/tags")),
             )
@@ -1656,7 +1630,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "POST",
                 &support::path::api_path("acta", &format!("/workspaces/{ws}/tags")),
             )
@@ -1667,7 +1640,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "GET",
                 &support::path::api_path("acta", &format!("/workspaces/{ws}/tags/used")),
             )
@@ -1678,7 +1650,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "PATCH",
                 &support::path::api_path("acta", &format!("/workspaces/{ws}/tags/{nil}")),
             )
@@ -1689,7 +1660,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "DELETE",
                 &support::path::api_path("acta", &format!("/workspaces/{ws}/tags/{nil}")),
             )
@@ -1700,7 +1670,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "GET",
                 &support::path::api_path("acta", &format!("/workspaces/{ws}/property-definitions")),
             )
@@ -1711,7 +1680,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "POST",
                 &support::path::api_path("acta", &format!("/workspaces/{ws}/property-definitions")),
             )
@@ -1722,7 +1690,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "DELETE",
                 &support::path::api_path(
                     "acta",
@@ -1754,7 +1721,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "GET",
                 &support::path::api_path(
                     "custos",
@@ -1768,7 +1734,6 @@ async fn invoke(
                 http,
                 base_url,
                 token,
-                pass,
                 "GET",
                 &support::path::api_path("custos", &format!("/workspaces/{ws}/grants")),
             )
@@ -1838,45 +1803,19 @@ async fn invoke(
 /// that have no generated `atlas_client` method, mirroring the client's own
 /// error-decoding shape so callers can use one assertion path for every case.
 ///
-/// `v2-e3-s4` PR5 (D1, R2): every call site still passes its path as an
-/// `/api`-absolute literal (`atlas_client`'s own `get`/`post`/etc. are
-/// namespace-unaware by the same construction, and this file's callers were
-/// written to mirror that shape); this is the one place that literal is
-/// turned into the concrete mount, so a caller never hand-concatenates
-/// `/api` a second time and every one of this file's raw call sites gets the
-/// pass loop for free once it threads `pass` down to here.
-///
-/// `pass` selects which of the route's own two mounts to use (`v2-e3-s4`
-/// PR7, D10): `0` for `/api`, `1` for that route's owning component's own
-/// `/api/v2/<component>` — never a flat, shared `/api/v2` literal. The
-/// owning component is resolved from `route_matrix()` by matching the
-/// concrete `relative` path against each `{placeholder}` template
-/// (`support::route_matrix::find_by_concrete_path`), the same live-registry
-/// fact every other namespace-scoped sweep in this crate reads.
+/// `v2-e3-s4` PR5 (D1, R2), collapsed to one mount by `v2-e3-s7` (D1/U2):
+/// every call site passes its path already fully mounted, built by
+/// `support::path::api_path` at the route's own owning component's
+/// `/api/v2/<component>` namespace — this helper no longer re-derives a
+/// mount from a bare relative path, since exactly one mount exists.
 async fn raw_call(
     http: &reqwest::Client,
     base_url: &str,
     token: &str,
-    pass: usize,
     method: &str,
     path: &str,
 ) -> Result<(), ClientError> {
-    let relative = path
-        .strip_prefix(V1_NAMESPACE)
-        .and_then(|rest| rest.strip_prefix('/'))
-        .map(|rest| format!("/{rest}"))
-        .unwrap_or_else(|| panic!("raw_call: path `{path}` must start with `{V1_NAMESPACE}/`"));
-    let registry_method: HttpMethod = method
-        .parse()
-        .unwrap_or_else(|err| panic!("raw_call: {err}"));
-    let component =
-        support::route_matrix::find_by_concrete_path(registry_method, &relative).component;
-    let namespaces = atlas_server::router_audit::namespaces_for(&component);
-    let namespace = namespaces
-        .get(pass)
-        .unwrap_or_else(|| panic!("raw_call: pass {pass} is out of range for {namespaces:?}"));
-    let mounted = mounted_path(namespace, &relative);
-    let url = format!("{base_url}{mounted}");
+    let url = format!("{base_url}{path}");
     // No `_` fallback: every call site names its method explicitly, so an
     // unrecognized value is a bug in the caller, not a route this helper
     // should silently retry as GET (the defect this PR's other raw-request
@@ -1962,19 +1901,14 @@ async fn capability_sweep_covers_every_registry_entry() {
     );
 }
 
-/// T5.15/T5.16/T7.14 (`v2-e3-s4` PR5/PR7, D1/D10, R2): this sweep drives
-/// every case through `AtlasClient` or `raw_call`, never `route_matrix()`
-/// (see this file's own module doc / D1's grounding), so it does not
-/// inherit `route_matrix()`'s namespace extension and needs its own pass
-/// loop here — named explicitly per R2's risk, rather than assumed covered
-/// elsewhere. `AtlasClient`'s own typed methods stay `/api`-only (the pass
-/// has no effect on those cases): `atlas_client` is untouched in this slice
-/// (S6's job), so only the `raw_call`-backed cases actually exercise
-/// `/api/v2/<component>` here, each joined with its OWN component's prefix
-/// (`raw_call`'s own per-route lookup), never a flat or another component's
-/// prefix; every `raw_call` case's own scope-gate outcome is identical
-/// regardless of mount, since the capability gate runs inside the same
-/// handler either way.
+/// T5.15/T5.16/T7.14 (`v2-e3-s4` PR5/PR7, D1/D10, R2), collapsed to one
+/// mount by `v2-e3-s7` (D1/U2): this sweep drives every case through
+/// `AtlasClient` or `raw_call`, never `route_matrix()` (see this file's own
+/// module doc / D1's grounding). `AtlasClient`'s own typed methods stay
+/// `/api/v2`-absolute (S6's job, not this one), and every `raw_call`-backed
+/// case is built by `support::path::api_path`, joined with its OWN
+/// component's prefix (`raw_call`'s own per-route lookup), never a flat or
+/// another component's prefix.
 #[tokio::test]
 async fn zero_scope_key_gets_scope_403_on_every_capability_gated_route() {
     let db = TestDb::create().await.expect("TestDb::create");
@@ -1987,22 +1921,28 @@ async fn zero_scope_key_gets_scope_403_on_every_capability_gated_route() {
     let token = create_scoped_agent(&db, owner_user.id, "cap-sweep-zero", vec![]).await;
     let agent = AtlasClient::new(server.base_url()).with_token(token.clone());
     let http = reqwest::Client::new();
+    let mut examined_routes = 0usize;
 
-    for pass in 0..2 {
-        for case in Case::ALL {
-            let result = invoke(*case, &agent, &http, server.base_url(), pass, &token, &fx).await;
-            assert!(
-                matches!(&result, Err(e) if is_scope_denial(e)),
-                "pass {pass}: case {case:?}: expected a scope-403, got {result:?}"
-            );
-        }
+    for case in Case::ALL {
+        let result = invoke(*case, &agent, &http, server.base_url(), &token, &fx).await;
+        assert!(
+            matches!(&result, Err(e) if is_scope_denial(e)),
+            "case {case:?}: expected a scope-403, got {result:?}"
+        );
+        examined_routes += 1;
     }
+
+    assert!(
+        examined_routes > 0,
+        "zero_scope_key_gets_scope_403_on_every_capability_gated_route must examine at least \
+         one capability-gated route, or its assertions pass vacuously"
+    );
 
     db.teardown().await;
 }
 
 /// See [`zero_scope_key_gets_scope_403_on_every_capability_gated_route`]'s
-/// doc for why this loops the pass itself rather than inheriting it.
+/// doc.
 #[tokio::test]
 async fn all_capabilities_scope_key_never_gets_scope_403() {
     let db = TestDb::create().await.expect("TestDb::create");
@@ -2021,19 +1961,24 @@ async fn all_capabilities_scope_key_never_gets_scope_403() {
     .await;
     let agent = AtlasClient::new(server.base_url()).with_token(token.clone());
     let http = reqwest::Client::new();
+    let mut examined_routes = 0usize;
 
-    for pass in 0..2 {
-        for case in Case::ALL {
-            let result = invoke(*case, &agent, &http, server.base_url(), pass, &token, &fx).await;
-            if let Err(e) = &result {
-                assert!(
-                    !is_scope_denial(e),
-                    "pass {pass}: case {case:?}: unexpected scope-403 with all \
-                     catalog capabilities: {e:?}"
-                );
-            }
+    for case in Case::ALL {
+        let result = invoke(*case, &agent, &http, server.base_url(), &token, &fx).await;
+        if let Err(e) = &result {
+            assert!(
+                !is_scope_denial(e),
+                "case {case:?}: unexpected scope-403 with all catalog capabilities: {e:?}"
+            );
         }
+        examined_routes += 1;
     }
+
+    assert!(
+        examined_routes > 0,
+        "all_capabilities_scope_key_never_gets_scope_403 must examine at least one \
+         capability-gated route, or its assertions pass vacuously"
+    );
 
     db.teardown().await;
 }
@@ -2119,7 +2064,6 @@ async fn each_capability_gate_admits_its_own_scope_and_rejects_a_wrong_one() {
             &wrong_agent,
             &http,
             server.base_url(),
-            0,
             &wrong_token,
             &fx,
         )
@@ -2147,7 +2091,7 @@ async fn each_capability_gate_admits_its_own_scope_and_rejects_a_wrong_one() {
         )
         .await;
         let ok_agent = AtlasClient::new(server.base_url()).with_token(ok_token.clone());
-        let ok_result = invoke(case, &ok_agent, &http, server.base_url(), 0, &ok_token, &fx).await;
+        let ok_result = invoke(case, &ok_agent, &http, server.base_url(), &ok_token, &fx).await;
         if let Err(e) = &ok_result {
             assert!(
                 !is_scope_denial(e),

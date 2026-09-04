@@ -149,13 +149,18 @@ fn stores_bearer_material_in_the_secret_store_before_restart_resume() {
 
 #[test]
 fn constructs_bearer_auth_for_rest_and_sse_without_exposing_the_token() {
-    let rest =
-        build_authenticated_request(ORIGIN, "GET", "/api/auth/me", BEARER, TransportKind::Rest)
-            .expect("valid REST request");
+    let rest = build_authenticated_request(
+        ORIGIN,
+        "GET",
+        "/api/v2/custos/auth/me",
+        BEARER,
+        TransportKind::Rest,
+    )
+    .expect("valid REST request");
     let sse = build_authenticated_request(
         ORIGIN,
         "GET",
-        "/api/workspaces/atlas/events",
+        "/api/v2/acta/workspaces/atlas/events",
         BEARER,
         TransportKind::Sse,
     )
@@ -163,7 +168,7 @@ fn constructs_bearer_auth_for_rest_and_sse_without_exposing_the_token() {
 
     assert_eq!(
         rest.url().as_str(),
-        "https://atlas.example.test/api/auth/me"
+        "https://atlas.example.test/api/v2/custos/auth/me"
     );
     assert_eq!(
         rest.headers()["authorization"],
@@ -178,7 +183,7 @@ fn constructs_bearer_auth_for_rest_and_sse_without_exposing_the_token() {
         build_authenticated_request(
             ORIGIN,
             "GET",
-            "https://other.example/api",
+            "https://other.example/api/v2",
             BEARER,
             TransportKind::Rest
         )
@@ -193,7 +198,7 @@ fn rejects_non_allowlisted_methods_and_api_path_escape_attempts() {
             build_authenticated_request(
                 ORIGIN,
                 method,
-                "/api/auth/me",
+                "/api/v2/custos/auth/me",
                 BEARER,
                 TransportKind::Rest
             )
@@ -227,7 +232,7 @@ fn generic_desktop_api_request_preserves_method_query_headers_and_body_beneath_a
         BEARER,
         DesktopApiRequest {
             method: "PATCH".to_owned(),
-            path: "/api/workspaces/acme/tasks/ATL-1?detail=full".to_owned(),
+            path: "/api/v2/acta/workspaces/acme/tasks/ATL-1?detail=full".to_owned(),
             headers: vec![
                 ("content-type".to_owned(), "application/json".to_owned()),
                 ("x-atlas-csrf".to_owned(), "1".to_owned()),
@@ -240,7 +245,7 @@ fn generic_desktop_api_request_preserves_method_query_headers_and_body_beneath_a
     assert_eq!(request.method(), "PATCH");
     assert_eq!(
         request.url().as_str(),
-        "https://atlas.example.test/api/workspaces/acme/tasks/ATL-1?detail=full"
+        "https://atlas.example.test/api/v2/acta/workspaces/acme/tasks/ATL-1?detail=full"
     );
     assert_eq!(request.headers()["content-type"], "application/json");
     assert_eq!(request.headers()["x-atlas-csrf"], "1");
@@ -259,13 +264,13 @@ fn generic_desktop_api_request_rejects_authorization_overrides_and_non_api_urls(
     for request in [
         DesktopApiRequest {
             method: "GET".to_owned(),
-            path: "https://other.example/api/workspaces".to_owned(),
+            path: "https://other.example/api/v2/acta/workspaces".to_owned(),
             headers: vec![],
             body: vec![],
         },
         DesktopApiRequest {
             method: "GET".to_owned(),
-            path: "/api/workspaces".to_owned(),
+            path: "/api/v2/acta/workspaces".to_owned(),
             headers: vec![("authorization".to_owned(), "Bearer attacker".to_owned())],
             body: vec![],
         },
@@ -299,7 +304,7 @@ fn normalizes_a_trailing_slash_and_derives_all_requests_from_the_api_service_roo
     let request = build_authenticated_request(
         scope.origin(),
         "GET",
-        "/api/workspaces/atlas/events",
+        "/api/v2/acta/workspaces/atlas/events",
         BEARER,
         TransportKind::Sse,
     )
@@ -308,7 +313,7 @@ fn normalizes_a_trailing_slash_and_derives_all_requests_from_the_api_service_roo
     assert_eq!(scope.origin(), "https://atlas.iperez.dev");
     assert_eq!(
         request.url().as_str(),
-        "https://atlas.iperez.dev/api/workspaces/atlas/events"
+        "https://atlas.iperez.dev/api/v2/acta/workspaces/atlas/events"
     );
 }
 
@@ -416,7 +421,7 @@ fn session_revalidation_and_realtime_use_the_scoped_workspace_endpoint() {
         .resume_with(&scope, |request| {
             assert_eq!(
                 request.url().as_str(),
-                "https://atlas.example.test:8443/api/auth/me"
+                "https://atlas.example.test:8443/api/v2/custos/auth/me"
             );
             Ok(())
         })
@@ -426,7 +431,7 @@ fn session_revalidation_and_realtime_use_the_scoped_workspace_endpoint() {
         .connect_workspace_events(&scope, "atlas", |request| {
             assert_eq!(
                 request.url().as_str(),
-                "https://atlas.example.test:8443/api/workspaces/atlas/events"
+                "https://atlas.example.test:8443/api/v2/acta/workspaces/atlas/events"
             );
             Ok("event: task.updated\ndata: {\"id\":\"event-1\",\"event_type\":\"task.updated\",\"version\":1,\"source\":\"server\",\"workspace_id\":\"workspace-1\",\"occurred_at\":\"2026-01-01T00:00:00Z\",\"actor\":{\"type\":\"user\",\"id\":\"user-1\"},\"data\":{\"task_id\":\"task-1\"}}\n\n".to_owned())
         })
@@ -457,7 +462,7 @@ fn failed_restart_revalidation_removes_only_the_invalid_origin_session() {
         session.resume_with(&first, |request| {
             assert_eq!(
                 request.url().as_str(),
-                "https://atlas.example.test:8443/api/auth/me"
+                "https://atlas.example.test:8443/api/v2/custos/auth/me"
             );
             Err::<(), _>(atlas_desktop::DesktopError::SessionInvalid)
         }),
@@ -471,12 +476,12 @@ fn failed_restart_revalidation_removes_only_the_invalid_origin_session() {
     );
     assert!(
         session
-            .authenticated_request(&first, "/api/auth/me", TransportKind::Rest)
+            .authenticated_request(&first, "/api/v2/custos/auth/me", TransportKind::Rest)
             .is_err()
     );
     assert!(
         session
-            .authenticated_request(&second, "/api/auth/me", TransportKind::Rest)
+            .authenticated_request(&second, "/api/v2/custos/auth/me", TransportKind::Rest)
             .is_ok()
     );
 }
@@ -502,12 +507,12 @@ fn transient_rest_revalidation_preserves_the_valid_scoped_session() {
     assert_eq!(session.take_action(), None);
     assert!(
         session
-            .authenticated_request(&first, "/api/auth/me", TransportKind::Rest)
+            .authenticated_request(&first, "/api/v2/custos/auth/me", TransportKind::Rest)
             .is_ok()
     );
     assert!(
         session
-            .authenticated_request(&second, "/api/auth/me", TransportKind::Rest)
+            .authenticated_request(&second, "/api/v2/custos/auth/me", TransportKind::Rest)
             .is_ok()
     );
 }
@@ -527,7 +532,7 @@ fn transient_workspace_stream_failure_preserves_the_valid_scoped_session() {
     assert_eq!(session.take_action(), None);
     assert!(
         session
-            .authenticated_request(&scope, "/api/auth/me", TransportKind::Rest)
+            .authenticated_request(&scope, "/api/v2/custos/auth/me", TransportKind::Rest)
             .is_ok()
     );
 }
@@ -742,7 +747,7 @@ fn failed_remote_logout_still_removes_only_the_affected_session_and_requests_a_s
         assert_eq!(request.method(), "POST");
         assert_eq!(
             request.url().as_str(),
-            "https://atlas.example.test/api/auth/logout"
+            "https://atlas.example.test/api/v2/custos/auth/logout"
         );
 
         Err(atlas_desktop::DesktopError::TransportUnavailable)
@@ -760,12 +765,12 @@ fn failed_remote_logout_still_removes_only_the_affected_session_and_requests_a_s
     );
     assert!(
         session
-            .authenticated_request(&first, "/api/auth/me", TransportKind::Rest)
+            .authenticated_request(&first, "/api/v2/custos/auth/me", TransportKind::Rest)
             .is_err()
     );
     assert!(
         session
-            .authenticated_request(&second, "/api/auth/me", TransportKind::Rest)
+            .authenticated_request(&second, "/api/v2/custos/auth/me", TransportKind::Rest)
             .is_ok()
     );
 }
@@ -796,7 +801,7 @@ fn remote_logout_request_is_bounded_and_removes_the_session_on_success() {
     );
     assert!(
         session
-            .authenticated_request(&scope, "/api/auth/me", TransportKind::Rest)
+            .authenticated_request(&scope, "/api/v2/custos/auth/me", TransportKind::Rest)
             .is_err()
     );
 }

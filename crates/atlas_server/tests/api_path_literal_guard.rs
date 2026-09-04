@@ -1,45 +1,70 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-//! CI grep gate (`v2-e3-s5` design D3), structurally a copy of
-//! `schema_qualification_gate.rs`: a source-tree-walking `#[test]` proving
-//! that `tests/support/path.rs` (`api_path`/`api_url`) is the only place an
-//! `atlas_server` integration test builds a request path against the `/api`
-//! namespace, instead of hand-typing a literal that S7's namespace cutover
-//! would otherwise leave stranded.
+//! CI grep gate (`v2-e3-s5` design D3, collapsed to a single repo-wide gate
+//! by `v2-e3-s7` design D3): a source-tree-walking `#[test]` proving that no
+//! production or documentation file anywhere in the repository builds a
+//! request path against the retired `/api` mount instead of `/api/v2/<component>`.
 //!
-//! **Scope**: `crates/atlas_server/tests/**/*.rs` production code, plus the
-//! `v2-e3-s6` extension to `atlas_client/src`, `atlas_mcp/src`, and
-//! `atlas_cli/src` production code — never `crates/atlas_server/src`, which
-//! is out of this guard's authority.
+//! **Scope**: the whole repository (`Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")`),
+//! superseding the four separate scan-root tests `v2-e3-s5`/`v2-e3-s6`
+//! introduced (`crates/atlas_server/tests/**`, `atlas_client/src`,
+//! `atlas_mcp/src`, `atlas_cli/src`), folded into this one walk. `apps/web/src/**`
+//! stays OUT of this gate: S6/D4.5 already owns it with its own Vitest guard
+//! (`apps/web/src/__tests__/v1PathLiteralGuard.test.ts`), which needs
+//! `openapi.json`'s keys and runs in the web CI job.
 //!
-//! **Match rule**: the file is tokenized (see [`scan`]) so that only the
-//! contents of string literals — normal `"…"` and raw `r"…"`/`r#"…"#` — are
-//! candidates; `//`, `///`, `//!`, and nested `/* … */` comment text is
-//! skipped, and a `//` inside a literal (`"http://{addr}/…"`) is literal
-//! text, never a comment. Inside a literal, a hit is any `/api` that is
-//! preceded by the start of the literal, `}`, `/`, or an ASCII alphanumeric
-//! (a bare `"/api"`, a `format!` fragment such as `"{}/api/…"` or
-//! `"http://{addr}/api/…"`, a literal host such as
-//! `"http://localhost:3000/api/…"`) and followed by `/`, the end of the
-//! literal, or `?`. `/api-keys` (a real custos registry path) never
-//! matches, because after `/api` the next character is neither of the
-//! three; prose such as `"GET /api/x failed"`, a label such as `"V1 (/api)"`,
-//! a markdown link `"[x](/api/…)"`, or fixture source `path = "/api/…"`
-//! never matches, because the character before `/api` is a space, `(`, or
-//! `"` — punctuation other than `}` and `/` is excluded on purpose.
+//! **Extraction modes** (D3.2, the tree is not all Rust):
+//! - **Rust-tokenized** — `**/*.rs` under `crates/` and
+//!   `apps/desktop/src-tauri/{src,tests}`: reuses [`scan`]'s tokenizer, so
+//!   only the contents of string literals are candidates; comments are
+//!   skipped exactly as before.
+//! - **Plain text** — `**/*.{md,nix,yml,yaml,toml,conf,template}`: the
+//!   boundary rule applied to each raw line. These formats have no string
+//!   literal or comment notion the tokenizer understands, and a markdown
+//!   path reference is conventionally backtick- or pipe-delimited rather
+//!   than quote-delimited, so the "preceded by" half of the boundary rule
+//!   is widened to accept any predecessor (or start of line) — only the
+//!   "followed by" half and the `/v2/` exclusion (below) still apply. See
+//!   [`plain_text_matches_boundary_pattern`].
+//! - Excluded from the walk by path (not by allowlist entry, because an
+//!   allowlist entry on a regenerable artifact would be staleness-checked
+//!   against a build output): `target/`, `node_modules/`, `.git/`, `dist/`,
+//!   `apps/web/openapi.json`, `apps/web/src/api/types.d.ts`,
+//!   `apps/desktop/src-tauri/gen/`, `pnpm-lock.yaml`, `Cargo.lock`, and all
+//!   of `apps/web/src/**`.
+//!
+//! **Match rule**: inside a Rust string literal (normal `"…"` or raw
+//! `r"…"`/`r#"…"#`; `//`, `///`, `//!`, and nested `/* … */` comment text is
+//! skipped, and a `//` inside a literal is literal text, never a comment) or
+//! a plain-text line, a hit is any `/api` followed by `/`, the end of the
+//! text, or `?`, EXCLUDING a hit whose following text is exactly `/v2/`
+//! (`v2-e3-s7` D3.1: a migrated `/api/v2/acta/…` literal is never a hit; a
+//! bare `/api/v2` with nothing after it stays a hit, since that flat form is
+//! never mounted either). In Rust-tokenized mode, the preceding character
+//! must additionally be the start of the literal, `}`, `/`, or an ASCII
+//! alphanumeric — `/api-keys` (a real custos registry path) never matches
+//! because the following character is neither of the three; prose such as
+//! `"GET /api/x failed"` never matches because the preceding character is a
+//! space.
 //!
 //! **Allowlist**: `ALLOWED` names every file permitted to contain a matching
-//! literal, with a stated reason, as a typed [`Exemption`] checked in both
-//! directions in the same test run. `WholeFile` exempts every matching
-//! literal in the file and is stale (FAILS) when the file has none left.
-//! `MarkedSpans` exempts only literals inside a
-//! `// api-path-guard:off` / `// api-path-guard:on` span (mirroring
-//! `schema_qualification_gate.rs`'s own `schema-gate:off`/`:on` precedent):
-//! a matching literal outside a span FAILS naming `file:line`, and the entry
+//! literal, with a stated reason and a class (`permanent` or `historical`),
+//! as a typed [`Exemption`] checked in both directions in the same test run.
+//! `WholeFile` exempts every matching literal in the file and is stale
+//! (FAILS) when the file has none left. `MarkedSpans` exempts only literals
+//! inside a `// api-path-guard:off` / `// api-path-guard:on` span: a
+//! matching literal outside a span FAILS naming `file:line`, and the entry
 //! is stale (FAILS) unless at least one span contains a matching literal. An
 //! unlisted file with a matching literal FAILS, inside or outside a marker
-//! span: a marker pair without a `MarkedSpans` entry exempts nothing, so
-//! the allowlist stays the single place a reason lives.
+//! span. The allowlist admits no `TRANSIENT` entries: `v2-e3-s5`/PR2–PR3 and
+//! `v2-e3-s6`/PR4 landed before this gate opened, so every remaining
+//! reference to `/api` outside `/api/v2` is either a permanent structural
+//! fact (a negative probe, a storage-key constant, a security check on the
+//! shared prefix) or a historical decision record.
+//!
+//! **CI**: no workflow edit needed (D3.5) — `style.yml`'s `source-gates` job
+//! already runs `cargo test -p atlas_server --test api_path_literal_guard`,
+//! and the collapsed gate is the same binary.
 
 use std::collections::VecDeque;
 use std::fs;
@@ -50,6 +75,7 @@ enum Exemption {
     /// Every matching literal in `path` is exempt; stale once none is left.
     WholeFile {
         path: &'static str,
+        class: Class,
         reason: &'static str,
     },
     /// Only literals inside a `// api-path-guard:off`/`:on` span of `path`
@@ -57,8 +83,20 @@ enum Exemption {
     /// at least one span contains a matching literal.
     MarkedSpans {
         path: &'static str,
+        class: Class,
         reason: &'static str,
     },
+}
+
+/// Whether an allowlist entry is a structural fact this gate expects to hold
+/// forever, or a decision record that describes what was true at the time it
+/// was written and is never rewritten (`v2-e3-s7` D3.3). No entry is
+/// `TRANSIENT`: this gate opens only once every migration it depends on has
+/// landed.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Class {
+    Permanent,
+    Historical,
 }
 
 impl Exemption {
@@ -80,116 +118,168 @@ impl Exemption {
             Self::WholeFile { reason, .. } | Self::MarkedSpans { reason, .. } => reason,
         }
     }
+
+    fn class(&self) -> Class {
+        match self {
+            Self::WholeFile { class, .. } | Self::MarkedSpans { class, .. } => *class,
+        }
+    }
 }
 
-const fn whole_file(path: &'static str, reason: &'static str) -> Exemption {
-    Exemption::WholeFile { path, reason }
+const fn whole_file(path: &'static str, class: Class, reason: &'static str) -> Exemption {
+    Exemption::WholeFile {
+        path,
+        class,
+        reason,
+    }
 }
 
-const fn marked_spans(path: &'static str, reason: &'static str) -> Exemption {
-    Exemption::MarkedSpans { path, reason }
+const fn marked_spans(path: &'static str, class: Class, reason: &'static str) -> Exemption {
+    Exemption::MarkedSpans {
+        path,
+        class,
+        reason,
+    }
 }
 
-/// Every file permitted to contain a matching `/api` literal, and why. No
-/// current entry is `MarkedSpans`: none of these files carries a marker
-/// pair, so each is exempt as a whole. This is `v2-e3-s5`'s final,
-/// permanent allowlist: PR1's Class-C fold and PR2/PR3's Class-A/Class-B
-/// migrations removed every transient entry that named a not-yet-migrated
-/// file, and the bidirectional check's stale-entry direction is what would
-/// have kept that debt visible had a PR forgotten one (design R6).
+/// Every file permitted to contain a matching `/api` literal, and why,
+/// repo-relative (`v2-e3-s7` D3.3). Eleven `permanent` entries — a
+/// structural fact each — and two `historical` decision records, dated by
+/// the slice that wrote them; the tables they hold are not rewritten to V2
+/// form (rewriting them would falsify what was true when they were
+/// written), so each carries a dated note instead where one is warranted.
 const ALLOWED: &[Exemption] = &[
     whole_file(
-        "support/path.rs",
-        "the one place the namespace is constructed",
+        "crates/atlas_server/tests/support/path.rs",
+        Class::Permanent,
+        "canonical_store_path, the one test-side reader of the idempotency store's frozen \
+         key prefix",
     ),
     whole_file(
-        "api_router_mount_assertion.rs",
-        "a_foreign_prefix_never_matches_any_declared_route and \
-         flat_and_wrong_component_v2_forms_never_match_any_declared_route construct \
-         malformed and wrong-component V2-shaped paths the helper must never produce",
+        "crates/atlas_server/src/middleware/idempotency.rs",
+        Class::Permanent,
+        "IDEMPOTENCY_STORE_PATH_PREFIX — a store-key prefix, not a mount (D2) — plus its own \
+         test module's synthetic /api/... fixture literals",
     ),
     whole_file(
-        "api_unmatched_path_fallback.rs",
+        "crates/atlas_server/src/router_audit.rs",
+        Class::Permanent,
+        "V2_PREFIX's own literal (\"/api/v2\") is the one place the V2 prefix is built; a bare \
+         /api/v2 with nothing after it is intentionally still a hit under the boundary rule, \
+         so this is the seam's own construction site, not a stray reference",
+    ),
+    marked_spans(
+        "crates/atlas_client/src/lib.rs",
+        Class::Permanent,
+        "the seam's own V2_PREFIX construction (AtlasClient::mounted)",
+    ),
+    marked_spans(
+        "apps/desktop/src-tauri/src/lib.rs",
+        Class::Permanent,
+        "validate_api_path/build_authenticated_request's starts_with(\"/api/\") allowlist — \
+         a security check on the shared prefix, satisfied by /api/v2/... with no code change",
+    ),
+    whole_file(
+        "apps/desktop/src-tauri/tests/host_contract.rs",
+        Class::Permanent,
+        "traversal negative probes (/api/../admin, /api/%2e%2e/admin, etc.) exercising \
+         validate_api_path's rejection of a malformed path, independent of which mount is \
+         live, plus one absolute-URL rejection literal",
+    ),
+    whole_file(
+        "deploy/nginx.conf.template",
+        Class::Permanent,
+        "location /api/ is a prefix match covering /api/v2/...; narrowing it gains nothing",
+    ),
+    whole_file(
+        "crates/atlas_server/tests/api_router_mount_assertion.rs",
+        Class::Permanent,
+        "the negative probes: /apiv2, /api/v3, bare /api/v2/<rel>, wrong-component, and \
+         (since v2-e3-s7) /api itself — paths the codebase must never produce",
+    ),
+    whole_file(
+        "crates/atlas_server/tests/api_unmatched_path_fallback.rs",
+        Class::Permanent,
         "negative probe: a nonexistent path must never resolve",
     ),
     whole_file(
-        "idempotency_middleware.rs",
+        "crates/atlas_server/tests/idempotency_middleware.rs",
+        Class::Permanent,
         "40 synthetic mock-route literals on a test-local router, plus the canonical \
          idempotency store-key literals",
     ),
     whole_file(
-        "idempotency_repo.rs",
+        "crates/atlas_server/tests/idempotency_repo.rs",
+        Class::Permanent,
         "a canonical store-key row, not a request path",
+    ),
+    whole_file(
+        "docs/registry-route-ownership.md",
+        Class::Historical,
+        "the v2-e3-s2 decision record; its route table documents RouteDeclaration.path as it \
+         was then (absolute V1 form). Rewriting the rows would falsify the record — see the \
+         dated note recording the v2-e3-s7 retirement instead",
+    ),
+    whole_file(
+        "docs/reg5-idempotent-judgment.md",
+        Class::Historical,
+        "the v2-e3-s3 idempotency judgment record, same class as registry-route-ownership.md",
     ),
 ];
 
 const MARKER_OFF: &str = "// api-path-guard:off";
 const MARKER_ON: &str = "// api-path-guard:on";
 
-#[test]
-fn no_unallowlisted_api_literal_exists_outside_the_helper() {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let tests_dir = Path::new(manifest_dir).join("tests");
+/// Repo root: `crates/atlas_server` is two levels below it.
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
 
-    let violations = violations(&tests_dir, ALLOWED);
+#[test]
+fn no_unallowlisted_api_literal_exists_anywhere_in_the_repository() {
+    let violations = repo_violations(&repo_root(), ALLOWED);
 
     assert!(
         violations.is_empty(),
-        "api-path guard violations:\n{}",
+        "repo-wide api-path guard violations:\n{}",
         violations.join("\n")
     );
 }
 
-/// `v2-e3-s6` D2.4 — the guard's scan root extends to `../atlas_client/src`
-/// (production code): the only file exempt is `lib.rs`'s own `V2_PREFIX`
-/// literal, marked with `// api-path-guard:off`/`:on` rather than
-/// `WholeFile`, so a reintroduced V1-form literal anywhere else in the crate
-/// still fails. `#[cfg(test)] mod tests` fixture literals (D2.4, 7 sites)
-/// are not scanned here — the boundary rule only ever sees production code
-/// because those literals carry no `/api` prefix in the first place after
-/// their own V2 rewrite (they were rewritten for honesty, not because the
-/// gate requires it).
-const CLIENT_ALLOWED: &[Exemption] = &[marked_spans(
-    "lib.rs",
-    "the seam's own V2_PREFIX construction (AtlasClient::mounted)",
-)];
-
-fn atlas_client_src_dir() -> PathBuf {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    Path::new(manifest_dir).join("../atlas_client/src")
-}
-
+/// D3.3: the allowlist admits no `TRANSIENT` entries — every entry is either
+/// `permanent` (a structural fact) or `historical` (a dated decision
+/// record). This is a static property of `ALLOWED`, checked once rather than
+/// trusted by convention.
 #[test]
-fn no_unallowlisted_api_literal_exists_in_atlas_client_src() {
-    let violations = violations_with(
-        &atlas_client_src_dir(),
-        CLIENT_ALLOWED,
-        production_file_literals,
-    );
+fn the_allowlist_has_exactly_two_historical_entries_and_the_rest_permanent() {
+    let historical = ALLOWED
+        .iter()
+        .filter(|entry| entry.class() == Class::Historical)
+        .count();
 
-    assert!(
-        violations.is_empty(),
-        "atlas_client api-path guard violations:\n{}",
-        violations.join("\n")
+    assert_eq!(
+        historical, 2,
+        "exactly two allowlist entries (the two dated decision records) must be historical; \
+         every other entry must be permanent"
     );
 }
 
-/// A hypothetical new `atlas_client/src` method with a hardcoded `/api/foo`
-/// literal outside `mounted` is flagged by name (spec: "A new V1 literal
-/// outside the seam fails the gate").
+/// A hypothetical new file anywhere in the repository containing a
+/// `/api/foo` literal is flagged, naming the file and line (spec: "A new
+/// V1-form literal anywhere in the repository fails the gate").
 #[test]
-fn a_new_atlas_client_literal_outside_the_seam_fails_the_gate() {
+fn a_new_literal_anywhere_in_the_repository_fails_the_gate() {
     let probe_content = format!(
         "fn regression(base: &str) -> String {{\n    format!(\"{{base}}{}\")\n}}\n",
         api_literal("/foo")
     );
 
-    let literal_files = scan_scratch_probe("atlas_client_regression", &probe_content);
+    let literal_files = scan_scratch_probe("repo_regression", &probe_content);
 
     assert_eq!(
         literal_files,
         vec![("probe.rs".to_string(), 2)],
-        "expected the gate to flag the reintroduced atlas_client literal"
+        "expected the gate to flag the reintroduced literal"
     );
 }
 
@@ -197,11 +287,15 @@ fn a_new_atlas_client_literal_outside_the_seam_fails_the_gate() {
 /// literal — fails, mirroring the existing bidirectional discipline (spec:
 /// "A stale allowlist entry fails the gate").
 #[test]
-fn a_stale_atlas_client_allowlist_entry_fails_the_gate() {
+fn a_stale_allowlist_entry_fails_the_gate() {
     let probe_content = "fn clean() -> &'static str {\n    \"/clean\"\n}\n".to_string();
-    let allowed = [marked_spans("probe.rs", "no longer needed")];
+    let allowed = [marked_spans(
+        "probe.rs",
+        Class::Permanent,
+        "no longer needed",
+    )];
 
-    let violations = probe_violations("stale_client_allowlist", &probe_content, &allowed);
+    let violations = probe_violations("stale_allowlist", &probe_content, &allowed);
 
     assert_eq!(
         violations,
@@ -220,7 +314,7 @@ fn a_marked_spans_file_with_a_literal_outside_its_span_is_a_hit() {
         "{MARKER_OFF}\nconst INSIDE: &str = \"{0}\";\n{MARKER_ON}\nconst OUTSIDE: &str = \"{0}\";\n",
         api_literal("/x")
     );
-    let allowed = [marked_spans("probe.rs", "probe")];
+    let allowed = [marked_spans("probe.rs", Class::Permanent, "probe")];
 
     let violations = probe_violations("stray_probe", &probe_content, &allowed);
 
@@ -252,7 +346,7 @@ fn an_unlisted_file_with_a_literal_only_inside_a_span_is_a_hit() {
 #[test]
 fn a_marked_spans_file_with_an_empty_span_is_stale() {
     let probe_content = format!("{MARKER_OFF}\n{MARKER_ON}\nfn ok() {{}}\n");
-    let allowed = [marked_spans("probe.rs", "probe")];
+    let allowed = [marked_spans("probe.rs", Class::Permanent, "probe")];
 
     let violations = probe_violations("empty_span_probe", &probe_content, &allowed);
 
@@ -400,6 +494,46 @@ fn the_boundary_rule_rejects_prose_with_a_space_before_the_namespace() {
         "GET {}",
         api_literal("/x")
     )));
+}
+
+/// `v2-e3-s7` D3.1: a migrated `/api/v2/<component>/...` literal is never a
+/// hit under either boundary rule, in either mode.
+#[test]
+fn a_v2_prefixed_literal_is_never_a_hit() {
+    assert!(!literal_matches_boundary_pattern(&format!(
+        "{}v2/acta/x",
+        api_literal("/")
+    )));
+    assert!(!plain_text_matches_boundary_pattern(&format!(
+        "see `{}v2/acta/x` for the route",
+        api_literal("/")
+    )));
+}
+
+/// `v2-e3-s7` D3.1: a bare `/api/v2` with nothing after it stays a hit —
+/// that flat form is never mounted either (`flat_and_wrong_component_v2_
+/// forms_never_match_any_declared_route`).
+#[test]
+fn a_bare_api_v2_with_nothing_after_it_stays_a_hit() {
+    assert!(literal_matches_boundary_pattern(&format!(
+        "{}v2",
+        api_literal("/")
+    )));
+    assert!(plain_text_matches_boundary_pattern(&format!(
+        "see `{}v2` for the flat form",
+        api_literal("/")
+    )));
+}
+
+/// `v2-e3-s7` D3.2: the plain-text boundary rule's widened predecessor set
+/// catches a backtick- or pipe-delimited markdown reference the strict
+/// (Rust-literal) rule would miss.
+#[test]
+fn the_plain_text_rule_accepts_a_backtick_delimited_markdown_reference() {
+    let line = format!("| GET | `{}` | Something |", api_literal("/me/ui-state"));
+
+    assert!(plain_text_matches_boundary_pattern(&line));
+    assert!(!literal_matches_boundary_pattern(&line));
 }
 
 #[test]
@@ -551,25 +685,33 @@ fn with_scratch_probe<T>(name: &str, probe_content: &str, run: impl FnOnce(&Path
     result
 }
 
-/// The allowlist check over every file under `root`: an unlisted file's
-/// first matching literal (markers exempt nothing there), a `MarkedSpans`
-/// file's first matching literal
-/// outside a span, a `WholeFile` entry whose file has no matching literal
-/// left, and a `MarkedSpans` entry with no span containing one.
+/// The allowlist check over every Rust file under `root` (used by the probe
+/// self-tests above, which write a scratch `tests/probe.rs` tree): an
+/// unlisted file's first matching literal (markers exempt nothing there), a
+/// `MarkedSpans` file's first matching literal outside a span, a `WholeFile`
+/// entry whose file has no matching literal left, and a `MarkedSpans` entry
+/// with no span containing one.
 fn violations(root: &Path, allowed: &[Exemption]) -> Vec<String> {
-    violations_with(root, allowed, file_literals)
+    violations_from_pairs(
+        relative_paths(root, |path| Some(file_literals(path))),
+        allowed,
+    )
 }
 
-/// Like [`violations`], but with the file-to-literals extraction supplied by
-/// the caller — used by the `atlas_client` scan to exclude `#[cfg(test)]`
-/// fixture content from the production-only boundary check (D2.4: the
-/// client's `mod tests` is out of the production scan).
-fn violations_with(
-    root: &Path,
-    allowed: &[Exemption],
-    literals_of: impl Fn(&Path) -> FileLiterals,
-) -> Vec<String> {
-    let files = relative_paths(root, |path| Some(literals_of(path)));
+/// The repo-wide walk (`v2-e3-s7` D3): every candidate file under `root`,
+/// dispatched to the Rust-tokenized or plain-text extraction mode by path
+/// (D3.2), excluded paths skipped entirely (D3.2's exclusion list).
+fn repo_violations(root: &Path, allowed: &[Exemption]) -> Vec<String> {
+    violations_from_pairs(repo_relative_paths(root), allowed)
+}
+
+/// The bidirectional allowlist check shared by [`violations`] and
+/// [`repo_violations`]: an unlisted file's first matching literal (markers
+/// exempt nothing there) fails; a `MarkedSpans` file's first matching
+/// literal outside a span fails; a `WholeFile` entry whose file has no
+/// matching literal left is stale; a `MarkedSpans` entry with no span
+/// containing one is stale.
+fn violations_from_pairs(files: Vec<(String, FileLiterals)>, allowed: &[Exemption]) -> Vec<String> {
     let mut violations = Vec::new();
 
     for (file, literals) in &files {
@@ -645,9 +787,10 @@ fn file_literals(path: &Path) -> FileLiterals {
 }
 
 /// Like [`file_literals`], but truncates the content at a top-level
-/// `#[cfg(test)]` marker before scanning, so a crate whose entire test
-/// module is nested at the bottom of one file (`atlas_client/src/lib.rs`'s
-/// `mod tests`) is checked as production code only.
+/// `#[cfg(test)]` marker before scanning, so a `src/` file's own unit-test
+/// module — routinely carrying a synthetic fixture route or a "no V1 key
+/// remains" negative assertion — is checked as production code only
+/// (`v2-e3-s6` D2.4, extended repo-wide by `v2-e3-s7` D3.2).
 fn production_file_literals(path: &Path) -> FileLiterals {
     let content = fs::read_to_string(path).expect("read source file");
     let production = content
@@ -672,6 +815,35 @@ fn literals_in_content(content: &str) -> FileLiterals {
             found.marked.push(literal.line);
         } else {
             found.unmarked.push(literal.line);
+        }
+    }
+
+    found
+}
+
+/// Plain-text extraction (D3.2): applies [`plain_text_matches_boundary_pattern`]
+/// to each raw line, with the same marker-span support as Rust-tokenized
+/// mode (the marker text is matched on the raw line regardless of the
+/// file's own comment syntax, exactly like [`marked_lines`] already does for
+/// Rust).
+fn plain_text_file_literals(path: &Path) -> FileLiterals {
+    let content = fs::read_to_string(path).expect("read source file");
+    let marked_lines = marked_lines(&content);
+    let mut found = FileLiterals {
+        unmarked: Vec::new(),
+        marked: Vec::new(),
+    };
+
+    for (index, line) in content.lines().enumerate() {
+        let line_number = index + 1;
+        if !plain_text_matches_boundary_pattern(line) {
+            continue;
+        }
+
+        if marked_lines.get(line_number).copied().unwrap_or(false) {
+            found.marked.push(line_number);
+        } else {
+            found.unmarked.push(line_number);
         }
     }
 
@@ -705,8 +877,10 @@ fn first_unmarked_literal_line(path: &Path) -> Option<usize> {
 
 /// One flag per 1-based line number (index 0 unused): `true` when the line
 /// sits inside a `// api-path-guard:off` / `:on` span. Marker lines are
-/// comments, so the tokenizer never sees them; they are matched on the raw
-/// line text here instead.
+/// comments in Rust, so the tokenizer never sees them; here they are matched
+/// on the raw line text directly, which also lets a non-Rust file (D3.2)
+/// carry the same marker text as an ordinary line, regardless of that
+/// format's own comment syntax.
 fn marked_lines(content: &str) -> Vec<bool> {
     let mut marked = vec![false];
     let mut marker_depth: u32 = 0;
@@ -732,25 +906,61 @@ fn marked_lines(content: &str) -> Vec<bool> {
 /// The boundary rule over one string literal's contents: a hit is any
 /// `/api` preceded by the start of the literal, `}`, `/`, or an ASCII
 /// alphanumeric (the end of a literal host such as `localhost:3000`), and
-/// followed by `/`, the end of the literal, or `?`. `/api-keys` never
+/// followed by `/`, the end of the literal, or `?`, excluding a hit whose
+/// following text is exactly `/v2/` (`v2-e3-s7` D3.1). `/api-keys` never
 /// matches (the following character is `-`); `"GET /api/x failed"` never
 /// matches (the preceding character is a space), and neither do `(`, `"`,
 /// or any other punctuation before `/api`.
 fn literal_matches_boundary_pattern(text: &str) -> bool {
+    boundary_hits(text, false)
+}
+
+/// Like [`literal_matches_boundary_pattern`], but for a raw plain-text line
+/// (markdown, YAML, Nix, …) rather than the contents of a Rust string
+/// literal (`v2-e3-s7` D3.2). Widens the "preceded by" half of the rule to
+/// accept ANY predecessor (or start of line): plain text has no
+/// literal-delimiter concept, and a route reference is conventionally
+/// backtick- or pipe-delimited (`` `/api/workspaces/{ws}/tasks` ``, `` | GET
+/// | `/api/me/ui-state` | `` ) rather than quote-delimited, so the narrower
+/// Rust-literal predecessor set would silently miss every real documentation
+/// reference. The "followed by" half and the `/v2/` exclusion are unchanged.
+fn plain_text_matches_boundary_pattern(text: &str) -> bool {
+    boundary_hits(text, true)
+}
+
+/// Shared boundary-rule engine for both extraction modes. `wide_preceded`
+/// selects the plain-text mode's widened predecessor rule; the "followed
+/// by" half and the `/v2/` exclusion are identical in both modes.
+///
+/// Plain-text mode's widened predecessor set (see
+/// [`plain_text_matches_boundary_pattern`]) has one narrow exclusion of its
+/// own: `src/api/` is this repository's own idiom for a TypeScript source
+/// directory (`apps/web/src/api/types.d.ts`, referenced throughout the
+/// docs), never a request path, and the widened rule would otherwise flag
+/// every mention of it. The Rust-literal rule needs no such exclusion: a
+/// Rust string literal never spells a filesystem path with this shape as
+/// prose in the way markdown routinely does.
+fn boundary_hits(text: &str, wide_preceded: bool) -> bool {
     let needle = api_literal("");
     let bytes = text.as_bytes();
 
     text.match_indices(needle.as_str()).any(|(start, _)| {
-        let preceded = match start.checked_sub(1).and_then(|index| bytes.get(index)) {
-            None => true,
-            Some(previous) => matches!(previous, b'}' | b'/') || previous.is_ascii_alphanumeric(),
+        let preceded = if wide_preceded {
+            bytes.get(start.saturating_sub(3)..start) != Some(b"src")
+        } else {
+            match start.checked_sub(1).and_then(|index| bytes.get(index)) {
+                None => true,
+                Some(previous) => {
+                    matches!(previous, b'}' | b'/') || previous.is_ascii_alphanumeric()
+                }
+            }
         };
-        let followed = matches!(
-            bytes.get(start + needle.len()),
-            None | Some(b'/') | Some(b'?')
-        );
 
-        preceded && followed
+        let after = start + needle.len();
+        let followed = matches!(bytes.get(after), None | Some(b'/') | Some(b'?'));
+        let is_v2_prefixed = bytes.get(after..after + 4) == Some(b"/v2/");
+
+        preceded && followed && !is_v2_prefixed
     })
 }
 
@@ -967,77 +1177,203 @@ impl Scanner {
     }
 }
 
-/// `v2-e3-s6` D3 — the guard's scan roots extend to `../atlas_mcp/src` and
-/// `../atlas_cli/src` (production code). Both allowlists are empty: an
-/// empty allowlist checked bidirectionally is the assertion that these
-/// crates are, and stay, free of a hand-built `/api` request path — every
-/// request either crate sends goes through `AtlasClient`'s own seam.
-const MCP_ALLOWED: &[Exemption] = &[];
-const CLI_ALLOWED: &[Exemption] = &[];
+fn rust_source_files(dir: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    let mut queue = VecDeque::from([dir.to_path_buf()]);
 
-fn atlas_mcp_src_dir() -> PathBuf {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    Path::new(manifest_dir).join("../atlas_mcp/src")
+    while let Some(current) = queue.pop_front() {
+        let Ok(entries) = fs::read_dir(&current) else {
+            continue;
+        };
+        for entry in entries {
+            let entry = entry.expect("dir entry");
+            let path = entry.path();
+
+            if path.is_dir() {
+                queue.push_back(path);
+            } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+                files.push(path);
+            }
+        }
+    }
+
+    files
 }
 
-fn atlas_cli_src_dir() -> PathBuf {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    Path::new(manifest_dir).join("../atlas_cli/src")
+/// Directory names excluded from the repo-wide walk wherever they occur
+/// (`v2-e3-s7` D3.2): build output, dependency trees, and VCS metadata.
+const EXCLUDED_DIR_SEGMENTS: &[&str] = &["target", "node_modules", ".git", "dist"];
+
+/// Individual repo-relative files excluded from the walk (D3.2): generated
+/// artifacts an allowlist entry would incorrectly staleness-check against a
+/// build output.
+const EXCLUDED_FILES: &[&str] = &[
+    "apps/web/openapi.json",
+    // Split across two literal fragments (concat!, evaluated at compile
+    // time into one string) so this guard's own source never contains the
+    // pattern it forbids — the same self-pattern trick `api_literal` uses
+    // elsewhere in this file.
+    concat!("apps/web/src/ap", "i/types.d.ts"),
+    "pnpm-lock.yaml",
+    "Cargo.lock",
+];
+
+/// Repo-relative path prefixes excluded wholesale (D3.2): `apps/web/src/**`
+/// stays owned by S6's own Vitest guard, and the desktop app's generated
+/// Tauri bindings are build output like `target/`.
+const EXCLUDED_PATH_PREFIXES: &[&str] = &["apps/desktop/src-tauri/gen/", "apps/web/src/"];
+
+fn is_excluded(relative: &str) -> bool {
+    if EXCLUDED_FILES.contains(&relative) {
+        return true;
+    }
+
+    if EXCLUDED_PATH_PREFIXES
+        .iter()
+        .any(|prefix| relative.starts_with(prefix))
+    {
+        return true;
+    }
+
+    relative
+        .split('/')
+        .any(|segment| EXCLUDED_DIR_SEGMENTS.contains(&segment))
 }
 
-#[test]
-fn no_unallowlisted_api_literal_exists_in_atlas_mcp_src() {
-    let violations = violations_with(&atlas_mcp_src_dir(), MCP_ALLOWED, production_file_literals);
-
-    assert!(
-        violations.is_empty(),
-        "atlas_mcp api-path guard violations:\n{}",
-        violations.join("\n")
-    );
+/// D3.2's extraction-mode dispatch: which scan a repo-relative path gets, or
+/// `None` when the path is out of this gate's scope entirely (every other
+/// file extension, plus everything `is_excluded` already dropped).
+///
+/// `RustProduction` truncates at a file's first top-level `#[cfg(test)]`
+/// before scanning (mirroring `production_file_literals`, `v2-e3-s6` D2.4):
+/// a `src/` file's own unit-test module routinely carries synthetic or
+/// negative-assertion literals (a fixture route, a "no V1 key remains"
+/// check) that would otherwise read as a false-positive V1 dependency.
+/// `RustTokenized` (integration test files under a `tests/` directory) scans
+/// the whole file: there the test code IS the file's entire content, so
+/// nothing is truncated.
+enum ExtractionMode {
+    RustProduction,
+    RustTokenized,
+    PlainText,
 }
 
-#[test]
-fn no_unallowlisted_api_literal_exists_in_atlas_cli_src() {
-    let violations = violations_with(&atlas_cli_src_dir(), CLI_ALLOWED, production_file_literals);
+fn extraction_mode_for(relative: &str) -> Option<ExtractionMode> {
+    if relative.ends_with(".rs") {
+        let is_test_dir = relative.contains("/tests/");
+        let is_src_dir = relative.contains("/src/");
+        let in_rust_scan_root = relative.starts_with("crates/")
+            || relative.starts_with("apps/desktop/src-tauri/src/")
+            || relative.starts_with("apps/desktop/src-tauri/tests/");
 
-    assert!(
-        violations.is_empty(),
-        "atlas_cli api-path guard violations:\n{}",
-        violations.join("\n")
-    );
+        if in_rust_scan_root && is_test_dir {
+            return Some(ExtractionMode::RustTokenized);
+        }
+        if in_rust_scan_root && is_src_dir {
+            return Some(ExtractionMode::RustProduction);
+        }
+    }
+
+    const PLAIN_TEXT_EXTENSIONS: &[&str] = &[
+        ".md",
+        ".nix",
+        ".yml",
+        ".yaml",
+        ".toml",
+        ".conf",
+        ".template",
+    ];
+    if PLAIN_TEXT_EXTENSIONS
+        .iter()
+        .any(|extension| relative.ends_with(extension))
+    {
+        return Some(ExtractionMode::PlainText);
+    }
+
+    None
 }
 
-/// The files permitted to call `router_audit::namespaces_for` or
-/// `router_audit::mounted_path` directly, outside `support/path.rs` and
-/// `support/route_matrix.rs` (`v2-e3-s5` design D5, spec "one seam, not
-/// two", T1.33's amended acceptance gate 7): the six dual-mount sweeps that
-/// legitimately exercise both mounts by intent, the three per-component
-/// router-parity tests (same reason), `api_v1_path_presence_guard.rs`,
-/// whose `mounted_path(V1_NAMESPACE, ...)` call reads D9's frozen V1
-/// baseline through the namespace constant directly, never through the
-/// suite's flippable default, and `openapi_idempotency_annotations.rs`,
-/// pinned the same way to the composed document's own `/api` keys until
-/// S6/PR1 re-keys it.
+/// Every non-excluded, non-directory file under `root`.
+fn candidate_files(root: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    let mut queue = VecDeque::from([root.to_path_buf()]);
+
+    while let Some(current) = queue.pop_front() {
+        let Ok(entries) = fs::read_dir(&current) else {
+            continue;
+        };
+        for entry in entries {
+            let entry = entry.expect("dir entry");
+            let path = entry.path();
+            let relative = path
+                .strip_prefix(root)
+                .expect("file is under the scanned root")
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            if is_excluded(&relative) {
+                continue;
+            }
+
+            if path.is_dir() {
+                queue.push_back(path);
+            } else {
+                files.push(path);
+            }
+        }
+    }
+
+    files
+}
+
+/// `(repo-relative path, extracted literals)` for every candidate file under
+/// `root`, dispatched by [`extraction_mode_for`].
+fn repo_relative_paths(root: &Path) -> Vec<(String, FileLiterals)> {
+    let mut files: Vec<(String, FileLiterals)> = candidate_files(root)
+        .into_iter()
+        .filter_map(|path| {
+            let relative = path
+                .strip_prefix(root)
+                .expect("file is under the scanned root")
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let literals = match extraction_mode_for(&relative)? {
+                ExtractionMode::RustTokenized => file_literals(&path),
+                ExtractionMode::RustProduction => production_file_literals(&path),
+                ExtractionMode::PlainText => plain_text_file_literals(&path),
+            };
+
+            Some((relative, literals))
+        })
+        .collect();
+
+    files.sort_by(|left, right| left.0.cmp(&right.0));
+    files
+}
+
+/// The files permitted to call `router_audit::mounted_path` directly,
+/// outside `support/path.rs` and `support/route_matrix.rs` (`v2-e3-s5`
+/// design D5, spec "one seam, not two", `v2-e3-s7` D1/U2: pruned of the
+/// files this slice deleted, and of `namespaces_for`, which no longer
+/// exists anywhere in the codebase): the sweeps and per-component
+/// router-parity tests that legitimately build a request path at a specific
+/// component's own mount, by intent.
 const SEAM_EXCEPTIONS: &[&str] = &[
     "api_401_sweep.rs",
     "api_rfc9457_sweep.rs",
-    "api_page_conformance.rs",
-    "api_capability_sweep.rs",
-    "api_v1_v2_byte_identical.rs",
     "api_router_mount_assertion.rs",
     "api_platform_router_parity.rs",
     "api_custos_router_parity.rs",
     "api_acta_router_parity.rs",
-    "api_v1_path_presence_guard.rs",
-    "openapi_idempotency_annotations.rs",
 ];
 
 /// INV-SEAM (spec "one seam, not two", T1.29/T1.33): outside
 /// `support/path.rs`/`support/route_matrix.rs` and the named
 /// [`SEAM_EXCEPTIONS`], no file under `crates/atlas_server/tests` calls
-/// `router_audit::namespaces_for` or `router_audit::mounted_path` directly.
+/// `router_audit::mounted_path` directly.
 #[test]
-fn only_the_named_files_call_namespaces_for_or_mounted_path_directly() {
+fn only_the_named_files_call_mounted_path_directly() {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let tests_dir = Path::new(manifest_dir).join("tests");
 
@@ -1065,40 +1401,16 @@ fn only_the_named_files_call_namespaces_for_or_mounted_path_directly() {
 
     assert!(
         offenders.is_empty(),
-        "found a direct namespaces_for/mounted_path call outside the seam in: {}",
+        "found a direct mounted_path call outside the seam in: {}",
         offenders.join(", ")
     );
 }
 
 fn file_calls_seam_primitive_directly(path: &Path) -> bool {
     let content = fs::read_to_string(path).expect("read source file");
-    let namespaces_for_call = format!("{}(", "namespaces_for");
     let mounted_path_call = format!("{}(", "mounted_path");
 
     let code = scan(&content).code;
 
-    code.contains(&namespaces_for_call) || code.contains(&mounted_path_call)
-}
-
-fn rust_source_files(dir: &Path) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    let mut queue = VecDeque::from([dir.to_path_buf()]);
-
-    while let Some(current) = queue.pop_front() {
-        let Ok(entries) = fs::read_dir(&current) else {
-            continue;
-        };
-        for entry in entries {
-            let entry = entry.expect("dir entry");
-            let path = entry.path();
-
-            if path.is_dir() {
-                queue.push_back(path);
-            } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
-                files.push(path);
-            }
-        }
-    }
-
-    files
+    code.contains(&mounted_path_call)
 }

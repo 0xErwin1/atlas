@@ -133,18 +133,14 @@ use crate::state::AppState;
 
 /// Builds the full application router with all routes and the middleware stack.
 pub fn app(state: AppState) -> Router {
-    // Each component's own router is built once and nested at both its V1
-    // segment (merged into the shared `/api` mount) and its own
+    // Each component's own router is built once and nested at its own
     // `/api/v2/<component>` mount (`v2-e3-s4` PR7, D10: SHELL-API-1 and the
     // E3 proposal fix the V2 URL with the component segment, correcting
-    // PR5's flat, shared `/api/v2` mount). `Router` is `Clone`, and the
-    // clone shares every per-route layer's state: tower_governor 0.8.0's
-    // `Governor::clone` (`governor.rs`) clones its `limiter`, an
-    // `Arc<RateLimiter>`, so a component's governed routes (e.g. custos's
-    // `login`/`activate`) keep one brute-force budget across their `/api`
-    // and `/api/v2/<component>` mounts instead of each mount getting a
-    // fresh one — the same reuse PR5 established, restated per component.
-    // The root-level routes (`/health`, `/ready`, `/version`,
+    // PR5's flat, shared `/api/v2` mount). Since `v2-e3-s7` this is the
+    // ONLY mount a component's routes are reachable at: the shared `/api`
+    // nest that used to also serve every route (S1's original mount) was
+    // retired once every consumer this repository owns migrated to the V2
+    // form. The root-level routes (`/health`, `/ready`, `/version`,
     // `/openapi.json`, `/scalar`) live in the separately built
     // `root_router`, outside every nest.
     //
@@ -158,18 +154,12 @@ pub fn app(state: AppState) -> Router {
     let custos_router = routes::custos::router(state.clone());
     let acta_router = routes::acta::router(state.clone());
 
-    let api_router = platform_router
-        .clone()
-        .merge(custos_router.clone())
-        .merge(acta_router.clone());
-
     let root_router =
         routes::platform::root_router(state.clone()).merge(routes::acta::root_router());
 
     let fallback_router = routes::protection::protect(Router::new().fallback(not_found), state);
 
     let router = Router::new()
-        .nest("/api", api_router)
         .nest("/api/v2/platform", platform_router)
         .nest("/api/v2/custos", custos_router)
         .nest("/api/v2/acta", acta_router)

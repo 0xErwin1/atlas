@@ -1,4 +1,5 @@
 import { onScopeDispose } from 'vue';
+import { toCurrentApiPath } from '@/lib/legacyApiPath';
 import { fetchThroughPlatform } from '@/platform/fetch';
 
 const API_PREFIX = '/api/';
@@ -14,9 +15,10 @@ const API_PREFIX = '/api/';
  * fetch in the browser).
  *
  * Sources that are not API paths are returned unchanged so external images keep
- * loading directly. Each source is fetched once and shared; object URLs are
- * revoked when the owning scope is disposed, which is why the resolver — not its
- * callers — owns their lifetime.
+ * loading directly. A V1 attachment path from pre-cutover stored content is
+ * fetched from its V2 form (see `toCurrentApiPath`). Each source is fetched once
+ * and shared; object URLs are revoked when the owning scope is disposed, which is
+ * why the resolver — not its callers — owns their lifetime.
  */
 export function useApiImageSrc(): (url: string) => Promise<string | null> {
   const resolved = new Map<string, Promise<string | null>>();
@@ -37,7 +39,8 @@ export function useApiImageSrc(): (url: string) => Promise<string | null> {
     resolved.clear();
   });
 
-  return (url: string): Promise<string | null> => {
+  return (source: string): Promise<string | null> => {
+    const url = toCurrentApiPath(source);
     if (!url.startsWith(API_PREFIX)) return Promise.resolve(url);
 
     const cached = resolved.get(url);

@@ -31,12 +31,12 @@
 mod support;
 
 use atlas_server::middleware::idempotency::{
-    idempotency_middleware_release, idempotency_middleware_store_briefly,
+    IDEMPOTENCY_STORE_PATH_PREFIX, idempotency_middleware_release,
+    idempotency_middleware_store_briefly,
 };
 use atlas_server::persistence::repos::{
     CompleteOutcome, IN_FLIGHT_TTL, IdempotencyScope, InsertOutcome, PgIdempotencyRepo,
 };
-use atlas_server::router_audit::CANONICAL_NAMESPACE;
 use atlas_server::state::AppState;
 use axum::body::Body;
 use axum::extract::Request;
@@ -99,7 +99,7 @@ async fn mock_handler_with_cookie() -> Response {
 /// prefix-stripped `request.uri()` it sees in the real layer stack and the
 /// store rows carry the `/api/...` form the tests query and seed by.
 fn mounted(router: Router) -> Router {
-    Router::new().nest(CANONICAL_NAMESPACE, router)
+    Router::new().nest(IDEMPOTENCY_STORE_PATH_PREFIX, router)
 }
 
 fn mock_router(state: AppState) -> Router {
@@ -717,83 +717,84 @@ async fn a_request_that_fails_authn_leaves_no_row_in_the_store() {
     );
 }
 
-/// The store keys on the canonical `/api` form of the path
-/// (`router_audit::CANONICAL_NAMESPACE`), so one `Idempotency-Key` names one
-/// logical operation across both mounts: a retry against the other namespace
-/// replays instead of running the handler again, proven in both orders.
+/// `v2-e3-s7` D2.3: narrowed from `the_same_key_replays_across_namespaces`
+/// (which proved a replay across the V1 and V2 mounts — a fact that cannot
+/// exist once the V1 mount is retired) to the one half of that test that
+/// survives its own premise: a V2 request still stores its row under the
+/// canonical `/api` form
+/// (`middleware::idempotency::IDEMPOTENCY_STORE_PATH_PREFIX`), proving the
+/// store key's shape is unchanged by the cutover (D2.2, INV-STORE-KEY-FROZEN)
+/// — one authenticated POST, one replay at the same mount, and a live
+/// `SELECT path` against the stored row.
 #[tokio::test]
-async fn the_same_key_replays_across_namespaces() {
+async fn a_v2_request_stores_the_canonical_api_key() {
     let db = TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
     let (client, ws, user) =
-        support::login_user_with_workspace(&server, &db, "idem-cross-ns").await;
+        support::login_user_with_workspace(&server, &db, "idem-store-key").await;
     let token = client.token().expect("session token").to_string();
     let relative = format!("/workspaces/{}/tags", ws.slug);
+    let key = "v2-request-store-key";
 
-    let send = |namespace: &str, key: &str, name: &str| {
+    let send = || {
         client
             .http_client()
-            .post(format!("{}{namespace}{relative}", server.base_url()))
+            .post(format!("{}/api/v2/acta{relative}", server.base_url()))
             .bearer_auth(&token)
             .header("x-atlas-csrf", "1")
             .header("idempotency-key", key)
-            .json(&json!({ "name": name }))
+            .json(&json!({ "name": key }))
             .send()
     };
 
-    for (key, first_ns, second_ns) in [
-        ("cross-ns-v1-first", "/api", "/api/v2/acta"),
-        ("cross-ns-v2-first", "/api/v2/acta", "/api"),
-    ] {
-        let first = send(first_ns, key, key).await.expect("first request");
-        let status1 = first.status();
-        assert_eq!(
-            status1.as_u16(),
-            201,
-            "{first_ns}: the original request must create the tag before any replay is compared"
-        );
-        assert!(
-            first.headers().get("idempotent-replayed").is_none(),
-            "{first_ns}: the original response must never carry Idempotent-Replayed"
-        );
-        let body1 = first.bytes().await.expect("first body");
+    let first = send().await.expect("first request");
+    let status1 = first.status();
+    assert_eq!(
+        status1.as_u16(),
+        201,
+        "the original request must create the tag before any replay is compared"
+    );
+    assert!(
+        first.headers().get("idempotent-replayed").is_none(),
+        "the original response must never carry Idempotent-Replayed"
+    );
+    let body1 = first.bytes().await.expect("first body");
 
-        let second = send(second_ns, key, key).await.expect("second request");
-        assert_eq!(second.status(), status1, "{second_ns}: replay status");
-        assert_eq!(
-            second
-                .headers()
-                .get("idempotent-replayed")
-                .and_then(|v| v.to_str().ok()),
-            Some("true"),
-            "{second_ns}: the same key sent to the other mount must replay"
-        );
-        assert_eq!(
-            second.bytes().await.expect("second body"),
-            body1,
-            "{second_ns}: replay body"
-        );
+    let second = send().await.expect("second request");
+    assert_eq!(second.status(), status1, "replay status");
+    assert_eq!(
+        second
+            .headers()
+            .get("idempotent-replayed")
+            .and_then(|v| v.to_str().ok()),
+        Some("true"),
+        "the same key sent again must replay"
+    );
+    assert_eq!(
+        second.bytes().await.expect("second body"),
+        body1,
+        "replay body"
+    );
 
-        let paths: Vec<String> = sea_orm::ConnectionTrait::query_all_raw(
-            db.conn(),
-            sea_orm::Statement::from_sql_and_values(
-                sea_orm::DatabaseBackend::Postgres,
-                "SELECT path FROM platform.idempotency_keys \
-                 WHERE principal_id = $1 AND method = $2 AND key = $3",
-                [user.id.0.into(), "POST".into(), key.into()],
-            ),
-        )
-        .await
-        .expect("path query must not error")
-        .into_iter()
-        .map(|row| row.try_get::<String>("", "path").expect("path column"))
-        .collect();
-        assert_eq!(
-            paths,
-            vec![format!("/api{relative}")],
-            "{first_ns} then {second_ns}: exactly one row, keyed on the /api form"
-        );
-    }
+    let paths: Vec<String> = sea_orm::ConnectionTrait::query_all_raw(
+        db.conn(),
+        sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT path FROM platform.idempotency_keys \
+             WHERE principal_id = $1 AND method = $2 AND key = $3",
+            [user.id.0.into(), "POST".into(), key.into()],
+        ),
+    )
+    .await
+    .expect("path query must not error")
+    .into_iter()
+    .map(|row| row.try_get::<String>("", "path").expect("path column"))
+    .collect();
+    assert_eq!(
+        paths,
+        vec![format!("/api{relative}")],
+        "a request through the V2 mount must still store the canonical /api-form key"
+    );
 }
 
 /// Untested spec scenario (verify report finding): "A response MUST be
@@ -826,7 +827,12 @@ async fn a_post_execution_404_is_stored_and_replayed_like_any_completed_response
 
     let nonexistent_user_id = uuid::Uuid::now_v7();
     let key = "post-exec-404-key";
-    let path = format!("/api/workspaces/{}/members", ws.slug);
+    let relative = format!("/workspaces/{}/members", ws.slug);
+    let path = support::path::api_path("acta", &relative);
+    let store_path = format!(
+        "{}{relative}",
+        atlas_server::middleware::idempotency::IDEMPOTENCY_STORE_PATH_PREFIX
+    );
     let token = client.token().expect("session token").to_string();
 
     let send_request = || {
@@ -933,7 +939,7 @@ async fn a_post_execution_404_is_stored_and_replayed_like_any_completed_response
             [
                 user.id.0.into(),
                 "POST".into(),
-                path.clone().into(),
+                store_path.clone().into(),
                 key.into(),
             ],
         ),

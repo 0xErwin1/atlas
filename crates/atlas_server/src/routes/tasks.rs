@@ -2756,7 +2756,8 @@ async fn upload_comment_attachment_for_path(
         .await
         .map_err(ApiError::Domain)?;
         let url = format!(
-            "/api/workspaces/{}/tasks/{}/comments/{}/attachments/{attachment_id}/content",
+            "{}/workspaces/{}/tasks/{}/comments/{}/attachments/{attachment_id}/content",
+            crate::router_audit::v2_namespace("acta"),
             auth.workspace.slug,
             auth.resource.0.readable_id,
             draft.id.0,
@@ -2894,7 +2895,8 @@ pub(crate) async fn list_comment_attachments(
                     .into_iter()
                     .map(|attachment| {
                         let url = format!(
-                            "/api/workspaces/{}/tasks/{}/comments/{}/attachments/{}/content",
+                            "{}/workspaces/{}/tasks/{}/comments/{}/attachments/{}/content",
+                            crate::router_audit::v2_namespace("acta"),
                             auth.workspace.slug,
                             auth.resource.0.readable_id,
                             draft_id.0,
@@ -2922,8 +2924,12 @@ pub(crate) async fn list_comment_attachments(
             .into_iter()
             .map(|attachment| {
                 let url = format!(
-                    "/api/workspaces/{}/tasks/{}/comments/{}/attachments/{}/content",
-                    auth.workspace.slug, auth.resource.0.readable_id, comment_id.0, attachment.id.0,
+                    "{}/workspaces/{}/tasks/{}/comments/{}/attachments/{}/content",
+                    crate::router_audit::v2_namespace("acta"),
+                    auth.workspace.slug,
+                    auth.resource.0.readable_id,
+                    comment_id.0,
+                    attachment.id.0,
                 );
                 comment_attachment_to_dto_with_url(attachment, comment_id.0, url)
             })
