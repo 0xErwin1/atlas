@@ -247,7 +247,7 @@ async fn fused_search(
         });
     }
 
-    let pool = state.search.hybrid_pool.max(limit as usize);
+    let pool = state.search_semantic.hybrid_pool.max(limit as usize);
     let lexical = if mode == SearchMode::Hybrid {
         PgSearchRepo::new((*state.db).clone())
             .search(
@@ -283,7 +283,7 @@ async fn fused_search(
         _ => Vec::new(),
     };
 
-    let fused = hybrid_search::fuse_ranks(&lexical, &semantic, state.search.rrf_k);
+    let fused = hybrid_search::fuse_ranks(&lexical, &semantic, state.search_semantic.rrf_k);
     let page = page_from_fused(state, ctx, &lexical, fused, limit, cursor).await?;
 
     Ok(Json(page).into_response())

@@ -32,11 +32,17 @@ async fn main() -> Result<()> {
         std::process::exit(exit_code);
     }
 
-    let cfg = atlas_server::config::ServerConfig::from_env(&atlas_core::config::ProcessEnv)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let cfg = match atlas_server::startup::run_config_gate(
+        &atlas_server::reg5::reg5_component_entries(storage_backend),
+        &atlas_core::config::ProcessEnv,
+        &mut std::io::stderr(),
+    ) {
+        Ok(cfg) => cfg,
+        Err(exit_code) => std::process::exit(exit_code),
+    };
 
     info!("connecting to database");
-    let db = atlas_postgres::connect(&cfg.postgres).await?;
+    let db = atlas_postgres::connect(&cfg.platform.postgres).await?;
 
     info!("applying migrations");
     Migrator::up(&db, None).await?;
@@ -44,23 +50,26 @@ async fn main() -> Result<()> {
     info!("running bootstrap");
     atlas_server::persistence::bootstrap::run_bootstrap(
         &atlas_server::persistence::bootstrap::BootstrapConfig {
-            root_password: cfg.root_password.clone(),
+            root_password: cfg
+                .custos
+                .root_password
+                .as_ref()
+                .map(|password| password.expose().clone()),
         },
         &db,
     )
     .await
     .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    let port: u16 = atlas_server::startup::read_port(&atlas_core::config::ProcessEnv, 8080);
+    let port = cfg.platform.port;
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
     info!("atlas_server listening on {addr}");
 
-    let state =
-        atlas_server::state::AppState::new(db.clone(), &cfg, &atlas_core::config::ProcessEnv)
-            .await
-            .map_err(|e| anyhow::anyhow!("AppState::new: {e}"))?;
+    let state = atlas_server::state::AppState::new(db.clone(), &cfg)
+        .await
+        .map_err(|e| anyhow::anyhow!("AppState::new: {e}"))?;
 
     // Spawn the webhook dispatcher as a background task.
     //
@@ -157,11 +166,11 @@ async fn main() -> Result<()> {
             info!("shutdown signal received; draining connections");
             let _ = drain_tx.send(true);
 
-            let drain_timeout = Duration::from_secs(cfg.shutdown_timeout_secs);
+            let drain_timeout = Duration::from_secs(cfg.platform.shutdown_timeout_secs);
             match tokio::time::timeout(drain_timeout, &mut server).await {
                 Ok(result) => result?,
                 Err(_) => tracing::warn!(
-                    timeout_secs = cfg.shutdown_timeout_secs,
+                    timeout_secs = cfg.platform.shutdown_timeout_secs,
                     "graceful drain exceeded timeout; forcing shutdown"
                 ),
             }

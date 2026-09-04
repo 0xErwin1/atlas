@@ -107,3 +107,72 @@ fn startup_gate_proceeds_when_the_real_reg5_registry_is_valid() {
         "no failure output should be written on a valid registry"
     );
 }
+
+/// SHELL-CFG-1: the second startup gate, `AtlasConfig::from_registry`, runs
+/// after `run_registry_gate` and refuses when mandatory config for a present
+/// component is missing, naming the variable and never its value.
+/// `atlas_server::startup::run_config_gate` wraps it for `main.rs` (design
+/// D2.5) and is unit-tested in its own module; these tests exercise the
+/// loader directly since `ConfigError` already asserts value-freedom in its
+/// own module tests (`atlas_core::config::error`).
+mod config_gate {
+    use atlas_core::config::{ConfigError, EnvSource};
+    use atlas_server::config::AtlasConfig;
+    use atlas_server::reg5::{StorageBackend, reg5_component_entries};
+    use base64::{Engine, engine::general_purpose::STANDARD};
+
+    fn env(pairs: Vec<(&'static str, String)>) -> impl EnvSource {
+        move |key: &str| {
+            pairs
+                .iter()
+                .find(|(name, _)| *name == key)
+                .map(|(_, value)| value.clone())
+        }
+    }
+
+    fn valid_key() -> String {
+        STANDARD.encode([0xAB_u8; 32])
+    }
+
+    #[test]
+    fn missing_webhook_enc_key_refuses_startup_naming_the_variable() {
+        let entries = reg5_component_entries(StorageBackend::Filesystem);
+        let source = env(vec![(
+            "DATABASE_URL",
+            "postgres://set-value/db".to_string(),
+        )]);
+
+        let error = AtlasConfig::from_registry(&entries, &source).expect_err("expected Err");
+
+        assert_eq!(error, ConfigError::missing("ATLAS_WEBHOOK_ENC_KEY"));
+        assert!(!error.to_string().is_empty());
+    }
+
+    #[test]
+    fn s3_backend_missing_bucket_refuses_startup_naming_the_variable() {
+        let entries = reg5_component_entries(StorageBackend::S3);
+        let source = env(vec![
+            ("DATABASE_URL", "postgres://set-value/db".to_string()),
+            ("ATLAS_WEBHOOK_ENC_KEY", valid_key()),
+            ("ATLAS_ATTACHMENT_BACKEND", "s3".to_string()),
+            ("ATLAS_S3_ENDPOINT", "endpoint".to_string()),
+            ("ATLAS_S3_ACCESS_KEY_ID", "access-key".to_string()),
+            ("ATLAS_S3_SECRET_ACCESS_KEY", "secret-key".to_string()),
+        ]);
+
+        let error = AtlasConfig::from_registry(&entries, &source).expect_err("expected Err");
+
+        assert_eq!(error, ConfigError::missing("ATLAS_S3_BUCKET"));
+    }
+
+    #[test]
+    fn every_mandatory_variable_present_starts_successfully() {
+        let entries = reg5_component_entries(StorageBackend::Filesystem);
+        let source = env(vec![
+            ("DATABASE_URL", "postgres://set-value/db".to_string()),
+            ("ATLAS_WEBHOOK_ENC_KEY", valid_key()),
+        ]);
+
+        AtlasConfig::from_registry(&entries, &source).expect("expected Ok");
+    }
+}

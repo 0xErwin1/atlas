@@ -1,4 +1,39 @@
-use atlas_core::config::{ComponentConfig, EnvSource};
+//! Typed, per-component server configuration (SHELL-CFG-1..3).
+//!
+//! [`AtlasConfig`] composes one [`atlas_core::config::ComponentConfig`]
+//! implementer per component/Module this release builds:
+//! [`platform::PlatformConfig`], [`custos::CustosConfig`],
+//! [`acta::ActaConfig`], and — under [`ModuleConfigs`] —
+//! [`storage::StorageConfig`], [`search::SearchLexicalConfig`], and
+//! [`search::SearchSemanticConfig`]. The single flat V1 loader this module
+//! used to expose is retired by this split; no consumer reads it after this
+//! slice.
+//!
+//! [`EmbeddingConfig`], [`SearchConfig`], and the free `read_*`/`load_*`
+//! helpers below predate the split. They stay `pub` and unmodified so the
+//! by-name environment-binding characterization test
+//! (`tests/env_binding.rs`, frozen unchanged across this PR per design
+//! D3.2/R1) and `tests/anchor_interval_divergence.rs` keep exercising the
+//! exact production surface they were written against. No route,
+//! `AppState`, or `main.rs` call site reads `EmbeddingConfig`/`SearchConfig`
+//! directly after this slice — [`search::SearchSemanticConfig::from_env`]
+//! is the only remaining caller, and it carries their validated values
+//! forward into `Secret`-wrapped fields.
+
+mod acta;
+mod custos;
+mod platform;
+mod search;
+mod storage;
+
+pub use acta::ActaConfig;
+pub use custos::CustosConfig;
+pub use platform::PlatformConfig;
+pub use search::{SearchLexicalConfig, SearchSemanticConfig};
+pub use storage::StorageConfig;
+
+use atlas_core::config::{ComponentConfig, ConfigError, EnvSource};
+use atlas_core::registry::ComponentEntry;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use std::fmt;
 
@@ -12,6 +47,12 @@ pub use atlas_postgres::{PoolConfig, PostgresConfig};
 /// disagrees with the column only surfaces on the first insert — long after
 /// startup, once a document write has already been accepted.
 pub const SCHEMA_EMBEDDING_DIMENSIONS: usize = 1536;
+
+/// Today's hardcoded attachment size cap, preserved as
+/// [`acta::ActaConfig::max_attachment_bytes`]'s default so an unconfigured
+/// deployment keeps behaving identically after `ATLAS_ACTA_MAX_ATTACHMENT_BYTES`
+/// is introduced.
+pub const DEFAULT_MAX_ATTACHMENT_BYTES: u64 = 20 * 1024 * 1024; // 20 MiB
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EmbeddingProviderKind {
@@ -234,84 +275,15 @@ impl Default for RateLimitConfig {
     }
 }
 
-pub struct ServerConfig {
-    pub postgres: PostgresConfig,
-    pub root_password: Option<String>,
-    pub anchor_interval: u32,
-    /// Raw 32-byte AES-256-GCM key bytes decoded from `ATLAS_WEBHOOK_ENC_KEY`.
-    pub webhook_enc_key: [u8; 32],
-    pub dispatcher: DispatcherConfig,
-    pub allow_private_webhook_targets: bool,
-    pub rate_limit: RateLimitConfig,
-    pub embeddings: EmbeddingConfig,
-    pub search: SearchConfig,
-    /// Upper bound, in seconds, on the post-signal graceful drain before the
-    /// process forces termination. Guards against long-lived SSE streams
-    /// blocking shutdown indefinitely.
-    pub shutdown_timeout_secs: u64,
-}
-
-impl ServerConfig {
-    pub fn from_env(source: &dyn EnvSource) -> Result<Self, String> {
-        let postgres = PostgresConfig::from_env(source).map_err(|e| e.to_string())?;
-
-        let root_password = env_var_nonempty(source, "ATLAS_ROOT_PASSWORD");
-
-        let anchor_interval = read_anchor_interval(source)?;
-
-        let webhook_enc_key = load_webhook_enc_key(source)?;
-        let dispatcher = load_dispatcher_config(source);
-        let allow_private_webhook_targets =
-            read_env_bool(source, "ATLAS_ALLOW_PRIVATE_WEBHOOK_TARGETS", false);
-        let rate_limit = load_rate_limit_config(source);
-
-        let embeddings = EmbeddingConfig::from_env(source)?;
-        let search = load_search_config(source)?;
-
-        let shutdown_timeout_secs = read_env(source, "ATLAS_SHUTDOWN_TIMEOUT_SECS", 20);
-
-        Ok(Self {
-            postgres,
-            root_password,
-            anchor_interval,
-            webhook_enc_key,
-            dispatcher,
-            allow_private_webhook_targets,
-            rate_limit,
-            embeddings,
-            search,
-            shutdown_timeout_secs,
-        })
-    }
-}
-
-impl fmt::Debug for ServerConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ServerConfig")
-            .field("postgres", &self.postgres)
-            .field("root_password", &"[REDACTED]")
-            .field("anchor_interval", &self.anchor_interval)
-            .field("webhook_enc_key", &"[REDACTED]")
-            .field("dispatcher", &self.dispatcher)
-            .field(
-                "allow_private_webhook_targets",
-                &self.allow_private_webhook_targets,
-            )
-            .field("rate_limit", &self.rate_limit)
-            .field("embeddings", &self.embeddings)
-            .field("search", &self.search)
-            .field("shutdown_timeout_secs", &self.shutdown_timeout_secs)
-            .finish()
-    }
-}
-
 /// Reads `ATLAS_ANCHOR_INTERVAL` through `source`, refusing a value below 2.
 ///
-/// Exposed (rather than inlined in [`ServerConfig::from_env`]) so the
-/// by-name environment-binding characterization test
-/// (`tests/env_binding.rs`) and the `ATLAS_ANCHOR_INTERVAL` divergence
-/// characterization test (`tests/anchor_interval_divergence.rs`) can exercise
-/// this exact rule without composing the rest of `ServerConfig`.
+/// Exposed (rather than inlined) so the by-name environment-binding
+/// characterization test (`tests/env_binding.rs`) and the
+/// `ATLAS_ANCHOR_INTERVAL` divergence characterization test
+/// (`tests/anchor_interval_divergence.rs`) can exercise this exact rule.
+/// [`acta::ActaConfig::from_env`] wraps this in a [`ConfigError`] that never
+/// echoes the parsed value, matching every other `ComponentConfig`
+/// implementer in this module.
 pub fn read_anchor_interval(source: &dyn EnvSource) -> Result<u32, String> {
     let value = read_env(source, "ATLAS_ANCHOR_INTERVAL", 50);
 
@@ -432,9 +404,122 @@ fn nonempty(value: Option<String>) -> Option<String> {
 ///
 /// Public (rather than `pub(crate)`) so the by-name environment-binding
 /// characterization test (`tests/env_binding.rs`) can exercise it directly,
-/// alongside its one other consumer, `reg5::storage_backend_from_env`.
+/// alongside its other consumers, `reg5::storage_backend_from_env` and
+/// [`storage::StorageConfig::from_env`].
 pub fn env_var_nonempty(source: &dyn EnvSource, key: &str) -> Option<String> {
     nonempty(source.get(key))
+}
+
+/// The typed configuration surface this release composes: one struct per
+/// component (`platform`, `custos`, `acta`) plus one per configurable
+/// Module, grouped under [`ModuleConfigs`].
+///
+/// Built by [`Self::from_registry`], never by hand: composition sequences
+/// each component's own `ComponentConfig::from_env` and surfaces the first
+/// `ConfigError` unmodified (SHELL-CFG-1's "the Shell validates only
+/// composition" — no field-level rule is re-implemented here).
+#[derive(Debug)] // safe: every field's own `Debug` already redacts its secrets.
+pub struct AtlasConfig {
+    pub platform: PlatformConfig,
+    pub custos: CustosConfig,
+    pub acta: ActaConfig,
+    pub modules: ModuleConfigs,
+}
+
+/// One config struct per configurable Module active in the built registry.
+#[derive(Debug)]
+pub struct ModuleConfigs {
+    pub storage: StorageConfig,
+    pub search_lexical: SearchLexicalConfig,
+    pub search_semantic: SearchSemanticConfig,
+}
+
+/// The `ConfigDeclaration.struct_name` of every field [`AtlasConfig`]
+/// composes. `tests/config_registry_composition.rs` checks this list
+/// bidirectionally against the registry's own declarations (D2.2): a
+/// declared struct with no loader here fails, and a loaded struct declared
+/// by no entry fails, for both storage backends.
+pub const COMPOSED_STRUCT_NAMES: &[&str] = &[
+    "PlatformConfig",
+    "CustosConfig",
+    "ActaConfig",
+    "StorageConfig",
+    "SearchLexicalConfig",
+    "SearchSemanticConfig",
+];
+
+/// The exact `ATLAS_EMBEDDINGS_*` variables `search.pgvector_embeddings`
+/// declares (`ATLAS_EMBEDDINGS_` prefix), checked one-by-one so a build that
+/// excludes the Module can still warn when one is set without needing to
+/// enumerate the whole process environment — `EnvSource` is deliberately not
+/// enumerable (SHELL-CFG-1).
+const SEARCH_SEMANTIC_VARS: &[&str] = &[
+    "ATLAS_EMBEDDINGS_ENABLED",
+    "ATLAS_EMBEDDINGS_PROVIDER",
+    "ATLAS_EMBEDDINGS_MODEL",
+    "ATLAS_EMBEDDINGS_DIMENSIONS",
+    "ATLAS_EMBEDDINGS_API_KEY",
+    "ATLAS_EMBEDDINGS_BASE_URL",
+    "ATLAS_EMBEDDINGS_BATCH_SIZE",
+    "ATLAS_EMBEDDINGS_TIMEOUT_MS",
+    "ATLAS_EMBEDDINGS_RETRY_ATTEMPTS",
+];
+
+impl AtlasConfig {
+    /// Loads every component config declared by `entries`, returning the
+    /// first `ConfigError` a component's own `from_env` produces.
+    ///
+    /// `search.pgvector_embeddings` is `mandatory: false` (SHELL-REG-5): when
+    /// it is absent from `entries`, its config is not loaded — a set
+    /// `ATLAS_EMBEDDINGS_*` variable only produces a `warn`-level log naming
+    /// the variable, never a startup failure (SHELL-CFG-1).
+    pub fn from_registry(
+        entries: &[ComponentEntry],
+        source: &dyn EnvSource,
+    ) -> Result<Self, ConfigError> {
+        let search_semantic = if component_present(entries, "search.pgvector_embeddings") {
+            SearchSemanticConfig::from_env(source)?
+        } else {
+            warn_configured_for_absent_component(
+                source,
+                "search.pgvector_embeddings",
+                SEARCH_SEMANTIC_VARS,
+            );
+            SearchSemanticConfig::default()
+        };
+
+        Ok(Self {
+            platform: PlatformConfig::from_env(source)?,
+            custos: CustosConfig::from_env(source)?,
+            acta: ActaConfig::from_env(source)?,
+            modules: ModuleConfigs {
+                storage: StorageConfig::from_env(source)?,
+                search_lexical: SearchLexicalConfig::from_env(source)?,
+                search_semantic,
+            },
+        })
+    }
+}
+
+fn component_present(entries: &[ComponentEntry], stable_id: &str) -> bool {
+    entries
+        .iter()
+        .any(|entry| entry.identity.stable_id.as_str() == stable_id)
+}
+
+/// Logs one `warn`-level line per `var` in `vars` that is set despite
+/// `component` being absent from the built registry (SHELL-CFG-1: "config
+/// for an absent component is ignored with a warning, not an error").
+fn warn_configured_for_absent_component(source: &dyn EnvSource, component: &str, vars: &[&str]) {
+    for var in vars {
+        if source.get(var).is_some() {
+            tracing::warn!(
+                variable = *var,
+                component,
+                "configuration variable is set for a component absent from this build; ignored"
+            );
+        }
+    }
 }
 
 #[cfg(test)]
@@ -442,45 +527,90 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use super::*;
+    use atlas_core::config::Secret;
 
     #[test]
-    fn debug_does_not_expose_database_url_password() {
-        let config = ServerConfig {
+    fn platform_config_debug_never_contains_the_database_url_password() {
+        let config = PlatformConfig {
             postgres: PostgresConfig {
-                database_url: atlas_core::config::Secret::new(
+                database_url: Secret::new(
                     "postgres://user:supersecretpassword@localhost/db".to_string(),
                 ),
-                pool: atlas_postgres::PoolConfig::default(),
+                pool: PoolConfig::default(),
             },
-            root_password: Some("rootsecret".to_string()),
-            anchor_interval: 50,
-            webhook_enc_key: [0xABu8; 32],
-            dispatcher: DispatcherConfig::default(),
-            allow_private_webhook_targets: false,
             rate_limit: RateLimitConfig::default(),
-            embeddings: EmbeddingConfig::default(),
-            search: SearchConfig::default(),
             shutdown_timeout_secs: 20,
+            port: 8080,
+            build: None,
+            server_url: None,
+            cookie_secure: true,
+            session_ttl_hours: 168,
+            session_max_ttl_hours: 720,
+            idempotency_retention_hours: 24,
         };
 
         let output = format!("{config:?}");
 
-        assert!(
-            !output.contains("supersecretpassword"),
-            "database_url password must not appear in Debug output: {output}"
-        );
-        assert!(
-            !output.contains("rootsecret"),
-            "root_password must not appear in Debug output: {output}"
-        );
-        assert!(
-            !output.contains("0xAB") && !output.contains("171"),
-            "webhook_enc_key bytes must not appear in Debug output: {output}"
-        );
-        assert!(
-            output.contains("[REDACTED]"),
-            "Debug output must contain [REDACTED]: {output}"
-        );
+        assert!(!output.contains("supersecretpassword"));
+        assert!(output.contains("Secret(<redacted>)"));
+    }
+
+    #[test]
+    fn custos_config_debug_never_contains_the_root_password() {
+        let config = CustosConfig {
+            root_password: Some(Secret::new("rootsecret".to_string())),
+        };
+
+        let output = format!("{config:?}");
+
+        assert!(!output.contains("rootsecret"));
+        assert!(output.contains("Secret(<redacted>)"));
+    }
+
+    #[test]
+    fn acta_config_debug_never_contains_the_webhook_key_bytes() {
+        let config = ActaConfig {
+            anchor_interval: 50,
+            dispatcher: DispatcherConfig::default(),
+            webhook_enc_key: Secret::new([0xABu8; 32]),
+            allow_private_webhook_targets: false,
+            max_attachment_bytes: DEFAULT_MAX_ATTACHMENT_BYTES,
+            upload_allowed_extensions: None,
+        };
+
+        let output = format!("{config:?}");
+
+        assert!(!output.contains("0xAB") && !output.contains("171"));
+        assert!(output.contains("Secret(<redacted>)"));
+    }
+
+    #[test]
+    fn storage_config_debug_never_contains_the_s3_secret_key() {
+        let config = StorageConfig::S3 {
+            bucket: "bucket".to_string(),
+            endpoint: "https://example.test".to_string(),
+            access_key_id: "access-key".to_string(),
+            secret_access_key: Secret::new("supersecretaccesskey".to_string()),
+            region: "auto".to_string(),
+        };
+
+        let output = format!("{config:?}");
+
+        assert!(!output.contains("supersecretaccesskey"));
+        assert!(output.contains("Secret(<redacted>)"));
+    }
+
+    #[test]
+    fn search_semantic_config_debug_never_contains_the_api_key() {
+        let config = SearchSemanticConfig {
+            api_key: Some(Secret::new("sk-supersecretapikey".to_string())),
+            ..SearchSemanticConfig::default()
+        };
+
+        let output = format!("{config:?}");
+
+        assert!(!output.contains("sk-supersecretapikey"));
+        assert!(output.contains("Secret(<redacted>)"));
     }
 
     #[test]
@@ -532,5 +662,48 @@ mod tests {
         .expect("valid deterministic config");
 
         assert_eq!(cfg.model, "closure-model");
+    }
+
+    #[test]
+    fn absent_component_config_warns_without_composition_error() {
+        // `entries` deliberately omits `search.pgvector_embeddings`, unlike
+        // the real `reg5_component_entries` builds today (§0.5). This proves
+        // the absent-component branch by construction rather than by
+        // rebuilding the registry, since no current build variant excludes
+        // it (SHELL-REG-5 reserves that for a future release).
+        let entries: Vec<ComponentEntry> = vec![];
+        let source = |key: &str| -> Option<String> {
+            match key {
+                "DATABASE_URL" => Some("postgres://set-value/db".to_string()),
+                "ATLAS_WEBHOOK_ENC_KEY" => Some(STANDARD.encode([0xAB_u8; 32]).to_string()),
+                "ATLAS_EMBEDDINGS_API_KEY" => Some("configured-but-absent".to_string()),
+                _ => None,
+            }
+        };
+
+        let cfg = AtlasConfig::from_registry(&entries, &source).expect("expected Ok");
+
+        assert!(!cfg.modules.search_semantic.enabled);
+        assert!(cfg.modules.search_semantic.api_key.is_none());
+    }
+
+    #[test]
+    fn from_registry_surfaces_the_owning_components_own_validation_error() {
+        let entries: Vec<ComponentEntry> = vec![];
+        let source = |key: &str| -> Option<String> {
+            match key {
+                "DATABASE_URL" => Some("postgres://set-value/db".to_string()),
+                "ATLAS_WEBHOOK_ENC_KEY" => Some(STANDARD.encode([0xAB_u8; 32]).to_string()),
+                "ATLAS_ANCHOR_INTERVAL" => Some("1".to_string()),
+                _ => None,
+            }
+        };
+
+        let error = AtlasConfig::from_registry(&entries, &source).expect_err("expected Err");
+
+        assert_eq!(
+            error,
+            ConfigError::invalid("ATLAS_ANCHOR_INTERVAL", "must be >= 2")
+        );
     }
 }

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::time::Duration;
 
-use crate::config::EmbeddingConfig;
+use crate::config::SearchSemanticConfig;
 
 #[derive(Debug, Clone)]
 pub struct DeterministicEmbeddingProvider {
@@ -71,11 +71,11 @@ impl EmbeddingProvider for DeterministicEmbeddingProvider {
 #[derive(Clone)]
 pub struct OpenAiCompatibleEmbeddingProvider {
     client: reqwest::Client,
-    config: EmbeddingConfig,
+    config: SearchSemanticConfig,
 }
 
 impl OpenAiCompatibleEmbeddingProvider {
-    pub fn new(config: EmbeddingConfig) -> Result<Self, DomainError> {
+    pub fn new(config: SearchSemanticConfig) -> Result<Self, DomainError> {
         config
             .validate_for_provider()
             .map_err(|message| DomainError::InvalidInput { message })?;
@@ -149,12 +149,18 @@ impl OpenAiCompatibleEmbeddingProvider {
         &self,
         inputs: &[EmbeddingInput],
     ) -> Result<Vec<Vec<f32>>, EmbeddingAttemptError> {
-        let api_key = self.config.api_key.as_deref().ok_or_else(|| {
-            EmbeddingAttemptError::Permanent(DomainError::InvalidInput {
-                message: "ATLAS_EMBEDDINGS_API_KEY is required for openai_compatible embeddings"
-                    .to_owned(),
-            })
-        })?;
+        let api_key = self
+            .config
+            .api_key
+            .as_ref()
+            .map(|key| key.expose().as_str())
+            .ok_or_else(|| {
+                EmbeddingAttemptError::Permanent(DomainError::InvalidInput {
+                    message:
+                        "ATLAS_EMBEDDINGS_API_KEY is required for openai_compatible embeddings"
+                            .to_owned(),
+                })
+            })?;
         let body = EmbeddingRequest {
             model: &self.config.model,
             input: inputs.iter().map(|input| input.text.as_str()).collect(),

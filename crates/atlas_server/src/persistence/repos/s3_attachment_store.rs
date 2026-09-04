@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use atlas_acta::ports::attachment_store::AttachmentStore;
+use atlas_core::config::Secret;
 use atlas_core::error::DomainError;
 use bytes::Bytes;
 use object_store::aws::AmazonS3Builder;
@@ -16,7 +17,7 @@ pub struct S3Config {
     pub bucket: String,
     pub endpoint: String,
     pub access_key_id: String,
-    pub secret_access_key: String,
+    pub secret_access_key: Secret<String>,
     pub region: String,
 }
 
@@ -41,7 +42,7 @@ impl S3AttachmentStore {
             .with_bucket_name(config.bucket)
             .with_endpoint(config.endpoint)
             .with_access_key_id(config.access_key_id)
-            .with_secret_access_key(config.secret_access_key)
+            .with_secret_access_key(config.secret_access_key.expose().clone())
             .with_region(config.region)
             .with_allow_http(allow_http)
             .build()
@@ -170,7 +171,7 @@ mod tests {
             bucket: "test-bucket".into(),
             endpoint: "http://localhost:9000".into(),
             access_key_id: "test-key".into(),
-            secret_access_key: "test-secret".into(),
+            secret_access_key: Secret::new("test-secret".into()),
             region: "auto".into(),
         })
         .expect("test S3 store must build")
