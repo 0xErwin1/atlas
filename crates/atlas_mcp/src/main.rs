@@ -273,16 +273,10 @@ mod tests {
         }))
     }
 
-    async fn mock_meta(headers: HeaderMap) -> Json<serde_json::Value> {
-        let enabled = headers
-            .get(http::header::AUTHORIZATION)
-            .and_then(|value| value.to_str().ok())
-            != Some("Bearer atlas_disabled");
-
+    async fn mock_meta() -> Json<serde_json::Value> {
         Json(serde_json::json!({
             "version": "1",
-            "build": null,
-            "semantic_search_enabled": enabled
+            "build": null
         }))
     }
 

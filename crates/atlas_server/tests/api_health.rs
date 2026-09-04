@@ -2,8 +2,6 @@
 
 mod support;
 
-use sea_orm::ConnectionTrait;
-
 #[tokio::test]
 async fn health_endpoint_returns_200_via_atlas_client() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -20,10 +18,11 @@ async fn health_endpoint_returns_200_via_atlas_client() {
     db.teardown().await;
 }
 
-/// SHELL-CFG-2, design D4.2/R11: `/api/meta`'s response body must never
-/// carry a secret field, regardless of how the endpoint's shape evolves.
-/// This is a permanent negative assertion (no secret field name appears),
-/// not a shape assertion — it survives E11-S3a's `/api/meta` rewrite.
+/// SHELL-CFG-2, design D4.2/R11: `/api/v2/platform/meta`'s response body
+/// must never carry a secret field, regardless of how the endpoint's shape
+/// evolves. This is a permanent negative assertion (no secret field name
+/// appears), not a shape assertion — it survives E11-S3a's `/api/v2/platform/meta`
+/// rewrite.
 ///
 /// The harness cannot inject real `ATLAS_ROOT_PASSWORD`/
 /// `ATLAS_WEBHOOK_ENC_KEY`/S3-credential values into a running test server
@@ -38,11 +37,24 @@ async fn meta_response_carries_no_secret_field_names() {
     let (client, _ws, _user) =
         support::login_user_with_workspace(&server, &db, "meta-secret-fields").await;
 
-    let meta = client
-        .server_meta()
+    let token = client.token().expect("authenticated token");
+    let body = reqwest::Client::new()
+        .get(support::path::api_url(
+            server.base_url(),
+            "platform",
+            "/meta",
+        ))
+        .bearer_auth(token)
+        .send()
         .await
-        .expect("server_meta request must succeed");
-    let body = serde_json::to_string(&meta).expect("meta serializes to JSON");
+        .expect("meta request must succeed")
+        .text()
+        .await
+        .expect("meta body is text");
+    assert!(
+        body.contains("\"version\""),
+        "the raw meta body must be the JSON payload, got: {body}"
+    );
 
     for forbidden in [
         "root_password",
@@ -60,8 +72,10 @@ async fn meta_response_carries_no_secret_field_names() {
     db.teardown().await;
 }
 
+/// E11-S3a design D4: `/api/v2/platform/meta` is identity-only, no config
+/// value, and lists the registry's present components (non-vacuously).
 #[tokio::test]
-async fn meta_exposes_version_and_optional_url() {
+async fn meta_exposes_version_url_and_components() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
     let (client, _ws, _user) = support::login_user_with_workspace(&server, &db, "meta-url-1").await;
@@ -79,81 +93,14 @@ async fn meta_exposes_version_and_optional_url() {
         meta.url.is_none(),
         "url must be absent when ATLAS_SERVER_URL is unset"
     );
-    assert_eq!(meta.max_attachment_bytes, Some(20 * 1024 * 1024));
-    assert_eq!(meta.semantic_search_enabled, Some(true));
-
-    db.teardown().await;
-}
-
-#[tokio::test]
-async fn meta_reports_semantic_search_disabled_when_no_embedding_provider_exists() {
-    let db = support::TestDb::create().await.expect("TestDb::create");
-    let mut state = atlas_server::state::AppState::for_test(db.conn().clone())
-        .await
-        .expect("test state");
-    state.embedding_provider = None;
-    let server = support::TestServer::spawn_with_state(state).await;
-    let (client, _ws, _user) =
-        support::login_user_with_workspace(&server, &db, "meta-semantic-disabled").await;
-
-    let meta = client.server_meta().await.expect("server_meta request");
-    assert_eq!(meta.semantic_search_enabled, Some(false));
-
-    db.teardown().await;
-}
-
-#[tokio::test]
-async fn meta_reports_semantic_search_disabled_when_schema_is_absent() {
-    let db = support::TestDb::create().await.expect("TestDb::create");
-    db.conn()
-        .execute_unprepared("DROP TABLE acta.search_embeddings")
-        .await
-        .expect("drop semantic search table");
-    let state = atlas_server::state::AppState::for_test(db.conn().clone())
-        .await
-        .expect("test state");
-    let server = support::TestServer::spawn_with_state(state).await;
-    let (client, _ws, _user) =
-        support::login_user_with_workspace(&server, &db, "meta-semantic-schema-absent").await;
-
-    let meta = client.server_meta().await.expect("server_meta request");
-    assert_eq!(meta.semantic_search_enabled, Some(false));
-
-    db.teardown().await;
-}
-
-#[tokio::test]
-async fn meta_reports_semantic_search_disabled_when_schema_disappears_after_startup() {
-    let db = support::TestDb::create().await.expect("TestDb::create");
-    let state = atlas_server::state::AppState::for_test(db.conn().clone())
-        .await
-        .expect("test state");
-    db.conn()
-        .execute_unprepared("DROP TABLE acta.search_embeddings")
-        .await
-        .expect("drop semantic search table after startup readiness");
-    let server = support::TestServer::spawn_with_state(state).await;
-    let (client, _ws, _user) =
-        support::login_user_with_workspace(&server, &db, "meta-semantic-schema-drift").await;
-
-    let meta = client.server_meta().await.expect("server_meta request");
-    assert_eq!(meta.semantic_search_enabled, Some(false));
-
-    db.teardown().await;
-}
-
-#[tokio::test]
-async fn meta_exposes_the_configured_attachment_limit() {
-    let db = support::TestDb::create().await.expect("TestDb::create");
-    let state = atlas_server::state::AppState::for_test(db.conn().clone())
-        .await
-        .expect("test state")
-        .with_max_attachment_bytes(123_456);
-    let server = support::TestServer::spawn_with_state(state).await;
-    let (client, _ws, _user) = support::login_user_with_workspace(&server, &db, "meta-limit").await;
-
-    let meta = client.server_meta().await.expect("server_meta request");
-    assert_eq!(meta.max_attachment_bytes, Some(123_456));
+    assert!(
+        !meta.components.is_empty(),
+        "components must walk a non-zero component count"
+    );
+    assert!(
+        meta.components.iter().any(|c| c.stable_id == "platform"),
+        "platform must be among the listed components"
+    );
 
     db.teardown().await;
 }

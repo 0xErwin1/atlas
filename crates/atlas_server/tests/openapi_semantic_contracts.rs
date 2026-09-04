@@ -431,23 +431,32 @@ fn comment_freedom_contract_is_exact_for_feeds_backlinks_attachments_and_metadat
         "document comment uploads must require the x-file-name header"
     );
 
-    let limit = document
-        .pointer("/components/schemas/ServerMetaDto/properties/max_attachment_bytes")
-        .expect("server metadata must advertise the optional attachment limit");
+    // E11-S3a PR2, design D4: `ServerMetaDto` lists registry-present
+    // components, never a config value. `max_attachment_bytes` and
+    // `semantic_search_enabled` were removed with no replacement route.
+    let components = document
+        .pointer("/components/schemas/ServerMetaDto/properties/components")
+        .expect("server metadata must list its present components");
+    assert_eq!(components.get("type"), Some(&Value::String("array".into())));
 
-    assert_eq!(
-        limit.get("type"),
-        Some(&serde_json::json!(["integer", "null"]))
+    assert!(
+        document
+            .pointer("/components/schemas/ServerMetaDto/properties/max_attachment_bytes")
+            .is_none(),
+        "max_attachment_bytes must not be documented on ServerMetaDto"
     );
-    assert_eq!(limit.get("format"), Some(&Value::String("int64".into())));
-    assert_eq!(limit.get("minimum"), Some(&serde_json::json!(0)));
+    assert!(
+        document
+            .pointer("/components/schemas/ServerMetaDto/properties/semantic_search_enabled")
+            .is_none(),
+        "semantic_search_enabled must not be documented on ServerMetaDto"
+    );
 
-    let semantic_search_enabled = document
-        .pointer("/components/schemas/ServerMetaDto/properties/semantic_search_enabled")
-        .expect("server metadata must advertise semantic search availability");
-    assert_eq!(
-        semantic_search_enabled.get("type"),
-        Some(&serde_json::json!(["boolean", "null"]))
+    assert!(
+        document
+            .pointer("/components/schemas/ComponentSummaryDto/properties/contract_version")
+            .is_some(),
+        "component summaries must document their contract version"
     );
 }
 

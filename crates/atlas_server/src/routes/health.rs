@@ -6,11 +6,11 @@ use axum::{
 };
 use serde_json::json;
 
-use atlas_api::dtos::{NotReadyComponentDto, ReadinessReportDto, ServerMetaDto};
+use atlas_api::dtos::{NotReadyComponentDto, ReadinessReportDto, ServerMetaDto, VersionDto};
 use atlas_core::ops::readiness::{ReadinessReport, aggregate_readiness};
 
 use crate::ops::deadline::TokioDeadline;
-use crate::{error::ApiError, state::AppState};
+use crate::state::AppState;
 
 #[utoipa::path(
     get,
@@ -89,15 +89,37 @@ pub(crate) async fn ready(State(state): State<AppState>) -> Response {
     }
 }
 
+/// The fields common to `/version` and `/api/v2/platform/meta` (design D4):
+/// built through [`crate::ops::meta::shared_identity`] from the registry
+/// `AppState` built once at startup, so the two payloads cannot drift apart
+/// on the same process and no handler rebuilds the registry per request.
+fn identity_fields(
+    state: &AppState,
+) -> (
+    String,
+    Option<String>,
+    Vec<atlas_api::dtos::ComponentSummaryDto>,
+) {
+    crate::ops::meta::shared_identity(&state.registry, state.build.clone())
+}
+
 #[utoipa::path(
     get,
     path = "/version",
-    responses((status = 200, description = "Service version"))
+    responses((status = 200, description = "Service version", body = VersionDto))
 )]
-pub(crate) async fn version() -> impl IntoResponse {
-    Json(json!({"version": env!("CARGO_PKG_VERSION")}))
+pub(crate) async fn version(State(state): State<AppState>) -> impl IntoResponse {
+    let (version, build, components) = identity_fields(&state);
+    Json(VersionDto {
+        version,
+        build,
+        components,
+    })
 }
 
+/// Server build information for the About screen: identity only, no config
+/// value (SHELL-OPS-7, design D4). Reads no database — `meta` is a pure
+/// registry+config read.
 #[utoipa::path(
     get,
     path = "/meta",
@@ -108,20 +130,12 @@ pub(crate) async fn version() -> impl IntoResponse {
         (status = 401, description = "Unauthenticated"),
     )
 )]
-pub(crate) async fn meta(State(state): State<AppState>) -> Result<impl IntoResponse, ApiError> {
-    let semantic_search_enabled =
-        state
-            .semantic_search_enabled_now()
-            .await
-            .map_err(|error| ApiError::Internal {
-                message: format!("semantic search schema readiness check failed: {error}"),
-            })?;
-
-    Ok(Json(ServerMetaDto {
-        version: env!("CARGO_PKG_VERSION").to_string(),
-        build: state.build.clone(),
+pub(crate) async fn meta(State(state): State<AppState>) -> impl IntoResponse {
+    let (version, build, components) = identity_fields(&state);
+    Json(ServerMetaDto {
+        version,
+        build,
         url: state.server_url.clone(),
-        max_attachment_bytes: Some(state.max_attachment_bytes),
-        semantic_search_enabled: Some(semantic_search_enabled),
-    }))
+        components,
+    })
 }

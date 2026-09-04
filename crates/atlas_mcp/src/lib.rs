@@ -25,7 +25,7 @@ use atlas_api::dtos::task_views::{
     CreateTaskViewRequest, TaskViewFiltersDto, UpdateTaskViewRequest,
 };
 use atlas_api::dtos::webhooks::{CreateWebhookRequest, UpdateWebhookRequest};
-use atlas_api::dtos::{CreateProjectRequest, ServerMetaDto, UpdateProjectRequest};
+use atlas_api::dtos::{CreateProjectRequest, UpdateProjectRequest};
 use atlas_client::{AtlasClient, helpers};
 use rmcp::{
     ErrorData as McpError, ServerHandler,
@@ -708,46 +708,21 @@ fn parse_resolved_board_uuid(board_id_str: &str) -> Result<uuid::Uuid, String> {
         .map_err(|_| format!("resolved board '{board_id_str}' is not a valid UUID"))
 }
 
-fn decode_comment_attachment_data(
-    data_base64: &str,
-    max_attachment_bytes: u64,
-) -> Result<Vec<u8>, String> {
+/// Decodes a comment attachment's base64 payload. The server's own upload
+/// route (`routes/acta.rs:555`) is the size enforcement (413) since
+/// `require_comment_attachment_limit`'s client-side pre-check was deleted
+/// (E11-S3a design D4, R3b): a size cap discovered via `/api/v2/platform/meta`
+/// no longer exists to pre-validate against.
+fn decode_comment_attachment_data(data_base64: &str) -> Result<Vec<u8>, String> {
     use base64::Engine as _;
 
-    let encoded_len = u64::try_from(data_base64.len())
-        .map_err(|_| "attachment content is too large to validate".to_string())?;
-    let max_encoded_len = max_attachment_bytes.div_ceil(3).saturating_mul(4);
-    if encoded_len > max_encoded_len {
-        return Err("attachment content exceeds the server attachment limit".to_string());
-    }
     if !data_base64.len().is_multiple_of(4) {
         return Err("attachment content must be padded standard base64".to_string());
     }
 
-    let bytes = base64::engine::general_purpose::STANDARD
+    base64::engine::general_purpose::STANDARD
         .decode(data_base64)
-        .map_err(|_| "attachment content must be padded standard base64".to_string())?;
-    if u64::try_from(bytes.len()).is_ok_and(|len| len > max_attachment_bytes) {
-        return Err("attachment content exceeds the server attachment limit".to_string());
-    }
-    Ok(bytes)
-}
-
-fn require_comment_attachment_limit(
-    result: Result<ServerMetaDto, atlas_client::ClientError>,
-    operation: &str,
-) -> Result<u64, String> {
-    result
-        .map_err(|e| {
-            format!(
-                "{operation}: server attachment limit could not be discovered; upload was not attempted: {}",
-                enrich_client_error(e, "server_meta")
-            )
-        })?
-        .max_attachment_bytes
-        .ok_or_else(|| {
-            format!("{operation}: server attachment limit could not be discovered; upload was not attempted")
-        })
+        .map_err(|_| "attachment content must be padded standard base64".to_string())
 }
 
 /// Upper bound on the size of a text attachment returned inline by `get_task_attachment`.
@@ -3823,11 +3798,7 @@ impl AtlasMcp {
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
         let comment_id = parse_uuid_param("comment_id", &params.comment_id)?;
-        let max_attachment_bytes = require_comment_attachment_limit(
-            client.server_meta().await,
-            "upload_task_comment_attachment",
-        )?;
-        let data = decode_comment_attachment_data(&params.data_base64, max_attachment_bytes)?;
+        let data = decode_comment_attachment_data(&params.data_base64)?;
         let attachment = client
             .upload_task_comment_attachment(
                 &params.workspace,
@@ -5165,11 +5136,7 @@ impl AtlasMcp {
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
         let comment_id = parse_uuid_param("comment_id", &params.comment_id)?;
-        let max_attachment_bytes = require_comment_attachment_limit(
-            client.server_meta().await,
-            "upload_document_comment_attachment",
-        )?;
-        let data = decode_comment_attachment_data(&params.data_base64, max_attachment_bytes)?;
+        let data = decode_comment_attachment_data(&params.data_base64)?;
         let attachment = client
             .upload_document_comment_attachment(
                 &params.workspace,
@@ -6307,35 +6274,11 @@ mod tests {
         (format!("http://{address}"), request_rx)
     }
 
-    fn serve_transport_failing_meta() -> (String, std::sync::mpsc::Receiver<String>) {
-        use std::io::Read;
-        use std::net::TcpListener;
-
-        let listener = TcpListener::bind("127.0.0.1:0").expect("recording server binds");
-        let address = listener.local_addr().expect("recording server has address");
-        let (request_tx, request_rx) = std::sync::mpsc::channel();
-
-        std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().expect("recording server accepts request");
-            let mut request = [0_u8; 8192];
-            let length = stream
-                .read(&mut request)
-                .expect("recording server reads request");
-            request_tx
-                .send(
-                    String::from_utf8_lossy(request.get(..length).unwrap_or_default()).into_owned(),
-                )
-                .expect("recording server records request");
-        });
-
-        (format!("http://{address}"), request_rx)
-    }
-
     #[tokio::test]
     async fn the_single_search_tool_is_offered_regardless_of_server_capabilities() {
         let (base_url, _requests) = serve_recording_atlas(vec![(
             "200 OK",
-            r#"{"version":"1","build":null,"semantic_search_enabled":false}"#.to_string(),
+            r#"{"version":"1","build":null}"#.to_string(),
         )]);
 
         let tools = listed_tool_names(AtlasMcp::new(base_url, "atlas_test").unwrap()).await;
@@ -6363,18 +6306,10 @@ mod tests {
                 "200 OK",
                 r#"{"items":[],"next_cursor":null,"has_more":false}"#.to_string(),
             ),
-            (
-                "200 OK",
-                r#"{"version":"1","build":null,"url":null,"max_attachment_bytes":16}"#.to_string(),
-            ),
             ("201 Created", COMMENT_ATTACHMENT.to_string()),
             ("200 OK", format!("[{COMMENT_ATTACHMENT}]")),
             ("200 OK", "ok".to_string()),
             ("204 No Content", String::new()),
-            (
-                "200 OK",
-                r#"{"version":"1","build":null,"url":null,"max_attachment_bytes":16}"#.to_string(),
-            ),
             ("201 Created", COMMENT_ATTACHMENT.to_string()),
             ("200 OK", format!("[{COMMENT_ATTACHMENT}]")),
             ("200 OK", "ok".to_string()),
@@ -6437,18 +6372,19 @@ mod tests {
             );
         }
 
-        let requests: Vec<_> = (0..12)
+        let requests: Vec<_> = (0..10)
             .map(|_| requests.recv().expect("Atlas received request"))
             .collect();
+        // No `GET /api/v2/platform/meta` hop precedes either upload: the
+        // client-side pre-check was deleted (E11-S3a design D4, R3b), so the
+        // server's own 413 is the sole size enforcement.
         let expected_paths = [
             "GET /api/v2/acta/workspaces/ws/tasks/ATL-1/comments?feed=full&limit=50 ",
             "GET /api/v2/acta/workspaces/ws/documents/note/comments?feed=full&limit=50 ",
-            "GET /api/v2/platform/meta ",
             "POST /api/v2/acta/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments ",
             "GET /api/v2/acta/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments ",
             "GET /api/v2/acta/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002/content ",
             "DELETE /api/v2/acta/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002 ",
-            "GET /api/v2/platform/meta ",
             "POST /api/v2/acta/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments ",
             "GET /api/v2/acta/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments ",
             "GET /api/v2/acta/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002 ",
@@ -6612,38 +6548,46 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn public_mcp_upload_fails_closed_when_metadata_discovery_cannot_supply_a_limit() {
-        for body in [
-            r#"{"version":"1","build":null,"url":null}"#,
-            r#"{"version":"1","build":null,"url":null,"max_attachment_bytes":null}"#,
-            r#"{"version":"1","build":null,"url":null,"max_attachment_bytes":"large"}"#,
-            r#"{"type":"urn:atlas:error","title":"Unavailable","status":503}"#,
+    async fn public_mcp_upload_still_fails_via_the_servers_413_after_the_pre_check_is_removed() {
+        for (name, arguments, expected_prefix) in [
+            (
+                "upload_task_comment_attachment",
+                serde_json::json!({"workspace":"ws","readable_id":"ATL-1","comment_id":COMMENT_ID,"file_name":"note.txt","content_type":"text/plain","data_base64":"b2s="}),
+                "POST /api/v2/acta/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments ",
+            ),
+            (
+                "upload_document_comment_attachment",
+                serde_json::json!({"workspace":"ws","slug":"note","comment_id":COMMENT_ID,"file_name":"note.txt","content_type":"text/plain","data_base64":"b2s="}),
+                "POST /api/v2/acta/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments ",
+            ),
         ] {
-            let status = if body.contains("Unavailable") {
-                "503 Service Unavailable"
-            } else {
-                "200 OK"
-            };
-            let (base_url, requests) = serve_recording_atlas(vec![(status, body.to_string())]);
+            let (base_url, requests) = serve_recording_atlas(vec![(
+                "413 Payload Too Large",
+                r#"{"type":"urn:atlas:error:payload_too_large","title":"Payload Too Large","status":413}"#.to_string(),
+            )]);
             let client =
                 start_mcp_client(AtlasMcp::new(base_url, "atlas_test").expect("server config"))
                     .await;
 
             let result = client
-                .call_tool(call_tool_params(
-                    "upload_task_comment_attachment",
-                    serde_json::json!({"workspace":"ws","readable_id":"ATL-1","comment_id":COMMENT_ID,"file_name":"note.txt","content_type":"text/plain","data_base64":"b2s="}),
-                ))
+                .call_tool(call_tool_params(name, arguments))
                 .await
                 .expect("MCP call completes with a tool error");
 
             assert!(result.is_error.unwrap_or(false));
-            assert!(tool_text(&result).contains("upload was not attempted"));
+            assert!(
+                tool_text(&result).contains("Payload Too Large: 413"),
+                "{name} must surface the server's 413, not a local pre-check message: {}",
+                tool_text(&result)
+            );
+            // Exactly one request: the upload attempt itself. With
+            // `require_comment_attachment_limit` deleted, no
+            // `GET /api/v2/platform/meta` hop precedes it.
             assert!(
                 requests
                     .recv()
-                    .expect("metadata request is recorded")
-                    .starts_with("GET /api/v2/platform/meta ")
+                    .expect("Atlas received the upload request")
+                    .starts_with(expected_prefix)
             );
             assert!(
                 requests
@@ -6651,31 +6595,6 @@ mod tests {
                     .is_err()
             );
         }
-
-        let (base_url, requests) = serve_transport_failing_meta();
-        let client =
-            start_mcp_client(AtlasMcp::new(base_url, "atlas_test").expect("server config")).await;
-        let result = client
-            .call_tool(call_tool_params(
-                "upload_document_comment_attachment",
-                serde_json::json!({"workspace":"ws","slug":"note","comment_id":COMMENT_ID,"file_name":"note.txt","content_type":"text/plain","data_base64":"b2s="}),
-            ))
-            .await
-            .expect("MCP call completes with a tool error");
-
-        assert!(result.is_error.unwrap_or(false));
-        assert!(tool_text(&result).contains("upload was not attempted"));
-        assert!(
-            requests
-                .recv()
-                .expect("metadata request is recorded")
-                .starts_with("GET /api/v2/platform/meta ")
-        );
-        assert!(
-            requests
-                .recv_timeout(std::time::Duration::from_millis(50))
-                .is_err()
-        );
     }
 
     #[test]
@@ -7087,31 +7006,14 @@ mod tests {
 
     #[test]
     fn comment_attachment_data_rejects_invalid_or_unpadded_base64() {
-        assert!(decode_comment_attachment_data("not base64", 16).is_err());
-        assert!(decode_comment_attachment_data("YQ", 16).is_err());
-        assert!(decode_comment_attachment_data("YQ==\n", 16).is_err());
+        assert!(decode_comment_attachment_data("not base64").is_err());
+        assert!(decode_comment_attachment_data("YQ").is_err());
+        assert!(decode_comment_attachment_data("YQ==\n").is_err());
     }
 
     #[test]
-    fn comment_attachment_data_rejects_encoded_and_decoded_oversize_payloads() {
-        assert!(decode_comment_attachment_data("YWJjZA==", 3).is_err());
-        assert!(decode_comment_attachment_data("YWI=", 1).is_err());
-        assert_eq!(decode_comment_attachment_data("YWI=", 2).unwrap(), b"ab");
-    }
-
-    #[test]
-    fn comment_attachment_limit_discovery_fails_closed_when_absent_or_null() {
-        let absent = ServerMetaDto {
-            version: "1".into(),
-            build: None,
-            url: None,
-            max_attachment_bytes: None,
-            semantic_search_enabled: None,
-        };
-        let error = require_comment_attachment_limit(Ok(absent), "upload_task_comment_attachment")
-            .unwrap_err();
-        assert!(error.contains("could not be discovered"));
-        assert!(error.contains("not attempted"));
+    fn comment_attachment_data_decodes_valid_padded_base64() {
+        assert_eq!(decode_comment_attachment_data("YWI=").unwrap(), b"ab");
     }
 
     #[test]
