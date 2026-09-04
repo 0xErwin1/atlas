@@ -6,19 +6,19 @@
 )]
 
 //! T4.9/T4.14 (`v2-e3-s3` PR4, D8): exhaustive rule-conformance test for
-//! `RouteDeclaration.idempotent`'s re-derivation. Every one of the 212
+//! `RouteDeclaration.idempotent`'s re-derivation. Every one of the 216
 //! `reg5.rs` entries is checked against the written rule
 //! (`crates/atlas_core/src/registry/route.rs`'s `idempotent` doc comment),
 //! not a sample — a mismatch names the exact offending `(method, path)`
 //! (INV-SET-style, never a count comparison).
 //!
-//! `EXPECTED_IDEMPOTENT` below encodes the same 212 decisions as the
+//! `EXPECTED_IDEMPOTENT` below encodes the same 216 decisions as the
 //! judgment file (`docs/reg5-idempotent-judgment.md`):
 //! every non-`POST` entry is `false` (T4.10, mechanical); every `POST`
 //! entry's value is either a mechanical `create_*` name match or one of the
 //! 39 judged decisions the judgment file explains (including the six
 //! streamed-upload routes, F4). This table
-//! is cross-checked for completeness against `reg5.rs`'s own 212-entry
+//! is cross-checked for completeness against `reg5.rs`'s own 216-entry
 //! enumeration below (`table_is_exhaustive_over_reg5`), the same
 //! "one source, checked exhaustively" shape D4's exclusion-list
 //! completeness check uses.
@@ -35,6 +35,12 @@ const EXPECTED_IDEMPOTENT: &[(HttpMethod, &str, bool)] = &[
     (HttpMethod::Get, "/version", false),
     (HttpMethod::Get, "/openapi.json", false),
     (HttpMethod::Get, "/scalar", false),
+    // custos's and acta's own probes (E11-S3a) share platform's relative
+    // paths; the table is keyed by (method, path) and lists them per owner.
+    (HttpMethod::Get, "/health", false),
+    (HttpMethod::Get, "/ready", false),
+    (HttpMethod::Get, "/health", false),
+    (HttpMethod::Get, "/ready", false),
     (HttpMethod::Post, "/auth/logout", false),
     (HttpMethod::Get, "/auth/me", false),
     (HttpMethod::Post, "/auth/change-password", false),
@@ -803,13 +809,13 @@ fn table_is_exhaustive_over_reg5() {
     let live = all_declared_routes();
     assert_eq!(
         live.len(),
-        212,
-        "reg5.rs must declare exactly 212 routes; the classification table below assumes this"
+        216,
+        "reg5.rs must declare exactly 216 routes; the classification table below assumes this"
     );
     assert_eq!(
         EXPECTED_IDEMPOTENT.len(),
-        212,
-        "EXPECTED_IDEMPOTENT must cover all 212 reg5.rs entries, not a sample"
+        216,
+        "EXPECTED_IDEMPOTENT must cover all 216 reg5.rs entries, not a sample"
     );
 
     let live_keys: std::collections::HashSet<(HttpMethod, &str)> = live
