@@ -75,3 +75,29 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod binary_source_tests {
+    /// Every binary that migrates a database must run the composed list:
+    /// the historical `migration::Migrator` alone leaves the Custos and
+    /// Acta schema moves unapplied on a live database while reporting
+    /// "no pending migrations".
+    #[test]
+    fn every_binary_migrates_through_the_composed_migrator() {
+        let sources = [
+            include_str!("../main.rs"),
+            include_str!("../bin/seed_dev.rs"),
+        ];
+
+        for source in sources {
+            assert!(
+                !source.contains("migration::Migrator"),
+                "a binary still migrates through the historical migrator alone"
+            );
+            assert!(
+                source.contains("ComposedMigrator::up("),
+                "a binary does not migrate through ComposedMigrator"
+            );
+        }
+    }
+}
