@@ -9,6 +9,7 @@
 pub mod acta;
 pub mod custos;
 pub mod deadline;
+pub mod meta;
 pub mod modules;
 pub mod platform;
 
@@ -147,14 +148,29 @@ pub(crate) fn db_error_kind(error: &DbErr) -> &'static str {
     }
 }
 
+/// Builds the validated component registry for the configured storage
+/// backend: the one `Registry` an `AppState` holds for its whole lifetime,
+/// so `/version`, `/api/v2/platform/meta` and `default_registry` all read
+/// the same entries and none of them rebuilds it per request.
+pub fn component_registry(storage: &StorageConfig) -> Result<Registry, anyhow::Error> {
+    let backend = match storage {
+        StorageConfig::Disk { .. } => StorageBackend::Filesystem,
+        StorageConfig::S3 { .. } => StorageBackend::S3,
+    };
+
+    atlas_core::registry::build(reg5_component_entries(backend))
+        .map_err(|errors| anyhow::anyhow!("registry validation failed: {errors:?}"))
+}
+
 /// Builds the standard six-component diagnostics table shared by
 /// `AppState::new` and `AppState::for_test` (design D1.2), so the table the
 /// server boots with and the table ~300 tests construct never drift apart.
-/// The active storage backend is derived from `storage`, matching whichever
-/// Module `reg5_component_entries` put in the registry, and the table is
-/// bound against that same registry so any drift between the two fails
-/// startup instead of a probe.
+/// The active storage Module is derived from `storage`, matching whichever
+/// entry [`component_registry`] put in `registry`, and the table is bound
+/// against that same registry so any drift between the two fails startup
+/// instead of a probe.
 pub fn default_registry(
+    registry: &Registry,
     db: Arc<DatabaseConnection>,
     attachments: Arc<dyn AttachmentStore>,
     embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
@@ -168,24 +184,18 @@ pub fn default_registry(
         embedding_provider,
     ));
 
-    let (backend, storage_id, storage_health, storage_readiness): (
-        StorageBackend,
+    let (storage_id, storage_health, storage_readiness): (
         ComponentId,
         Arc<dyn Health>,
         Arc<dyn Readiness>,
     ) = match storage {
         StorageConfig::Disk { root } => {
             let disk = Arc::new(DiskStorageDiagnostics::new(root.clone()));
-            (
-                StorageBackend::Filesystem,
-                component("storage.filesystem"),
-                disk.clone(),
-                disk,
-            )
+            (component("storage.filesystem"), disk.clone(), disk)
         }
         StorageConfig::S3 { .. } => {
             let s3 = Arc::new(S3StorageDiagnostics::new(attachments));
-            (StorageBackend::S3, component("storage.s3"), s3.clone(), s3)
+            (component("storage.s3"), s3.clone(), s3)
         }
     };
 
@@ -236,10 +246,7 @@ pub fn default_registry(
         ),
     ];
 
-    let registry = atlas_core::registry::build(reg5_component_entries(backend))
-        .map_err(|errors| anyhow::anyhow!("registry validation failed: {errors:?}"))?;
-
-    DiagnosticsRegistry::bind(&registry, table)
+    DiagnosticsRegistry::bind(registry, table)
         .map_err(|errors| anyhow::anyhow!("diagnostics binding failed: {errors:?}"))
 }
 
@@ -456,7 +463,10 @@ mod tests {
     }
 
     fn default_registry_for(storage: &StorageConfig) -> DiagnosticsRegistry {
+        let registry = component_registry(storage).expect("valid registry");
+
         default_registry(
+            &registry,
             Arc::new(DatabaseConnection::default()),
             Arc::new(UnusedAttachmentStore),
             None,

@@ -4722,43 +4722,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn server_meta_preserves_optional_limit_and_decode_context() {
-        let absent = AtlasClient::new(serve_once(
+    async fn server_meta_preserves_components_and_decode_context() {
+        let absent_components = AtlasClient::new(serve_once(
             "200 OK",
-            r#"{"version":"1","build":null,"url":null}"#,
-        ));
-        let absent_meta = absent.server_meta().await.unwrap();
-        assert!(absent_meta.max_attachment_bytes.is_none());
-        assert!(absent_meta.semantic_search_enabled.is_none());
-
-        let null = AtlasClient::new(serve_once(
-            "200 OK",
-            r#"{"version":"1","build":null,"url":null,"max_attachment_bytes":null}"#,
+            r#"{"version":"1","build":null,"url":null,"components":[]}"#,
         ));
         assert!(
-            null.server_meta()
-                .await
-                .unwrap()
-                .max_attachment_bytes
-                .is_none()
-        );
-
-        let disabled = AtlasClient::new(serve_once(
-            "200 OK",
-            r#"{"version":"1","build":null,"url":null,"semantic_search_enabled":false}"#,
-        ));
-        assert_eq!(
-            disabled
+            absent_components
                 .server_meta()
                 .await
                 .unwrap()
-                .semantic_search_enabled,
-            Some(false)
+                .components
+                .is_empty()
         );
+
+        let with_components = AtlasClient::new(serve_once(
+            "200 OK",
+            r#"{"version":"1","build":null,"url":null,"components":[{"stable_id":"platform","kind":"platform-service","contract_version":1}]}"#,
+        ));
+        let meta = with_components.server_meta().await.unwrap();
+        assert_eq!(meta.components.len(), 1);
+        let component = meta.components.first().expect("one component");
+        assert_eq!(component.stable_id, "platform");
+        assert_eq!(component.kind, "platform-service");
+        assert_eq!(component.contract_version, 1);
 
         let malformed = AtlasClient::new(serve_once(
             "200 OK",
-            r#"{"version":"1","build":null,"url":null,"max_attachment_bytes":"large"}"#,
+            r#"{"version":"1","build":null,"url":null,"components":"not-an-array"}"#,
         ));
         assert!(matches!(
             malformed.server_meta().await,

@@ -758,6 +758,60 @@
         "x-atlas-component": "acta"
       }
     },
+    "/api/v2/acta/health": {
+      "get": {
+        "tags": [
+          "crate::routes::diagnostics",
+          "acta"
+        ],
+        "operationId": "acta_health",
+        "responses": {
+          "200": {
+            "description": "acta's own health signal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComponentProbeDto"
+                }
+              }
+            }
+          }
+        },
+        "x-atlas-component": "acta"
+      }
+    },
+    "/api/v2/acta/ready": {
+      "get": {
+        "tags": [
+          "crate::routes::diagnostics",
+          "acta"
+        ],
+        "operationId": "acta_ready",
+        "responses": {
+          "200": {
+            "description": "acta is ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComponentProbeDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "acta is not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComponentProbeDto"
+                }
+              }
+            }
+          }
+        },
+        "x-atlas-component": "acta"
+      }
+    },
     "/api/v2/acta/workspaces": {
       "get": {
         "tags": [
@@ -14148,6 +14202,60 @@
         "x-atlas-component": "custos"
       }
     },
+    "/api/v2/custos/health": {
+      "get": {
+        "tags": [
+          "crate::routes::diagnostics",
+          "custos"
+        ],
+        "operationId": "custos_health",
+        "responses": {
+          "200": {
+            "description": "custos's own health signal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComponentProbeDto"
+                }
+              }
+            }
+          }
+        },
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/ready": {
+      "get": {
+        "tags": [
+          "crate::routes::diagnostics",
+          "custos"
+        ],
+        "operationId": "custos_ready",
+        "responses": {
+          "200": {
+            "description": "custos is ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComponentProbeDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "custos is not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComponentProbeDto"
+                }
+              }
+            }
+          }
+        },
+        "x-atlas-component": "custos"
+      }
+    },
     "/api/v2/custos/users": {
       "get": {
         "tags": [
@@ -15802,6 +15910,7 @@
           "meta",
           "platform"
         ],
+        "summary": "Server build information for the About screen: identity only, no config\nvalue (SHELL-OPS-7, design D4). Reads no database — `meta` is a pure\nregistry+config read.",
         "operationId": "meta",
         "responses": {
           "200": {
@@ -15847,15 +15956,29 @@
           "crate::routes::health",
           "platform"
         ],
-        "summary": "Readiness probe: liveness plus a `SELECT 1` round-trip to the database.",
-        "description": "Unlike `/health` (a cheap liveness signal), this endpoint touches the pool so\nan orchestrator can withhold traffic while the database is unreachable or the\npool is exhausted. Returns 503 on any database error.",
+        "summary": "Readiness probe: aggregates every mandatory component's own `Readiness`\nresult (`Registry::readiness_components()`, today `platform`, `custos`,\n`acta`) through `aggregate_readiness`, each bounded by\n[`READINESS_PER_COMPONENT_TIMEOUT`] (design D3, SHELL-OPS-2).",
+        "description": "Unlike `/health` (a cheap liveness signal), this endpoint performs one\nbounded probe per mandatory component. Answers 503 naming every\nnot-ready component with its own reason (SH2), never just the first.",
         "operationId": "ready",
         "responses": {
           "200": {
-            "description": "Service is ready: the database is reachable"
+            "description": "Service is ready: every mandatory component is ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessReportDto"
+                }
+              }
+            }
           },
           "503": {
-            "description": "Service is not ready: the database is unreachable"
+            "description": "Service is not ready: at least one mandatory component is not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessReportDto"
+                }
+              }
+            }
           }
         },
         "x-atlas-component": "platform"
@@ -15870,7 +15993,14 @@
         "operationId": "version",
         "responses": {
           "200": {
-            "description": "Service version"
+            "description": "Service version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionDto"
+                }
+              }
+            }
           }
         },
         "x-atlas-component": "platform"
@@ -17073,6 +17203,50 @@
           }
         ],
         "description": "The compatible default comment page or the opt-in full comment feed page."
+      },
+      "ComponentProbeDto": {
+        "type": "object",
+        "description": "Response from `GET /api/v2/{component}/ready` (custos/acta, E11-S3a\ndesign D3): that component's own `Readiness` result, rendered exactly —\nthe Shell never reinterprets or aggregates it (SHELL-OPS-3,\nINV-NO-REINTERPRET). `status` is `\"ready\"` or `\"not_ready\"`; `reason` is\npresent only when not ready.",
+        "required": [
+          "component",
+          "status"
+        ],
+        "properties": {
+          "component": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "ComponentSummaryDto": {
+        "type": "object",
+        "description": "One registry-present component's identity summary, listed in `/version`\nand `/api/v2/platform/meta` (E11-S3a design D4). Derived from\n`Registry::entries()`; release metadata only, never a runtime/config\nvalue (SHELL-OPS-7).",
+        "required": [
+          "stable_id",
+          "kind",
+          "contract_version"
+        ],
+        "properties": {
+          "contract_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "kind": {
+            "type": "string"
+          },
+          "stable_id": {
+            "type": "string"
+          }
+        }
       },
       "ConflictProblemDto": {
         "allOf": [
@@ -18967,6 +19141,22 @@
           }
         }
       },
+      "NotReadyComponentDto": {
+        "type": "object",
+        "description": "One not-ready mandatory component and the short, component-authored\ncause SHELL-OPS-2 requires. Never a raw error `Display`, which can carry\na connection string (SHELL-CFG-2).",
+        "required": [
+          "component",
+          "reason"
+        ],
+        "properties": {
+          "component": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
       "Page_ActivityEntryDto": {
         "type": "object",
         "description": "Paginated response envelope.",
@@ -20578,6 +20768,25 @@
           }
         }
       },
+      "ReadinessReportDto": {
+        "type": "object",
+        "description": "Response from root `GET /ready` (E11-S3a design D3): the aggregate result\nof `atlas_core::ops::readiness::aggregate_readiness` over the mandatory\ncomponent set. `ready: false` names every not-ready component, not just\nthe first (SH2).",
+        "required": [
+          "ready",
+          "not_ready"
+        ],
+        "properties": {
+          "not_ready": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NotReadyComponentDto"
+            }
+          },
+          "ready": {
+            "type": "boolean"
+          }
+        }
+      },
       "ReferenceDto": {
         "type": "object",
         "description": "A typed outbound reference from a task to another task or document.",
@@ -21059,9 +21268,10 @@
       },
       "ServerMetaDto": {
         "type": "object",
-        "description": "Response from `GET /api/meta`. Server build information for the About screen.",
+        "description": "Response from `GET /api/v2/platform/meta`. Server build information for\nthe About screen — identity only, never a config value (SHELL-OPS-7,\nE11-S3a design D4). `max_attachment_bytes` and `semantic_search_enabled`\nwere removed with no replacement route in this slice.",
         "required": [
-          "version"
+          "version",
+          "components"
         ],
         "properties": {
           "build": {
@@ -21070,19 +21280,11 @@
               "null"
             ]
           },
-          "max_attachment_bytes": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "minimum": 0
-          },
-          "semantic_search_enabled": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+          "components": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ComponentSummaryDto"
+            }
           },
           "url": {
             "type": [
@@ -22287,6 +22489,31 @@
             "type": "string"
           },
           "workspace_slug": {
+            "type": "string"
+          }
+        }
+      },
+      "VersionDto": {
+        "type": "object",
+        "description": "Response from `GET /version`: identity-only, no config (E11-S3a design\nD4). Public.",
+        "required": [
+          "version",
+          "components"
+        ],
+        "properties": {
+          "build": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ComponentSummaryDto"
+            }
+          },
+          "version": {
             "type": "string"
           }
         }

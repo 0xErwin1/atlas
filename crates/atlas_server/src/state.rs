@@ -59,6 +59,11 @@ pub struct AppState {
     pub presence: Arc<PresenceRegistry>,
     pub embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
     pub search_semantic: SearchSemanticConfig,
+    /// The validated component registry for the configured storage backend,
+    /// built once by [`crate::ops::component_registry`] and read by
+    /// `/version` and `/api/v2/platform/meta` (design D4) so neither
+    /// handler rebuilds it per request.
+    pub registry: Arc<atlas_core::registry::Registry>,
     /// Bound `Health`/`Readiness` implementers, one per diagnostics-bearing
     /// component plus the active storage/search Modules (E11-S3a design D1).
     /// Built once by [`crate::ops::default_registry`] in both `new` and
@@ -91,7 +96,9 @@ impl AppState {
         let upload_allowed_extensions =
             parse_upload_allowed_extensions(cfg.acta.upload_allowed_extensions.clone());
 
+        let registry = Arc::new(crate::ops::component_registry(&cfg.modules.storage)?);
         let diagnostics = Arc::new(crate::ops::default_registry(
+            &registry,
             Arc::new(db.clone()),
             attachments.clone(),
             embedding_provider.clone(),
@@ -118,6 +125,7 @@ impl AppState {
             presence: Arc::new(PresenceRegistry::default()),
             embedding_provider,
             search_semantic: cfg.modules.search_semantic.clone(),
+            registry,
             diagnostics,
             readiness_timeout: DEFAULT_READINESS_TIMEOUT,
         })
@@ -152,13 +160,16 @@ impl AppState {
 
         let db = Arc::new(db);
 
+        let storage = crate::config::StorageConfig::Disk {
+            root: attachment_root,
+        };
+        let registry = Arc::new(crate::ops::component_registry(&storage)?);
         let diagnostics = Arc::new(crate::ops::default_registry(
+            &registry,
             db.clone(),
             attachments.clone(),
             embedding_provider.clone(),
-            &crate::config::StorageConfig::Disk {
-                root: attachment_root,
-            },
+            &storage,
         )?);
 
         Ok(Self {
@@ -181,6 +192,7 @@ impl AppState {
             presence: Arc::new(PresenceRegistry::default()),
             embedding_provider,
             search_semantic: SearchSemanticConfig::default(),
+            registry,
             diagnostics,
             readiness_timeout: DEFAULT_READINESS_TIMEOUT,
         })

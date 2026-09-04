@@ -179,7 +179,32 @@ pub struct SetSystemAdminRequest {
     pub is_system_admin: bool,
 }
 
-/// Response from `GET /api/meta`. Server build information for the About screen.
+/// One registry-present component's identity summary, listed in `/version`
+/// and `/api/v2/platform/meta` (E11-S3a design D4). Derived from
+/// `Registry::entries()`; release metadata only, never a runtime/config
+/// value (SHELL-OPS-7).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct ComponentSummaryDto {
+    pub stable_id: String,
+    pub kind: String,
+    pub contract_version: u32,
+}
+
+/// Response from `GET /version`: identity-only, no config (E11-S3a design
+/// D4). Public.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct VersionDto {
+    pub version: String,
+    pub build: Option<String>,
+    pub components: Vec<ComponentSummaryDto>,
+}
+
+/// Response from `GET /api/v2/platform/meta`. Server build information for
+/// the About screen — identity only, never a config value (SHELL-OPS-7,
+/// E11-S3a design D4). `max_attachment_bytes` and `semantic_search_enabled`
+/// were removed with no replacement route in this slice.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ServerMetaDto {
@@ -188,10 +213,7 @@ pub struct ServerMetaDto {
     /// Public base URL of this server, when configured (`ATLAS_SERVER_URL`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_attachment_bytes: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub semantic_search_enabled: Option<bool>,
+    pub components: Vec<ComponentSummaryDto>,
 }
 
 /// Request body for `POST /api/users`.
@@ -654,6 +676,49 @@ mod tests {
         let json = serde_json::to_string(&probe).expect("serialize");
 
         assert_eq!(json, r#"{"component":"acta","status":"ready"}"#);
+    }
+
+    #[test]
+    fn server_meta_dto_carries_components_and_no_config_field() {
+        let meta = ServerMetaDto {
+            version: "1".to_string(),
+            build: None,
+            url: None,
+            components: vec![ComponentSummaryDto {
+                stable_id: "platform".to_string(),
+                kind: "platform-service".to_string(),
+                contract_version: 1,
+            }],
+        };
+
+        let json = serde_json::to_string(&meta).expect("serialize");
+
+        assert_eq!(
+            json,
+            r#"{"version":"1","build":null,"components":[{"stable_id":"platform","kind":"platform-service","contract_version":1}]}"#
+        );
+        assert!(!json.contains("max_attachment_bytes"));
+        assert!(!json.contains("semantic_search_enabled"));
+    }
+
+    #[test]
+    fn version_dto_carries_components() {
+        let version = VersionDto {
+            version: "1".to_string(),
+            build: Some("abc123".to_string()),
+            components: vec![ComponentSummaryDto {
+                stable_id: "custos".to_string(),
+                kind: "product".to_string(),
+                contract_version: 2,
+            }],
+        };
+
+        let json = serde_json::to_string(&version).expect("serialize");
+
+        assert_eq!(
+            json,
+            r#"{"version":"1","build":"abc123","components":[{"stable_id":"custos","kind":"product","contract_version":2}]}"#
+        );
     }
 
     #[test]
