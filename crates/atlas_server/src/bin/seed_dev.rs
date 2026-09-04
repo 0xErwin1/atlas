@@ -13,7 +13,8 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let cfg = atlas_server::config::ServerConfig::from_env().map_err(|e| anyhow::anyhow!("{e}"))?;
+    let cfg = atlas_server::config::ServerConfig::from_env(&atlas_core::config::ProcessEnv)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     let db = Database::connect(cfg.postgres.database_url.expose().clone()).await?;
 

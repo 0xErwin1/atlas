@@ -1,4 +1,4 @@
-use atlas_core::config::ComponentConfig;
+use atlas_core::config::{ComponentConfig, EnvSource};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use std::fmt;
 
@@ -33,15 +33,18 @@ pub struct EmbeddingConfig {
 }
 
 impl EmbeddingConfig {
-    pub fn from_env() -> Result<Self, String> {
-        Self::from_env_vars(|name| std::env::var(name).ok())
-    }
-
+    /// Kept for existing test call sites that build a closure-based source;
+    /// the closure already satisfies `EnvSource` via `atlas_core`'s blanket
+    /// impl, so this is a thin forwarder to [`Self::from_env`].
     pub fn from_env_vars<F>(get: F) -> Result<Self, String>
     where
         F: Fn(&str) -> Option<String>,
     {
-        let read = |name: &str| get(name);
+        Self::from_env(&get)
+    }
+
+    pub fn from_env(source: &dyn EnvSource) -> Result<Self, String> {
+        let read = |name: &str| source.get(name);
         let enabled = read_bool(read("ATLAS_EMBEDDINGS_ENABLED"), false);
         let provider = match nonempty(read("ATLAS_EMBEDDINGS_PROVIDER")) {
             Some(raw) => match raw.as_str() {
@@ -249,33 +252,23 @@ pub struct ServerConfig {
 }
 
 impl ServerConfig {
-    pub fn from_env() -> Result<Self, String> {
-        let postgres =
-            PostgresConfig::from_env(&atlas_core::config::ProcessEnv).map_err(|e| e.to_string())?;
+    pub fn from_env(source: &dyn EnvSource) -> Result<Self, String> {
+        let postgres = PostgresConfig::from_env(source).map_err(|e| e.to_string())?;
 
-        let root_password = env_var_nonempty("ATLAS_ROOT_PASSWORD");
+        let root_password = env_var_nonempty(source, "ATLAS_ROOT_PASSWORD");
 
-        let anchor_interval = std::env::var("ATLAS_ANCHOR_INTERVAL")
-            .ok()
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(50);
+        let anchor_interval = read_anchor_interval(source)?;
 
-        if anchor_interval < 2 {
-            return Err(format!(
-                "ATLAS_ANCHOR_INTERVAL must be >= 2, got {anchor_interval}"
-            ));
-        }
-
-        let webhook_enc_key = load_webhook_enc_key()?;
-        let dispatcher = load_dispatcher_config();
+        let webhook_enc_key = load_webhook_enc_key(source)?;
+        let dispatcher = load_dispatcher_config(source);
         let allow_private_webhook_targets =
-            read_env_bool("ATLAS_ALLOW_PRIVATE_WEBHOOK_TARGETS", false);
-        let rate_limit = load_rate_limit_config();
+            read_env_bool(source, "ATLAS_ALLOW_PRIVATE_WEBHOOK_TARGETS", false);
+        let rate_limit = load_rate_limit_config(source);
 
-        let embeddings = EmbeddingConfig::from_env()?;
-        let search = load_search_config()?;
+        let embeddings = EmbeddingConfig::from_env(source)?;
+        let search = load_search_config(source)?;
 
-        let shutdown_timeout_secs = read_env_u64("ATLAS_SHUTDOWN_TIMEOUT_SECS", 20);
+        let shutdown_timeout_secs = read_env(source, "ATLAS_SHUTDOWN_TIMEOUT_SECS", 20);
 
         Ok(Self {
             postgres,
@@ -312,14 +305,32 @@ impl fmt::Debug for ServerConfig {
     }
 }
 
+/// Reads `ATLAS_ANCHOR_INTERVAL` through `source`, refusing a value below 2.
+///
+/// Exposed (rather than inlined in [`ServerConfig::from_env`]) so the
+/// by-name environment-binding characterization test
+/// (`tests/env_binding.rs`) and the `ATLAS_ANCHOR_INTERVAL` divergence
+/// characterization test (`tests/anchor_interval_divergence.rs`) can exercise
+/// this exact rule without composing the rest of `ServerConfig`.
+pub fn read_anchor_interval(source: &dyn EnvSource) -> Result<u32, String> {
+    let value = read_env(source, "ATLAS_ANCHOR_INTERVAL", 50);
+
+    if value < 2 {
+        return Err(format!("ATLAS_ANCHOR_INTERVAL must be >= 2, got {value}"));
+    }
+
+    Ok(value)
+}
+
 /// Reads and validates `ATLAS_WEBHOOK_ENC_KEY`.
 ///
 /// The variable must contain a standard-base64-encoded value that decodes to
 /// exactly 32 bytes. The error message never echoes the value so a misconfigured
 /// key cannot leak through startup logs.
-fn load_webhook_enc_key() -> Result<[u8; 32], String> {
-    let raw = std::env::var("ATLAS_WEBHOOK_ENC_KEY")
-        .map_err(|_| "ATLAS_WEBHOOK_ENC_KEY is required but not set".to_string())?;
+pub fn load_webhook_enc_key(source: &dyn EnvSource) -> Result<[u8; 32], String> {
+    let raw = source
+        .get("ATLAS_WEBHOOK_ENC_KEY")
+        .ok_or_else(|| "ATLAS_WEBHOOK_ENC_KEY is required but not set".to_string())?;
 
     let bytes = STANDARD
         .decode(raw.trim())
@@ -333,33 +344,21 @@ fn load_webhook_enc_key() -> Result<[u8; 32], String> {
     })
 }
 
-fn load_dispatcher_config() -> DispatcherConfig {
+pub fn load_dispatcher_config(source: &dyn EnvSource) -> DispatcherConfig {
     DispatcherConfig {
-        poll_interval_ms: read_env_u64("ATLAS_WEBHOOK_POLL_INTERVAL_MS", 1_000),
-        max_attempts: std::env::var("ATLAS_WEBHOOK_MAX_ATTEMPTS")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(5),
-        delivery_timeout_ms: read_env_u64("ATLAS_WEBHOOK_DELIVERY_TIMEOUT_MS", 10_000),
-        max_concurrent: std::env::var("ATLAS_WEBHOOK_MAX_CONCURRENT")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(16),
-        batch_size: std::env::var("ATLAS_WEBHOOK_BATCH_SIZE")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(32),
-        lease_secs: std::env::var("ATLAS_WEBHOOK_LEASE_SECS")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(30),
+        poll_interval_ms: read_env(source, "ATLAS_WEBHOOK_POLL_INTERVAL_MS", 1_000),
+        max_attempts: read_env(source, "ATLAS_WEBHOOK_MAX_ATTEMPTS", 5),
+        delivery_timeout_ms: read_env(source, "ATLAS_WEBHOOK_DELIVERY_TIMEOUT_MS", 10_000),
+        max_concurrent: read_env(source, "ATLAS_WEBHOOK_MAX_CONCURRENT", 16),
+        batch_size: read_env(source, "ATLAS_WEBHOOK_BATCH_SIZE", 32),
+        lease_secs: read_env(source, "ATLAS_WEBHOOK_LEASE_SECS", 30),
     }
 }
 
-fn load_search_config() -> Result<SearchConfig, String> {
+pub fn load_search_config(source: &dyn EnvSource) -> Result<SearchConfig, String> {
     let defaults = SearchConfig::default();
 
-    let rrf_k = match env_var_nonempty("ATLAS_SEARCH_RRF_K") {
+    let rrf_k = match env_var_nonempty(source, "ATLAS_SEARCH_RRF_K") {
         Some(raw) => raw
             .parse::<f32>()
             .ok()
@@ -368,7 +367,7 @@ fn load_search_config() -> Result<SearchConfig, String> {
         None => defaults.rrf_k,
     };
 
-    let hybrid_pool = match env_var_nonempty("ATLAS_SEARCH_HYBRID_POOL") {
+    let hybrid_pool = match env_var_nonempty(source, "ATLAS_SEARCH_HYBRID_POOL") {
         Some(raw) => raw
             .parse::<usize>()
             .ok()
@@ -382,31 +381,34 @@ fn load_search_config() -> Result<SearchConfig, String> {
     Ok(SearchConfig { rrf_k, hybrid_pool })
 }
 
-fn load_rate_limit_config() -> RateLimitConfig {
+pub fn load_rate_limit_config(source: &dyn EnvSource) -> RateLimitConfig {
     let defaults = RateLimitConfig::default();
     RateLimitConfig {
-        enabled: read_env_bool("ATLAS_RATE_LIMIT_ENABLED", defaults.enabled),
-        per_second: read_env_u32("ATLAS_RATE_LIMIT_PER_SECOND", defaults.per_second),
-        burst: read_env_u32("ATLAS_RATE_LIMIT_BURST", defaults.burst),
+        enabled: read_env_bool(source, "ATLAS_RATE_LIMIT_ENABLED", defaults.enabled),
+        per_second: read_env(source, "ATLAS_RATE_LIMIT_PER_SECOND", defaults.per_second),
+        burst: read_env(source, "ATLAS_RATE_LIMIT_BURST", defaults.burst),
     }
 }
 
-fn read_env_u32(var: &str, default: u32) -> u32 {
-    std::env::var(var)
-        .ok()
-        .and_then(|s| s.parse().ok())
+/// Reads and parses an environment variable through `source`, falling back to
+/// `default` when the variable is absent or fails to parse as `T`.
+///
+/// Generic over every numeric field this module and `state.rs` read (`u32`,
+/// `u64`, `i64`, `i32`, `usize`), matching V1's lenient-parsing behavior:
+/// an unparseable value falls back to the default rather than failing
+/// startup.
+pub fn read_env<T>(source: &dyn EnvSource, var: &str, default: T) -> T
+where
+    T: std::str::FromStr,
+{
+    source
+        .get(var)
+        .and_then(|s| s.parse::<T>().ok())
         .unwrap_or(default)
 }
 
-fn read_env_u64(var: &str, default: u64) -> u64 {
-    std::env::var(var)
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(default)
-}
-
-fn read_env_bool(var: &str, default: bool) -> bool {
-    read_bool(std::env::var(var).ok(), default)
+pub fn read_env_bool(source: &dyn EnvSource, var: &str, default: bool) -> bool {
+    read_bool(source.get(var), default)
 }
 
 fn read_bool(value: Option<String>, default: bool) -> bool {
@@ -425,10 +427,14 @@ fn nonempty(value: Option<String>) -> Option<String> {
     value.filter(|v| !v.is_empty())
 }
 
-/// Reads an environment variable, treating a present-but-empty value as absent
-/// so the caller's default applies instead of a blank string.
-pub(crate) fn env_var_nonempty(key: &str) -> Option<String> {
-    nonempty(std::env::var(key).ok())
+/// Reads an environment variable through `source`, treating a present-but-empty
+/// value as absent so the caller's default applies instead of a blank string.
+///
+/// Public (rather than `pub(crate)`) so the by-name environment-binding
+/// characterization test (`tests/env_binding.rs`) can exercise it directly,
+/// alongside its one other consumer, `reg5::storage_backend_from_env`.
+pub fn env_var_nonempty(source: &dyn EnvSource, key: &str) -> Option<String> {
+    nonempty(source.get(key))
 }
 
 #[cfg(test)]
@@ -515,5 +521,16 @@ mod tests {
         assert_eq!(nonempty(Some(String::new())), None);
         assert_eq!(nonempty(Some("x".to_string())), Some("x".to_string()));
         assert_eq!(nonempty(None), None);
+    }
+
+    #[test]
+    fn from_env_vars_forwards_to_from_env_via_the_env_source_blanket_impl() {
+        let cfg = EmbeddingConfig::from_env_vars(|name| match name {
+            "ATLAS_EMBEDDINGS_MODEL" => Some("closure-model".to_owned()),
+            _ => None,
+        })
+        .expect("valid deterministic config");
+
+        assert_eq!(cfg.model, "closure-model");
     }
 }
