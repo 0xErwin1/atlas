@@ -13,6 +13,8 @@ pub enum RegistryIdError {
     Charset { id_type: &'static str, ch: char },
     #[error("{id_type} has an empty label")]
     EmptyLabel { id_type: &'static str },
+    #[error("{id_type} is missing a namespace separator (`.`)")]
+    MissingNamespace { id_type: &'static str },
 }
 
 /// Validates a dotted lowercase id: `validate_segment`, then `[a-z0-9_-]`
@@ -34,6 +36,23 @@ pub(crate) fn validate_dotted_id(
         {
             return Err(RegistryIdError::Charset { id_type, ch });
         }
+    }
+
+    Ok(())
+}
+
+/// Validates a namespaced dotted id: `validate_dotted_id`, plus at least one
+/// `.` separator, so `{component}.{name}` always has a non-empty component
+/// half and a non-empty name half (the name half may itself contain further
+/// dots, e.g. `search.pgvector_embeddings.index_worker`).
+pub(crate) fn validate_namespaced_id(
+    id_type: &'static str,
+    value: &str,
+) -> Result<(), RegistryIdError> {
+    validate_dotted_id(id_type, value)?;
+
+    if !value.contains('.') {
+        return Err(RegistryIdError::MissingNamespace { id_type });
     }
 
     Ok(())
@@ -119,6 +138,33 @@ mod tests {
         for (value, expected) in cases {
             assert_eq!(validate_dotted_id("component id", value), Err(expected));
         }
+    }
+
+    #[test]
+    fn namespaced_id_accepts_a_dotted_component_and_multi_dot_name() {
+        for value in ["acta.reindex", "search.pgvector_embeddings.index_worker"] {
+            assert_eq!(validate_namespaced_id("worker id", value), Ok(()));
+        }
+    }
+
+    #[test]
+    fn namespaced_id_rejects_a_single_label_with_no_separator() {
+        assert_eq!(
+            validate_namespaced_id("worker id", "acta"),
+            Err(RegistryIdError::MissingNamespace {
+                id_type: "worker id"
+            })
+        );
+    }
+
+    #[test]
+    fn namespaced_id_rejects_an_empty_component_half() {
+        assert_eq!(
+            validate_namespaced_id("worker id", ".reindex"),
+            Err(RegistryIdError::EmptyLabel {
+                id_type: "worker id"
+            })
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use super::{
     Authorization, CapabilityId, ComponentId, ComponentKind, ConfigDeclaration, ContractVersion,
-    Persistence, RouteDeclaration, SatelliteDeclaration,
+    Persistence, RouteDeclaration, SatelliteDeclaration, WorkerDeclaration,
 };
 
 /// Stable identity of a component within the registry (SHELL-REG-1).
@@ -53,13 +53,6 @@ pub struct Experience {
     pub context_providers: Vec<String>,
 }
 
-/// A background worker declared by a component. Start/drain ordering derives
-/// from `ComponentEntry.dependencies`, not from per-worker fields.
-#[derive(Debug)]
-pub struct WorkerDeclaration {
-    pub name: String,
-}
-
 /// The complete registry entry for one component (SHELL-REG-1, SHELL-INT-3).
 #[derive(Debug)]
 pub struct ComponentEntry {
@@ -82,6 +75,7 @@ mod tests {
     use crate::ids::ActionId;
     use crate::registry::{
         ContractVersionRange, HttpMethod, RouteDeclaration, RoutePath, SatelliteMode, SchemaId,
+        WorkerId,
     };
 
     fn full_entry() -> ComponentEntry {
@@ -149,7 +143,8 @@ mod tests {
                     .expect("valid config declaration"),
             ),
             workers: vec![WorkerDeclaration {
-                name: "acta.reindex".to_string(),
+                id: WorkerId::new("acta.reindex").expect("valid worker id"),
+                critical: false,
             }],
             satellites: vec![
                 SatelliteDeclaration::new(

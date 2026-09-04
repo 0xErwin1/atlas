@@ -389,3 +389,28 @@ fn multi_violation_registry_reports_every_matrix_rule() {
     let second_run = build(multi_violation_entries()).expect_err("fixture is deliberately broken");
     assert_eq!(errors, second_run, "build() must be deterministic");
 }
+
+/// Fabricated failure: the dependency graph alone is acyclic (`a` depends on
+/// `b`), but `b` requiring the capability `a` provides closes a cycle in the
+/// merged startup-order graph. That is a `StartupOrderCycle` and nothing else.
+#[test]
+fn capability_edge_closing_an_acyclic_dependency_graph_is_only_a_startup_order_cycle() {
+    let mut a = base_entry("a", ComponentKind::Product);
+    a.dependencies.push(Dependency {
+        component: component("b"),
+        min_contract: ContractVersion::new(1),
+    });
+    a.capabilities.provided.push(capability("a.cap"));
+
+    let mut b = base_entry("b", ComponentKind::Product);
+    b.capabilities.required_mandatory.push(capability("a.cap"));
+
+    let errors = build(vec![a, b]).expect_err("merged graph is cyclic");
+
+    assert_eq!(
+        errors,
+        vec![RegistryBuildError::StartupOrderCycle {
+            chain: vec![component("a"), component("b")],
+        }]
+    );
+}

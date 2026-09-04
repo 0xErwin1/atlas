@@ -3,13 +3,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::graph::topological_order;
 use super::{
     CapabilityId, ComponentEntry, ComponentId, HttpMethod, Registry, RegistryBuildError, RoutePath,
-    SchemaContractId, SchemaId,
+    SchemaContractId, SchemaId, WorkerId,
 };
 use crate::ids::ActionId;
 
 /// Builds a validated `Registry` from the full entry slice, or every matrix
-/// violation found (SHELL-REG-3). Pure: runs all six validators over the
-/// same input and never stops at the first violation.
+/// violation found (SHELL-REG-3). Pure: runs every validator over the same
+/// input and never stops at the first violation.
 pub fn build(entries: Vec<ComponentEntry>) -> Result<Registry, Vec<RegistryBuildError>> {
     let index = ComponentIndex::build(&entries);
 
@@ -18,11 +18,20 @@ pub fn build(entries: Vec<ComponentEntry>) -> Result<Registry, Vec<RegistryBuild
     errors.extend(validate_dependencies(&entries, &index));
     errors.extend(validate_capabilities(&entries));
     errors.extend(validate_persistence(&entries, &index));
+    errors.extend(validate_workers(&entries));
 
     let migration_order = match validate_migration_order(&entries) {
         Ok(order) => order,
         Err(migration_errors) => {
             errors.extend(migration_errors);
+            Vec::new()
+        }
+    };
+
+    let startup_order = match compute_startup_order(&entries, &index) {
+        Ok(order) => order,
+        Err(startup_errors) => {
+            errors.extend(startup_errors);
             Vec::new()
         }
     };
@@ -33,7 +42,12 @@ pub fn build(entries: Vec<ComponentEntry>) -> Result<Registry, Vec<RegistryBuild
         return Err(errors);
     }
 
-    Ok(Registry::new(entries, index.into_inner(), migration_order))
+    Ok(Registry::new(
+        entries,
+        index.into_inner(),
+        migration_order,
+        startup_order,
+    ))
 }
 
 /// A lookup from `ComponentId` to its position in the entry slice. The first
@@ -320,6 +334,131 @@ fn validate_persistence(
     errors
 }
 
+/// Rejects a `WorkerId` declared by more than one entry (or twice inside
+/// one entry) and a `critical: true` worker owned by an entry whose
+/// `diagnostics.readiness` is `false` (E11-S2 design D5). "A worker for a
+/// component absent from the registry" is not a row here: a
+/// `WorkerDeclaration` only exists as a field inside a real `ComponentEntry`,
+/// so it is unrepresentable at `build()` time. Its runtime equivalent — a
+/// bound implementation whose id no entry declares — is
+/// `BoundWorkers::bind`'s `UnknownWorker` case.
+fn validate_workers(entries: &[ComponentEntry]) -> Vec<RegistryBuildError> {
+    let mut errors = Vec::new();
+
+    let mut worker_owners: BTreeMap<WorkerId, Vec<ComponentId>> = BTreeMap::new();
+    for entry in entries {
+        for worker in &entry.workers {
+            worker_owners
+                .entry(worker.id.clone())
+                .or_default()
+                .push(entry.identity.stable_id.clone());
+        }
+    }
+    for (worker, components) in &worker_owners {
+        if components.len() > 1 {
+            errors.push(RegistryBuildError::DuplicateWorkerId {
+                worker: worker.clone(),
+                components: components.clone(),
+            });
+        }
+    }
+
+    for entry in entries {
+        for worker in &entry.workers {
+            if worker.critical && !entry.diagnostics.readiness {
+                errors.push(RegistryBuildError::CriticalWorkerWithoutReadiness {
+                    component: entry.identity.stable_id.clone(),
+                    worker: worker.id.clone(),
+                });
+            }
+        }
+    }
+
+    errors
+}
+
+/// Computes `Registry::startup_order()`: a topological sort over dependency
+/// edges merged with capability provider→consumer edges (provider precedes
+/// every entry that lists the capability in `required_mandatory` or
+/// `required_optional`), restricted to components declaring at least one
+/// worker (E11-S2 design D2.1). `StartupOrderCycle` is raised only when the
+/// dependency-only graph is acyclic and the merged graph is not, so the cycle
+/// needs at least one capability edge no entry's `dependencies` field ever
+/// declared. A cyclic dependency graph yields no order and no new error:
+/// `validate_dependencies` already reports that chain as `DependencyCycle`.
+fn compute_startup_order(
+    entries: &[ComponentEntry],
+    index: &ComponentIndex,
+) -> Result<Vec<ComponentId>, Vec<RegistryBuildError>> {
+    let nodes: BTreeSet<ComponentId> = entries
+        .iter()
+        .map(|entry| entry.identity.stable_id.clone())
+        .collect();
+
+    let mut edges: BTreeMap<ComponentId, BTreeSet<ComponentId>> = BTreeMap::new();
+    for entry in entries {
+        for dependency in &entry.dependencies {
+            if index.contains(&dependency.component) {
+                edges
+                    .entry(dependency.component.clone())
+                    .or_default()
+                    .insert(entry.identity.stable_id.clone());
+            }
+        }
+    }
+
+    if topological_order(&nodes, &edges).is_err() {
+        return Err(Vec::new());
+    }
+
+    let mut providers: BTreeMap<CapabilityId, BTreeSet<ComponentId>> = BTreeMap::new();
+    for entry in entries {
+        for capability in &entry.capabilities.provided {
+            providers
+                .entry(capability.clone())
+                .or_default()
+                .insert(entry.identity.stable_id.clone());
+        }
+    }
+
+    for entry in entries {
+        let required = entry
+            .capabilities
+            .required_mandatory
+            .iter()
+            .chain(&entry.capabilities.required_optional);
+
+        for capability in required {
+            let Some(capability_providers) = providers.get(capability) else {
+                continue;
+            };
+
+            for provider in capability_providers {
+                edges
+                    .entry(provider.clone())
+                    .or_default()
+                    .insert(entry.identity.stable_id.clone());
+            }
+        }
+    }
+
+    match topological_order(&nodes, &edges) {
+        Ok(order) => {
+            let worker_bearing: BTreeSet<ComponentId> = entries
+                .iter()
+                .filter(|entry| !entry.workers.is_empty())
+                .map(|entry| entry.identity.stable_id.clone())
+                .collect();
+
+            Ok(order
+                .into_iter()
+                .filter(|id| worker_bearing.contains(id))
+                .collect())
+        }
+        Err(chain) => Err(vec![RegistryBuildError::StartupOrderCycle { chain }]),
+    }
+}
+
 /// Orders persistent entries so every provider of a `SchemaContractId`
 /// precedes every entry requiring it. Rejects a required contract with no
 /// provider and a contract cycle.
@@ -424,7 +563,7 @@ mod tests {
     use crate::registry::{
         Api, Authorization, Capabilities, ComponentKind, ContractVersion, ContractVersionRange,
         Dependency, Diagnostics, Experience, Identity, Persistence, RouteDeclaration,
-        SatelliteDeclaration, SatelliteMode,
+        SatelliteDeclaration, SatelliteMode, WorkerDeclaration,
     };
 
     fn component(value: &str) -> ComponentId {
@@ -608,6 +747,23 @@ mod tests {
             )
             .expect("valid satellite declaration"),
         );
+        entry
+    }
+
+    fn worker_id(value: &str) -> WorkerId {
+        WorkerId::new(value).expect("valid worker id")
+    }
+
+    fn with_worker(mut entry: ComponentEntry, id: &str, critical: bool) -> ComponentEntry {
+        entry.workers.push(WorkerDeclaration {
+            id: worker_id(id),
+            critical,
+        });
+        entry
+    }
+
+    fn with_readiness(mut entry: ComponentEntry, readiness: bool) -> ComponentEntry {
+        entry.diagnostics.readiness = readiness;
         entry
     }
 
@@ -1180,6 +1336,283 @@ mod tests {
             let index = ComponentIndex::build(&entries);
 
             assert!(validate_satellites(&entries, &index).is_empty());
+        }
+    }
+
+    mod workers {
+        use super::*;
+
+        #[test]
+        fn a_single_declared_worker_produces_no_errors() {
+            let entries = vec![with_worker(
+                with_readiness(base_entry("acta"), true),
+                "acta.reindex",
+                false,
+            )];
+
+            assert!(validate_workers(&entries).is_empty());
+        }
+
+        #[test]
+        fn the_same_worker_id_declared_twice_is_rejected() {
+            let entries = vec![
+                with_worker(base_entry("acta"), "acta.reindex", false),
+                with_worker(base_entry("custos"), "acta.reindex", false),
+            ];
+
+            let errors = validate_workers(&entries);
+            assert!(errors.contains(&RegistryBuildError::DuplicateWorkerId {
+                worker: worker_id("acta.reindex"),
+                components: vec![component("acta"), component("custos")],
+            }));
+        }
+
+        #[test]
+        fn a_worker_id_declared_twice_on_one_entry_is_rejected() {
+            let entries = vec![with_worker(
+                with_worker(base_entry("acta"), "acta.reindex", false),
+                "acta.reindex",
+                false,
+            )];
+
+            let errors = validate_workers(&entries);
+            assert!(errors.contains(&RegistryBuildError::DuplicateWorkerId {
+                worker: worker_id("acta.reindex"),
+                components: vec![component("acta"), component("acta")],
+            }));
+        }
+
+        #[test]
+        fn a_critical_worker_without_a_readiness_surface_is_rejected() {
+            let entries = vec![with_worker(
+                with_readiness(base_entry("acta"), false),
+                "acta.reindex",
+                true,
+            )];
+
+            let errors = validate_workers(&entries);
+            assert!(
+                errors.contains(&RegistryBuildError::CriticalWorkerWithoutReadiness {
+                    component: component("acta"),
+                    worker: worker_id("acta.reindex"),
+                })
+            );
+        }
+
+        #[test]
+        fn a_critical_worker_with_a_readiness_surface_is_not_rejected() {
+            let entries = vec![with_worker(
+                with_readiness(base_entry("acta"), true),
+                "acta.reindex",
+                true,
+            )];
+
+            assert!(validate_workers(&entries).is_empty());
+        }
+
+        #[test]
+        fn a_duplicate_worker_id_and_an_existing_violation_are_reported_together() {
+            let entries = vec![
+                with_dependency(
+                    with_worker(base_entry("acta"), "acta.reindex", false),
+                    "ghost",
+                    1,
+                ),
+                with_worker(base_entry("custos"), "acta.reindex", false),
+            ];
+            let index = ComponentIndex::build(&entries);
+
+            let mut errors = validate_dependencies(&entries, &index);
+            errors.extend(validate_workers(&entries));
+
+            assert!(
+                errors
+                    .iter()
+                    .any(|error| matches!(error, RegistryBuildError::UnknownDependency { .. }))
+            );
+            assert!(
+                errors
+                    .iter()
+                    .any(|error| matches!(error, RegistryBuildError::DuplicateWorkerId { .. }))
+            );
+        }
+    }
+
+    mod startup_order {
+        use super::*;
+
+        #[test]
+        fn start_order_matches_component_dependency_order() {
+            let entries = vec![
+                with_worker(base_entry("platform"), "platform.one", false),
+                with_worker(
+                    with_dependency(base_entry("custos"), "platform", 1),
+                    "custos.one",
+                    false,
+                ),
+                with_worker(
+                    with_dependency(
+                        with_dependency(base_entry("acta"), "platform", 1),
+                        "custos",
+                        1,
+                    ),
+                    "acta.one",
+                    false,
+                ),
+            ];
+            let index = ComponentIndex::build(&entries);
+
+            let order = compute_startup_order(&entries, &index).expect("acyclic order");
+            assert_eq!(
+                order,
+                vec![
+                    component("platform"),
+                    component("custos"),
+                    component("acta")
+                ]
+            );
+        }
+
+        #[test]
+        fn a_component_with_no_workers_is_absent_from_the_order() {
+            let entries = vec![
+                with_worker(base_entry("platform"), "platform.one", false),
+                with_dependency(base_entry("custos"), "platform", 1),
+                with_worker(
+                    with_dependency(
+                        with_dependency(base_entry("acta"), "platform", 1),
+                        "custos",
+                        1,
+                    ),
+                    "acta.one",
+                    false,
+                ),
+            ];
+            let index = ComponentIndex::build(&entries);
+
+            let order = compute_startup_order(&entries, &index).expect("acyclic order");
+            assert_eq!(order, vec![component("platform"), component("acta")]);
+        }
+
+        #[test]
+        fn merged_capability_edges_place_an_undeclared_dependency_provider_before_its_consumer() {
+            let entries = vec![
+                with_worker(base_entry("platform"), "platform.one", false),
+                with_worker(
+                    with_dependency(base_entry("custos"), "platform", 1),
+                    "custos.one",
+                    false,
+                ),
+                with_worker(
+                    with_mandatory_capability(
+                        with_dependency(
+                            with_dependency(base_entry("acta"), "platform", 1),
+                            "custos",
+                            1,
+                        ),
+                        "storage.blob",
+                    ),
+                    "acta.one",
+                    false,
+                ),
+                with_worker(
+                    with_provided_capability(base_entry("storage.module"), "storage.blob"),
+                    "storage.one",
+                    false,
+                ),
+            ];
+            let index = ComponentIndex::build(&entries);
+
+            let order = compute_startup_order(&entries, &index).expect("acyclic order");
+            let acta_position = order
+                .iter()
+                .position(|id| id == &component("acta"))
+                .expect("acta is worker-bearing");
+            let storage_position = order
+                .iter()
+                .position(|id| id == &component("storage.module"))
+                .expect("storage.module is worker-bearing");
+
+            assert!(
+                storage_position < acta_position,
+                "a capability provider with no dependency edge must still precede its consumer: {order:?}"
+            );
+        }
+
+        #[test]
+        fn a_capability_only_cycle_is_rejected_as_a_startup_order_cycle() {
+            let entries = vec![
+                with_worker(
+                    with_provided_capability(
+                        with_mandatory_capability(base_entry("a"), "b.cap"),
+                        "a.cap",
+                    ),
+                    "a.one",
+                    false,
+                ),
+                with_worker(
+                    with_provided_capability(
+                        with_mandatory_capability(base_entry("b"), "a.cap"),
+                        "b.cap",
+                    ),
+                    "b.one",
+                    false,
+                ),
+            ];
+            let index = ComponentIndex::build(&entries);
+
+            let errors =
+                compute_startup_order(&entries, &index).expect_err("capability cycle rejected");
+            assert!(errors.contains(&RegistryBuildError::StartupOrderCycle {
+                chain: vec![component("a"), component("b")],
+            }));
+        }
+
+        #[test]
+        fn real_reg5_shaped_entries_place_the_undeclared_storage_provider_before_acta() {
+            let entries = vec![
+                with_worker(base_entry("platform"), "platform.one", false),
+                with_worker(
+                    with_dependency(base_entry("custos"), "platform", 1),
+                    "custos.one",
+                    false,
+                ),
+                with_worker(
+                    with_mandatory_capability(
+                        with_dependency(
+                            with_dependency(base_entry("acta"), "platform", 1),
+                            "custos",
+                            1,
+                        ),
+                        "storage.blob",
+                    ),
+                    "acta.webhook_dispatcher",
+                    false,
+                ),
+                with_worker(
+                    with_provided_capability(base_entry("storage.module"), "storage.blob"),
+                    "storage.module.worker",
+                    false,
+                ),
+            ];
+            let index = ComponentIndex::build(&entries);
+
+            let order = compute_startup_order(&entries, &index).expect("acyclic order");
+            let custos_position = order
+                .iter()
+                .position(|id| id == &component("custos"))
+                .expect("custos is worker-bearing");
+            let acta_position = order
+                .iter()
+                .position(|id| id == &component("acta"))
+                .expect("acta is worker-bearing");
+            let storage_position = order
+                .iter()
+                .position(|id| id == &component("storage.module"))
+                .expect("storage.module is worker-bearing");
+
+            assert!(storage_position < acta_position);
+            assert!(custos_position < acta_position);
         }
     }
 

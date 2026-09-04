@@ -34,6 +34,7 @@ mod satellite_mode;
 mod schema_contract_id;
 mod schema_id;
 mod validated;
+mod worker;
 
 pub use authorization::Authorization;
 pub use build::build;
@@ -42,10 +43,7 @@ pub use component_id::ComponentId;
 pub use component_kind::{ComponentKind, ComponentKindParseError};
 pub use config::{ConfigDeclaration, ConfigDeclarationError};
 pub use contract_version::{ContractVersion, ContractVersionRange, ContractVersionRangeError};
-pub use entry::{
-    Api, Capabilities, ComponentEntry, Dependency, Diagnostics, Experience, Identity,
-    WorkerDeclaration,
-};
+pub use entry::{Api, Capabilities, ComponentEntry, Dependency, Diagnostics, Experience, Identity};
 pub use error::RegistryBuildError;
 pub use name::RegistryIdError;
 pub use persistence::Persistence;
@@ -55,3 +53,4 @@ pub use satellite_mode::{SatelliteMode, SatelliteModeParseError};
 pub use schema_contract_id::SchemaContractId;
 pub use schema_id::SchemaId;
 pub use validated::Registry;
+pub use worker::{BoundWorkers, Worker, WorkerBindError, WorkerDeclaration, WorkerId};
