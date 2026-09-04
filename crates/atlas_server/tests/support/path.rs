@@ -79,17 +79,34 @@ mod tests {
     }
 
     #[test]
-    fn root_level_paths_stay_unprefixed_independent_of_component() {
+    fn root_level_paths_stay_unprefixed_only_for_platform() {
         let root_level_paths = ["/health", "/ready", "/version", "/openapi.json", "/scalar"];
 
         for relative in root_level_paths {
-            // Proves inheritance from `mounted_path`'s own `ROOT_LEVEL_PATHS`
-            // exemption, not a restatement of it: `api_path`'s real result is
-            // exercised alongside a locally-computed `v2_namespace` call for
-            // a different component, so the exemption is shown to hold
-            // independent of `component`.
-            assert_eq!(api_path("acta", relative), relative);
-            assert_eq!(mounted_path(&v2_namespace("custos"), relative), relative);
+            // E11-S3a design D2/§0.3: the `ROOT_LEVEL_PATHS` exemption is
+            // scoped to `platform` — `("platform", GET, "/health")` already
+            // IS platform's own probe, so it stays unprefixed.
+            assert_eq!(mounted_path(&v2_namespace("platform"), relative), relative);
+        }
+    }
+
+    #[test]
+    fn a_non_platform_components_root_level_named_path_is_namespaced() {
+        // The other half of the bidirectional property (design D2/§0.3):
+        // `custos`/`acta` declaring a route that shares a name with a
+        // `ROOT_LEVEL_PATHS` member (`/health`, `/ready`) does NOT inherit
+        // platform's root-level exemption — it is namespaced like any other
+        // route, since `custos`'s `/health` is a genuinely different URL
+        // from platform's own `/health`.
+        for component in ["custos", "acta"] {
+            assert_eq!(
+                mounted_path(&v2_namespace(component), "/health"),
+                format!("/api/v2/{component}/health")
+            );
+            assert_eq!(
+                api_path(component, "/health"),
+                format!("/api/v2/{component}/health")
+            );
         }
     }
 

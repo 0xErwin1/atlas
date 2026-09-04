@@ -4,11 +4,12 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 use serde_json::json;
 
-use atlas_api::dtos::ServerMetaDto;
+use atlas_api::dtos::{NotReadyComponentDto, ReadinessReportDto, ServerMetaDto};
+use atlas_core::ops::readiness::{ReadinessReport, aggregate_readiness};
 
+use crate::ops::deadline::TokioDeadline;
 use crate::{error::ApiError, state::AppState};
 
 #[utoipa::path(
@@ -20,43 +21,71 @@ pub(crate) async fn health() -> impl IntoResponse {
     Json(json!({"status": "ok"}))
 }
 
-/// Readiness probe: liveness plus a `SELECT 1` round-trip to the database.
+/// Readiness probe: aggregates every mandatory component's own `Readiness`
+/// result (`Registry::readiness_components()`, today `platform`, `custos`,
+/// `acta`) through `aggregate_readiness`, each bounded by
+/// `AppState::readiness_timeout` (default
+/// [`crate::state::DEFAULT_READINESS_TIMEOUT`]; design D3, SHELL-OPS-2).
+/// The mandatory set itself was captured once at startup by
+/// `DiagnosticsRegistry::bind`, so no registry is rebuilt per request.
 ///
-/// Unlike `/health` (a cheap liveness signal), this endpoint touches the pool so
-/// an orchestrator can withhold traffic while the database is unreachable or the
-/// pool is exhausted. Returns 503 on any database error.
+/// Unlike `/health` (a cheap liveness signal), this endpoint performs one
+/// bounded probe per mandatory component. Answers 503 naming every
+/// not-ready component with its own reason (SH2), never just the first.
 #[utoipa::path(
     get,
     path = "/ready",
     responses(
-        (status = 200, description = "Service is ready: the database is reachable"),
-        (status = 503, description = "Service is not ready: the database is unreachable"),
+        (status = 200, description = "Service is ready: every mandatory component is ready", body = ReadinessReportDto),
+        (status = 503, description = "Service is not ready: at least one mandatory component is not ready", body = ReadinessReportDto),
     )
 )]
 pub(crate) async fn ready(State(state): State<AppState>) -> Response {
-    let probe = state
-        .db
-        .execute_raw(Statement::from_string(
-            DatabaseBackend::Postgres,
-            "SELECT 1",
-        ))
-        .await;
-
-    match probe {
-        Ok(_) => (StatusCode::OK, Json(json!({"status": "ready"}))).into_response(),
-        Err(e) => {
-            tracing::warn!(
-                target: "health.readiness",
-                event = "readiness_failed",
-                error = %e,
-                "readiness probe failed: database unreachable"
-            );
-            (
+    let set = match state.diagnostics.readiness_set() {
+        Ok(set) => set,
+        Err(component) => {
+            return (
                 StatusCode::SERVICE_UNAVAILABLE,
-                Json(json!({"status": "unavailable"})),
+                Json(ReadinessReportDto {
+                    ready: false,
+                    not_ready: vec![NotReadyComponentDto {
+                        component: component.as_str().to_string(),
+                        reason: "no readiness implementer is bound".to_string(),
+                    }],
+                }),
             )
-                .into_response()
+                .into_response();
         }
+    };
+
+    let deadline = TokioDeadline {
+        per_component: state.readiness_timeout,
+    };
+    let report = aggregate_readiness(&set, &deadline).await;
+
+    match report {
+        ReadinessReport::Ready => (
+            StatusCode::OK,
+            Json(ReadinessReportDto {
+                ready: true,
+                not_ready: vec![],
+            }),
+        )
+            .into_response(),
+        ReadinessReport::NotReady { not_ready } => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ReadinessReportDto {
+                ready: false,
+                not_ready: not_ready
+                    .into_iter()
+                    .map(|component| NotReadyComponentDto {
+                        component: component.component.as_str().to_string(),
+                        reason: component.reason,
+                    })
+                    .collect(),
+            }),
+        )
+            .into_response(),
     }
 }
 

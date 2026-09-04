@@ -167,15 +167,33 @@ pub const ROOT_LEVEL_PATHS: &[&str] =
     &["/health", "/ready", "/version", "/openapi.json", "/scalar"];
 
 /// The concrete path a registry-relative `path` is actually served at under
-/// `namespace` (`v2-e3-s4` D2/T4.X): a [`ROOT_LEVEL_PATHS`] member stays
-/// unprefixed (it is never nested under `/api`/`/api/v2` at all); every
-/// other route is [`joined`] with `namespace`. This is the one place a
-/// registry-relative path is turned into the URL actually reachable on the
-/// wire, so every consumer that builds a request or compares against the
-/// OpenAPI document's (prefixed) path keys goes through this function
-/// rather than hand-concatenating `/api` a second time.
+/// `namespace` (`v2-e3-s4` D2/T4.X, component-scoped since E11-S3a design D2):
+/// a [`ROOT_LEVEL_PATHS`] member stays unprefixed **only when `namespace`
+/// names `platform`** (`("platform", GET, "/health")` already IS platform's
+/// probe — §0.2/§0.3); every other route, and every other component's own
+/// same-named path (e.g. `custos`'s `/health`), is [`joined`] with
+/// `namespace`.
+///
+/// The owning component is folded into the existing `namespace` parameter
+/// rather than added as a new one (design T1.33's "or fold the component
+/// into an existing parameter"): every call site already builds `namespace`
+/// via [`v2_namespace`], i.e. `{V2_PREFIX}/{component}`, so the component is
+/// recovered by stripping that fixed prefix — no call site's signature
+/// changes. A `namespace` that is not `V2_PREFIX`-shaped (e.g.
+/// `canonical_store_path`'s idempotency-store prefix) simply never matches
+/// `platform`, which is the correct outcome for a non-route namespace.
+///
+/// This is the one place a registry-relative path is turned into the URL
+/// actually reachable on the wire, so every consumer that builds a request
+/// or compares against the OpenAPI document's (prefixed) path keys goes
+/// through this function rather than hand-concatenating `/api` a second
+/// time.
 pub fn mounted_path(namespace: &str, path: &str) -> String {
-    if ROOT_LEVEL_PATHS.contains(&path) {
+    let owner = namespace
+        .strip_prefix(V2_PREFIX)
+        .and_then(|rest| rest.strip_prefix('/'));
+
+    if owner == Some("platform") && ROOT_LEVEL_PATHS.contains(&path) {
         path.to_string()
     } else {
         joined(namespace, path)

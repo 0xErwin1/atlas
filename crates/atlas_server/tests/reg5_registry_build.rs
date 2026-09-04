@@ -117,7 +117,9 @@ fn declared_route_count_matches_the_live_router_enumeration() {
     // `/scalar` was never among the 211 (`.merge()`, not a `.route()` call).
     // D3 widened `RoutePath` and declared both as ordinary `platform`
     // routes, raising the total to 212. See `docs/registry-route-ownership.md`
-    // for the full table.
+    // for the full table. E11-S3a design D2 added 4 more: `custos`'s and
+    // `acta`'s own namespaced `/health`/`/ready` probes, raising the total
+    // to 216.
     //
     // This assertion compares totals only, which is deliberately weak: a
     // dropped declaration paired with an equally undercounted expectation
@@ -127,8 +129,8 @@ fn declared_route_count_matches_the_live_router_enumeration() {
     // against the live router's set element by element; this count is only a
     // cheap tripwire until that lands.
     assert_eq!(
-        declared_route_count, 212,
-        "platform + custos + acta declared routes must equal the live router's 212 representable (method, path) pairs"
+        declared_route_count, 216,
+        "platform + custos + acta declared routes must equal the live router's 216 representable (method, path) pairs"
     );
 }
 

@@ -20,6 +20,12 @@ use crate::persistence::repos::{
 use crate::presence::PresenceRegistry;
 use crate::services::{CommentService, DocumentService, TaskService};
 
+/// The default per-component readiness bound root `/ready` enforces
+/// (design D3): small enough that the worst case (every mandatory
+/// component elapsing, sequentially) stays well under a typical
+/// orchestrator probe interval.
+pub const DEFAULT_READINESS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
 /// Shared application state injected into every route handler.
 #[derive(Clone)]
 pub struct AppState {
@@ -53,6 +59,19 @@ pub struct AppState {
     pub presence: Arc<PresenceRegistry>,
     pub embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
     pub search_semantic: SearchSemanticConfig,
+    /// Bound `Health`/`Readiness` implementers, one per diagnostics-bearing
+    /// component plus the active storage/search Modules (E11-S3a design D1).
+    /// Built once by [`crate::ops::default_registry`] in both `new` and
+    /// `for_test` (D1.2), so the table the server boots with and the table
+    /// ~300 tests construct never drift apart.
+    pub diagnostics: Arc<crate::ops::DiagnosticsRegistry>,
+    /// The per-component bound root `/ready` enforces via `TokioDeadline`
+    /// (design D3): small enough that the worst case (every mandatory
+    /// component elapsing, sequentially) stays well under a typical
+    /// orchestrator probe interval. Overridden in tests via
+    /// [`Self::with_readiness_timeout`] to prove the budget path without a
+    /// multi-second real wait.
+    pub readiness_timeout: std::time::Duration,
 }
 
 impl AppState {
@@ -71,6 +90,13 @@ impl AppState {
 
         let upload_allowed_extensions =
             parse_upload_allowed_extensions(cfg.acta.upload_allowed_extensions.clone());
+
+        let diagnostics = Arc::new(crate::ops::default_registry(
+            Arc::new(db.clone()),
+            attachments.clone(),
+            embedding_provider.clone(),
+            &cfg.modules.storage,
+        )?);
 
         Ok(Self {
             db: Arc::new(db),
@@ -92,6 +118,8 @@ impl AppState {
             presence: Arc::new(PresenceRegistry::default()),
             embedding_provider,
             search_semantic: cfg.modules.search_semantic.clone(),
+            diagnostics,
+            readiness_timeout: DEFAULT_READINESS_TIMEOUT,
         })
     }
 
@@ -112,12 +140,29 @@ impl AppState {
                     .to_string()
             });
 
-        let attachments = DiskAttachmentStore::new(&attachment_root)
-            .await
-            .map_err(|e| anyhow::anyhow!("test attachment store: {e:?}"))?;
+        let attachments: Arc<dyn AttachmentStore> = Arc::new(
+            DiskAttachmentStore::new(&attachment_root)
+                .await
+                .map_err(|e| anyhow::anyhow!("test attachment store: {e:?}"))?,
+        );
+
+        let embedding_provider: Option<Arc<dyn EmbeddingProvider>> = Some(Arc::new(
+            DeterministicEmbeddingProvider::new("atlas-test-embedding", 1536)?,
+        ));
+
+        let db = Arc::new(db);
+
+        let diagnostics = Arc::new(crate::ops::default_registry(
+            db.clone(),
+            attachments.clone(),
+            embedding_provider.clone(),
+            &crate::config::StorageConfig::Disk {
+                root: attachment_root,
+            },
+        )?);
 
         Ok(Self {
-            db: Arc::new(db),
+            db,
             session_ttl_hours: 24,
             session_max_ttl_hours: 72,
             idempotency_retention_hours: 24,
@@ -125,7 +170,7 @@ impl AppState {
             build: None,
             server_url: None,
             anchor_interval,
-            attachments: Arc::new(attachments),
+            attachments,
             max_attachment_bytes: DEFAULT_MAX_ATTACHMENT_BYTES,
             upload_allowed_extensions: None,
             webhook_crypto: Arc::new(WebhookCrypto::generate_for_test()),
@@ -134,12 +179,30 @@ impl AppState {
             rate_limiter: None,
             live: LiveEventHub::new(DEFAULT_HUB_CAPACITY),
             presence: Arc::new(PresenceRegistry::default()),
-            embedding_provider: Some(Arc::new(DeterministicEmbeddingProvider::new(
-                "atlas-test-embedding",
-                1536,
-            )?)),
+            embedding_provider,
             search_semantic: SearchSemanticConfig::default(),
+            diagnostics,
+            readiness_timeout: DEFAULT_READINESS_TIMEOUT,
         })
+    }
+
+    /// Consumes this state and returns it with the diagnostics table replaced —
+    /// the test seam a container test uses to force one component's
+    /// `Health`/`Readiness` result via `atlas_core::ops::test_support::FakeDiagnostics`
+    /// (design R8): never by poisoning the shared pool, which would fail
+    /// every component at once and prove nothing about aggregation.
+    pub fn with_diagnostics(mut self, diagnostics: crate::ops::DiagnosticsRegistry) -> Self {
+        self.diagnostics = Arc::new(diagnostics);
+        self
+    }
+
+    /// Consumes this state and returns it with the readiness timeout replaced —
+    /// the test seam that proves `/ready`'s budget (design D3, T1.28)
+    /// without waiting out the real default on every stalling-component
+    /// scenario.
+    pub fn with_readiness_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.readiness_timeout = timeout;
+        self
     }
 
     pub async fn semantic_search_enabled_now(&self) -> Result<bool, DbErr> {
@@ -210,7 +273,7 @@ impl AppState {
     }
 }
 
-async fn probe_semantic_search_schema(db: &DatabaseConnection) -> Result<bool, DbErr> {
+pub(crate) async fn probe_semantic_search_schema(db: &DatabaseConnection) -> Result<bool, DbErr> {
     let row = db
         .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
