@@ -13,17 +13,28 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let cfg = atlas_server::config::ServerConfig::from_env(&atlas_core::config::ProcessEnv)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let storage_backend =
+        atlas_server::reg5::storage_backend_from_env(&atlas_core::config::ProcessEnv)
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    let db = Database::connect(cfg.postgres.database_url.expose().clone()).await?;
+    let cfg = atlas_server::config::AtlasConfig::from_registry(
+        &atlas_server::reg5::reg5_component_entries(storage_backend),
+        &atlas_core::config::ProcessEnv,
+    )
+    .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    let db = Database::connect(cfg.platform.postgres.database_url.expose().clone()).await?;
 
     Migrator::up(&db, None).await?;
     info!("migrations applied");
 
     atlas_server::persistence::bootstrap::run_dev_seed(
         &atlas_server::persistence::bootstrap::BootstrapConfig {
-            root_password: cfg.root_password.clone(),
+            root_password: cfg
+                .custos
+                .root_password
+                .as_ref()
+                .map(|password| password.expose().clone()),
         },
         &db,
     )

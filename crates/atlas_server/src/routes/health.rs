@@ -90,8 +90,8 @@ pub(crate) async fn meta(State(state): State<AppState>) -> Result<impl IntoRespo
 
     Ok(Json(ServerMetaDto {
         version: env!("CARGO_PKG_VERSION").to_string(),
-        build: std::env::var("ATLAS_BUILD").ok(),
-        url: std::env::var("ATLAS_SERVER_URL").ok(),
+        build: state.build.clone(),
+        url: state.server_url.clone(),
         max_attachment_bytes: Some(state.max_attachment_bytes),
         semantic_search_enabled: Some(semantic_search_enabled),
     }))

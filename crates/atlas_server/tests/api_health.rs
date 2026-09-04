@@ -20,6 +20,46 @@ async fn health_endpoint_returns_200_via_atlas_client() {
     db.teardown().await;
 }
 
+/// SHELL-CFG-2, design D4.2/R11: `/api/meta`'s response body must never
+/// carry a secret field, regardless of how the endpoint's shape evolves.
+/// This is a permanent negative assertion (no secret field name appears),
+/// not a shape assertion — it survives E11-S3a's `/api/meta` rewrite.
+///
+/// The harness cannot inject real `ATLAS_ROOT_PASSWORD`/
+/// `ATLAS_WEBHOOK_ENC_KEY`/S3-credential values into a running test server
+/// (edition 2024 forbids `std::env::set_var`, and `TestServer` spawns
+/// `AppState::for_test`, not `AtlasConfig::from_registry`), so this asserts
+/// structurally: the serialized response never carries any of the five
+/// secret field names `AtlasConfig`'s component structs define.
+#[tokio::test]
+async fn meta_response_carries_no_secret_field_names() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, _ws, _user) =
+        support::login_user_with_workspace(&server, &db, "meta-secret-fields").await;
+
+    let meta = client
+        .server_meta()
+        .await
+        .expect("server_meta request must succeed");
+    let body = serde_json::to_string(&meta).expect("meta serializes to JSON");
+
+    for forbidden in [
+        "root_password",
+        "webhook_enc_key",
+        "access_key_id",
+        "secret_access_key",
+        "api_key",
+    ] {
+        assert!(
+            !body.contains(forbidden),
+            "/api/v2/platform/meta response must never carry a `{forbidden}` field: {body}"
+        );
+    }
+
+    db.teardown().await;
+}
+
 #[tokio::test]
 async fn meta_exposes_version_and_optional_url() {
     let db = support::TestDb::create().await.expect("TestDb::create");

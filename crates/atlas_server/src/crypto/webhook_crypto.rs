@@ -54,17 +54,6 @@ impl WebhookCrypto {
         Ok(Self::new(&key_bytes))
     }
 
-    /// Reads `ATLAS_WEBHOOK_ENC_KEY` from the environment and constructs the cipher.
-    ///
-    /// Returns `Err` if the variable is missing or does not pass `from_base64_key`
-    /// validation. The error message names the variable and the problem but never
-    /// echoes the key value.
-    pub fn load_from_env() -> Result<Self, String> {
-        let raw = std::env::var("ATLAS_WEBHOOK_ENC_KEY")
-            .map_err(|_| "ATLAS_WEBHOOK_ENC_KEY is required but not set".to_string())?;
-        Self::from_base64_key(&raw)
-    }
-
     /// Constructs the cipher from a fresh random 32-byte key.
     ///
     /// Only for test environments where `ATLAS_WEBHOOK_ENC_KEY` is not configured.

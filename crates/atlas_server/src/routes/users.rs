@@ -118,7 +118,7 @@ pub(crate) async fn create_user(
     )
     .await?;
 
-    let activation_link = build_activation_link(&plaintext);
+    let activation_link = build_activation_link(state.server_url.as_deref(), &plaintext);
 
     let response = CreateUserResponse {
         user: user_to_dto(&user),
@@ -223,7 +223,7 @@ pub(crate) async fn regenerate_activation_link(
         message: e.to_string(),
     })?;
 
-    let activation_link = build_activation_link(&plaintext);
+    let activation_link = build_activation_link(state.server_url.as_deref(), &plaintext);
 
     Ok(Json(ActivationLinkResponse { activation_link }))
 }
@@ -816,10 +816,11 @@ fn is_unique_violation(err: &sea_orm::DbErr) -> bool {
 
 /// Builds the activation link path from a plaintext token.
 ///
-/// The base URL prefix comes from the `ATLAS_SERVER_URL` environment variable
-/// when set; otherwise the link is a bare path so the web layer can prefix it.
-fn build_activation_link(plaintext: &str) -> String {
-    let base = std::env::var("ATLAS_SERVER_URL").unwrap_or_default();
+/// `server_url` comes from `PlatformConfig`'s `ATLAS_SERVER_URL`, threaded
+/// through `AppState`, when set; otherwise the link is a bare path so the
+/// web layer can prefix it.
+fn build_activation_link(server_url: Option<&str>, plaintext: &str) -> String {
+    let base = server_url.unwrap_or_default();
     format!("{base}/activate/{plaintext}")
 }
 

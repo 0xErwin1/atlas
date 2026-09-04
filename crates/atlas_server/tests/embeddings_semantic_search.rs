@@ -3,8 +3,9 @@ use atlas_acta::semantic_search::EmbeddingInput;
 use atlas_acta::semantic_search::EmbeddingProvider;
 use atlas_acta::semantic_search::ResourceKind;
 use atlas_acta::semantic_search::SemanticSearchSource;
+use atlas_core::config::{ComponentConfig, Secret};
 use atlas_server::{
-    config::{EmbeddingConfig, EmbeddingProviderKind, SCHEMA_EMBEDDING_DIMENSIONS},
+    config::{EmbeddingProviderKind, SCHEMA_EMBEDDING_DIMENSIONS, SearchSemanticConfig},
     embeddings::{DeterministicEmbeddingProvider, OpenAiCompatibleEmbeddingProvider},
     semantic_indexer::{
         AttachmentText, ChecklistText, CommentText, DocumentIndexInput, SubtaskText,
@@ -69,7 +70,7 @@ async fn semantic_search_embeddings_deterministic_provider_guards_dimensions()
 #[test]
 fn semantic_search_embeddings_openai_compatible_config_requires_key_and_dimensions()
 -> Result<(), Box<dyn Error>> {
-    let cfg = EmbeddingConfig::from_env_vars(|name| match name {
+    let cfg = SearchSemanticConfig::from_env(&|name: &str| match name {
         "ATLAS_EMBEDDINGS_ENABLED" => Some("true".to_owned()),
         "ATLAS_EMBEDDINGS_PROVIDER" => Some("openai_compatible".to_owned()),
         "ATLAS_EMBEDDINGS_MODEL" => Some("text-embedding-3-small".to_owned()),
@@ -84,7 +85,7 @@ fn semantic_search_embeddings_openai_compatible_config_requires_key_and_dimensio
     assert_eq!(cfg.model, "text-embedding-3-small");
     assert_eq!(cfg.dimensions, 1536);
 
-    let missing_key = EmbeddingConfig::from_env_vars(|name| match name {
+    let missing_key = SearchSemanticConfig::from_env(&|name: &str| match name {
         "ATLAS_EMBEDDINGS_ENABLED" => Some("true".to_owned()),
         "ATLAS_EMBEDDINGS_PROVIDER" => Some("openai_compatible".to_owned()),
         "ATLAS_EMBEDDINGS_MODEL" => Some("text-embedding-3-small".to_owned()),
@@ -93,7 +94,7 @@ fn semantic_search_embeddings_openai_compatible_config_requires_key_and_dimensio
     });
     assert!(missing_key.is_err());
 
-    let bad_dimensions = EmbeddingConfig::from_env_vars(|name| match name {
+    let bad_dimensions = SearchSemanticConfig::from_env(&|name: &str| match name {
         "ATLAS_EMBEDDINGS_ENABLED" => Some("true".to_owned()),
         "ATLAS_EMBEDDINGS_PROVIDER" => Some("openai_compatible".to_owned()),
         "ATLAS_EMBEDDINGS_MODEL" => Some("text-embedding-3-small".to_owned()),
@@ -169,17 +170,19 @@ fn stub_config(
     dimensions: usize,
     batch_size: usize,
     retries: u32,
-) -> EmbeddingConfig {
-    EmbeddingConfig {
+) -> SearchSemanticConfig {
+    SearchSemanticConfig {
         enabled: true,
         provider: EmbeddingProviderKind::OpenAiCompatible,
         model: "stub-embedding".to_owned(),
         dimensions,
-        api_key: Some("stub-key".to_owned()),
+        api_key: Some(Secret::new("stub-key".to_owned())),
         base_url,
         batch_size,
         timeout_ms: 5_000,
         retry_attempts: retries,
+        rrf_k: 60.0,
+        hybrid_pool: 50,
     }
 }
 
@@ -259,18 +262,18 @@ async fn openai_compatible_provider_gives_up_after_the_configured_retries()
 
 #[test]
 fn semantic_search_embeddings_config_requires_an_explicit_provider_when_enabled() {
-    let inherited = EmbeddingConfig::from_env_vars(|name| match name {
+    let inherited = SearchSemanticConfig::from_env(&|name: &str| match name {
         "ATLAS_EMBEDDINGS_ENABLED" => Some("true".to_owned()),
         _ => None,
     });
 
-    let error = inherited.err().unwrap_or_default();
+    let error = inherited.err().map(|e| e.to_string()).unwrap_or_default();
     assert!(
         error.contains("ATLAS_EMBEDDINGS_PROVIDER"),
         "enabling embeddings without naming a provider must fail loudly: {error}"
     );
 
-    let asked_for_deterministic = EmbeddingConfig::from_env_vars(|name| match name {
+    let asked_for_deterministic = SearchSemanticConfig::from_env(&|name: &str| match name {
         "ATLAS_EMBEDDINGS_ENABLED" => Some("true".to_owned()),
         "ATLAS_EMBEDDINGS_PROVIDER" => Some("deterministic".to_owned()),
         _ => None,
@@ -281,7 +284,7 @@ fn semantic_search_embeddings_config_requires_an_explicit_provider_when_enabled(
         "the deterministic provider stays available when it is asked for by name"
     );
 
-    let disabled = EmbeddingConfig::from_env_vars(|_| None);
+    let disabled = SearchSemanticConfig::from_env(&|_: &str| None);
     assert!(
         disabled.is_ok(),
         "a deployment with embeddings off needs no provider"
@@ -290,7 +293,7 @@ fn semantic_search_embeddings_config_requires_an_explicit_provider_when_enabled(
 
 #[test]
 fn semantic_search_embeddings_config_rejects_dimensions_the_schema_cannot_store() {
-    let mismatched = EmbeddingConfig::from_env_vars(|name| match name {
+    let mismatched = SearchSemanticConfig::from_env(&|name: &str| match name {
         "ATLAS_EMBEDDINGS_ENABLED" => Some("true".to_owned()),
         "ATLAS_EMBEDDINGS_PROVIDER" => Some("openai_compatible".to_owned()),
         "ATLAS_EMBEDDINGS_MODEL" => Some("text-embedding-3-small".to_owned()),
@@ -299,7 +302,7 @@ fn semantic_search_embeddings_config_rejects_dimensions_the_schema_cannot_store(
         _ => None,
     });
 
-    let error = mismatched.err().unwrap_or_default();
+    let error = mismatched.err().map(|e| e.to_string()).unwrap_or_default();
 
     assert!(
         error.contains("768") && error.contains("search_embeddings"),

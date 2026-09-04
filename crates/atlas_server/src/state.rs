@@ -7,7 +7,8 @@ use atlas_acta::ports::attachment_store::AttachmentStore;
 use atlas_acta::semantic_search::EmbeddingProvider;
 
 use crate::config::{
-    DispatcherConfig, EmbeddingProviderKind, SearchConfig, ServerConfig, env_var_nonempty, read_env,
+    AtlasConfig, DEFAULT_MAX_ATTACHMENT_BYTES, DispatcherConfig, EmbeddingProviderKind,
+    SearchSemanticConfig, StorageConfig, env_var_nonempty, read_env,
 };
 use crate::crypto::WebhookCrypto;
 use crate::embeddings::{DeterministicEmbeddingProvider, OpenAiCompatibleEmbeddingProvider};
@@ -19,8 +20,6 @@ use crate::persistence::repos::{
 use crate::presence::PresenceRegistry;
 use crate::services::{CommentService, DocumentService, TaskService};
 
-const DEFAULT_MAX_ATTACHMENT_BYTES: u64 = 20 * 1024 * 1024; // 20 MiB
-
 /// Shared application state injected into every route handler.
 #[derive(Clone)]
 pub struct AppState {
@@ -31,6 +30,11 @@ pub struct AppState {
     /// PR4), alongside `session_ttl_hours`. Default 24h.
     pub idempotency_retention_hours: i64,
     pub cookie_secure: bool,
+    /// Build identifier surfaced by `/api/meta` (`ATLAS_BUILD`, `PlatformConfig`).
+    pub build: Option<String>,
+    /// Public base URL surfaced by `/api/meta` and used in activation links
+    /// (`ATLAS_SERVER_URL`, `PlatformConfig`).
+    pub server_url: Option<String>,
     pub anchor_interval: u32,
     pub attachments: Arc<dyn AttachmentStore>,
     pub max_attachment_bytes: u64,
@@ -48,56 +52,46 @@ pub struct AppState {
     /// In-memory board presence registry (who is currently viewing each board).
     pub presence: Arc<PresenceRegistry>,
     pub embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
-    pub search: SearchConfig,
+    pub search_semantic: SearchSemanticConfig,
 }
 
 impl AppState {
-    pub async fn new(
-        db: DatabaseConnection,
-        cfg: &ServerConfig,
-        source: &dyn EnvSource,
-    ) -> Result<Self, anyhow::Error> {
-        let session_ttl_hours = read_env(source, "ATLAS_SESSION_TTL_HOURS", 168);
-        let session_max_ttl_hours = read_env(source, "ATLAS_SESSION_MAX_TTL_HOURS", 720);
-        let idempotency_retention_hours = read_env(source, "ATLAS_IDEMPOTENCY_RETENTION_HOURS", 24);
+    pub async fn new(db: DatabaseConnection, cfg: &AtlasConfig) -> Result<Self, anyhow::Error> {
+        let attachments = build_attachment_store(&cfg.modules.storage).await?;
+        let webhook_crypto = Arc::new(WebhookCrypto::new(cfg.acta.webhook_enc_key.expose()));
 
-        let cookie_secure = resolve_cookie_secure(source);
-
-        let anchor_interval = read_env::<u32>(source, "ATLAS_ANCHOR_INTERVAL", 50).max(2);
-
-        let attachments = build_attachment_store(source).await?;
-        let webhook_crypto = Arc::new(WebhookCrypto::new(&cfg.webhook_enc_key));
-
-        let rate_limiter = cfg.rate_limit.enabled.then(|| {
+        let rate_limiter = cfg.platform.rate_limit.enabled.then(|| {
             Arc::new(PrincipalRateLimiter::new(
-                cfg.rate_limit.per_second,
-                cfg.rate_limit.burst,
+                cfg.platform.rate_limit.per_second,
+                cfg.platform.rate_limit.burst,
             ))
         });
 
-        let embedding_provider = build_embedding_provider(cfg)?;
+        let embedding_provider = build_embedding_provider(&cfg.modules.search_semantic)?;
 
         let upload_allowed_extensions =
-            parse_upload_allowed_extensions(source.get("ATLAS_UPLOAD_ALLOWED_EXTENSIONS"));
+            parse_upload_allowed_extensions(cfg.acta.upload_allowed_extensions.clone());
 
         Ok(Self {
             db: Arc::new(db),
-            session_ttl_hours,
-            session_max_ttl_hours,
-            idempotency_retention_hours,
-            cookie_secure,
-            anchor_interval,
+            session_ttl_hours: cfg.platform.session_ttl_hours,
+            session_max_ttl_hours: cfg.platform.session_max_ttl_hours,
+            idempotency_retention_hours: cfg.platform.idempotency_retention_hours,
+            cookie_secure: cfg.platform.cookie_secure,
+            build: cfg.platform.build.clone(),
+            server_url: cfg.platform.server_url.clone(),
+            anchor_interval: cfg.acta.anchor_interval,
             attachments,
-            max_attachment_bytes: DEFAULT_MAX_ATTACHMENT_BYTES,
+            max_attachment_bytes: cfg.acta.max_attachment_bytes,
             upload_allowed_extensions,
             webhook_crypto,
-            dispatcher_config: cfg.dispatcher.clone(),
-            allow_private_webhook_targets: cfg.allow_private_webhook_targets,
+            dispatcher_config: cfg.acta.dispatcher.clone(),
+            allow_private_webhook_targets: cfg.acta.allow_private_webhook_targets,
             rate_limiter,
             live: LiveEventHub::new(DEFAULT_HUB_CAPACITY),
             presence: Arc::new(PresenceRegistry::default()),
             embedding_provider,
-            search: cfg.search.clone(),
+            search_semantic: cfg.modules.search_semantic.clone(),
         })
     }
 
@@ -128,6 +122,8 @@ impl AppState {
             session_max_ttl_hours: 72,
             idempotency_retention_hours: 24,
             cookie_secure: false,
+            build: None,
+            server_url: None,
             anchor_interval,
             attachments: Arc::new(attachments),
             max_attachment_bytes: DEFAULT_MAX_ATTACHMENT_BYTES,
@@ -142,7 +138,7 @@ impl AppState {
                 "atlas-test-embedding",
                 1536,
             )?)),
-            search: SearchConfig::default(),
+            search_semantic: SearchSemanticConfig::default(),
         })
     }
 
@@ -230,27 +226,23 @@ async fn probe_semantic_search_schema(db: &DatabaseConnection) -> Result<bool, D
     Ok(vector_extension && embeddings_table)
 }
 
-/// Builds the attachment store selected by `ATLAS_ATTACHMENT_BACKEND`.
-///
-/// Defaults to the filesystem backend (`disk`) so an unconfigured deployment keeps
-/// working. The `s3` backend targets any S3-compatible object store (e.g. Cloudflare
-/// R2) and requires its connection variables; a missing required variable fails
-/// startup with a message that names the variable but never echoes a secret value.
+/// Builds the semantic embedding provider selected by
+/// `cfg.provider`, or `None` when semantic search is disabled.
 fn build_embedding_provider(
-    cfg: &ServerConfig,
+    cfg: &SearchSemanticConfig,
 ) -> Result<Option<Arc<dyn EmbeddingProvider>>, anyhow::Error> {
-    if !cfg.embeddings.enabled {
+    if !cfg.enabled {
         return Ok(None);
     }
 
-    let provider: Arc<dyn EmbeddingProvider> = match cfg.embeddings.provider {
+    let provider: Arc<dyn EmbeddingProvider> = match cfg.provider {
         EmbeddingProviderKind::Deterministic => Arc::new(DeterministicEmbeddingProvider::new(
-            cfg.embeddings.model.clone(),
-            cfg.embeddings.dimensions,
+            cfg.model.clone(),
+            cfg.dimensions,
         )?),
-        EmbeddingProviderKind::OpenAiCompatible => Arc::new(
-            OpenAiCompatibleEmbeddingProvider::new(cfg.embeddings.clone())?,
-        ),
+        EmbeddingProviderKind::OpenAiCompatible => {
+            Arc::new(OpenAiCompatibleEmbeddingProvider::new(cfg.clone())?)
+        }
     };
     Ok(Some(provider))
 }
@@ -313,24 +305,26 @@ pub fn resolve_attachment_backend(
     }
 }
 
-/// Builds the attachment store selected by `ATLAS_ATTACHMENT_BACKEND`.
+/// Builds the attachment store selected by `cfg` (the composed
+/// `StorageConfig`, `ATLAS_ATTACHMENT_BACKEND`'s discriminator).
 ///
 /// Defaults to the filesystem backend (`disk`) so an unconfigured deployment keeps
 /// working. The `s3` backend targets any S3-compatible object store (e.g. Cloudflare
-/// R2) and requires its connection variables; a missing required variable fails
-/// startup with a message that names the variable but never echoes a secret value.
+/// R2) and requires its connection variables; `StorageConfig::from_env` already
+/// refused startup with a value-free message if one was missing, so this
+/// function only builds the client.
 async fn build_attachment_store(
-    source: &dyn EnvSource,
+    cfg: &StorageConfig,
 ) -> Result<Arc<dyn AttachmentStore>, anyhow::Error> {
-    match resolve_attachment_backend(source)? {
-        AttachmentBackendChoice::Disk { root } => {
-            let store = DiskAttachmentStore::new(&root).await.map_err(|e| {
+    match cfg {
+        StorageConfig::Disk { root } => {
+            let store = DiskAttachmentStore::new(root).await.map_err(|e| {
                 anyhow::anyhow!("cannot initialise attachment store at {root}: {e:?}")
             })?;
 
             Ok(Arc::new(store))
         }
-        AttachmentBackendChoice::S3 {
+        StorageConfig::S3 {
             bucket,
             endpoint,
             access_key_id,
@@ -338,11 +332,11 @@ async fn build_attachment_store(
             region,
         } => {
             let config = S3Config {
-                bucket,
-                endpoint,
-                access_key_id,
-                secret_access_key,
-                region,
+                bucket: bucket.clone(),
+                endpoint: endpoint.clone(),
+                access_key_id: access_key_id.clone(),
+                secret_access_key: secret_access_key.clone(),
+                region: region.clone(),
             };
 
             let store = S3AttachmentStore::new(config)

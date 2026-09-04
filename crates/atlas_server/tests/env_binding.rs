@@ -796,19 +796,28 @@ fn check_port() -> Result<(), String> {
     Ok(())
 }
 
-// `ATLAS_SERVER_URL`/`ATLAS_BUILD` stay per-request reads in this PR (task
-// T1.8, design D3.4): they are declared here — proving the enumeration
-// covers them by name — but not yet composed into `ServerConfig`/`AppState`.
-// `routes/health.rs`/`routes/users.rs` still call `std::env::var(...).ok()`
-// directly, which `EnvSource::get` reproduces exactly, so the "request-time
-// reader with the source substituted" is `EnvSource::get` itself.
+// `ATLAS_SERVER_URL`/`ATLAS_BUILD` move into `PlatformConfig` in PR2 (design
+// D3.4, orchestrator override): they are read at startup now, so these two
+// rows assert through `PlatformConfig::from_env` rather than
+// `EnvSource::get` directly (the pre-PR2 shape this file previously pinned,
+// when the two variables were still read per-request in `routes/health.rs`/
+// `routes/users.rs`). Every other row in this file is unchanged.
 fn check_server_url() -> Result<(), String> {
-    let source = env(&[("ATLAS_SERVER_URL", "https://atlas.example.test")]);
-    if source.get("ATLAS_SERVER_URL").as_deref() != Some("https://atlas.example.test") {
+    let set = atlas_server::config::PlatformConfig::from_env(&env(&[
+        ("DATABASE_URL", "postgres://set-value/db"),
+        ("ATLAS_SERVER_URL", "https://atlas.example.test"),
+    ]))
+    .map_err(|e| e.to_string())?;
+    if set.server_url.as_deref() != Some("https://atlas.example.test") {
         return Err("server_url did not bind to the set value".to_string());
     }
 
-    if empty().get("ATLAS_SERVER_URL").is_some() {
+    let unset = atlas_server::config::PlatformConfig::from_env(&env(&[(
+        "DATABASE_URL",
+        "postgres://set-value/db",
+    )]))
+    .map_err(|e| e.to_string())?;
+    if unset.server_url.is_some() {
         return Err("expected None when unset".to_string());
     }
 
@@ -816,12 +825,21 @@ fn check_server_url() -> Result<(), String> {
 }
 
 fn check_build() -> Result<(), String> {
-    let source = env(&[("ATLAS_BUILD", "2026.09.01+abc123")]);
-    if source.get("ATLAS_BUILD").as_deref() != Some("2026.09.01+abc123") {
+    let set = atlas_server::config::PlatformConfig::from_env(&env(&[
+        ("DATABASE_URL", "postgres://set-value/db"),
+        ("ATLAS_BUILD", "2026.09.01+abc123"),
+    ]))
+    .map_err(|e| e.to_string())?;
+    if set.build.as_deref() != Some("2026.09.01+abc123") {
         return Err("build did not bind to the set value".to_string());
     }
 
-    if empty().get("ATLAS_BUILD").is_some() {
+    let unset = atlas_server::config::PlatformConfig::from_env(&env(&[(
+        "DATABASE_URL",
+        "postgres://set-value/db",
+    )]))
+    .map_err(|e| e.to_string())?;
+    if unset.build.is_some() {
         return Err("expected None when unset".to_string());
     }
 

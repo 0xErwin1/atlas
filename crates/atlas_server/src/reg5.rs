@@ -82,7 +82,16 @@ fn action(value: &str) -> ActionId {
 
 #[allow(clippy::expect_used)]
 fn config(struct_name: &str, env_prefix: &str) -> ConfigDeclaration {
-    ConfigDeclaration::new(struct_name, env_prefix, true).expect("valid config declaration")
+    config_with_mandatory(struct_name, env_prefix, true)
+}
+
+#[allow(clippy::expect_used)]
+fn config_with_mandatory(
+    struct_name: &str,
+    env_prefix: &str,
+    mandatory: bool,
+) -> ConfigDeclaration {
+    ConfigDeclaration::new(struct_name, env_prefix, mandatory).expect("valid config declaration")
 }
 
 #[allow(clippy::expect_used)]
@@ -2035,37 +2044,61 @@ fn acta_entry() -> ComponentEntry {
 /// `storage.filesystem`: mandatory `storage.blob` provider, local-disk
 /// backend. No HTTP surface (Module, SHELL-REG-5).
 fn storage_filesystem_entry() -> ComponentEntry {
-    minimal_module("storage.filesystem", vec![capability("storage.blob")])
+    minimal_module(
+        "storage.filesystem",
+        vec![capability("storage.blob")],
+        Some(config("StorageConfig", "ATLAS_STORAGE_")),
+    )
 }
 
 /// `storage.s3`: mandatory `storage.blob` provider, S3-compatible backend.
 /// No HTTP surface (Module, SHELL-REG-5). Mutually exclusive with
 /// `storage.filesystem` in a single `build()` call; see `StorageBackend`.
 fn storage_s3_entry() -> ComponentEntry {
-    minimal_module("storage.s3", vec![capability("storage.blob")])
+    minimal_module(
+        "storage.s3",
+        vec![capability("storage.blob")],
+        Some(config("StorageConfig", "ATLAS_STORAGE_")),
+    )
 }
 
 /// `search.postgres_fts`: lexical search provider. No HTTP surface (Module,
 /// SHELL-REG-5).
 fn search_postgres_fts_entry() -> ComponentEntry {
-    minimal_module("search.postgres_fts", vec![capability("search.lexical")])
+    minimal_module(
+        "search.postgres_fts",
+        vec![capability("search.lexical")],
+        Some(config("SearchLexicalConfig", "ATLAS_SEARCH_")),
+    )
 }
 
 /// `search.pgvector_embeddings`: optional-capability semantic search
 /// provider (spec scenario "search.pgvector_embeddings is optional"). No
-/// HTTP surface (Module, SHELL-REG-5).
+/// HTTP surface (Module, SHELL-REG-5). `mandatory: false` matches
+/// SHELL-REG-5's "optional": the Module is present in this release, but no
+/// startup gate requires its variables to be set.
 fn search_pgvector_embeddings_entry() -> ComponentEntry {
     minimal_module(
         "search.pgvector_embeddings",
         vec![capability("search.semantic")],
+        Some(config_with_mandatory(
+            "SearchSemanticConfig",
+            "ATLAS_EMBEDDINGS_",
+            false,
+        )),
     )
 }
 
 /// Shared shape for a capability/persistence-only Module: no HTTP surface,
-/// no persistence, no config, no authorization (mirrors `entry.rs`'s own
+/// no persistence, no authorization (mirrors `entry.rs`'s own
 /// `minimal_module_entry()` fixture, which this spec's Module requirement is
-/// grounded in).
-fn minimal_module(stable_id: &str, provided: Vec<CapabilityId>) -> ComponentEntry {
+/// grounded in). `config` is a parameter (not always `None`) since the four
+/// Module entries above each declare their own `ConfigDeclaration`.
+fn minimal_module(
+    stable_id: &str,
+    provided: Vec<CapabilityId>,
+    config: Option<ConfigDeclaration>,
+) -> ComponentEntry {
     ComponentEntry {
         identity: Identity {
             stable_id: component(stable_id),
@@ -2100,7 +2133,7 @@ fn minimal_module(stable_id: &str, provided: Vec<CapabilityId>) -> ComponentEntr
             context_providers: vec![],
         },
         persistence: None,
-        config: None,
+        config,
         workers: vec![],
         satellites: vec![],
     }
