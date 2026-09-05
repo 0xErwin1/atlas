@@ -77,10 +77,15 @@ impl Readiness for NeverResolves {
 
 fn never_resolves() -> ComponentDiagnostics {
     let stalling = Arc::new(NeverResolves);
+    let doctor: Arc<FakeDiagnostics> = Arc::new(FakeDiagnostics::new(
+        HealthStatus::Ok,
+        ReadinessStatus::Ready,
+        Vec::<DoctorFinding>::new(),
+    ));
     ComponentDiagnostics {
         health: stalling.clone(),
         readiness: stalling,
-        doctor: None,
+        doctor: Some(doctor),
     }
 }
 
