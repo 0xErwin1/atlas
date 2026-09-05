@@ -75,17 +75,56 @@ fn client_lib_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../atlas_client/src/lib.rs")
 }
 
-/// `atlas_client/src/lib.rs`'s production source, with `#[cfg(test)] mod
-/// tests { .. }` truncated off — the same scope
+fn client_src_path(file_name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../atlas_client/src")
+        .join(file_name)
+}
+
+/// `atlas_client/src/<file_name>`'s production source, with `#[cfg(test)]
+/// mod tests { .. }` truncated off — the same scope
 /// `atlas_client_route_contract.rs::production_source` uses, computed here
 /// independently rather than shared, per design D5's "not a shared
 /// function" instruction.
-fn client_production_source() -> String {
-    let content = fs::read_to_string(client_lib_path()).expect("read atlas_client/src/lib.rs");
+fn client_production_source(file_name: &str) -> String {
+    let path = if file_name == "lib.rs" {
+        client_lib_path()
+    } else {
+        client_src_path(file_name)
+    };
+    let content =
+        fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     match content.find("#[cfg(test)]") {
         Some(index) => content[..index].to_string(),
         None => content,
     }
+}
+
+/// `crates/atlas_client/src/*.rs` files that carry real method
+/// implementations outside `lib.rs`, populated one at a time as PR3-PR5
+/// split the client (`custos.rs` in PR3). Each one is walked in full by
+/// [`derive_method_namespace_map`], on equal footing with `lib.rs`.
+const SPLIT_PRODUCTION_FILES: &[&str] = &["custos.rs"];
+
+/// The names of every `pub async fn` in `source` whose attribute block
+/// carries `#[doc(hidden)]` (doc-comment lines may sit between the
+/// attribute and the `fn`) — a D6 shim forwarder, not a real
+/// implementation. Excluded from `lib.rs`'s own method population so a
+/// method that moved to a split file is derived from its new home, not
+/// double-counted (once as a real call there, once as a rootless forwarder
+/// here). `#[doc(hidden)]` is the marker because the forwarders are not
+/// `#[deprecated]`: this guard already pins every flat call site, so a new
+/// flat call fails here without a deprecation warning, and a warning would
+/// force `#![allow(deprecated)]` into every consumer crate under
+/// `-D warnings`.
+fn hidden_forwarder_names(source: &str) -> std::collections::HashSet<String> {
+    let re = Regex::new(
+        r"(?m)^[ \t]*#\[doc\(hidden\)\][ \t]*\r?\n(?:[ \t]*///[^\n]*\r?\n)*[ \t]*pub async fn (\w+)",
+    )
+    .unwrap();
+    re.captures_iter(source)
+        .map(|caps| caps[1].to_string())
+        .collect()
 }
 
 /// (byte offset of the `fn` keyword, function name, whether it is `pub
@@ -185,50 +224,107 @@ struct DerivedMap {
 /// fn`'s home namespace, independently of `atlas_client_route_contract.rs`'s
 /// `extract_calls` (design D5: "independent implementation, not a shared
 /// function").
+///
+/// Walks `lib.rs` plus every [`SPLIT_PRODUCTION_FILES`] entry, on equal
+/// footing. `lib.rs`'s own D6 shim forwarders (`#[doc(hidden)]`-attributed
+/// `pub async fn`s with no direct verb call of their own) are excluded from
+/// its population entirely — once a method's real implementation moves to a
+/// split file, its home is derived from that file's own `Component::X`
+/// literal, not treated as newly rootless because the root now only
+/// forwards to it.
 fn derive_method_namespace_map() -> DerivedMap {
-    let source = client_production_source();
-    let boundaries = function_boundaries(&source);
     let verb_re = Regex::new(r"self\s*\.\s*(get|post|patch|put|delete|root_get)\s*\(").unwrap();
 
-    let pub_async_names: Vec<&str> = boundaries
-        .iter()
-        .filter(|b| b.is_pub_async)
-        .map(|b| b.name.as_str())
-        .collect();
-
-    let direct_call_methods = pub_async_names
-        .iter()
-        .filter(|name| {
-            function_body(&source, &boundaries, name).is_some_and(|body| verb_re.is_match(body))
-        })
-        .count();
-
+    let mut total_pub_async_fns = 0;
+    let mut direct_call_methods = 0;
     let mut map = HashMap::new();
     let mut naturally_rootless = Vec::new();
 
-    for name in &pub_async_names {
-        if NEVER_NAMESPACED
+    let mut files = vec!["lib.rs"];
+    files.extend(SPLIT_PRODUCTION_FILES);
+
+    for file_name in files {
+        let source = client_production_source(file_name);
+        let boundaries = function_boundaries(&source);
+        let shim_names = if file_name == "lib.rs" {
+            hidden_forwarder_names(&source)
+        } else {
+            std::collections::HashSet::new()
+        };
+
+        let pub_async_names: Vec<&str> = boundaries
             .iter()
-            .any(|(excluded, _)| excluded == name)
-        {
-            continue;
+            .filter(|b| b.is_pub_async && !shim_names.contains(&b.name))
+            .map(|b| b.name.as_str())
+            .collect();
+
+        direct_call_methods += pub_async_names
+            .iter()
+            .filter(|name| {
+                function_body(&source, &boundaries, name).is_some_and(|body| verb_re.is_match(body))
+            })
+            .count();
+
+        for name in &pub_async_names {
+            if NEVER_NAMESPACED
+                .iter()
+                .any(|(excluded, _)| excluded == name)
+            {
+                continue;
+            }
+
+            match resolve_component(name, &boundaries, &source, 0) {
+                Some(component) => {
+                    map.insert((*name).to_string(), component);
+                }
+                None => naturally_rootless.push((*name).to_string()),
+            }
         }
 
-        match resolve_component(name, &boundaries, &source, 0) {
-            Some(component) => {
-                map.insert((*name).to_string(), component);
-            }
-            None => naturally_rootless.push((*name).to_string()),
-        }
+        total_pub_async_fns += pub_async_names.len();
     }
 
     DerivedMap {
         map,
-        total_pub_async_fns: pub_async_names.len(),
+        total_pub_async_fns,
         direct_call_methods,
         excluded_by_name: NEVER_NAMESPACED.iter().map(|(name, _)| *name).collect(),
         naturally_rootless,
     }
+}
+
+#[test]
+fn hidden_forwarder_names_match_only_doc_hidden_pub_async_fns() {
+    let source = "\
+    #[doc(hidden)]
+    pub async fn plain(&self) {}
+
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
+    pub async fn documented(&self, ws: &str) {}
+
+    /// `GET /real`
+    pub async fn real(&self) {}
+
+    #[doc(hidden)]
+    pub fn not_async(&self) {}
+";
+
+    let names = hidden_forwarder_names(source);
+
+    let mut sorted: Vec<&str> = names.iter().map(String::as_str).collect();
+    sorted.sort_unstable();
+    assert_eq!(sorted, vec!["documented", "plain"]);
+}
+
+#[test]
+fn lib_rs_forwarders_are_the_pr3_custos_moves() {
+    let names = hidden_forwarder_names(&client_production_source("lib.rs"));
+
+    assert_eq!(names.len(), 34, "PR3 added exactly 34 custos() forwarders");
+    assert!(names.contains("me"));
+    assert!(names.contains("list_workspace_audit"));
+    assert!(hidden_forwarder_names(&client_production_source("custos.rs")).is_empty());
 }
 
 #[test]

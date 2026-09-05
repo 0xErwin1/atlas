@@ -50,6 +50,12 @@ fn client_lib_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../atlas_client/src/lib.rs")
 }
 
+fn client_source_path(file_name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../atlas_client/src")
+        .join(file_name)
+}
+
 /// The crate's source, with `#[cfg(test)] mod tests { .. }` truncated off —
 /// the walker's scope is production code only (D2.4's same rule for the
 /// grep gate).
@@ -63,6 +69,17 @@ fn truncate_at_test_module(content: &str) -> String {
         Some(index) => content[..index].to_string(),
         None => content.to_string(),
     }
+}
+
+/// Reads and truncates `crates/atlas_client/src/<file_name>`'s production
+/// source the same way [`production_source`] reads `lib.rs`. Introduced in
+/// PR3 (D2.2) once the client's methods start splitting across
+/// per-component files; every file [`PRODUCTION_SOURCE_MAPPINGS`] names
+/// (other than `lib.rs` itself) is read through this function.
+fn source_for(file_name: &str) -> String {
+    let content = fs::read_to_string(client_source_path(file_name))
+        .unwrap_or_else(|_| panic!("read atlas_client/src/{file_name}"));
+    truncate_at_test_module(&content)
 }
 
 /// One `self.<verb>(..)` or `self.root_get(..)` call site extracted from
@@ -423,7 +440,7 @@ fn normalize_template(path: &str) -> String {
 /// skips; `lib.rs` is the sole file allowed to carry it at any point (D4.4's
 /// totality assertion: "no second `Mixed` file").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // Custos/Platform are wired for real files in PR3-PR5
+#[allow(dead_code)] // Platform is wired for a real file in PR5
 enum FileComponent {
     Acta,
     Custos,
@@ -451,15 +468,22 @@ struct SourceMapping {
 }
 
 /// Every production file in `crates/atlas_client/src/` at this PR's ground
-/// truth. `lib.rs` is the only one that exists pre-migration — it is mapped
-/// `Mixed` because it still holds every component's methods (PR3–PR5 split
-/// it into `custos.rs`/`acta.rs`/`platform.rs`, each mapped to its own
-/// component).
-const PRODUCTION_SOURCE_MAPPINGS: &[SourceMapping] = &[SourceMapping {
-    file_name: "lib.rs",
-    component: FileComponent::Mixed,
-    reason: "root file, not yet split; mapped Mixed until PR3-PR5",
-}];
+/// truth. `lib.rs` stays `Mixed` while it still holds Acta and Platform
+/// methods plus `login`/`health` (PR4/PR5 finish the split); `custos.rs`
+/// (PR3, D2.2) carries only custos-owned methods and is mapped to its own
+/// component.
+const PRODUCTION_SOURCE_MAPPINGS: &[SourceMapping] = &[
+    SourceMapping {
+        file_name: "lib.rs",
+        component: FileComponent::Mixed,
+        reason: "root file, not yet fully split; still holds acta/platform methods, login, and health until PR4-PR5",
+    },
+    SourceMapping {
+        file_name: "custos.rs",
+        component: FileComponent::Custos,
+        reason: "custos-owned client methods, split out of lib.rs in PR3",
+    },
+];
 
 /// Files in `crates/atlas_client/src/` that carry no `self.<verb>(..)` calls
 /// of their own — consumers of `AtlasClient`, not contributors to this
@@ -919,20 +943,43 @@ fn reverse_check(calls: &[ExtractedCall], entries: &[RouteMatrixEntry]) -> Vec<S
     failures
 }
 
+/// Extracts calls from every file [`PRODUCTION_SOURCE_MAPPINGS`] names,
+/// paired with that file's declared component — the combined population
+/// [`totality_check`], [`forward_check`], and [`reverse_check`] run over
+/// (D4.3/D4.4). A pure move between mapped files changes no call's resolved
+/// route, so the combined set stays a stable proxy for "every route this
+/// crate's production code can reach," regardless of which file a method
+/// currently lives in.
+fn all_mapped_calls() -> Vec<(FileComponent, Vec<ExtractedCall>)> {
+    PRODUCTION_SOURCE_MAPPINGS
+        .iter()
+        .map(|mapping| {
+            let source = if mapping.file_name == "lib.rs" {
+                production_source()
+            } else {
+                source_for(mapping.file_name)
+            };
+            let boundaries = function_boundaries(&source);
+            (mapping.component, extract_calls(&source, &boundaries))
+        })
+        .collect()
+}
+
 #[test]
 fn every_migrated_call_matches_a_declared_v2_route_both_directions() {
-    let source = production_source();
-    let boundaries = function_boundaries(&source);
-    let calls = extract_calls(&source, &boundaries);
+    let per_file = all_mapped_calls();
+    let calls: Vec<ExtractedCall> = per_file
+        .iter()
+        .flat_map(|(_, calls)| calls.iter().cloned())
+        .collect();
     let entries = registry_route_surface();
 
     let mut failures = totality_check(&calls);
     failures.extend(forward_check(&calls, &entries));
     failures.extend(reverse_check(&calls, &entries));
-    // `lib.rs` is mapped `Mixed` at this PR's ground truth (T1.9), so this
-    // is a documented no-op today; PR3-PR5 wire it for real per-component
-    // file.
-    failures.extend(namespace_attribution_check(&calls, FileComponent::Mixed));
+    for (component, file_calls) in &per_file {
+        failures.extend(namespace_attribution_check(file_calls, *component));
+    }
 
     assert!(
         failures.is_empty(),
@@ -1040,15 +1087,39 @@ fn uncovered_routes_count_is_pinned() {
 
 #[test]
 fn extracted_call_count_is_pinned() {
-    let source = production_source();
-    let boundaries = function_boundaries(&source);
-    let calls = extract_calls(&source, &boundaries);
+    let per_file = all_mapped_calls();
+    let total: usize = per_file.iter().map(|(_, calls)| calls.len()).sum();
 
     assert_eq!(
-        calls.len(),
-        194,
-        "the number of self.<verb>(..)/self.root_get(..) call sites in atlas_client/src/lib.rs \
-         changed without this pin moving"
+        total, 194,
+        "the total number of self.<verb>(..)/self.root_get(..) call sites across every mapped \
+         atlas_client/src file changed without this pin moving — a pure move between mapped \
+         files must leave this total unchanged"
+    );
+}
+
+/// D4.6, per-file — `custos.rs` split out exactly the 34 custos-owned call
+/// sites in PR3, leaving `lib.rs` with the rest (160). Catches a call
+/// silently dropped or duplicated during the move that the total-count pin
+/// above cannot distinguish from a compensating change elsewhere.
+#[test]
+fn extracted_call_count_is_pinned_per_file() {
+    let per_file = all_mapped_calls();
+    let counts: std::collections::HashMap<&'static str, usize> = PRODUCTION_SOURCE_MAPPINGS
+        .iter()
+        .zip(per_file.iter())
+        .map(|(mapping, (_, calls))| (mapping.file_name, calls.len()))
+        .collect();
+
+    assert_eq!(
+        counts.get("lib.rs").copied(),
+        Some(160),
+        "lib.rs's own call count moved"
+    );
+    assert_eq!(
+        counts.get("custos.rs").copied(),
+        Some(34),
+        "custos.rs's own call count moved"
     );
 }
 
