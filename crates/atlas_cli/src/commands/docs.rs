@@ -138,6 +138,7 @@ async fn run_list(ctx: &Ctx, args: DocsListArgs) -> Result<(), CliError> {
 
     let page = ctx
         .client
+        .acta()
         .list_documents(ws, project, args.cursor.as_deref(), Some(limit))
         .await?;
 
@@ -183,7 +184,7 @@ pub(crate) struct DocsGetArgs {
 
 async fn run_get(ctx: &Ctx, args: DocsGetArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
-    let doc = ctx.client.get_document(ws, &args.slug).await?;
+    let doc = ctx.client.acta().get_document(ws, &args.slug).await?;
 
     match args.detail {
         Detail::Compact => {
@@ -260,7 +261,11 @@ async fn run_create_single(ctx: &Ctx, args: DocsCreateArgs) -> Result<(), CliErr
         content: args.content,
     };
 
-    let doc = ctx.client.create_document(ws, &project, body).await?;
+    let doc = ctx
+        .client
+        .acta()
+        .create_document(ws, &project, body)
+        .await?;
     let proj = DocCompactProjection::from(doc);
     output::emit(ctx.output, &proj)
 }
@@ -272,6 +277,7 @@ async fn run_create_stdin(ctx: &Ctx, args: DocsCreateArgs) -> Result<(), CliErro
     for item in items {
         match ctx
             .client
+            .acta()
             .create_document(ws, &item.project, item.body)
             .await
         {
@@ -348,7 +354,7 @@ async fn run_update_metadata(ctx: &Ctx, args: DocsUpdateMetadataArgs) -> Result<
         folder_id: args.folder_id,
     };
 
-    let doc = ctx.client.update_document(ws, &slug, body).await?;
+    let doc = ctx.client.acta().update_document(ws, &slug, body).await?;
     let proj = DocCompactProjection::from(doc);
     output::emit(ctx.output, &proj)
 }
@@ -362,7 +368,12 @@ async fn run_update_metadata_stdin(
 
     for item in items {
         let slug = item.slug.clone();
-        match ctx.client.update_document(ws, &slug, item.body).await {
+        match ctx
+            .client
+            .acta()
+            .update_document(ws, &slug, item.body)
+            .await
+        {
             Ok(doc) => {
                 let proj = DocCompactProjection::from(doc);
                 let value = serde_json::to_value(&proj)
@@ -432,7 +443,7 @@ async fn run_update_content(ctx: &Ctx, args: DocsUpdateContentArgs) -> Result<()
         base_revision_id: args.base_revision_id,
     };
 
-    match ctx.client.update_content(ws, &args.slug, body).await {
+    match ctx.client.acta().update_content(ws, &args.slug, body).await {
         Ok(doc) => {
             let proj = DocCompactProjection::from(doc);
             output::emit(ctx.output, &proj)
@@ -484,7 +495,7 @@ async fn run_delete(ctx: &Ctx, args: DocsDeleteArgs) -> Result<(), CliError> {
 
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
 
-    ctx.client.delete_document(ws, &args.slug).await?;
+    ctx.client.acta().delete_document(ws, &args.slug).await?;
 
     let proj = DeleteDocProjection {
         deleted: true,
@@ -525,6 +536,7 @@ async fn run_backlinks(ctx: &Ctx, args: DocsBacklinksArgs) -> Result<(), CliErro
         .clamp(LIMIT_MIN, LIMIT_MAX);
     let page = ctx
         .client
+        .acta()
         .list_backlinks(ws, &args.slug, args.cursor.as_deref(), Some(limit))
         .await?;
     let projections: Vec<DocBacklinkProjection> = page
@@ -572,6 +584,7 @@ async fn run_history(ctx: &Ctx, args: DocsHistoryArgs) -> Result<(), CliError> {
         .clamp(LIMIT_MIN, LIMIT_MAX);
     let page = ctx
         .client
+        .acta()
         .list_document_history(ws, &args.slug, args.cursor.as_deref(), Some(limit))
         .await?;
     let projections: Vec<DocHistoryProjection> = page
@@ -611,6 +624,7 @@ async fn run_revision(ctx: &Ctx, args: DocsRevisionArgs) -> Result<(), CliError>
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
     let rev = ctx
         .client
+        .acta()
         .get_revision_content(ws, &args.slug, args.seq)
         .await?;
     let proj = DocRevisionProjection::from(rev);
@@ -635,7 +649,7 @@ pub(crate) struct DocsFrontmatterArgs {
 
 async fn run_frontmatter(ctx: &Ctx, args: DocsFrontmatterArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
-    let fm = ctx.client.get_frontmatter(ws, &args.slug).await?;
+    let fm = ctx.client.acta().get_frontmatter(ws, &args.slug).await?;
     output::print_json(&fm.data)
 }
 
@@ -828,7 +842,7 @@ fn apply_edit_outcome(
 async fn run_edit(ctx: &Ctx, args: DocsEditArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
 
-    let doc = ctx.client.get_document(ws, &args.slug).await?;
+    let doc = ctx.client.acta().get_document(ws, &args.slug).await?;
     let base_revision_id = doc.head_revision_id;
     let original_content = doc.content.clone();
 
@@ -848,7 +862,7 @@ async fn run_edit(ctx: &Ctx, args: DocsEditArgs) -> Result<(), CliError> {
     // Clone before moving into the request body so `new_content` is still
     // available on the error path for writing the recovery file.
     let body = build_update_content_request(new_content.clone(), base_revision_id);
-    let outcome = ctx.client.update_content(ws, &args.slug, body).await;
+    let outcome = ctx.client.acta().update_content(ws, &args.slug, body).await;
 
     match apply_edit_outcome(&args.slug, &new_content, outcome) {
         Ok(updated) => {
@@ -989,6 +1003,7 @@ async fn run_attach_upload(ctx: &Ctx, args: DocsAttachUploadArgs) -> Result<(), 
 
     let dto = ctx
         .client
+        .acta()
         .upload_attachment(ws, &args.slug, &filename, &args.content_type, data)
         .await?;
 
@@ -1000,6 +1015,7 @@ async fn run_attach_list(ctx: &Ctx, args: DocsAttachListArgs) -> Result<(), CliE
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
     let page = ctx
         .client
+        .acta()
         .list_attachments(ws, &args.slug, None, None)
         .await?;
 
@@ -1016,6 +1032,7 @@ async fn run_attach_download(ctx: &Ctx, args: DocsAttachDownloadArgs) -> Result<
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
     let bytes = ctx
         .client
+        .acta()
         .download_attachment(ws, args.attachment_id)
         .await?;
 
@@ -1034,7 +1051,10 @@ async fn run_attach_delete(ctx: &Ctx, args: DocsAttachDeleteArgs) -> Result<(), 
     }
 
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
-    ctx.client.delete_attachment(ws, args.attachment_id).await?;
+    ctx.client
+        .acta()
+        .delete_attachment(ws, args.attachment_id)
+        .await?;
 
     println!("attachment {} deleted", args.attachment_id);
     Ok(())

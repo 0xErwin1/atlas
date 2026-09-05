@@ -54,7 +54,7 @@ pub(crate) async fn run(ctx: &Ctx, cmd: PlatformStatusTemplatesCmd) -> Result<()
 // ---------------------------------------------------------------------------
 
 async fn run_list(ctx: &Ctx) -> Result<(), CliError> {
-    let templates = ctx.client.list_platform_status_templates().await?;
+    let templates = ctx.client.acta().list_platform_status_templates().await?;
 
     let items: Vec<PlatformStatusTemplateProjection> = templates
         .into_iter()
@@ -90,7 +90,11 @@ async fn run_create(ctx: &Ctx, args: PlatformStatusTemplatesCreateArgs) -> Resul
         after: None,
     };
 
-    let template = ctx.client.create_platform_status_template(body).await?;
+    let template = ctx
+        .client
+        .acta()
+        .create_platform_status_template(body)
+        .await?;
     let proj = PlatformStatusTemplateProjection::from(template);
     output::emit(ctx.output, &proj)
 }
@@ -145,6 +149,7 @@ async fn run_update(ctx: &Ctx, args: PlatformStatusTemplatesUpdateArgs) -> Resul
 
     let template = ctx
         .client
+        .acta()
         .update_platform_status_template(args.template_id, body)
         .await?;
     let proj = PlatformStatusTemplateProjection::from(template);
@@ -175,6 +180,7 @@ async fn run_delete(ctx: &Ctx, args: PlatformStatusTemplatesDeleteArgs) -> Resul
     }
 
     ctx.client
+        .acta()
         .delete_platform_status_template(args.template_id)
         .await?;
 

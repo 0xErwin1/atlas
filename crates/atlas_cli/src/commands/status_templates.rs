@@ -67,7 +67,7 @@ pub(crate) struct StatusTemplatesListArgs {
 async fn run_list(ctx: &Ctx, args: StatusTemplatesListArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
 
-    let templates = ctx.client.list_status_templates(ws).await?;
+    let templates = ctx.client.acta().list_status_templates(ws).await?;
 
     let items: Vec<StatusTemplateProjection> = templates
         .into_iter()
@@ -117,7 +117,7 @@ async fn run_create(ctx: &Ctx, args: StatusTemplatesCreateArgs) -> Result<(), Cl
         after: args.after,
     };
 
-    let template = ctx.client.create_status_template(ws, body).await?;
+    let template = ctx.client.acta().create_status_template(ws, body).await?;
     let proj = StatusTemplateProjection::from(template);
     output::emit(ctx.output, &proj)
 }
@@ -178,6 +178,7 @@ async fn run_update(ctx: &Ctx, args: StatusTemplatesUpdateArgs) -> Result<(), Cl
 
     let template = ctx
         .client
+        .acta()
         .update_status_template(ws, args.template_id, body)
         .await?;
     let proj = StatusTemplateProjection::from(template);
@@ -214,6 +215,7 @@ async fn run_delete(ctx: &Ctx, args: StatusTemplatesDeleteArgs) -> Result<(), Cl
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
 
     ctx.client
+        .acta()
         .delete_status_template(ws, args.template_id)
         .await?;
 
@@ -243,7 +245,11 @@ pub(crate) struct StatusTemplatesApplyArgs {
 async fn run_apply(ctx: &Ctx, args: StatusTemplatesApplyArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
 
-    let columns = ctx.client.apply_status_templates(ws, args.board_id).await?;
+    let columns = ctx
+        .client
+        .acta()
+        .apply_status_templates(ws, args.board_id)
+        .await?;
 
     let items: Vec<ColumnProjection> = columns.into_iter().map(ColumnProjection::from).collect();
 

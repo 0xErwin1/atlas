@@ -54,7 +54,7 @@ pub(crate) struct TagsListArgs {
 async fn run_list(ctx: &Ctx, args: TagsListArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
 
-    let tags = ctx.client.list_tags(ws).await?;
+    let tags = ctx.client.acta().list_tags(ws).await?;
 
     let items: Vec<TagProjection> = tags.into_iter().map(TagProjection::from).collect();
 

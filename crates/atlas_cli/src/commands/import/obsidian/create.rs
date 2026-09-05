@@ -99,6 +99,7 @@ async fn load_existing_folders(
 
     loop {
         let page = client
+            .acta()
             .list_folders(ws, project, cursor.as_deref(), Some(100))
             .await?;
 
@@ -140,6 +141,7 @@ pub(crate) async fn execute_folders(
             Some(id) => id,
             None => {
                 let dto = client
+                    .acta()
                     .create_folder(
                         ws,
                         project,
@@ -201,6 +203,7 @@ pub(crate) async fn execute_documents(
                 let folder_id = resolve_doc_folder_id(&op.folder_rel, manifest)?;
 
                 let dto = client
+                    .acta()
                     .create_document(
                         ws,
                         project,
@@ -238,7 +241,7 @@ pub(crate) async fn execute_documents(
                     )
                 })?;
 
-                let doc = client.get_document(ws, &entry.slug).await?;
+                let doc = client.acta().get_document(ws, &entry.slug).await?;
                 let slug = entry.slug.clone();
 
                 let updated = cas_update_document(
@@ -301,6 +304,7 @@ pub(crate) async fn execute_boards_and_tasks(
             })?,
             None => {
                 let dto = client
+                    .acta()
                     .create_board(
                         ws,
                         project,
@@ -352,6 +356,7 @@ pub(crate) async fn execute_boards_and_tasks(
         };
 
         let dto = client
+            .acta()
             .create_task(
                 ws,
                 *board_id,
@@ -405,6 +410,7 @@ pub(crate) async fn execute_boards_and_tasks(
         })?;
 
         match client
+            .acta()
             .create_reference(
                 ws,
                 readable_id,
@@ -474,6 +480,7 @@ pub(crate) async fn execute_attachments(
         }
 
         match client
+            .acta()
             .upload_attachment(
                 ws,
                 &doc_entry.slug,
@@ -585,6 +592,7 @@ async fn attachment_exists_by_name(
     let mut cursor: Option<String> = None;
     loop {
         let page = client
+            .acta()
             .list_attachments(ws, slug, cursor.as_deref(), Some(100))
             .await?;
 
@@ -608,7 +616,7 @@ async fn ensure_board_columns(
     board_id: Uuid,
     desired: &[String],
 ) -> Result<HashMap<String, Uuid>, CliError> {
-    let existing = client.list_columns(ws, board_id).await?;
+    let existing = client.acta().list_columns(ws, board_id).await?;
 
     let mut column_map: HashMap<String, Uuid> =
         existing.into_iter().map(|c| (c.name, c.id)).collect();
@@ -616,6 +624,7 @@ async fn ensure_board_columns(
     for name in desired {
         if !column_map.contains_key(name) {
             let col = client
+                .acta()
                 .create_column(
                     ws,
                     board_id,
@@ -654,6 +663,7 @@ async fn cas_update_document(
 
     for _ in 0..MAX_CAS_RETRIES {
         match client
+            .acta()
             .update_content(
                 ws,
                 slug,

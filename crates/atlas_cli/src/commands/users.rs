@@ -89,7 +89,7 @@ impl TableRow for UserActionProjection {
 // ---------------------------------------------------------------------------
 
 async fn run_list(ctx: &Ctx) -> Result<(), CliError> {
-    let users = ctx.client.list_users().await?;
+    let users = ctx.client.custos().list_users().await?;
 
     let items: Vec<UserProjection> = users.into_iter().map(UserProjection::from).collect();
 
@@ -135,7 +135,7 @@ async fn run_create(ctx: &Ctx, args: UsersCreateArgs) -> Result<(), CliError> {
         email: args.email,
     };
 
-    let resp = ctx.client.create_user(body).await?;
+    let resp = ctx.client.custos().create_user(body).await?;
     let proj = UserCreatedProjection::from(resp);
     output::emit(ctx.output, &proj)
 }
@@ -163,7 +163,7 @@ async fn run_disable(ctx: &Ctx, args: UsersDisableArgs) -> Result<(), CliError> 
         ));
     }
 
-    ctx.client.disable_user(args.user_id).await?;
+    ctx.client.custos().disable_user(args.user_id).await?;
 
     let proj = UserActionProjection {
         ok: true,
@@ -185,7 +185,7 @@ pub(crate) struct UsersEnableArgs {
 }
 
 async fn run_enable(ctx: &Ctx, args: UsersEnableArgs) -> Result<(), CliError> {
-    ctx.client.enable_user(args.user_id).await?;
+    ctx.client.custos().enable_user(args.user_id).await?;
 
     let proj = UserActionProjection {
         ok: true,
@@ -226,6 +226,7 @@ async fn run_reset_password(ctx: &Ctx, args: UsersResetPasswordArgs) -> Result<(
     let new_password = crate::commands::config::read_secret_from_reader(&mut reader, "password")?;
 
     ctx.client
+        .custos()
         .reset_user_password(args.user_id, new_password)
         .await?;
 
@@ -249,7 +250,11 @@ pub(crate) struct UsersRegenerateLinkArgs {
 }
 
 async fn run_regenerate_link(ctx: &Ctx, args: UsersRegenerateLinkArgs) -> Result<(), CliError> {
-    let resp = ctx.client.regenerate_activation_link(args.user_id).await?;
+    let resp = ctx
+        .client
+        .custos()
+        .regenerate_activation_link(args.user_id)
+        .await?;
     let proj = ActivationLinkProjection::from(resp);
     output::emit(ctx.output, &proj)
 }
@@ -267,7 +272,11 @@ pub(crate) struct UsersMembershipsArgs {
 }
 
 async fn run_memberships(ctx: &Ctx, args: UsersMembershipsArgs) -> Result<(), CliError> {
-    let memberships = ctx.client.list_user_memberships(args.user_id).await?;
+    let memberships = ctx
+        .client
+        .custos()
+        .list_user_memberships(args.user_id)
+        .await?;
 
     let items: Vec<UserMembershipProjection> = memberships
         .into_iter()

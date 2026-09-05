@@ -97,6 +97,7 @@ async fn run_workspace_list(ctx: &Ctx, args: WorkspaceGrantsListArgs) -> Result<
 
     let page = ctx
         .client
+        .custos()
         .list_workspace_grants(ws, args.cursor.as_deref(), limit)
         .await?;
 
@@ -144,7 +145,7 @@ async fn run_workspace_create(ctx: &Ctx, args: WorkspaceGrantsCreateArgs) -> Res
         role: args.role,
     };
 
-    let grant = ctx.client.create_workspace_grant(ws, body).await?;
+    let grant = ctx.client.custos().create_workspace_grant(ws, body).await?;
     let proj = GrantProjection::from(grant);
     output::emit(ctx.output, &proj)
 }
@@ -175,7 +176,10 @@ async fn run_workspace_revoke(ctx: &Ctx, args: WorkspaceGrantsRevokeArgs) -> Res
     }
 
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
-    ctx.client.delete_workspace_grant(ws, args.grant_id).await?;
+    ctx.client
+        .custos()
+        .delete_workspace_grant(ws, args.grant_id)
+        .await?;
 
     let proj = DeleteByIdProjection {
         deleted: true,
@@ -241,6 +245,7 @@ async fn run_project_list(ctx: &Ctx, args: ProjectGrantsListArgs) -> Result<(), 
 
     let page = ctx
         .client
+        .custos()
         .list_project_grants(ws, &args.project, args.cursor.as_deref(), limit)
         .await?;
 
@@ -294,6 +299,7 @@ async fn run_project_create(ctx: &Ctx, args: ProjectGrantsCreateArgs) -> Result<
 
     let grant = ctx
         .client
+        .custos()
         .create_project_grant(ws, &args.project, body)
         .await?;
     let proj = GrantProjection::from(grant);
@@ -332,6 +338,7 @@ async fn run_project_revoke(ctx: &Ctx, args: ProjectGrantsRevokeArgs) -> Result<
 
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
     ctx.client
+        .custos()
         .delete_project_grant(ws, &args.project, args.grant_id)
         .await?;
 

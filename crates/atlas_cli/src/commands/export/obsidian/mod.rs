@@ -62,7 +62,7 @@ pub(crate) struct ObsidianExportArgs {
 pub(crate) async fn run_obsidian(ctx: &Ctx, args: ObsidianExportArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
 
-    match ctx.client.get_project(ws, &args.project).await {
+    match ctx.client.acta().get_project(ws, &args.project).await {
         Ok(_) => {}
         Err(ClientError::Api(p)) if p.status == 404 => {
             return Err(CliError::Validation(format!(
@@ -141,7 +141,7 @@ async fn build_export_plan(
 
     for summary in &doc_summaries {
         let slug = summary.slug.as_deref().unwrap_or("");
-        let doc = client.get_document(ws, slug).await?;
+        let doc = client.acta().get_document(ws, slug).await?;
 
         let dir = match doc.folder_id.and_then(|id| folder_paths.get(&id)) {
             Some(p) => p.clone(),
@@ -211,7 +211,7 @@ async fn collect_board_task_files(
     board: &atlas_api::dtos::boards_tasks::BoardSummaryDto,
     board_dir: &Path,
 ) -> Result<Vec<FileOp>, CliError> {
-    let columns = client.list_columns(ws, board.id).await?;
+    let columns = client.acta().list_columns(ws, board.id).await?;
     let col_by_id: HashMap<Uuid, String> = columns.iter().map(|c| (c.id, c.name.clone())).collect();
 
     let tasks = paginate_tasks(client, ws, board.id).await?;
@@ -220,6 +220,7 @@ async fn collect_board_task_files(
 
     for task_summary in &tasks {
         let refs = client
+            .acta()
             .list_references(ws, &task_summary.readable_id)
             .await?;
         let ref_kinds: Vec<&str> = refs
@@ -263,7 +264,10 @@ async fn collect_board_task_files(
         let task_filename = unique_filename(&task_summary.title, &task_slug, &task_names);
         task_names.insert(task_filename.clone());
 
-        let task = client.get_task(ws, &task_summary.readable_id).await?;
+        let task = client
+            .acta()
+            .get_task(ws, &task_summary.readable_id)
+            .await?;
         let content = render_task_content(&task_fm, &task.description);
 
         files.push(FileOp {
@@ -328,6 +332,7 @@ async fn paginate_folders(
 ) -> Result<Vec<atlas_api::dtos::folders::FolderDto>, CliError> {
     paginate_all(|cursor| async move {
         client
+            .acta()
             .list_folders(ws, project, cursor.as_deref(), Some(EXPORT_PAGE_SIZE))
             .await
     })
@@ -342,6 +347,7 @@ async fn paginate_documents(
 ) -> Result<Vec<atlas_api::dtos::documents::DocumentSummaryDto>, CliError> {
     paginate_all(|cursor| async move {
         client
+            .acta()
             .list_documents(ws, project, cursor.as_deref(), Some(EXPORT_PAGE_SIZE))
             .await
     })
@@ -356,6 +362,7 @@ async fn paginate_boards(
 ) -> Result<Vec<atlas_api::dtos::boards_tasks::BoardSummaryDto>, CliError> {
     paginate_all(|cursor| async move {
         client
+            .acta()
             .list_boards(ws, project, cursor.as_deref(), Some(EXPORT_PAGE_SIZE))
             .await
     })
@@ -370,6 +377,7 @@ async fn paginate_tasks(
 ) -> Result<Vec<atlas_api::dtos::boards_tasks::TaskSummaryDto>, CliError> {
     paginate_all(|cursor| async move {
         client
+            .acta()
             .list_tasks(ws, board_id, cursor.as_deref(), Some(EXPORT_PAGE_SIZE))
             .await
     })

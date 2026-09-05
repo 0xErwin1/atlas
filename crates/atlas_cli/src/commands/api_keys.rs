@@ -82,6 +82,7 @@ async fn run_list(ctx: &Ctx, args: ApiKeysListArgs) -> Result<(), CliError> {
 
     let page = ctx
         .client
+        .custos()
         .list_user_api_keys(args.cursor.as_deref(), limit)
         .await?;
 
@@ -167,7 +168,7 @@ async fn run_create(ctx: &Ctx, args: ApiKeysCreateArgs) -> Result<(), CliError> 
         },
     };
 
-    let created = ctx.client.create_user_api_key(body).await?;
+    let created = ctx.client.custos().create_user_api_key(body).await?;
     let proj = ApiKeyCreatedProjection::from(created);
     output::emit(ctx.output, &proj)
 }
@@ -195,7 +196,7 @@ async fn run_revoke(ctx: &Ctx, args: ApiKeysRevokeArgs) -> Result<(), CliError> 
         ));
     }
 
-    ctx.client.revoke_user_api_key(args.key_id).await?;
+    ctx.client.custos().revoke_user_api_key(args.key_id).await?;
 
     let proj = DeleteByIdProjection {
         deleted: true,
@@ -223,6 +224,7 @@ pub(crate) struct ApiKeysSetGlobalArgs {
 async fn run_set_global(ctx: &Ctx, args: ApiKeysSetGlobalArgs) -> Result<(), CliError> {
     let key = ctx
         .client
+        .custos()
         .set_api_key_global(args.key_id, args.global)
         .await?;
     let proj = ApiKeyProjection::from(key);
@@ -250,7 +252,11 @@ pub(crate) struct ApiKeysSetScopesArgs {
 async fn run_set_scopes(ctx: &Ctx, args: ApiKeysSetScopesArgs) -> Result<(), CliError> {
     let scopes = collect_scopes(&args.scopes)?;
 
-    let key = ctx.client.set_api_key_scopes(args.key_id, scopes).await?;
+    let key = ctx
+        .client
+        .custos()
+        .set_api_key_scopes(args.key_id, scopes)
+        .await?;
     let proj = ApiKeyProjection::from(key);
     output::emit(ctx.output, &proj)
 }
@@ -293,7 +299,7 @@ pub(crate) struct ApiKeysGrantsArgs {
 }
 
 async fn run_grants(ctx: &Ctx, args: ApiKeysGrantsArgs) -> Result<(), CliError> {
-    let grants = ctx.client.list_api_key_grants(args.key_id).await?;
+    let grants = ctx.client.custos().list_api_key_grants(args.key_id).await?;
 
     let items: Vec<ApiKeyGrantProjection> = grants
         .into_iter()
@@ -331,6 +337,7 @@ async fn run_delete_grant(ctx: &Ctx, args: ApiKeysDeleteGrantArgs) -> Result<(),
     }
 
     ctx.client
+        .custos()
         .delete_api_key_grant(args.key_id, args.grant_id)
         .await?;
 

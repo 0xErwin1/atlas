@@ -122,6 +122,7 @@ async fn run_workspace(ctx: &Ctx, args: AuditWorkspaceArgs) -> Result<(), CliErr
 
     let page = if args.cursor.is_some() {
         ctx.client
+            .custos()
             .list_workspace_audit_with_cursor(
                 ws,
                 args.actor.as_deref(),
@@ -133,6 +134,7 @@ async fn run_workspace(ctx: &Ctx, args: AuditWorkspaceArgs) -> Result<(), CliErr
             .await?
     } else {
         ctx.client
+            .custos()
             .list_workspace_audit(
                 ws,
                 args.actor.as_deref(),
@@ -165,6 +167,7 @@ async fn run_platform(ctx: &Ctx, args: AuditPlatformArgs) -> Result<(), CliError
 
     let page = if args.cursor.is_some() {
         ctx.client
+            .custos()
             .list_platform_audit_with_cursor(
                 args.actor.as_deref(),
                 args.action.as_deref(),
@@ -175,6 +178,7 @@ async fn run_platform(ctx: &Ctx, args: AuditPlatformArgs) -> Result<(), CliError
             .await?
     } else {
         ctx.client
+            .custos()
             .list_platform_audit(
                 args.actor.as_deref(),
                 args.action.as_deref(),

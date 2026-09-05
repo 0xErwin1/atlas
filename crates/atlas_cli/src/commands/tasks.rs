@@ -186,7 +186,7 @@ async fn run_list(ctx: &Ctx, args: TasksListArgs) -> Result<(), CliError> {
         limit: Some(limit),
     };
 
-    let page = ctx.client.list_workspace_tasks(ws, &query).await?;
+    let page = ctx.client.acta().list_workspace_tasks(ws, &query).await?;
 
     let projections: Vec<TaskSummaryProjection> = page
         .items
@@ -225,7 +225,7 @@ pub(crate) struct TasksGetArgs {
 
 async fn run_get(ctx: &Ctx, args: TasksGetArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
-    let task = ctx.client.get_task(ws, &args.readable_id).await?;
+    let task = ctx.client.acta().get_task(ws, &args.readable_id).await?;
 
     match args.detail {
         Detail::Compact => {
@@ -236,6 +236,7 @@ async fn run_get(ctx: &Ctx, args: TasksGetArgs) -> Result<(), CliError> {
         Detail::Full => {
             let refs = ctx
                 .client
+                .acta()
                 .list_references(ws, &args.readable_id)
                 .await
                 .map(|v| {
@@ -257,6 +258,7 @@ async fn run_get(ctx: &Ctx, args: TasksGetArgs) -> Result<(), CliError> {
 
             let subtasks = ctx
                 .client
+                .acta()
                 .list_subtasks(ws, &args.readable_id)
                 .await
                 .map_err(|e| format!("list_subtasks failed: {e}"))
@@ -271,6 +273,7 @@ async fn run_get(ctx: &Ctx, args: TasksGetArgs) -> Result<(), CliError> {
 
             let assignees = ctx
                 .client
+                .acta()
                 .list_assignees(ws, &args.readable_id)
                 .await
                 .map(|v| {
@@ -388,7 +391,7 @@ async fn run_create_single(ctx: &Ctx, args: TasksCreateArgs) -> Result<(), CliEr
         ))
     })?;
 
-    let cols = ctx.client.list_columns(ws, board_uuid).await?;
+    let cols = ctx.client.acta().list_columns(ws, board_uuid).await?;
     let column_uuid =
         helpers::resolve_column_id_on_board(&column, &cols).map_err(CliError::Validation)?;
 
@@ -428,7 +431,7 @@ async fn run_create_single(ctx: &Ctx, args: TasksCreateArgs) -> Result<(), CliEr
         references: vec![],
     };
 
-    let task = ctx.client.create_task(ws, board_uuid, body).await?;
+    let task = ctx.client.acta().create_task(ws, board_uuid, body).await?;
     let proj = TaskCompactProjection::from(task);
     output::emit(ctx.output, &proj)
 }
@@ -438,7 +441,12 @@ async fn run_create_stdin(ctx: &Ctx, args: TasksCreateArgs) -> Result<(), CliErr
     let (items, mut any_failed) = bulk::parse_stdin_batch::<bulk::BulkTaskCreateLine>()?;
 
     for item in items {
-        match ctx.client.create_task(ws, item.board_id, item.body).await {
+        match ctx
+            .client
+            .acta()
+            .create_task(ws, item.board_id, item.body)
+            .await
+        {
             Ok(task) => {
                 let proj = TaskCompactProjection::from(task);
                 let value = serde_json::to_value(&proj)
@@ -595,7 +603,11 @@ async fn run_update(ctx: &Ctx, args: TasksUpdateArgs) -> Result<(), CliError> {
         })?
         .to_owned();
     let body = build_update_body(&args)?;
-    let task = ctx.client.update_task(ws, &readable_id, body).await?;
+    let task = ctx
+        .client
+        .acta()
+        .update_task(ws, &readable_id, body)
+        .await?;
     let proj = TaskCompactProjection::from(task);
     output::emit(ctx.output, &proj)
 }
@@ -607,7 +619,7 @@ async fn run_update_stdin(ctx: &Ctx, args: TasksUpdateArgs) -> Result<(), CliErr
     for item in items {
         let readable_id = item.readable_id.clone();
         let body = item.into_request();
-        match ctx.client.update_task(ws, &readable_id, body).await {
+        match ctx.client.acta().update_task(ws, &readable_id, body).await {
             Ok(task) => {
                 let proj = TaskCompactProjection::from(task);
                 let value = serde_json::to_value(&proj)
@@ -667,11 +679,11 @@ async fn run_move(ctx: &Ctx, args: TasksMoveArgs) -> Result<(), CliError> {
             }))
         })?
     } else {
-        let task = ctx.client.get_task(ws, &args.readable_id).await?;
+        let task = ctx.client.acta().get_task(ws, &args.readable_id).await?;
         task.board_id
     };
 
-    let cols = ctx.client.list_columns(ws, board_uuid).await?;
+    let cols = ctx.client.acta().list_columns(ws, board_uuid).await?;
     let column_uuid =
         helpers::resolve_column_id_on_board(&args.column, &cols).map_err(CliError::Validation)?;
 
@@ -681,7 +693,11 @@ async fn run_move(ctx: &Ctx, args: TasksMoveArgs) -> Result<(), CliError> {
         after: None,
     };
 
-    let task = ctx.client.move_task(ws, &args.readable_id, body).await?;
+    let task = ctx
+        .client
+        .acta()
+        .move_task(ws, &args.readable_id, body)
+        .await?;
     let proj = TaskCompactProjection::from(task);
     output::emit(ctx.output, &proj)
 }
@@ -715,7 +731,7 @@ async fn run_delete(ctx: &Ctx, args: TasksDeleteArgs) -> Result<(), CliError> {
 
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
 
-    ctx.client.delete_task(ws, &args.readable_id).await?;
+    ctx.client.acta().delete_task(ws, &args.readable_id).await?;
 
     let proj = DeleteTaskProjection {
         deleted: true,
@@ -805,7 +821,11 @@ async fn run_refs(ctx: &Ctx, cmd: RefsCmd) -> Result<(), CliError> {
 
 async fn run_refs_list(ctx: &Ctx, args: RefsListArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
-    let refs = ctx.client.list_references(ws, &args.readable_id).await?;
+    let refs = ctx
+        .client
+        .acta()
+        .list_references(ws, &args.readable_id)
+        .await?;
     let projections: Vec<TaskRefProjection> =
         refs.into_iter().map(TaskRefProjection::from).collect();
     output::emit_list(ctx.output, &projections, None, false)
@@ -831,6 +851,7 @@ async fn run_refs_create(ctx: &Ctx, args: RefsCreateArgs) -> Result<(), CliError
 
     let reference = ctx
         .client
+        .acta()
         .create_reference(ws, &args.readable_id, body)
         .await?;
 
@@ -841,6 +862,7 @@ async fn run_refs_create(ctx: &Ctx, args: RefsCreateArgs) -> Result<(), CliError
 async fn run_refs_remove(ctx: &Ctx, args: RefsRemoveArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
     ctx.client
+        .acta()
         .delete_reference(ws, &args.readable_id, args.ref_id)
         .await?;
     let proj = DeletedProjection { deleted: true };
@@ -867,6 +889,7 @@ async fn run_backlinks(ctx: &Ctx, args: TasksBacklinksArgs) -> Result<(), CliErr
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
     let page = ctx
         .client
+        .acta()
         .list_task_backlinks(ws, &args.readable_id)
         .await?;
     let projections: Vec<TaskBacklinkProjection> = page
@@ -961,7 +984,11 @@ async fn run_assignees(ctx: &Ctx, cmd: AssigneesCmd) -> Result<(), CliError> {
 
 async fn run_assignees_list(ctx: &Ctx, args: AssigneesListArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
-    let assignees = ctx.client.list_assignees(ws, &args.readable_id).await?;
+    let assignees = ctx
+        .client
+        .acta()
+        .list_assignees(ws, &args.readable_id)
+        .await?;
     let projections: Vec<TaskAssigneeProjection> = assignees
         .into_iter()
         .map(TaskAssigneeProjection::from)
@@ -979,7 +1006,11 @@ async fn run_assignees_add(ctx: &Ctx, args: AssigneesAddArgs) -> Result<(), CliE
         assignee_id: args.assignee_id,
     };
 
-    let assignee = ctx.client.add_assignee(ws, &args.readable_id, body).await?;
+    let assignee = ctx
+        .client
+        .acta()
+        .add_assignee(ws, &args.readable_id, body)
+        .await?;
 
     let proj = TaskAssigneeProjection::from(assignee);
     output::emit(ctx.output, &proj)
@@ -988,6 +1019,7 @@ async fn run_assignees_add(ctx: &Ctx, args: AssigneesAddArgs) -> Result<(), CliE
 async fn run_assignees_remove(ctx: &Ctx, args: AssigneesRemoveArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
     ctx.client
+        .acta()
         .remove_assignee(ws, &args.readable_id, &args.assignee_id)
         .await?;
     let proj = DeletedProjection { deleted: true };
@@ -1131,7 +1163,11 @@ async fn run_checklist(ctx: &Ctx, cmd: ChecklistCmd) -> Result<(), CliError> {
 
 async fn run_checklist_list(ctx: &Ctx, args: ChecklistListArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
-    let items = ctx.client.list_checklist(ws, &args.readable_id).await?;
+    let items = ctx
+        .client
+        .acta()
+        .list_checklist(ws, &args.readable_id)
+        .await?;
     let projections: Vec<ChecklistItemProjection> = items
         .into_iter()
         .map(ChecklistItemProjection::from)
@@ -1148,6 +1184,7 @@ async fn run_checklist_add(ctx: &Ctx, args: ChecklistAddArgs) -> Result<(), CliE
     };
     let item = ctx
         .client
+        .acta()
         .create_checklist_item(ws, &args.readable_id, body)
         .await?;
     let proj = ChecklistItemProjection::from(item);
@@ -1174,6 +1211,7 @@ async fn run_checklist_update(ctx: &Ctx, args: ChecklistUpdateArgs) -> Result<()
 
     let item = ctx
         .client
+        .acta()
         .update_checklist_item(ws, &args.readable_id, args.id, body)
         .await?;
 
@@ -1190,6 +1228,7 @@ async fn run_checklist_remove(ctx: &Ctx, args: ChecklistRemoveArgs) -> Result<()
 
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
     ctx.client
+        .acta()
         .delete_checklist_item(ws, &args.readable_id, args.id)
         .await?;
 
@@ -1210,7 +1249,7 @@ async fn run_checklist_promote(ctx: &Ctx, args: ChecklistPromoteArgs) -> Result<
         }))
     })?;
 
-    let cols = ctx.client.list_columns(ws, board_uuid).await?;
+    let cols = ctx.client.acta().list_columns(ws, board_uuid).await?;
     let column_uuid =
         helpers::resolve_column_id_on_board(&args.column, &cols).map_err(CliError::Validation)?;
 
@@ -1221,6 +1260,7 @@ async fn run_checklist_promote(ctx: &Ctx, args: ChecklistPromoteArgs) -> Result<
 
     let promotion = ctx
         .client
+        .acta()
         .promote_checklist_item(ws, &args.readable_id, args.id, body)
         .await?;
 
@@ -1246,7 +1286,11 @@ pub(crate) struct TasksActivityArgs {
 
 async fn run_task_activity(ctx: &Ctx, args: TasksActivityArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
-    let page = ctx.client.list_activity(ws, &args.readable_id).await?;
+    let page = ctx
+        .client
+        .acta()
+        .list_activity(ws, &args.readable_id)
+        .await?;
     let projections: Vec<TaskActivityProjection> = page
         .items
         .into_iter()
@@ -1337,6 +1381,7 @@ async fn run_comments_list(ctx: &Ctx, args: CommentsListArgs) -> Result<(), CliE
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
     let page = ctx
         .client
+        .acta()
         .list_comments(ws, &args.readable_id, None, None)
         .await?;
     let projections: Vec<CommentProjection> = page
@@ -1355,7 +1400,11 @@ async fn run_comments_list(ctx: &Ctx, args: CommentsListArgs) -> Result<(), CliE
 async fn run_comments_add(ctx: &Ctx, args: CommentsAddArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
     let body = CreateCommentRequest::published(args.body);
-    let comment = ctx.client.add_comment(ws, &args.readable_id, body).await?;
+    let comment = ctx
+        .client
+        .acta()
+        .add_comment(ws, &args.readable_id, body)
+        .await?;
     let proj = CommentProjection::from(comment);
     output::emit(ctx.output, &proj)
 }
@@ -1363,6 +1412,7 @@ async fn run_comments_add(ctx: &Ctx, args: CommentsAddArgs) -> Result<(), CliErr
 async fn run_comments_delete(ctx: &Ctx, args: CommentsDeleteArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
     ctx.client
+        .acta()
         .delete_comment(ws, &args.readable_id, args.comment_id)
         .await?;
     let proj = DeletedProjection { deleted: true };
@@ -1487,7 +1537,11 @@ async fn run_subtasks(ctx: &Ctx, cmd: SubtasksCmd) -> Result<(), CliError> {
 
 async fn run_subtasks_list(ctx: &Ctx, args: SubtasksListArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
-    let subtasks = ctx.client.list_subtasks(ws, &args.readable_id).await?;
+    let subtasks = ctx
+        .client
+        .acta()
+        .list_subtasks(ws, &args.readable_id)
+        .await?;
     let projections: Vec<SubtaskProjection> =
         subtasks.into_iter().map(SubtaskProjection::from).collect();
     output::emit_list(ctx.output, &projections, None, false)
@@ -1513,11 +1567,11 @@ async fn run_subtasks_create(ctx: &Ctx, args: SubtasksCreateArgs) -> Result<(), 
         })
         .transpose()?;
 
-    let parent = ctx.client.get_task(ws, &args.readable_id).await?;
+    let parent = ctx.client.acta().get_task(ws, &args.readable_id).await?;
 
     let column_id = match args.column.as_deref() {
         Some(column) => {
-            let cols = ctx.client.list_columns(ws, parent.board_id).await?;
+            let cols = ctx.client.acta().list_columns(ws, parent.board_id).await?;
             Some(helpers::resolve_column_id_on_board(column, &cols).map_err(CliError::Validation)?)
         }
         None => None,
@@ -1551,6 +1605,7 @@ async fn run_subtasks_create(ctx: &Ctx, args: SubtasksCreateArgs) -> Result<(), 
 
     let created = ctx
         .client
+        .acta()
         .create_subtask(ws, &args.readable_id, body)
         .await?;
     let proj = TaskCompactProjection::from(created.task);
@@ -1564,6 +1619,7 @@ async fn run_subtasks_attach(ctx: &Ctx, args: SubtasksAttachArgs) -> Result<(), 
     };
     let task = ctx
         .client
+        .acta()
         .set_task_parent(ws, &args.readable_id, body)
         .await?;
     let proj = TaskCompactProjection::from(task);
@@ -1572,7 +1628,11 @@ async fn run_subtasks_attach(ctx: &Ctx, args: SubtasksAttachArgs) -> Result<(), 
 
 async fn run_subtasks_promote(ctx: &Ctx, args: SubtasksPromoteArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
-    let task = ctx.client.promote_subtask(ws, &args.subtask_id).await?;
+    let task = ctx
+        .client
+        .acta()
+        .promote_subtask(ws, &args.subtask_id)
+        .await?;
     let proj = TaskCompactProjection::from(task);
     output::emit(ctx.output, &proj)
 }
@@ -1687,6 +1747,7 @@ async fn run_task_attach_upload(ctx: &Ctx, args: TasksAttachUploadArgs) -> Resul
 
     let dto = ctx
         .client
+        .acta()
         .upload_task_attachment(ws, &args.readable_id, &filename, &args.content_type, data)
         .await?;
 
@@ -1698,6 +1759,7 @@ async fn run_task_attach_list(ctx: &Ctx, args: TasksAttachListArgs) -> Result<()
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
     let items = ctx
         .client
+        .acta()
         .list_task_attachments(ws, &args.readable_id)
         .await?;
 
@@ -1713,6 +1775,7 @@ async fn run_task_attach_download(
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
     let (bytes, _content_type) = ctx
         .client
+        .acta()
         .download_task_attachment(ws, &args.readable_id, args.attachment_id)
         .await?;
 
@@ -1732,6 +1795,7 @@ async fn run_task_attach_delete(ctx: &Ctx, args: TasksAttachDeleteArgs) -> Resul
 
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
     ctx.client
+        .acta()
         .delete_task_attachment(ws, &args.readable_id, args.attachment_id)
         .await?;
 

@@ -64,7 +64,7 @@ pub(crate) struct SavedSearchesListArgs {
 async fn run_list(ctx: &Ctx, args: SavedSearchesListArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
 
-    let searches = ctx.client.list_saved_searches(ws).await?;
+    let searches = ctx.client.acta().list_saved_searches(ws).await?;
 
     let items: Vec<SavedSearchProjection> = searches
         .into_iter()
@@ -104,7 +104,7 @@ async fn run_create(ctx: &Ctx, args: SavedSearchesCreateArgs) -> Result<(), CliE
         query: args.query,
     };
 
-    let search = ctx.client.create_saved_search(ws, body).await?;
+    let search = ctx.client.acta().create_saved_search(ws, body).await?;
     let proj = SavedSearchProjection::from(search);
     output::emit(ctx.output, &proj)
 }
@@ -136,7 +136,11 @@ async fn run_rename(ctx: &Ctx, args: SavedSearchesRenameArgs) -> Result<(), CliE
 
     let body = RenameSavedSearchRequest { name: args.name };
 
-    let search = ctx.client.rename_saved_search(ws, args.id, body).await?;
+    let search = ctx
+        .client
+        .acta()
+        .rename_saved_search(ws, args.id, body)
+        .await?;
     let proj = SavedSearchProjection::from(search);
     output::emit(ctx.output, &proj)
 }
@@ -170,7 +174,7 @@ async fn run_delete(ctx: &Ctx, args: SavedSearchesDeleteArgs) -> Result<(), CliE
 
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
 
-    ctx.client.delete_saved_search(ws, args.id).await?;
+    ctx.client.acta().delete_saved_search(ws, args.id).await?;
 
     let proj = DeleteByIdProjection {
         deleted: true,

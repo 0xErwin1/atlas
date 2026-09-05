@@ -78,6 +78,7 @@ async fn run_list(ctx: &Ctx, args: FoldersListArgs) -> Result<(), CliError> {
 
     let page = ctx
         .client
+        .acta()
         .list_folders(ws, &args.project, args.cursor.as_deref(), Some(limit))
         .await?;
 
@@ -109,7 +110,7 @@ pub(crate) struct FoldersGetArgs {
 
 async fn run_get(ctx: &Ctx, args: FoldersGetArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
-    let folder = ctx.client.get_folder(ws, args.folder_id).await?;
+    let folder = ctx.client.acta().get_folder(ws, args.folder_id).await?;
     let proj = FolderProjection::from(folder);
     output::emit(ctx.output, &proj)
 }

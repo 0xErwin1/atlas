@@ -54,7 +54,7 @@ pub(crate) struct MembersListArgs {
 async fn run_list(ctx: &Ctx, args: MembersListArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
 
-    let members = ctx.client.list_workspace_members(ws).await?;
+    let members = ctx.client.acta().list_workspace_members(ws).await?;
 
     let items: Vec<MemberProjection> = members.into_iter().map(MemberProjection::from).collect();
 
