@@ -418,132 +418,304 @@ fn normalize_template(path: &str) -> String {
         .join("/")
 }
 
-/// Every registry route with no client call site — reason included, checked
-/// bidirectionally by [`uncovered_routes_table_matches_the_live_gap`]: an
+/// A `crates/atlas_client/src/*.rs` file's declared owning component for the
+/// namespace-attribution check (D4.3). `Mixed` is the only value the check
+/// skips; `lib.rs` is the sole file allowed to carry it at any point (D4.4's
+/// totality assertion: "no second `Mixed` file").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)] // Custos/Platform are wired for real files in PR3-PR5
+enum FileComponent {
+    Acta,
+    Custos,
+    Platform,
+    Mixed,
+}
+
+impl FileComponent {
+    fn as_component_str(self) -> Option<&'static str> {
+        match self {
+            FileComponent::Acta => Some("acta"),
+            FileComponent::Custos => Some("custos"),
+            FileComponent::Platform => Some("platform"),
+            FileComponent::Mixed => None,
+        }
+    }
+}
+
+/// One `crates/atlas_client/src/*.rs` file mapped for the namespace-
+/// attribution and file-set-totality checks (D4.3, D4.4).
+struct SourceMapping {
+    file_name: &'static str,
+    component: FileComponent,
+    reason: &'static str,
+}
+
+/// Every production file in `crates/atlas_client/src/` at this PR's ground
+/// truth. `lib.rs` is the only one that exists pre-migration — it is mapped
+/// `Mixed` because it still holds every component's methods (PR3–PR5 split
+/// it into `custos.rs`/`acta.rs`/`platform.rs`, each mapped to its own
+/// component).
+const PRODUCTION_SOURCE_MAPPINGS: &[SourceMapping] = &[SourceMapping {
+    file_name: "lib.rs",
+    component: FileComponent::Mixed,
+    reason: "root file, not yet split; mapped Mixed until PR3-PR5",
+}];
+
+/// Files in `crates/atlas_client/src/` that carry no `self.<verb>(..)` calls
+/// of their own — consumers of `AtlasClient`, not contributors to this
+/// walker's subject. `helpers.rs` calls the flat methods, never
+/// `self.<verb>(...)` directly, so it needs no component mapping.
+const NON_PRODUCTION_ALLOWLIST: &[&str] = &["helpers.rs"];
+
+/// D4.4's file-set totality: every `.rs` file name in `file_names` MUST be
+/// either mapped in [`PRODUCTION_SOURCE_MAPPINGS`] or named in
+/// [`NON_PRODUCTION_ALLOWLIST`]. Returns the unmapped, non-allowlisted names
+/// — a new client module carrying verb calls that nobody mapped fails this
+/// gate instead of silently escaping coverage.
+fn unmapped_source_files(file_names: &[String]) -> Vec<String> {
+    file_names
+        .iter()
+        .filter(|name| name.ends_with(".rs"))
+        .filter(|name| {
+            let mapped = PRODUCTION_SOURCE_MAPPINGS
+                .iter()
+                .any(|mapping| &mapping.file_name == name);
+            let allowlisted = NON_PRODUCTION_ALLOWLIST.contains(&name.as_str());
+            !mapped && !allowlisted
+        })
+        .cloned()
+        .collect()
+}
+
+fn client_src_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../atlas_client/src")
+}
+
+fn real_client_source_file_names() -> Vec<String> {
+    fs::read_dir(client_src_dir())
+        .expect("read atlas_client/src")
+        .map(|entry| entry.expect("dir entry").file_name())
+        .filter_map(|name| name.into_string().ok())
+        .collect()
+}
+
+/// D4.3 — for every call extracted from a file mapped to a *specific*
+/// component (not `Mixed`), its literal `Component::X` MUST equal that
+/// file's declared component. A root-level `root_get` call carries no
+/// `Component::` literal and is exempt (it targets no owning namespace on
+/// the wire). `Mixed`-mapped files are skipped entirely.
+fn namespace_attribution_check(
+    calls: &[ExtractedCall],
+    file_component: FileComponent,
+) -> Vec<String> {
+    let Some(expected) = file_component.as_component_str() else {
+        return Vec::new();
+    };
+
+    calls
+        .iter()
+        .filter(|call| !call.is_root)
+        .filter_map(|call| match &call.component {
+            Some(actual) if actual != expected => Some(format!(
+                "{} (line {}): call carries Component::{} but its file is mapped to {}",
+                call.fn_name,
+                call.line,
+                capitalize(actual),
+                capitalize(expected)
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Every registry route with no client call site — owning component and
+/// reason included, checked bidirectionally by [`reverse_check`]: an
 /// unlisted uncovered route fails, and a route the client now covers is a
 /// stale entry.
-const UNCOVERED_ROUTES: &[(HttpMethod, &str, &str)] = &[
+///
+/// Re-keyed component-aware in E11-S4 PR1 (D4.5): every entry now names the
+/// component it belongs to, resolved against the namespaced end state (the
+/// destination each route's owning method will live under after PR3–PR5),
+/// not the unmigrated client's current `Mixed` file. Four entries were added
+/// beyond the original 25 — `custos`'s and `acta`'s own namespaced
+/// `/health`/`/ready` probes (E11-S3a) — which the pre-PR1 `(method, path)`
+/// dedup silently skipped: each collided with the platform root's own
+/// `/health`/`/ready` dedup key and was never independently checked (spec
+/// Purpose, design §0.3). The component-aware re-key surfaces them for the
+/// first time; they are genuinely uncovered (`AtlasClient` has no
+/// per-component health/ready method), so they are listed here rather than
+/// covered by a new method.
+const UNCOVERED_ROUTES: &[(&str, HttpMethod, &str, &str)] = &[
     (
+        "platform",
         HttpMethod::Get,
         "/ready",
         "readiness probe; no AtlasClient consumer needs it",
     ),
     (
+        "platform",
         HttpMethod::Get,
         "/version",
         "build-version probe; no AtlasClient consumer needs it",
     ),
     (
+        "platform",
         HttpMethod::Get,
         "/openapi.json",
         "document introspection; no AtlasClient consumer needs it",
     ),
     (
+        "platform",
         HttpMethod::Get,
         "/scalar",
         "the HTML API-doc viewer; no AtlasClient consumer needs it",
     ),
     (
+        "custos",
         HttpMethod::Post,
         "/users/{user_id}/system-admin",
         "root-only system-admin toggle; not yet exposed on AtlasClient",
     ),
     (
+        "custos",
         HttpMethod::Get,
         "/activate/{token}",
         "the self-service activation page; no AtlasClient consumer needs it",
     ),
     (
+        "custos",
         HttpMethod::Post,
         "/activate/{token}",
         "self-service account activation; no AtlasClient consumer needs it",
     ),
     (
+        "custos",
+        HttpMethod::Get,
+        "/health",
+        "custos's own namespaced health probe (E11-S3a); AtlasClient's health() targets only the root-level probe, not this component-scoped copy",
+    ),
+    (
+        "custos",
+        HttpMethod::Get,
+        "/ready",
+        "custos's own namespaced readiness probe (E11-S3a); no AtlasClient consumer needs the per-component probe, only the aggregated root /ready",
+    ),
+    (
+        "acta",
         HttpMethod::Post,
         "/workspaces/{ws}/boards/{board_id}/presence",
         "board presence heartbeat; not yet exposed on AtlasClient",
     ),
     (
+        "acta",
         HttpMethod::Delete,
         "/workspaces/{ws}/boards/{board_id}/presence",
         "board presence heartbeat; not yet exposed on AtlasClient",
     ),
     (
+        "acta",
         HttpMethod::Post,
         "/workspaces/{ws}/documents/{slug}/presence",
         "document presence heartbeat; not yet exposed on AtlasClient",
     ),
     (
+        "acta",
         HttpMethod::Delete,
         "/workspaces/{ws}/documents/{slug}/presence",
         "document presence heartbeat; not yet exposed on AtlasClient",
     ),
     (
+        "acta",
         HttpMethod::Post,
         "/workspaces/{ws}/integration-configs",
         "integration-config management; not yet exposed on AtlasClient",
     ),
     (
+        "acta",
         HttpMethod::Get,
         "/workspaces/{ws}/integration-configs",
         "integration-config management; not yet exposed on AtlasClient",
     ),
     (
+        "acta",
         HttpMethod::Get,
         "/workspaces/{ws}/integration-configs/{config_id}",
         "integration-config management; not yet exposed on AtlasClient",
     ),
     (
+        "acta",
         HttpMethod::Patch,
         "/workspaces/{ws}/integration-configs/{config_id}",
         "integration-config management; not yet exposed on AtlasClient",
     ),
     (
+        "acta",
         HttpMethod::Delete,
         "/workspaces/{ws}/integration-configs/{config_id}",
         "integration-config management; not yet exposed on AtlasClient",
     ),
     (
+        "acta",
         HttpMethod::Post,
         "/workspaces/{ws}/automation-rules",
         "automation-rule management; not yet exposed on AtlasClient",
     ),
     (
+        "acta",
         HttpMethod::Get,
         "/workspaces/{ws}/automation-rules",
         "automation-rule management; not yet exposed on AtlasClient",
     ),
     (
+        "acta",
         HttpMethod::Get,
         "/workspaces/{ws}/automation-rules/{rule_id}",
         "automation-rule management; not yet exposed on AtlasClient",
     ),
     (
+        "acta",
         HttpMethod::Patch,
         "/workspaces/{ws}/automation-rules/{rule_id}",
         "automation-rule management; not yet exposed on AtlasClient",
     ),
     (
+        "acta",
         HttpMethod::Delete,
         "/workspaces/{ws}/automation-rules/{rule_id}",
         "automation-rule management; not yet exposed on AtlasClient",
     ),
     (
+        "acta",
         HttpMethod::Get,
         "/workspaces/{ws}/events",
         "the SSE event stream; a raw connection, not a request/response verb call",
     ),
     (
+        "acta",
         HttpMethod::Get,
         "/workspaces/{ws}/semantic-search/reindex",
         "reindex status polling; not yet exposed on AtlasClient",
     ),
     (
+        "acta",
         HttpMethod::Post,
         "/workspaces/{ws}/semantic-search/reindex",
         "triggering a reindex; not yet exposed on AtlasClient",
     ),
     (
+        "acta",
+        HttpMethod::Get,
+        "/health",
+        "acta's own namespaced health probe (E11-S3a); AtlasClient's health() targets only the root-level probe, not this component-scoped copy",
+    ),
+    (
+        "acta",
+        HttpMethod::Get,
+        "/ready",
+        "acta's own namespaced readiness probe (E11-S3a); no AtlasClient consumer needs the per-component probe, only the aggregated root /ready",
+    ),
+    (
+        "acta",
         HttpMethod::Post,
         "/workspaces/{ws}/integrations/{integration}/events",
         "the incoming third-party webhook receiver; called by the integration, not by AtlasClient",
@@ -623,23 +795,61 @@ fn totality_check(calls: &[ExtractedCall]) -> Vec<String> {
         .collect()
 }
 
-/// Bidirectional reverse check: an unlisted uncovered route fails, and a
-/// listed route the client now covers is a stale entry.
-fn reverse_check(calls: &[ExtractedCall], entries: &[RouteMatrixEntry]) -> Vec<String> {
+/// Whether some call in `calls` covers `component`'s `(method, relative)`
+/// route (D4.2). A root-level probe call (`self.root_get(..)`, `component:
+/// None`, `is_root: true`) covers only `platform`'s copy of a
+/// [`atlas_server::router_audit::ROOT_LEVEL_PATHS`] member — the one route
+/// actually reachable unprefixed on the wire — never `custos`'s or `acta`'s
+/// own namespaced copy of the same path string (D3, D4.2's "a call site
+/// resolving to the wrong component is no longer accepted as coverage").
+fn is_covered(
+    calls: &[ExtractedCall],
+    component: &str,
+    method: HttpMethod,
+    relative: &str,
+) -> bool {
+    let normalized = normalize_template(relative);
+    calls.iter().any(|call| {
+        call.method == method
+            && call
+                .relative
+                .as_deref()
+                .is_some_and(|r| normalize_template(r) == normalized)
+            && if call.is_root {
+                component == "platform"
+            } else {
+                call.component.as_deref() == Some(component)
+            }
+    })
+}
+
+/// The pre-PR1 dedup key and coverage predicate: `(method, path)` only, with
+/// no owning component (spec Purpose, design §0.3). Retained solely so
+/// [`two_components_sharing_a_path_are_checked_independently`] and
+/// [`a_call_on_the_wrong_component_does_not_count_as_coverage`] can
+/// demonstrate the component-aware re-key changes real behavior rather than
+/// only its types — never used by the production checks below.
+fn is_covered_component_blind(calls: &[ExtractedCall], method: HttpMethod, relative: &str) -> bool {
+    let normalized = normalize_template(relative);
+    calls.iter().any(|call| {
+        call.method == method
+            && call
+                .relative
+                .as_deref()
+                .is_some_and(|r| normalize_template(r) == normalized)
+    })
+}
+
+/// The pre-PR1 reverse check, built on [`is_covered_component_blind`] and a
+/// `(HttpMethod, path)`-only dedup key — see
+/// [`is_covered_component_blind`]'s doc comment for why this exists.
+fn reverse_check_component_blind(
+    calls: &[ExtractedCall],
+    entries: &[RouteMatrixEntry],
+) -> Vec<String> {
     let mut failures = Vec::new();
-
-    let is_covered = |method: HttpMethod, relative: &str| {
-        let normalized = normalize_template(relative);
-        calls.iter().any(|call| {
-            call.method == method
-                && call
-                    .relative
-                    .as_deref()
-                    .is_some_and(|r| normalize_template(r) == normalized)
-        })
-    };
-
     let mut seen: Vec<(HttpMethod, String)> = Vec::new();
+
     for entry in entries {
         let key = (entry.method, normalize_template(&entry.path_template));
         if seen.contains(&key) {
@@ -647,26 +857,61 @@ fn reverse_check(calls: &[ExtractedCall], entries: &[RouteMatrixEntry]) -> Vec<S
         }
         seen.push(key.clone());
 
-        if is_covered(entry.method, &entry.path_template) {
+        if is_covered_component_blind(calls, entry.method, &entry.path_template) {
             continue;
         }
 
-        let listed = UNCOVERED_ROUTES
-            .iter()
-            .any(|(method, path, _)| *method == entry.method && normalize_template(path) == key.1);
+        failures.push(format!(
+            "{} {} ({}) has no AtlasClient call site",
+            entry.method, entry.path_template, entry.component
+        ));
+    }
+
+    failures
+}
+
+/// Bidirectional reverse check: an unlisted uncovered route fails, and a
+/// listed route the client now covers is a stale entry. Both the dedup key
+/// and [`is_covered`] are component-aware (D4.1, D4.2) — S3a's four
+/// `health`/`ready` probe routes shared across `platform`, `custos`, and
+/// `acta` are four independent entries here, never collapsed into fewer.
+fn reverse_check(calls: &[ExtractedCall], entries: &[RouteMatrixEntry]) -> Vec<String> {
+    let mut failures = Vec::new();
+
+    let mut seen: Vec<(String, HttpMethod, String)> = Vec::new();
+    for entry in entries {
+        let key = (
+            entry.component.clone(),
+            entry.method,
+            normalize_template(&entry.path_template),
+        );
+        if seen.contains(&key) {
+            continue;
+        }
+        seen.push(key.clone());
+
+        if is_covered(calls, &entry.component, entry.method, &entry.path_template) {
+            continue;
+        }
+
+        let listed = UNCOVERED_ROUTES.iter().any(|(component, method, path, _)| {
+            *component == entry.component
+                && *method == entry.method
+                && normalize_template(path) == key.2
+        });
 
         if !listed {
             failures.push(format!(
-                "{} {} has no AtlasClient call site and is not listed in UNCOVERED_ROUTES",
-                entry.method, entry.path_template
+                "{} {} ({}) has no AtlasClient call site and is not listed in UNCOVERED_ROUTES",
+                entry.method, entry.path_template, entry.component
             ));
         }
     }
 
-    for (method, path, reason) in UNCOVERED_ROUTES {
-        if is_covered(*method, path) {
+    for (component, method, path, reason) in UNCOVERED_ROUTES {
+        if is_covered(calls, component, *method, path) {
             failures.push(format!(
-                "stale UNCOVERED_ROUTES entry ({method} {path}, \"{reason}\"): an AtlasClient call site now covers it"
+                "stale UNCOVERED_ROUTES entry ({component} {method} {path}, \"{reason}\"): an AtlasClient call site now covers it"
             ));
         }
     }
@@ -684,11 +929,126 @@ fn every_migrated_call_matches_a_declared_v2_route_both_directions() {
     let mut failures = totality_check(&calls);
     failures.extend(forward_check(&calls, &entries));
     failures.extend(reverse_check(&calls, &entries));
+    // `lib.rs` is mapped `Mixed` at this PR's ground truth (T1.9), so this
+    // is a documented no-op today; PR3-PR5 wire it for real per-component
+    // file.
+    failures.extend(namespace_attribution_check(&calls, FileComponent::Mixed));
 
     assert!(
         failures.is_empty(),
         "atlas_client route contract violations:\n{}",
         failures.join("\n")
+    );
+}
+
+/// D4.4 — every real `crates/atlas_client/src/*.rs` file is mapped or
+/// allowlisted; there is exactly one `Mixed`-mapped file (`lib.rs`, until
+/// PR3-PR5 split it).
+#[test]
+fn every_client_source_file_is_mapped_or_allowlisted() {
+    let unmapped = unmapped_source_files(&real_client_source_file_names());
+    assert!(
+        unmapped.is_empty(),
+        "unmapped atlas_client/src files, neither mapped nor allowlisted: {unmapped:?}"
+    );
+
+    let mixed_count = PRODUCTION_SOURCE_MAPPINGS
+        .iter()
+        .filter(|mapping| mapping.component == FileComponent::Mixed)
+        .count();
+    assert_eq!(
+        mixed_count, 1,
+        "exactly one atlas_client/src file may be mapped Mixed at any point (D4.4)"
+    );
+
+    for mapping in PRODUCTION_SOURCE_MAPPINGS {
+        assert!(
+            !mapping.reason.is_empty(),
+            "{} carries no written mapping reason (D4.4)",
+            mapping.file_name
+        );
+    }
+}
+
+/// T1.6 — a synthetic unmapped file fails the file-set totality gate instead
+/// of silently escaping coverage.
+#[test]
+fn an_unmapped_source_file_fails_the_totality_gate() {
+    let mut file_names = real_client_source_file_names();
+    file_names.push("mystery_module.rs".to_string());
+
+    let unmapped = unmapped_source_files(&file_names);
+
+    assert!(
+        unmapped.iter().any(|name| name == "mystery_module.rs"),
+        "expected the synthetic unmapped file to be flagged, got: {unmapped:?}"
+    );
+}
+
+/// T1.8 — a call planted in a file mapped to a specific component, carrying
+/// the *wrong* `Component::` literal, is flagged by name.
+#[test]
+fn the_namespace_attribution_check_flags_a_wrong_component_call_by_name() {
+    let source = format!(
+        "impl Acta<'_> {{\n    pub async fn probe_wrong_home(&self) {{\n        let response = self.get(Component::Custos, {}).send().await?;\n    }}\n}}\n",
+        format_args!("\"{}\"", "/workspaces/{ws}/tasks")
+    );
+    let boundaries = function_boundaries(&source);
+    let calls = extract_calls(&source, &boundaries);
+
+    let failures = namespace_attribution_check(&calls, FileComponent::Acta);
+
+    assert!(
+        failures.iter().any(|f| f.contains("probe_wrong_home")),
+        "expected the wrong-home call to be flagged by name, got:\n{}",
+        failures.join("\n")
+    );
+}
+
+/// T1.9 — a `Mixed`-mapped file is skipped by the namespace-attribution
+/// check even when it carries calls to every component, confirmed against
+/// real `lib.rs`.
+#[test]
+fn a_mixed_mapped_file_skips_the_namespace_attribution_check() {
+    let source = production_source();
+    let boundaries = function_boundaries(&source);
+    let calls = extract_calls(&source, &boundaries);
+
+    let failures = namespace_attribution_check(&calls, FileComponent::Mixed);
+
+    assert!(
+        failures.is_empty(),
+        "expected a Mixed-mapped file to be a no-op, got:\n{}",
+        failures.join("\n")
+    );
+}
+
+/// D4.6 — count pins. `UNCOVERED_ROUTES.len()` and the extracted-call count
+/// are pinned by exact equality, so a silently dropped or added entry fails
+/// loudly. `UNCOVERED_ROUTES` grew from 25 to 29 in this PR: the four new
+/// entries are `custos`'s and `acta`'s own namespaced `health`/`ready`
+/// probes, newly visible under the component-aware re-key (see
+/// [`UNCOVERED_ROUTES`]'s own doc comment).
+#[test]
+fn uncovered_routes_count_is_pinned() {
+    assert_eq!(
+        UNCOVERED_ROUTES.len(),
+        29,
+        "UNCOVERED_ROUTES grew or shrank without this pin moving"
+    );
+}
+
+#[test]
+fn extracted_call_count_is_pinned() {
+    let source = production_source();
+    let boundaries = function_boundaries(&source);
+    let calls = extract_calls(&source, &boundaries);
+
+    assert_eq!(
+        calls.len(),
+        194,
+        "the number of self.<verb>(..)/self.root_get(..) call sites in atlas_client/src/lib.rs \
+         changed without this pin moving"
     );
 }
 
@@ -757,7 +1117,8 @@ fn the_walker_flags_a_missing_component_by_name() {
 }
 
 /// (c) a stale `UNCOVERED_ROUTES` entry is flagged, mirroring the grep
-/// gate's stale-allowlist discipline.
+/// gate's stale-allowlist discipline. Updated to the 4-tuple, component-aware
+/// shape (D4.5, T1.5).
 #[test]
 fn a_stale_uncovered_routes_entry_is_flagged() {
     let call = ExtractedCall {
@@ -776,8 +1137,12 @@ fn a_stale_uncovered_routes_entry_is_flagged() {
     }];
 
     // A stale table naming an entry the probe call above now covers.
-    let stale_table: &[(HttpMethod, &str, &str)] =
-        &[(HttpMethod::Get, "/workspaces/{ws}/tasks", "stale probe")];
+    let stale_table: &[(&str, HttpMethod, &str, &str)] = &[(
+        "acta",
+        HttpMethod::Get,
+        "/workspaces/{ws}/tasks",
+        "stale probe",
+    )];
 
     let failures = reverse_check_with_table(&[call], &entries, stale_table);
 
@@ -788,36 +1153,138 @@ fn a_stale_uncovered_routes_entry_is_flagged() {
     );
 }
 
+/// A stale entry naming the *wrong* component for a route the client now
+/// covers must still be flagged stale — the component field does not give a
+/// stale entry a new way to hide.
+#[test]
+fn a_stale_uncovered_routes_entry_is_flagged_regardless_of_which_component_it_names() {
+    let call = ExtractedCall {
+        fn_name: "probe".to_string(),
+        line: 1,
+        method: HttpMethod::Get,
+        component: Some("custos".to_string()),
+        is_root: false,
+        relative: Some("/probe-shape".to_string()),
+    };
+    let entries = vec![RouteMatrixEntry {
+        method: HttpMethod::Get,
+        path_template: "/probe-shape".to_string(),
+        is_public: false,
+        component: "custos".to_string(),
+    }];
+
+    let stale_table: &[(&str, HttpMethod, &str, &str)] =
+        &[("custos", HttpMethod::Get, "/probe-shape", "stale probe")];
+
+    let failures = reverse_check_with_table(&[call], &entries, stale_table);
+
+    assert!(
+        failures.iter().any(|f| f.contains("stale")),
+        "expected the stale entry to be flagged, got:\n{}",
+        failures.join("\n")
+    );
+}
+
 /// Test-only indirection so [`a_stale_uncovered_routes_entry_is_flagged`]
 /// can exercise the stale-entry direction against a synthetic table,
 /// without touching the real [`UNCOVERED_ROUTES`] const.
 fn reverse_check_with_table(
     calls: &[ExtractedCall],
     entries: &[RouteMatrixEntry],
-    table: &[(HttpMethod, &str, &str)],
+    table: &[(&str, HttpMethod, &str, &str)],
 ) -> Vec<String> {
     let mut failures = Vec::new();
-    let is_covered = |method: HttpMethod, relative: &str| {
-        let normalized = normalize_template(relative);
-        calls.iter().any(|call| {
-            call.method == method
-                && call
-                    .relative
-                    .as_deref()
-                    .is_some_and(|r| normalize_template(r) == normalized)
-        })
-    };
 
-    for (method, path, reason) in table {
-        if is_covered(*method, path) {
+    for (component, method, path, reason) in table {
+        if is_covered(calls, component, *method, path) {
             failures.push(format!(
-                "stale UNCOVERED_ROUTES entry ({method} {path}, \"{reason}\"): an AtlasClient call site now covers it"
+                "stale UNCOVERED_ROUTES entry ({component} {method} {path}, \"{reason}\"): an AtlasClient call site now covers it"
             ));
         }
     }
 
     let _ = entries;
     failures
+}
+
+/// T1.1(a) — two components declaring the same `(method, path)` shape are
+/// checked independently under the component-aware re-key. Neither route is
+/// covered or listed. The pre-PR1 component-blind dedup collapses them into
+/// one check (masking one component's gap); the re-keyed check reports both.
+#[test]
+fn two_components_sharing_a_path_are_checked_independently() {
+    let entries = vec![
+        RouteMatrixEntry {
+            method: HttpMethod::Get,
+            path_template: "/probe-shared".to_string(),
+            is_public: true,
+            component: "custos".to_string(),
+        },
+        RouteMatrixEntry {
+            method: HttpMethod::Get,
+            path_template: "/probe-shared".to_string(),
+            is_public: true,
+            component: "acta".to_string(),
+        },
+    ];
+    let calls: Vec<ExtractedCall> = Vec::new();
+
+    let old_failures = reverse_check_component_blind(&calls, &entries);
+    assert_eq!(
+        old_failures.len(),
+        1,
+        "expected the component-blind dedup to collapse both routes into one check, got:\n{}",
+        old_failures.join("\n")
+    );
+
+    let new_failures = reverse_check(&calls, &entries);
+    assert_eq!(
+        new_failures.len(),
+        2,
+        "expected the component-aware re-key to report both components' gaps independently, got:\n{}",
+        new_failures.join("\n")
+    );
+}
+
+/// T1.1(b) — a call site resolving to component `Y` that shares component
+/// `X`'s method and normalized path must not count as coverage for `X`'s
+/// route. The pre-PR1 component-blind `is_covered` wrongly accepts it; the
+/// re-keyed check still reports `X`'s route uncovered.
+#[test]
+fn a_call_on_the_wrong_component_does_not_count_as_coverage() {
+    let entries = vec![RouteMatrixEntry {
+        method: HttpMethod::Get,
+        path_template: "/probe-wrong-owner".to_string(),
+        is_public: true,
+        component: "custos".to_string(),
+    }];
+    let calls = vec![ExtractedCall {
+        fn_name: "probe".to_string(),
+        line: 1,
+        method: HttpMethod::Get,
+        component: Some("acta".to_string()),
+        is_root: false,
+        relative: Some("/probe-wrong-owner".to_string()),
+    }];
+
+    let old_failures = reverse_check_component_blind(&calls, &entries);
+    assert!(
+        old_failures.is_empty(),
+        "expected the component-blind is_covered to wrongly accept the acta call as coverage, got:\n{}",
+        old_failures.join("\n")
+    );
+
+    let new_failures = reverse_check(&calls, &entries);
+    assert_eq!(
+        new_failures.len(),
+        1,
+        "expected custos's route to still be reported uncovered, got:\n{}",
+        new_failures.join("\n")
+    );
+    assert!(
+        new_failures.first().is_some_and(|f| f.contains("custos")),
+        "expected the failure to name custos, got: {new_failures:?}"
+    );
 }
 
 #[test]
