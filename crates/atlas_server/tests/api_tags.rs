@@ -24,6 +24,7 @@ async fn create_tag_returns_201_and_appears_in_list() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "tag-crud-1").await;
 
     let tag = client
+        .acta()
         .create_tag(
             &ws.slug,
             CreateTagRequest {
@@ -36,7 +37,7 @@ async fn create_tag_returns_201_and_appears_in_list() {
     assert_eq!(tag.name, "Epic");
     assert_eq!(tag.workspace_id, ws.id.0);
 
-    let listed = client.list_tags(&ws.slug).await.expect("list tags");
+    let listed = client.acta().list_tags(&ws.slug).await.expect("list tags");
 
     assert_eq!(listed.len(), 1, "the created tag must appear in the list");
     assert_eq!(listed[0].id, tag.id);
@@ -56,6 +57,7 @@ async fn create_tag_is_idempotent_by_case_insensitive_name() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "tag-idem-1").await;
 
     let first = client
+        .acta()
         .create_tag(
             &ws.slug,
             CreateTagRequest {
@@ -66,6 +68,7 @@ async fn create_tag_is_idempotent_by_case_insensitive_name() {
         .expect("create tag");
 
     let same = client
+        .acta()
         .create_tag(
             &ws.slug,
             CreateTagRequest {
@@ -76,6 +79,7 @@ async fn create_tag_is_idempotent_by_case_insensitive_name() {
         .expect("create same tag");
 
     let different_case = client
+        .acta()
         .create_tag(
             &ws.slug,
             CreateTagRequest {
@@ -91,7 +95,7 @@ async fn create_tag_is_idempotent_by_case_insensitive_name() {
         "case-insensitive name must return the same tag"
     );
 
-    let listed = client.list_tags(&ws.slug).await.expect("list tags");
+    let listed = client.acta().list_tags(&ws.slug).await.expect("list tags");
 
     assert_eq!(listed.len(), 1, "idempotent creates must not duplicate");
 
@@ -110,6 +114,7 @@ async fn list_tags_is_sorted_by_name_ascending() {
 
     for name in ["Gamma", "alpha", "Beta"] {
         client
+            .acta()
             .create_tag(
                 &ws.slug,
                 CreateTagRequest {
@@ -120,7 +125,7 @@ async fn list_tags_is_sorted_by_name_ascending() {
             .expect("create tag");
     }
 
-    let listed = client.list_tags(&ws.slug).await.expect("list tags");
+    let listed = client.acta().list_tags(&ws.slug).await.expect("list tags");
 
     let names: Vec<String> = listed.into_iter().map(|t| t.name).collect();
     assert_eq!(names, vec!["alpha", "Beta", "Gamma"]);
@@ -142,6 +147,7 @@ async fn tags_are_isolated_per_workspace() {
         support::login_user_with_workspace(&server, &db, "tag-tenant-b").await;
 
     client_a
+        .acta()
         .create_tag(
             &ws_a.slug,
             CreateTagRequest {
@@ -152,6 +158,7 @@ async fn tags_are_isolated_per_workspace() {
         .expect("create tag in A");
 
     let listed_b = client_b
+        .acta()
         .list_tags(&ws_b.slug)
         .await
         .expect("list tags in B");
@@ -175,6 +182,7 @@ async fn create_tag_rejects_blank_name() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "tag-blank-1").await;
 
     let result = client
+        .acta()
         .create_tag(
             &ws.slug,
             CreateTagRequest {
@@ -203,6 +211,7 @@ async fn rename_tag_updates_name_and_backfills_task_labels() {
         support::login_user_with_workspace(&server, &db, "tag-rename-backfill").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -217,6 +226,7 @@ async fn rename_tag_updates_name_and_backfills_task_labels() {
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             &project.slug,
@@ -229,6 +239,7 @@ async fn rename_tag_updates_name_and_backfills_task_labels() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -243,6 +254,7 @@ async fn rename_tag_updates_name_and_backfills_task_labels() {
         .expect("create column");
 
     let tag = client
+        .acta()
         .create_tag(
             &ws.slug,
             CreateTagRequest {
@@ -253,6 +265,7 @@ async fn rename_tag_updates_name_and_backfills_task_labels() {
         .expect("create tag");
 
     let task1 = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -273,6 +286,7 @@ async fn rename_tag_updates_name_and_backfills_task_labels() {
         .expect("create task1");
 
     let task2 = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -293,6 +307,7 @@ async fn rename_tag_updates_name_and_backfills_task_labels() {
         .expect("create task2");
 
     let updated = client
+        .acta()
         .update_tag(
             &ws.slug,
             tag.id,
@@ -307,10 +322,12 @@ async fn rename_tag_updates_name_and_backfills_task_labels() {
     assert_eq!(updated.name, "platform");
 
     let t1 = client
+        .acta()
         .get_task(&ws.slug, &task1.readable_id)
         .await
         .expect("get task1");
     let t2 = client
+        .acta()
         .get_task(&ws.slug, &task2.readable_id)
         .await
         .expect("get task2");
@@ -347,6 +364,7 @@ async fn rename_tag_dedup_when_new_name_already_present_in_task() {
         support::login_user_with_workspace(&server, &db, "tag-rename-dedup").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -361,6 +379,7 @@ async fn rename_tag_dedup_when_new_name_already_present_in_task() {
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             &project.slug,
@@ -373,6 +392,7 @@ async fn rename_tag_dedup_when_new_name_already_present_in_task() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -387,11 +407,13 @@ async fn rename_tag_dedup_when_new_name_already_present_in_task() {
         .expect("create column");
 
     let old_tag = client
+        .acta()
         .create_tag(&ws.slug, CreateTagRequest { name: "v1".into() })
         .await
         .expect("create old tag");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -412,6 +434,7 @@ async fn rename_tag_dedup_when_new_name_already_present_in_task() {
         .expect("create task");
 
     client
+        .acta()
         .update_tag(
             &ws.slug,
             old_tag.id,
@@ -424,6 +447,7 @@ async fn rename_tag_dedup_when_new_name_already_present_in_task() {
         .expect("rename tag v1 -> v2");
 
     let t = client
+        .acta()
         .get_task(&ws.slug, &task.readable_id)
         .await
         .expect("get task");
@@ -445,6 +469,7 @@ async fn rename_tag_to_existing_name_returns_409() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "tag-rename-409").await;
 
     client
+        .acta()
         .create_tag(
             &ws.slug,
             CreateTagRequest {
@@ -455,6 +480,7 @@ async fn rename_tag_to_existing_name_returns_409() {
         .expect("create alpha");
 
     let beta = client
+        .acta()
         .create_tag(
             &ws.slug,
             CreateTagRequest {
@@ -465,6 +491,7 @@ async fn rename_tag_to_existing_name_returns_409() {
         .expect("create beta");
 
     let result = client
+        .acta()
         .update_tag(
             &ws.slug,
             beta.id,
@@ -490,6 +517,7 @@ async fn recolor_tag_sets_color_without_backfill() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "tag-recolor").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -504,6 +532,7 @@ async fn recolor_tag_sets_color_without_backfill() {
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             &project.slug,
@@ -516,6 +545,7 @@ async fn recolor_tag_sets_color_without_backfill() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -530,6 +560,7 @@ async fn recolor_tag_sets_color_without_backfill() {
         .expect("create column");
 
     let tag = client
+        .acta()
         .create_tag(
             &ws.slug,
             CreateTagRequest {
@@ -540,6 +571,7 @@ async fn recolor_tag_sets_color_without_backfill() {
         .expect("create tag");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -560,6 +592,7 @@ async fn recolor_tag_sets_color_without_backfill() {
         .expect("create task");
 
     let updated = client
+        .acta()
         .update_tag(
             &ws.slug,
             tag.id,
@@ -578,6 +611,7 @@ async fn recolor_tag_sets_color_without_backfill() {
     );
 
     let t = client
+        .acta()
         .get_task(&ws.slug, &task.readable_id)
         .await
         .expect("get task");
@@ -602,6 +636,7 @@ async fn soft_delete_tag_removes_it_from_list_but_keeps_task_labels() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "tag-delete-1").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -616,6 +651,7 @@ async fn soft_delete_tag_removes_it_from_list_but_keeps_task_labels() {
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             &project.slug,
@@ -628,6 +664,7 @@ async fn soft_delete_tag_removes_it_from_list_but_keeps_task_labels() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -642,6 +679,7 @@ async fn soft_delete_tag_removes_it_from_list_but_keeps_task_labels() {
         .expect("create column");
 
     let tag = client
+        .acta()
         .create_tag(
             &ws.slug,
             CreateTagRequest {
@@ -652,6 +690,7 @@ async fn soft_delete_tag_removes_it_from_list_but_keeps_task_labels() {
         .expect("create tag");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -672,11 +711,12 @@ async fn soft_delete_tag_removes_it_from_list_but_keeps_task_labels() {
         .expect("create task");
 
     client
+        .acta()
         .delete_tag(&ws.slug, tag.id)
         .await
         .expect("delete tag");
 
-    let listed = client.list_tags(&ws.slug).await.expect("list tags");
+    let listed = client.acta().list_tags(&ws.slug).await.expect("list tags");
 
     assert!(
         listed.iter().all(|t| t.id != tag.id),
@@ -684,6 +724,7 @@ async fn soft_delete_tag_removes_it_from_list_but_keeps_task_labels() {
     );
 
     let t = client
+        .acta()
         .get_task(&ws.slug, &task.readable_id)
         .await
         .expect("get task after delete");
@@ -708,6 +749,7 @@ async fn patch_tag_invalid_swatch_returns_422() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "tag-inv-swatch").await;
 
     let tag = client
+        .acta()
         .create_tag(
             &ws.slug,
             CreateTagRequest {
@@ -718,6 +760,7 @@ async fn patch_tag_invalid_swatch_returns_422() {
         .expect("create tag");
 
     let result = client
+        .acta()
         .update_tag(
             &ws.slug,
             tag.id,
@@ -744,6 +787,7 @@ async fn patch_tag_from_other_workspace_returns_404() {
     let (client_b, ws_b, _) = support::login_user_with_workspace(&server, &db, "tag-xws-b").await;
 
     let tag_a = client_a
+        .acta()
         .create_tag(
             &ws_a.slug,
             CreateTagRequest {
@@ -754,6 +798,7 @@ async fn patch_tag_from_other_workspace_returns_404() {
         .expect("create tag in A");
 
     let result = client_b
+        .acta()
         .update_tag(
             &ws_b.slug,
             tag_a.id,
@@ -782,6 +827,7 @@ async fn delete_tag_from_other_workspace_returns_404() {
         support::login_user_with_workspace(&server, &db, "tag-del-xws-b").await;
 
     let tag_a = client_a
+        .acta()
         .create_tag(
             &ws_a.slug,
             CreateTagRequest {
@@ -791,7 +837,7 @@ async fn delete_tag_from_other_workspace_returns_404() {
         .await
         .expect("create tag in A");
 
-    let result = client_b.delete_tag(&ws_b.slug, tag_a.id).await;
+    let result = client_b.acta().delete_tag(&ws_b.slug, tag_a.id).await;
 
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
@@ -812,6 +858,7 @@ async fn patch_tag_hex_color_is_accepted() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "tag-hex-ok").await;
 
     let tag = client
+        .acta()
         .create_tag(
             &ws.slug,
             CreateTagRequest {
@@ -822,6 +869,7 @@ async fn patch_tag_hex_color_is_accepted() {
         .expect("create tag");
 
     let updated = client
+        .acta()
         .update_tag(
             &ws.slug,
             tag.id,
@@ -849,6 +897,7 @@ async fn patch_tag_lowercase_hex_color_is_accepted() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "tag-hex-lower").await;
 
     let tag = client
+        .acta()
         .create_tag(
             &ws.slug,
             CreateTagRequest {
@@ -859,6 +908,7 @@ async fn patch_tag_lowercase_hex_color_is_accepted() {
         .expect("create tag");
 
     let updated = client
+        .acta()
         .update_tag(
             &ws.slug,
             tag.id,
@@ -886,6 +936,7 @@ async fn patch_tag_named_swatch_ids_still_accepted_after_hex_extension() {
         "neutral", "blue", "green", "amber", "red", "magenta", "cyan",
     ] {
         let tag = client
+            .acta()
             .create_tag(
                 &ws.slug,
                 CreateTagRequest {
@@ -896,6 +947,7 @@ async fn patch_tag_named_swatch_ids_still_accepted_after_hex_extension() {
             .expect("create tag");
 
         client
+            .acta()
             .update_tag(
                 &ws.slug,
                 tag.id,
@@ -918,6 +970,7 @@ async fn patch_tag_invalid_hex_formats_return_422() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "tag-hex-422").await;
 
     let tag = client
+        .acta()
         .create_tag(
             &ws.slug,
             CreateTagRequest {
@@ -931,6 +984,7 @@ async fn patch_tag_invalid_hex_formats_return_422() {
         "#xyz123", "#12345", "hotpink", "#GGGGGG", "#1A2B3", "#1A2B3C4",
     ] {
         let result = client
+            .acta()
             .update_tag(
                 &ws.slug,
                 tag.id,
@@ -961,6 +1015,7 @@ async fn list_used_labels_returns_distinct_labels_across_tasks() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "tags-used-basic").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -975,6 +1030,7 @@ async fn list_used_labels_returns_distinct_labels_across_tasks() {
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             &project.slug,
@@ -987,6 +1043,7 @@ async fn list_used_labels_returns_distinct_labels_across_tasks() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -1001,6 +1058,7 @@ async fn list_used_labels_returns_distinct_labels_across_tasks() {
         .expect("create column");
 
     client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -1021,6 +1079,7 @@ async fn list_used_labels_returns_distinct_labels_across_tasks() {
         .expect("create task 1");
 
     client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -1041,6 +1100,7 @@ async fn list_used_labels_returns_distinct_labels_across_tasks() {
         .expect("create task 2");
 
     let used = client
+        .acta()
         .list_used_labels(&ws.slug)
         .await
         .expect("list used labels");
@@ -1065,6 +1125,7 @@ async fn list_used_labels_excludes_soft_deleted_task_labels() {
         support::login_user_with_workspace(&server, &db, "tags-used-deleted").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -1079,6 +1140,7 @@ async fn list_used_labels_excludes_soft_deleted_task_labels() {
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             &project.slug,
@@ -1091,6 +1153,7 @@ async fn list_used_labels_excludes_soft_deleted_task_labels() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -1105,6 +1168,7 @@ async fn list_used_labels_excludes_soft_deleted_task_labels() {
         .expect("create column");
 
     let live_task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -1125,6 +1189,7 @@ async fn list_used_labels_excludes_soft_deleted_task_labels() {
         .expect("create live task");
 
     let deleted_task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -1145,11 +1210,13 @@ async fn list_used_labels_excludes_soft_deleted_task_labels() {
         .expect("create task to delete");
 
     client
+        .acta()
         .delete_task(&ws.slug, &deleted_task.readable_id)
         .await
         .expect("delete task");
 
     let used = client
+        .acta()
         .list_used_labels(&ws.slug)
         .await
         .expect("list used labels");
@@ -1175,6 +1242,7 @@ async fn list_used_labels_empty_workspace_returns_empty_list() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "tags-used-empty").await;
 
     let used = client
+        .acta()
         .list_used_labels(&ws.slug)
         .await
         .expect("list used labels");
@@ -1197,6 +1265,7 @@ async fn list_used_labels_isolated_per_workspace() {
         support::login_user_with_workspace(&server, &db, "tags-used-iso-b").await;
 
     let project_a = client_a
+        .acta()
         .create_project(
             &ws_a.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -1211,6 +1280,7 @@ async fn list_used_labels_isolated_per_workspace() {
         .expect("create project in A");
 
     let board_a = client_a
+        .acta()
         .create_board(
             &ws_a.slug,
             &project_a.slug,
@@ -1223,6 +1293,7 @@ async fn list_used_labels_isolated_per_workspace() {
         .expect("create board in A");
 
     let col_a = client_a
+        .acta()
         .create_column(
             &ws_a.slug,
             board_a.id,
@@ -1237,6 +1308,7 @@ async fn list_used_labels_isolated_per_workspace() {
         .expect("create column in A");
 
     client_a
+        .acta()
         .create_task(
             &ws_a.slug,
             board_a.id,
@@ -1257,6 +1329,7 @@ async fn list_used_labels_isolated_per_workspace() {
         .expect("create task in A");
 
     let used_b = client_b
+        .acta()
         .list_used_labels(&ws_b.slug)
         .await
         .expect("list used labels in B");

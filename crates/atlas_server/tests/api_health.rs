@@ -81,6 +81,7 @@ async fn meta_exposes_version_url_and_components() {
     let (client, _ws, _user) = support::login_user_with_workspace(&server, &db, "meta-url-1").await;
 
     let meta = client
+        .platform()
         .server_meta()
         .await
         .expect("server_meta request must succeed");

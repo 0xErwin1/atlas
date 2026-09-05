@@ -33,6 +33,7 @@ async fn duplicate_folder_name_returns_409_with_fixed_message() {
         support::login_user_with_workspace(&server, &db, "dup-folder-name-409").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -47,6 +48,7 @@ async fn duplicate_folder_name_returns_409_with_fixed_message() {
         .expect("create project");
 
     client
+        .acta()
         .create_folder(
             &ws.slug,
             &project.slug,
@@ -59,6 +61,7 @@ async fn duplicate_folder_name_returns_409_with_fixed_message() {
         .expect("create first folder");
 
     let result = client
+        .acta()
         .create_folder(
             &ws.slug,
             &project.slug,

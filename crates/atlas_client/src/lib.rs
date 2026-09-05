@@ -11,52 +11,9 @@ pub use platform::Platform;
 
 use atlas_api::{
     dtos::{
-        ActivationLinkResponse, AdminUpdateWorkspaceRequest, ApiKeyCreated, ApiKeyDto,
-        ApiKeyGrantDto, ApiKeyScope, ChangePasswordRequest, CreateGrantRequest,
-        CreateProjectRequest, CreateUserApiKeyRequest, CreateUserRequest, CreateUserResponse,
-        DoctorReportDto, GrantDto, HealthResponse, LoginRequest, LoginResponse, MeResponse,
-        PrincipalDto, ProjectDto, ServerMetaDto, UpdateMeRequest, UpdateProjectRequest,
-        UpdateWorkspaceRequest, UserDto, UserMembershipDto, WorkspaceDto,
-        boards_tasks::{
-            ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
-            ChecklistItemDto, ColumnDto, CommentDto, CommentFeedEntryDto, CreateBoardRequest,
-            CreateChecklistItemRequest, CreateColumnRequest, CreateCommentRequest,
-            CreateReferenceBatchRequest, CreateReferenceBatchResultDto, CreateReferenceRequest,
-            CreateSubtaskRequest, CreateTaskRequest, CreateTaskResponseDto, MoveBoardRequest,
-            MoveTaskRequest, PromoteChecklistItemRequest, PromotionDto, ReferenceDto,
-            RenameTaskAttachmentRequest, SetTaskParentRequest, TaskAttachmentDto, TaskBacklinkDto,
-            TaskDto, TaskGraphDto, TaskSummaryDto, UnifiedReferenceDto, UpdateBoardRequest,
-            UpdateChecklistItemRequest, UpdateColumnRequest, UpdateCommentRequest,
-            UpdateTaskRequest, WorkspaceTaskQueryParams,
-        },
-        documents::{
-            AttachmentDto, BacklinkDto, CommentAttachmentDto, CommentDraftDto, ConflictProblemDto,
-            CreateDocumentRequest, DocumentCompactDto, DocumentContentEditRequest,
-            DocumentContentRangeDto, DocumentContentRangeQuery, DocumentContentSearchDto,
-            DocumentContentSearchRequest, DocumentDto, DocumentMoveBatchRequest,
-            DocumentMoveBatchResultDto, DocumentSummaryDto, FrontmatterDto, MoveDocumentRequest,
-            RenameAttachmentRequest, RevisionContentDto, RevisionMetaDto, UpdateContentRequest,
-            UpdateDocumentRequest, WorkspaceAttachmentDto,
-        },
-        folders::{CreateFolderRequest, FolderDto, MoveFolderRequest, RenameFolderRequest},
-        groups::{AddGroupMemberRequest, CreateGroupRequest, GroupDto, GroupMemberDto},
-        lifecycle::{PurgeStatusDtoResponse, TrashItemDto, TrashKindDto},
-        property_definitions::{CreatePropertyDefinitionRequest, PropertyDefinitionDto},
-        saved_searches::{CreateSavedSearchRequest, RenameSavedSearchRequest, SavedSearchDto},
-        search::SearchHitDto,
-        semantic_search::SemanticSearchHitDto,
-        status_templates::{
-            CreateStatusTemplateRequest, PlatformStatusTemplateDto, StatusTemplateDto,
-            UpdateStatusTemplateRequest,
-        },
-        tags::{CreateTagRequest, TagDto, UpdateTagRequest},
-        task_views::{CreateTaskViewRequest, TaskViewDto, UpdateTaskViewRequest},
-        webhooks::{
-            CreateWebhookRequest, UpdateWebhookRequest, WebhookCreatedDto, WebhookDeliveryDto,
-            WebhookDto,
-        },
+        HealthResponse, LoginRequest, LoginResponse, documents::ConflictProblemDto,
+        lifecycle::PurgeStatusDtoResponse,
     },
-    pagination::Page,
     problem::ProblemDetails,
 };
 use std::time::Duration;
@@ -405,2133 +362,6 @@ impl AtlasClient {
         self.token = Some(login.token.clone());
         Ok(login)
     }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn me(&self) -> Result<MeResponse, ClientError> {
-        self.custos().me().await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn change_password(&self, body: ChangePasswordRequest) -> Result<(), ClientError> {
-        self.custos().change_password(body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn update_me(&self, body: UpdateMeRequest) -> Result<UserDto, ClientError> {
-        self.custos().update_me(body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `platform()`; removed in PR12 of this slice.
-    pub async fn get_ui_state(&self) -> Result<serde_json::Value, ClientError> {
-        self.platform().get_ui_state().await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `platform()`; removed in PR12 of this slice.
-    pub async fn set_ui_state(
-        &self,
-        state: &serde_json::Value,
-    ) -> Result<serde_json::Value, ClientError> {
-        self.platform().set_ui_state(state).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `platform()`; removed in PR12 of this slice.
-    pub async fn server_meta(&self) -> Result<ServerMetaDto, ClientError> {
-        self.platform().server_meta().await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `platform()`; removed in PR12 of this slice.
-    pub async fn doctor(&self) -> Result<DoctorReportDto, ClientError> {
-        self.platform().doctor().await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn list_users(&self) -> Result<Vec<UserDto>, ClientError> {
-        self.custos().list_users().await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn create_user(
-        &self,
-        body: CreateUserRequest,
-    ) -> Result<CreateUserResponse, ClientError> {
-        self.custos().create_user(body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn regenerate_activation_link(
-        &self,
-        user_id: uuid::Uuid,
-    ) -> Result<ActivationLinkResponse, ClientError> {
-        self.custos().regenerate_activation_link(user_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn disable_user(&self, user_id: uuid::Uuid) -> Result<(), ClientError> {
-        self.custos().disable_user(user_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn enable_user(&self, user_id: uuid::Uuid) -> Result<(), ClientError> {
-        self.custos().enable_user(user_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn reset_user_password(
-        &self,
-        user_id: uuid::Uuid,
-        new_password: impl Into<String>,
-    ) -> Result<(), ClientError> {
-        self.custos()
-            .reset_user_password(user_id, new_password)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn list_user_memberships(
-        &self,
-        user_id: uuid::Uuid,
-    ) -> Result<Vec<UserMembershipDto>, ClientError> {
-        self.custos().list_user_memberships(user_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn create_user_api_key(
-        &self,
-        body: CreateUserApiKeyRequest,
-    ) -> Result<ApiKeyCreated, ClientError> {
-        self.custos().create_user_api_key(body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn list_user_api_keys(
-        &self,
-        cursor: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<ApiKeyDto>, ClientError> {
-        self.custos().list_user_api_keys(cursor, limit).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn revoke_user_api_key(&self, key_id: uuid::Uuid) -> Result<(), ClientError> {
-        self.custos().revoke_user_api_key(key_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn set_api_key_global(
-        &self,
-        key_id: uuid::Uuid,
-        is_global: bool,
-    ) -> Result<ApiKeyDto, ClientError> {
-        self.custos().set_api_key_global(key_id, is_global).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn set_api_key_scopes(
-        &self,
-        key_id: uuid::Uuid,
-        scopes: Vec<ApiKeyScope>,
-    ) -> Result<ApiKeyDto, ClientError> {
-        self.custos().set_api_key_scopes(key_id, scopes).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn list_api_key_grants(
-        &self,
-        key_id: uuid::Uuid,
-    ) -> Result<Vec<ApiKeyGrantDto>, ClientError> {
-        self.custos().list_api_key_grants(key_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn delete_api_key_grant(
-        &self,
-        key_id: uuid::Uuid,
-        grant_id: uuid::Uuid,
-    ) -> Result<(), ClientError> {
-        self.custos().delete_api_key_grant(key_id, grant_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn create_project(
-        &self,
-        ws: &str,
-        body: CreateProjectRequest,
-    ) -> Result<ProjectDto, ClientError> {
-        self.acta().create_project(ws, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_projects(
-        &self,
-        ws: &str,
-        cursor: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<ProjectDto>, ClientError> {
-        self.acta().list_projects(ws, cursor, limit).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn get_project(&self, ws: &str, slug: &str) -> Result<ProjectDto, ClientError> {
-        self.acta().get_project(ws, slug).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn update_project(
-        &self,
-        ws: &str,
-        slug: &str,
-        body: UpdateProjectRequest,
-    ) -> Result<ProjectDto, ClientError> {
-        self.acta().update_project(ws, slug, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn delete_project(&self, ws: &str, slug: &str) -> Result<(), ClientError> {
-        self.acta().delete_project(ws, slug).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn create_project_grant(
-        &self,
-        ws: &str,
-        slug: &str,
-        body: CreateGrantRequest,
-    ) -> Result<GrantDto, ClientError> {
-        self.custos().create_project_grant(ws, slug, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn list_project_grants(
-        &self,
-        ws: &str,
-        slug: &str,
-        cursor: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<GrantDto>, ClientError> {
-        self.custos()
-            .list_project_grants(ws, slug, cursor, limit)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn delete_project_grant(
-        &self,
-        ws: &str,
-        slug: &str,
-        grant_id: uuid::Uuid,
-    ) -> Result<(), ClientError> {
-        self.custos().delete_project_grant(ws, slug, grant_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn create_workspace_grant(
-        &self,
-        ws: &str,
-        body: CreateGrantRequest,
-    ) -> Result<GrantDto, ClientError> {
-        self.custos().create_workspace_grant(ws, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn list_workspace_grants(
-        &self,
-        ws: &str,
-        cursor: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<GrantDto>, ClientError> {
-        self.custos().list_workspace_grants(ws, cursor, limit).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn delete_workspace_grant(
-        &self,
-        ws: &str,
-        grant_id: uuid::Uuid,
-    ) -> Result<(), ClientError> {
-        self.custos().delete_workspace_grant(ws, grant_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn create_workspace(&self, name: &str) -> Result<WorkspaceDto, ClientError> {
-        self.acta().create_workspace(name).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_workspaces(&self) -> Result<Vec<WorkspaceDto>, ClientError> {
-        self.acta().list_workspaces().await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn get_workspace(&self, ws: &str) -> Result<WorkspaceDto, ClientError> {
-        self.acta().get_workspace(ws).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn update_workspace(
-        &self,
-        ws: &str,
-        body: UpdateWorkspaceRequest,
-    ) -> Result<WorkspaceDto, ClientError> {
-        self.acta().update_workspace(ws, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn admin_list_workspaces(&self) -> Result<Vec<WorkspaceDto>, ClientError> {
-        self.acta().admin_list_workspaces().await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn admin_update_workspace(
-        &self,
-        ws: &str,
-        body: AdminUpdateWorkspaceRequest,
-    ) -> Result<WorkspaceDto, ClientError> {
-        self.acta().admin_update_workspace(ws, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn admin_delete_workspace(&self, ws: &str) -> Result<(), ClientError> {
-        self.acta().admin_delete_workspace(ws).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_workspace_members(&self, ws: &str) -> Result<Vec<PrincipalDto>, ClientError> {
-        self.acta().list_workspace_members(ws).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn add_member(
-        &self,
-        ws: &str,
-        user_id: uuid::Uuid,
-        role: &str,
-    ) -> Result<PrincipalDto, ClientError> {
-        self.acta().add_member(ws, user_id, role).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_assignable_users(&self, ws: &str) -> Result<Vec<UserDto>, ClientError> {
-        self.acta().list_assignable_users(ws).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn update_member_role(
-        &self,
-        ws: &str,
-        user_id: uuid::Uuid,
-        role: &str,
-    ) -> Result<PrincipalDto, ClientError> {
-        self.acta().update_member_role(ws, user_id, role).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn remove_member(&self, ws: &str, user_id: uuid::Uuid) -> Result<(), ClientError> {
-        self.acta().remove_member(ws, user_id).await
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn search(
-        &self,
-        ws: &str,
-        q: &str,
-        type_filter: Option<&str>,
-        sort: Option<&str>,
-        cursor: Option<&str>,
-        limit: Option<u32>,
-        mode: Option<&str>,
-    ) -> Result<Page<SearchHitDto>, ClientError> {
-        self.acta()
-            .search(ws, q, type_filter, sort, cursor, limit, mode)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn semantic_search(
-        &self,
-        ws: &str,
-        q: &str,
-        type_filter: Option<&str>,
-        cursor: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<SemanticSearchHitDto>, ClientError> {
-        self.acta()
-            .semantic_search(ws, q, type_filter, cursor, limit)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn create_folder(
-        &self,
-        ws: &str,
-        project_slug: &str,
-        body: CreateFolderRequest,
-    ) -> Result<FolderDto, ClientError> {
-        self.acta().create_folder(ws, project_slug, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_folders(
-        &self,
-        ws: &str,
-        project_slug: &str,
-        cursor: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<FolderDto>, ClientError> {
-        self.acta()
-            .list_folders(ws, project_slug, cursor, limit)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn get_folder(
-        &self,
-        ws: &str,
-        folder_id: uuid::Uuid,
-    ) -> Result<FolderDto, ClientError> {
-        self.acta().get_folder(ws, folder_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn rename_folder(
-        &self,
-        ws: &str,
-        folder_id: uuid::Uuid,
-        body: RenameFolderRequest,
-    ) -> Result<FolderDto, ClientError> {
-        self.acta().rename_folder(ws, folder_id, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn move_folder(
-        &self,
-        ws: &str,
-        folder_id: uuid::Uuid,
-        body: MoveFolderRequest,
-    ) -> Result<FolderDto, ClientError> {
-        self.acta().move_folder(ws, folder_id, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn copy_folder(
-        &self,
-        ws: &str,
-        folder_id: uuid::Uuid,
-        parent_folder_id: Option<uuid::Uuid>,
-    ) -> Result<FolderDto, ClientError> {
-        self.acta()
-            .copy_folder(ws, folder_id, parent_folder_id)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn delete_folder(&self, ws: &str, folder_id: uuid::Uuid) -> Result<(), ClientError> {
-        self.acta().delete_folder(ws, folder_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn create_document(
-        &self,
-        ws: &str,
-        project_slug: &str,
-        body: CreateDocumentRequest,
-    ) -> Result<DocumentDto, ClientError> {
-        self.acta().create_document(ws, project_slug, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_documents(
-        &self,
-        ws: &str,
-        project_slug: &str,
-        cursor: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<DocumentSummaryDto>, ClientError> {
-        self.acta()
-            .list_documents(ws, project_slug, cursor, limit)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_documents_with_unfiled_filter(
-        &self,
-        ws: &str,
-        project_slug: &str,
-        cursor: Option<&str>,
-        limit: Option<u32>,
-        unfiled: Option<bool>,
-    ) -> Result<Page<DocumentSummaryDto>, ClientError> {
-        self.acta()
-            .list_documents_with_unfiled_filter(ws, project_slug, cursor, limit, unfiled)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_documents_with_options(
-        &self,
-        ws: &str,
-        project_slug: &str,
-        cursor: Option<&str>,
-        limit: Option<u32>,
-        unfiled: Option<bool>,
-        preview: bool,
-    ) -> Result<Page<DocumentSummaryDto>, ClientError> {
-        self.acta()
-            .list_documents_with_options(ws, project_slug, cursor, limit, unfiled, preview)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn get_document(&self, ws: &str, slug: &str) -> Result<DocumentDto, ClientError> {
-        self.acta().get_document(ws, slug).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn get_document_compact(
-        &self,
-        ws: &str,
-        slug: &str,
-    ) -> Result<DocumentCompactDto, ClientError> {
-        self.acta().get_document_compact(ws, slug).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn get_document_content_range(
-        &self,
-        ws: &str,
-        slug: &str,
-        query: DocumentContentRangeQuery,
-    ) -> Result<DocumentContentRangeDto, ClientError> {
-        self.acta()
-            .get_document_content_range(ws, slug, query)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn search_document_content(
-        &self,
-        ws: &str,
-        slug: &str,
-        body: DocumentContentSearchRequest,
-    ) -> Result<DocumentContentSearchDto, ClientError> {
-        self.acta().search_document_content(ws, slug, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn edit_document_content_range(
-        &self,
-        ws: &str,
-        slug: &str,
-        body: DocumentContentEditRequest,
-    ) -> Result<DocumentCompactDto, ClientError> {
-        self.acta()
-            .edit_document_content_range(ws, slug, body)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn update_document(
-        &self,
-        ws: &str,
-        slug: &str,
-        body: UpdateDocumentRequest,
-    ) -> Result<DocumentDto, ClientError> {
-        self.acta().update_document(ws, slug, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn update_content(
-        &self,
-        ws: &str,
-        slug: &str,
-        body: UpdateContentRequest,
-    ) -> Result<DocumentDto, ClientError> {
-        self.acta().update_content(ws, slug, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn delete_document(&self, ws: &str, slug: &str) -> Result<(), ClientError> {
-        self.acta().delete_document(ws, slug).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_document_history(
-        &self,
-        ws: &str,
-        slug: &str,
-        cursor: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<RevisionMetaDto>, ClientError> {
-        self.acta()
-            .list_document_history(ws, slug, cursor, limit)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn get_revision_content(
-        &self,
-        ws: &str,
-        slug: &str,
-        seq: i64,
-    ) -> Result<RevisionContentDto, ClientError> {
-        self.acta().get_revision_content(ws, slug, seq).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_backlinks(
-        &self,
-        ws: &str,
-        slug: &str,
-        cursor: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<BacklinkDto>, ClientError> {
-        self.acta().list_backlinks(ws, slug, cursor, limit).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn get_frontmatter(
-        &self,
-        ws: &str,
-        slug: &str,
-    ) -> Result<FrontmatterDto, ClientError> {
-        self.acta().get_frontmatter(ws, slug).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn upload_attachment(
-        &self,
-        ws: &str,
-        slug: &str,
-        file_name: &str,
-        content_type: &str,
-        data: Vec<u8>,
-    ) -> Result<AttachmentDto, ClientError> {
-        self.acta()
-            .upload_attachment(ws, slug, file_name, content_type, data)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_attachments(
-        &self,
-        ws: &str,
-        slug: &str,
-        cursor: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<AttachmentDto>, ClientError> {
-        self.acta().list_attachments(ws, slug, cursor, limit).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_workspace_attachments(
-        &self,
-        ws: &str,
-        cursor: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<WorkspaceAttachmentDto>, ClientError> {
-        self.acta()
-            .list_workspace_attachments(ws, cursor, limit)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn rename_workspace_attachment(
-        &self,
-        ws: &str,
-        attachment_id: uuid::Uuid,
-        body: RenameAttachmentRequest,
-    ) -> Result<WorkspaceAttachmentDto, ClientError> {
-        self.acta()
-            .rename_workspace_attachment(ws, attachment_id, body)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn download_attachment(
-        &self,
-        ws: &str,
-        attachment_id: uuid::Uuid,
-    ) -> Result<Vec<u8>, ClientError> {
-        self.acta().download_attachment(ws, attachment_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn delete_attachment(
-        &self,
-        ws: &str,
-        attachment_id: uuid::Uuid,
-    ) -> Result<(), ClientError> {
-        self.acta().delete_attachment(ws, attachment_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn upload_task_attachment(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        file_name: &str,
-        content_type: &str,
-        data: Vec<u8>,
-    ) -> Result<TaskAttachmentDto, ClientError> {
-        self.acta()
-            .upload_task_attachment(ws, readable_id, file_name, content_type, data)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_task_attachments(
-        &self,
-        ws: &str,
-        readable_id: &str,
-    ) -> Result<Vec<TaskAttachmentDto>, ClientError> {
-        self.acta().list_task_attachments(ws, readable_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn download_task_attachment(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        attachment_id: uuid::Uuid,
-    ) -> Result<(Vec<u8>, Option<String>), ClientError> {
-        self.acta()
-            .download_task_attachment(ws, readable_id, attachment_id)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn rename_task_attachment(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        attachment_id: uuid::Uuid,
-        body: RenameTaskAttachmentRequest,
-    ) -> Result<TaskAttachmentDto, ClientError> {
-        self.acta()
-            .rename_task_attachment(ws, readable_id, attachment_id, body)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn delete_task_attachment(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        attachment_id: uuid::Uuid,
-    ) -> Result<(), ClientError> {
-        self.acta()
-            .delete_task_attachment(ws, readable_id, attachment_id)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn move_document(
-        &self,
-        ws: &str,
-        slug: &str,
-        body: MoveDocumentRequest,
-    ) -> Result<DocumentDto, ClientError> {
-        self.acta().move_document(ws, slug, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn move_documents_batch(
-        &self,
-        ws: &str,
-        body: DocumentMoveBatchRequest,
-    ) -> Result<Vec<DocumentMoveBatchResultDto>, ClientError> {
-        self.acta().move_documents_batch(ws, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn copy_document(
-        &self,
-        ws: &str,
-        slug: &str,
-        folder_id: Option<uuid::Uuid>,
-    ) -> Result<DocumentDto, ClientError> {
-        self.acta().copy_document(ws, slug, folder_id).await
-    }
-
-    // ---- Admin Trash -----------------------------------------------------------
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_trash(
-        &self,
-        workspace_id: Option<uuid::Uuid>,
-        kind: Option<TrashKindDto>,
-        cursor: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<TrashItemDto>, ClientError> {
-        self.acta()
-            .list_trash(workspace_id, kind, cursor, limit)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn restore_trash(
-        &self,
-        kind: TrashKindDto,
-        target_id: uuid::Uuid,
-    ) -> Result<(), ClientError> {
-        self.acta().restore_trash(kind, target_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn purge_trash(
-        &self,
-        kind: TrashKindDto,
-        target_id: uuid::Uuid,
-        confirm: bool,
-    ) -> Result<PurgeTrashResult, ClientError> {
-        self.acta().purge_trash(kind, target_id, confirm).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn get_purge_status(
-        &self,
-        operation_id: uuid::Uuid,
-    ) -> Result<PurgeStatusDtoResponse, ClientError> {
-        self.acta().get_purge_status(operation_id).await
-    }
-
-    // ---- Webhooks --------------------------------------------------------------
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn create_webhook(
-        &self,
-        ws: &str,
-        body: CreateWebhookRequest,
-    ) -> Result<WebhookCreatedDto, ClientError> {
-        self.acta().create_webhook(ws, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_webhooks(
-        &self,
-        ws: &str,
-        after: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<WebhookDto>, ClientError> {
-        self.acta().list_webhooks(ws, after, limit).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn get_webhook(
-        &self,
-        ws: &str,
-        webhook_id: uuid::Uuid,
-    ) -> Result<WebhookDto, ClientError> {
-        self.acta().get_webhook(ws, webhook_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn update_webhook(
-        &self,
-        ws: &str,
-        webhook_id: uuid::Uuid,
-        body: UpdateWebhookRequest,
-    ) -> Result<WebhookDto, ClientError> {
-        self.acta().update_webhook(ws, webhook_id, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn delete_webhook(
-        &self,
-        ws: &str,
-        webhook_id: uuid::Uuid,
-    ) -> Result<(), ClientError> {
-        self.acta().delete_webhook(ws, webhook_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_webhook_deliveries(
-        &self,
-        ws: &str,
-        webhook_id: uuid::Uuid,
-        before: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<WebhookDeliveryDto>, ClientError> {
-        self.acta()
-            .list_webhook_deliveries(ws, webhook_id, before, limit)
-            .await
-    }
-
-    // ---- Boards ----------------------------------------------------------------
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn create_board(
-        &self,
-        ws: &str,
-        project_slug: &str,
-        body: CreateBoardRequest,
-    ) -> Result<BoardDto, ClientError> {
-        self.acta().create_board(ws, project_slug, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_boards(
-        &self,
-        ws: &str,
-        project_slug: &str,
-        cursor: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<BoardSummaryDto>, ClientError> {
-        self.acta()
-            .list_boards(ws, project_slug, cursor, limit)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn get_board(&self, ws: &str, board_id: uuid::Uuid) -> Result<BoardDto, ClientError> {
-        self.acta().get_board(ws, board_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn update_board(
-        &self,
-        ws: &str,
-        board_id: uuid::Uuid,
-        body: UpdateBoardRequest,
-    ) -> Result<BoardDto, ClientError> {
-        self.acta().update_board(ws, board_id, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn move_board(
-        &self,
-        ws: &str,
-        board_id: uuid::Uuid,
-        body: MoveBoardRequest,
-    ) -> Result<BoardDto, ClientError> {
-        self.acta().move_board(ws, board_id, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn delete_board(&self, ws: &str, board_id: uuid::Uuid) -> Result<(), ClientError> {
-        self.acta().delete_board(ws, board_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn create_column(
-        &self,
-        ws: &str,
-        board_id: uuid::Uuid,
-        body: CreateColumnRequest,
-    ) -> Result<ColumnDto, ClientError> {
-        self.acta().create_column(ws, board_id, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_columns(
-        &self,
-        ws: &str,
-        board_id: uuid::Uuid,
-    ) -> Result<Vec<ColumnDto>, ClientError> {
-        self.acta().list_columns(ws, board_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn create_tag(
-        &self,
-        ws: &str,
-        body: CreateTagRequest,
-    ) -> Result<TagDto, ClientError> {
-        self.acta().create_tag(ws, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_tags(&self, ws: &str) -> Result<Vec<TagDto>, ClientError> {
-        self.acta().list_tags(ws).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_used_labels(&self, ws: &str) -> Result<Vec<String>, ClientError> {
-        self.acta().list_used_labels(ws).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn update_tag(
-        &self,
-        ws: &str,
-        tag_id: uuid::Uuid,
-        body: UpdateTagRequest,
-    ) -> Result<TagDto, ClientError> {
-        self.acta().update_tag(ws, tag_id, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn delete_tag(&self, ws: &str, tag_id: uuid::Uuid) -> Result<(), ClientError> {
-        self.acta().delete_tag(ws, tag_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_property_definitions(
-        &self,
-        ws: &str,
-        applies_to: Option<&str>,
-    ) -> Result<Vec<PropertyDefinitionDto>, ClientError> {
-        self.acta().list_property_definitions(ws, applies_to).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn create_property_definition(
-        &self,
-        ws: &str,
-        body: CreatePropertyDefinitionRequest,
-    ) -> Result<PropertyDefinitionDto, ClientError> {
-        self.acta().create_property_definition(ws, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn delete_property_definition(
-        &self,
-        ws: &str,
-        property_definition_id: uuid::Uuid,
-    ) -> Result<(), ClientError> {
-        self.acta()
-            .delete_property_definition(ws, property_definition_id)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn create_saved_search(
-        &self,
-        ws: &str,
-        body: CreateSavedSearchRequest,
-    ) -> Result<SavedSearchDto, ClientError> {
-        self.acta().create_saved_search(ws, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_saved_searches(&self, ws: &str) -> Result<Vec<SavedSearchDto>, ClientError> {
-        self.acta().list_saved_searches(ws).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn rename_saved_search(
-        &self,
-        ws: &str,
-        id: uuid::Uuid,
-        body: RenameSavedSearchRequest,
-    ) -> Result<SavedSearchDto, ClientError> {
-        self.acta().rename_saved_search(ws, id, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn delete_saved_search(&self, ws: &str, id: uuid::Uuid) -> Result<(), ClientError> {
-        self.acta().delete_saved_search(ws, id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_task_views(&self, ws: &str) -> Result<Vec<TaskViewDto>, ClientError> {
-        self.acta().list_task_views(ws).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn create_task_view(
-        &self,
-        ws: &str,
-        body: CreateTaskViewRequest,
-    ) -> Result<TaskViewDto, ClientError> {
-        self.acta().create_task_view(ws, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn get_task_view(
-        &self,
-        ws: &str,
-        id: uuid::Uuid,
-    ) -> Result<TaskViewDto, ClientError> {
-        self.acta().get_task_view(ws, id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn update_task_view(
-        &self,
-        ws: &str,
-        id: uuid::Uuid,
-        body: UpdateTaskViewRequest,
-    ) -> Result<TaskViewDto, ClientError> {
-        self.acta().update_task_view(ws, id, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn delete_task_view(&self, ws: &str, id: uuid::Uuid) -> Result<(), ClientError> {
-        self.acta().delete_task_view(ws, id).await
-    }
-
-    // ---- Status templates -------------------------------------------------------
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_status_templates(
-        &self,
-        ws: &str,
-    ) -> Result<Vec<StatusTemplateDto>, ClientError> {
-        self.acta().list_status_templates(ws).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn create_status_template(
-        &self,
-        ws: &str,
-        body: CreateStatusTemplateRequest,
-    ) -> Result<StatusTemplateDto, ClientError> {
-        self.acta().create_status_template(ws, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn update_status_template(
-        &self,
-        ws: &str,
-        template_id: uuid::Uuid,
-        body: UpdateStatusTemplateRequest,
-    ) -> Result<StatusTemplateDto, ClientError> {
-        self.acta()
-            .update_status_template(ws, template_id, body)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn delete_status_template(
-        &self,
-        ws: &str,
-        template_id: uuid::Uuid,
-    ) -> Result<(), ClientError> {
-        self.acta().delete_status_template(ws, template_id).await
-    }
-
-    // ---- Platform status templates (Atlas-wide defaults, admin-only) -------------
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_platform_status_templates(
-        &self,
-    ) -> Result<Vec<PlatformStatusTemplateDto>, ClientError> {
-        self.acta().list_platform_status_templates().await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn create_platform_status_template(
-        &self,
-        body: CreateStatusTemplateRequest,
-    ) -> Result<PlatformStatusTemplateDto, ClientError> {
-        self.acta().create_platform_status_template(body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn update_platform_status_template(
-        &self,
-        template_id: uuid::Uuid,
-        body: UpdateStatusTemplateRequest,
-    ) -> Result<PlatformStatusTemplateDto, ClientError> {
-        self.acta()
-            .update_platform_status_template(template_id, body)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn delete_platform_status_template(
-        &self,
-        template_id: uuid::Uuid,
-    ) -> Result<(), ClientError> {
-        self.acta()
-            .delete_platform_status_template(template_id)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn apply_status_templates(
-        &self,
-        ws: &str,
-        board_id: uuid::Uuid,
-    ) -> Result<Vec<atlas_api::dtos::boards_tasks::ColumnDto>, ClientError> {
-        self.acta().apply_status_templates(ws, board_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn update_column(
-        &self,
-        ws: &str,
-        board_id: uuid::Uuid,
-        column_id: uuid::Uuid,
-        body: UpdateColumnRequest,
-    ) -> Result<ColumnDto, ClientError> {
-        self.acta()
-            .update_column(ws, board_id, column_id, body)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn delete_column(
-        &self,
-        ws: &str,
-        board_id: uuid::Uuid,
-        column_id: uuid::Uuid,
-    ) -> Result<(), ClientError> {
-        self.acta().delete_column(ws, board_id, column_id).await
-    }
-
-    // ---- Tasks ----------------------------------------------------------------
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn create_task(
-        &self,
-        ws: &str,
-        board_id: uuid::Uuid,
-        body: CreateTaskRequest,
-    ) -> Result<TaskDto, ClientError> {
-        self.acta().create_task(ws, board_id, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn create_task_with_references(
-        &self,
-        ws: &str,
-        board_id: uuid::Uuid,
-        body: CreateTaskRequest,
-    ) -> Result<CreateTaskResponseDto, ClientError> {
-        self.acta()
-            .create_task_with_references(ws, board_id, body)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_tasks(
-        &self,
-        ws: &str,
-        board_id: uuid::Uuid,
-        cursor: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<TaskSummaryDto>, ClientError> {
-        self.acta().list_tasks(ws, board_id, cursor, limit).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_workspace_tasks(
-        &self,
-        ws: &str,
-        query: &WorkspaceTaskQueryParams,
-    ) -> Result<Page<TaskSummaryDto>, ClientError> {
-        self.acta().list_workspace_tasks(ws, query).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn get_task(&self, ws: &str, readable_id: &str) -> Result<TaskDto, ClientError> {
-        self.acta().get_task(ws, readable_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn update_task(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        body: UpdateTaskRequest,
-    ) -> Result<TaskDto, ClientError> {
-        self.acta().update_task(ws, readable_id, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn delete_task(&self, ws: &str, readable_id: &str) -> Result<(), ClientError> {
-        self.acta().delete_task(ws, readable_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn move_task(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        body: MoveTaskRequest,
-    ) -> Result<TaskDto, ClientError> {
-        self.acta().move_task(ws, readable_id, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_assignees(
-        &self,
-        ws: &str,
-        readable_id: &str,
-    ) -> Result<Vec<AssigneeDto>, ClientError> {
-        self.acta().list_assignees(ws, readable_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn add_assignee(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        body: AddAssigneeRequest,
-    ) -> Result<AssigneeDto, ClientError> {
-        self.acta().add_assignee(ws, readable_id, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn remove_assignee(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        assignee_ref: &str,
-    ) -> Result<(), ClientError> {
-        self.acta()
-            .remove_assignee(ws, readable_id, assignee_ref)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_references(
-        &self,
-        ws: &str,
-        readable_id: &str,
-    ) -> Result<Vec<UnifiedReferenceDto>, ClientError> {
-        self.acta().list_references(ws, readable_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn create_reference(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        body: CreateReferenceRequest,
-    ) -> Result<ReferenceDto, ClientError> {
-        self.acta().create_reference(ws, readable_id, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn create_reference_batch(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        body: CreateReferenceBatchRequest,
-    ) -> Result<Vec<CreateReferenceBatchResultDto>, ClientError> {
-        self.acta()
-            .create_reference_batch(ws, readable_id, body)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn delete_reference(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        reference_id: uuid::Uuid,
-    ) -> Result<(), ClientError> {
-        self.acta()
-            .delete_reference(ws, readable_id, reference_id)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_task_backlinks(
-        &self,
-        ws: &str,
-        readable_id: &str,
-    ) -> Result<Page<TaskBacklinkDto>, ClientError> {
-        self.acta().list_task_backlinks(ws, readable_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn archive_board(
-        &self,
-        ws: &str,
-        board_id: uuid::Uuid,
-    ) -> Result<BoardDto, ClientError> {
-        self.acta().archive_board(ws, board_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn unarchive_board(
-        &self,
-        ws: &str,
-        board_id: uuid::Uuid,
-    ) -> Result<BoardDto, ClientError> {
-        self.acta().unarchive_board(ws, board_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn get_task_graph(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        depth: Option<u32>,
-    ) -> Result<TaskGraphDto, ClientError> {
-        self.acta().get_task_graph(ws, readable_id, depth).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_checklist(
-        &self,
-        ws: &str,
-        readable_id: &str,
-    ) -> Result<Vec<ChecklistItemDto>, ClientError> {
-        self.acta().list_checklist(ws, readable_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn create_checklist_item(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        body: CreateChecklistItemRequest,
-    ) -> Result<ChecklistItemDto, ClientError> {
-        self.acta()
-            .create_checklist_item(ws, readable_id, body)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn update_checklist_item(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        item_id: uuid::Uuid,
-        body: UpdateChecklistItemRequest,
-    ) -> Result<ChecklistItemDto, ClientError> {
-        self.acta()
-            .update_checklist_item(ws, readable_id, item_id, body)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn delete_checklist_item(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        item_id: uuid::Uuid,
-    ) -> Result<(), ClientError> {
-        self.acta()
-            .delete_checklist_item(ws, readable_id, item_id)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn promote_checklist_item(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        item_id: uuid::Uuid,
-        body: PromoteChecklistItemRequest,
-    ) -> Result<PromotionDto, ClientError> {
-        self.acta()
-            .promote_checklist_item(ws, readable_id, item_id, body)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_subtasks(
-        &self,
-        ws: &str,
-        readable_id: &str,
-    ) -> Result<Vec<TaskSummaryDto>, ClientError> {
-        self.acta().list_subtasks(ws, readable_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn create_subtask(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        body: CreateSubtaskRequest,
-    ) -> Result<CreateTaskResponseDto, ClientError> {
-        self.acta().create_subtask(ws, readable_id, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn promote_subtask(
-        &self,
-        ws: &str,
-        readable_id: &str,
-    ) -> Result<TaskDto, ClientError> {
-        self.acta().promote_subtask(ws, readable_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn set_task_parent(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        body: SetTaskParentRequest,
-    ) -> Result<TaskDto, ClientError> {
-        self.acta().set_task_parent(ws, readable_id, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_activity(
-        &self,
-        ws: &str,
-        readable_id: &str,
-    ) -> Result<Page<ActivityEntryDto>, ClientError> {
-        self.acta().list_activity(ws, readable_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_comments(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        cursor: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<CommentDto>, ClientError> {
-        self.acta()
-            .list_comments(ws, readable_id, cursor, limit)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_comment_feed(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        cursor: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<CommentFeedEntryDto>, ClientError> {
-        self.acta()
-            .list_comment_feed(ws, readable_id, cursor, limit)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn upload_task_comment_attachment(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        comment_id: uuid::Uuid,
-        file_name: &str,
-        content_type: &str,
-        data: Vec<u8>,
-    ) -> Result<CommentAttachmentDto, ClientError> {
-        self.acta()
-            .upload_task_comment_attachment(
-                ws,
-                readable_id,
-                comment_id,
-                file_name,
-                content_type,
-                data,
-            )
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn create_task_comment_draft(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        create_token: uuid::Uuid,
-    ) -> Result<CommentDraftDto, ClientError> {
-        self.acta()
-            .create_task_comment_draft(ws, readable_id, create_token)
-            .await
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn upload_task_draft_attachment(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        draft_id: uuid::Uuid,
-        upload_token: uuid::Uuid,
-        file_name: &str,
-        content_type: &str,
-        data: Vec<u8>,
-    ) -> Result<CommentAttachmentDto, ClientError> {
-        self.acta()
-            .upload_task_draft_attachment(
-                ws,
-                readable_id,
-                draft_id,
-                upload_token,
-                file_name,
-                content_type,
-                data,
-            )
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn cancel_task_comment_draft(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        draft_id: uuid::Uuid,
-    ) -> Result<(), ClientError> {
-        self.acta()
-            .cancel_task_comment_draft(ws, readable_id, draft_id)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_task_comment_attachments(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        comment_id: uuid::Uuid,
-    ) -> Result<Vec<CommentAttachmentDto>, ClientError> {
-        self.acta()
-            .list_task_comment_attachments(ws, readable_id, comment_id)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn download_task_comment_attachment(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        comment_id: uuid::Uuid,
-        attachment_id: uuid::Uuid,
-    ) -> Result<(Vec<u8>, Option<String>), ClientError> {
-        self.acta()
-            .download_task_comment_attachment(ws, readable_id, comment_id, attachment_id)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn delete_task_comment_attachment(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        comment_id: uuid::Uuid,
-        attachment_id: uuid::Uuid,
-    ) -> Result<(), ClientError> {
-        self.acta()
-            .delete_task_comment_attachment(ws, readable_id, comment_id, attachment_id)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn add_comment(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        body: CreateCommentRequest,
-    ) -> Result<CommentDto, ClientError> {
-        self.acta().add_comment(ws, readable_id, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn update_comment(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        comment_id: uuid::Uuid,
-        body: UpdateCommentRequest,
-    ) -> Result<CommentDto, ClientError> {
-        self.acta()
-            .update_comment(ws, readable_id, comment_id, body)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn delete_comment(
-        &self,
-        ws: &str,
-        readable_id: &str,
-        comment_id: uuid::Uuid,
-    ) -> Result<(), ClientError> {
-        self.acta()
-            .delete_comment(ws, readable_id, comment_id)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_document_comments(
-        &self,
-        ws: &str,
-        slug: &str,
-        cursor: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<CommentDto>, ClientError> {
-        self.acta()
-            .list_document_comments(ws, slug, cursor, limit)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_document_comment_feed(
-        &self,
-        ws: &str,
-        slug: &str,
-        cursor: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<CommentFeedEntryDto>, ClientError> {
-        self.acta()
-            .list_document_comment_feed(ws, slug, cursor, limit)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn upload_document_comment_attachment(
-        &self,
-        ws: &str,
-        slug: &str,
-        comment_id: uuid::Uuid,
-        file_name: &str,
-        content_type: &str,
-        data: Vec<u8>,
-    ) -> Result<CommentAttachmentDto, ClientError> {
-        self.acta()
-            .upload_document_comment_attachment(ws, slug, comment_id, file_name, content_type, data)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn create_document_comment_draft(
-        &self,
-        ws: &str,
-        slug: &str,
-        create_token: uuid::Uuid,
-    ) -> Result<CommentDraftDto, ClientError> {
-        self.acta()
-            .create_document_comment_draft(ws, slug, create_token)
-            .await
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn upload_document_draft_attachment(
-        &self,
-        ws: &str,
-        slug: &str,
-        draft_id: uuid::Uuid,
-        upload_token: uuid::Uuid,
-        file_name: &str,
-        content_type: &str,
-        data: Vec<u8>,
-    ) -> Result<CommentAttachmentDto, ClientError> {
-        self.acta()
-            .upload_document_draft_attachment(
-                ws,
-                slug,
-                draft_id,
-                upload_token,
-                file_name,
-                content_type,
-                data,
-            )
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn cancel_document_comment_draft(
-        &self,
-        ws: &str,
-        slug: &str,
-        draft_id: uuid::Uuid,
-    ) -> Result<(), ClientError> {
-        self.acta()
-            .cancel_document_comment_draft(ws, slug, draft_id)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_document_comment_attachments(
-        &self,
-        ws: &str,
-        slug: &str,
-        comment_id: uuid::Uuid,
-    ) -> Result<Vec<CommentAttachmentDto>, ClientError> {
-        self.acta()
-            .list_document_comment_attachments(ws, slug, comment_id)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn download_document_comment_attachment(
-        &self,
-        ws: &str,
-        slug: &str,
-        comment_id: uuid::Uuid,
-        attachment_id: uuid::Uuid,
-    ) -> Result<(Vec<u8>, Option<String>), ClientError> {
-        self.acta()
-            .download_document_comment_attachment(ws, slug, comment_id, attachment_id)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn delete_document_comment_attachment(
-        &self,
-        ws: &str,
-        slug: &str,
-        comment_id: uuid::Uuid,
-        attachment_id: uuid::Uuid,
-    ) -> Result<(), ClientError> {
-        self.acta()
-            .delete_document_comment_attachment(ws, slug, comment_id, attachment_id)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn add_document_comment(
-        &self,
-        ws: &str,
-        slug: &str,
-        body: CreateCommentRequest,
-    ) -> Result<CommentDto, ClientError> {
-        self.acta().add_document_comment(ws, slug, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn update_document_comment(
-        &self,
-        ws: &str,
-        slug: &str,
-        comment_id: uuid::Uuid,
-        body: UpdateCommentRequest,
-    ) -> Result<CommentDto, ClientError> {
-        self.acta()
-            .update_document_comment(ws, slug, comment_id, body)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn delete_document_comment(
-        &self,
-        ws: &str,
-        slug: &str,
-        comment_id: uuid::Uuid,
-    ) -> Result<(), ClientError> {
-        self.acta()
-            .delete_document_comment(ws, slug, comment_id)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_workspace_activity(
-        &self,
-        ws: &str,
-        actor: Option<&str>,
-        from: Option<&str>,
-        to: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<ActivityEntryDto>, ClientError> {
-        self.acta()
-            .list_workspace_activity(ws, actor, from, to, limit)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `acta()`; removed in PR12 of this slice.
-    pub async fn list_workspace_activity_with_cursor(
-        &self,
-        ws: &str,
-        actor: Option<&str>,
-        from: Option<&str>,
-        cursor: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<ActivityEntryDto>, ClientError> {
-        self.acta()
-            .list_workspace_activity_with_cursor(ws, actor, from, cursor, limit)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn list_workspace_audit(
-        &self,
-        ws: &str,
-        actor: Option<&str>,
-        action: Option<&str>,
-        from: Option<&str>,
-        to: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<atlas_api::dtos::audit::AuditEntryDto>, ClientError> {
-        self.custos()
-            .list_workspace_audit(ws, actor, action, from, to, limit)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn list_workspace_audit_with_cursor(
-        &self,
-        ws: &str,
-        actor: Option<&str>,
-        action: Option<&str>,
-        from: Option<&str>,
-        cursor: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<atlas_api::dtos::audit::AuditEntryDto>, ClientError> {
-        self.custos()
-            .list_workspace_audit_with_cursor(ws, actor, action, from, cursor, limit)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn list_platform_audit(
-        &self,
-        actor: Option<&str>,
-        action: Option<&str>,
-        from: Option<&str>,
-        to: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<atlas_api::dtos::audit::AuditEntryDto>, ClientError> {
-        self.custos()
-            .list_platform_audit(actor, action, from, to, limit)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn list_platform_audit_with_cursor(
-        &self,
-        actor: Option<&str>,
-        action: Option<&str>,
-        from: Option<&str>,
-        cursor: Option<&str>,
-        limit: Option<u32>,
-    ) -> Result<Page<atlas_api::dtos::audit::AuditEntryDto>, ClientError> {
-        self.custos()
-            .list_platform_audit_with_cursor(actor, action, from, cursor, limit)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn logout(&self) -> Result<(), ClientError> {
-        self.custos().logout().await
-    }
-
-    // ---- Groups ----------------------------------------------------------------
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn create_group(
-        &self,
-        ws: &str,
-        body: CreateGroupRequest,
-    ) -> Result<GroupDto, ClientError> {
-        self.custos().create_group(ws, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn list_groups(&self, ws: &str) -> Result<Vec<GroupDto>, ClientError> {
-        self.custos().list_groups(ws).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn delete_group(&self, ws: &str, group_id: uuid::Uuid) -> Result<(), ClientError> {
-        self.custos().delete_group(ws, group_id).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn add_group_member(
-        &self,
-        ws: &str,
-        group_id: uuid::Uuid,
-        body: AddGroupMemberRequest,
-    ) -> Result<GroupMemberDto, ClientError> {
-        self.custos().add_group_member(ws, group_id, body).await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn remove_group_member(
-        &self,
-        ws: &str,
-        group_id: uuid::Uuid,
-        user_id: uuid::Uuid,
-    ) -> Result<(), ClientError> {
-        self.custos()
-            .remove_group_member(ws, group_id, user_id)
-            .await
-    }
-
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn list_group_members(
-        &self,
-        ws: &str,
-        group_id: uuid::Uuid,
-    ) -> Result<Vec<GroupMemberDto>, ClientError> {
-        self.custos().list_group_members(ws, group_id).await
-    }
 }
 
 /// Percent-encodes characters that are not safe in a query-string value.
@@ -2611,7 +441,14 @@ fn build_paginated_path(base: &str, cursor: Option<&str>, limit: Option<u32>) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use atlas_api::dtos::lifecycle::PurgeStatusDto;
+    use atlas_api::dtos::{
+        boards_tasks::{CreateReferenceRequest, CreateTaskRequest},
+        documents::{
+            DocumentContentRangeQuery, DocumentContentSearchRequest, DocumentMoveBatchRequest,
+            DocumentMoveBatchResultDto,
+        },
+        lifecycle::{PurgeStatusDto, TrashKindDto},
+    };
 
     #[test]
     fn construction_stores_base_url() {
@@ -2849,6 +686,7 @@ mod tests {
         ));
         assert!(
             absent_components
+                .platform()
                 .server_meta()
                 .await
                 .unwrap()
@@ -2860,7 +698,7 @@ mod tests {
             "200 OK",
             r#"{"version":"1","build":null,"url":null,"components":[{"stable_id":"platform","kind":"platform-service","contract_version":1}]}"#,
         ));
-        let meta = with_components.server_meta().await.unwrap();
+        let meta = with_components.platform().server_meta().await.unwrap();
         assert_eq!(meta.components.len(), 1);
         let component = meta.components.first().expect("one component");
         assert_eq!(component.stable_id, "platform");
@@ -2872,7 +710,7 @@ mod tests {
             r#"{"version":"1","build":null,"url":null,"components":"not-an-array"}"#,
         ));
         assert!(matches!(
-            malformed.server_meta().await,
+            malformed.platform().server_meta().await,
             Err(ClientError::Decode {
                 context: "server_meta",
                 ..
@@ -2886,14 +724,17 @@ mod tests {
             "503 Service Unavailable",
             r#"{"type":"urn:atlas:error","title":"Unavailable","status":503}"#,
         ));
-        assert!(matches!(api.server_meta().await, Err(ClientError::Api(_))));
+        assert!(matches!(
+            api.platform().server_meta().await,
+            Err(ClientError::Api(_))
+        ));
 
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         drop(listener);
         let transport = AtlasClient::new(format!("http://{address}"));
         assert!(matches!(
-            transport.server_meta().await,
+            transport.platform().server_meta().await,
             Err(ClientError::Transport(_))
         ));
     }
@@ -2927,6 +768,7 @@ mod tests {
 
         let (base_url, requests) = serve_once_observing("201 Created", RESPONSE);
         let created = AtlasClient::new(base_url)
+            .acta()
             .create_task_with_references("ws", BOARD_ID, request.clone())
             .await
             .expect("reference-aware task creation succeeds");
@@ -2956,6 +798,7 @@ mod tests {
         assert!(raw.contains("\"target_document_id\":\"00000000-0000-0000-0000-000000000020\""));
 
         let task = AtlasClient::new(serve_once("201 Created", RESPONSE))
+            .acta()
             .create_task("ws", BOARD_ID, request)
             .await
             .expect("task-only compatibility method succeeds");
@@ -2975,7 +818,7 @@ mod tests {
         let attachment = assert_comment_attachment_request(
             requests,
             "POST /api/v2/acta/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments ",
-            client.upload_task_comment_attachment("ws", "ATL-1", COMMENT_ID, "note.txt", "text/plain", b"ok".to_vec()),
+            client.acta().upload_task_comment_attachment("ws", "ATL-1", COMMENT_ID, "note.txt", "text/plain", b"ok".to_vec()),
         )
         .await;
         assert_eq!(attachment.id, ATTACHMENT_ID);
@@ -2985,7 +828,7 @@ mod tests {
         let attachments = assert_comment_attachment_request(
             requests,
             "GET /api/v2/acta/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments ",
-            client.list_task_comment_attachments("ws", "ATL-1", COMMENT_ID),
+            client.acta().list_task_comment_attachments("ws", "ATL-1", COMMENT_ID),
         )
         .await;
         assert_eq!(attachments.len(), 1);
@@ -2999,7 +842,7 @@ mod tests {
         let (data, _) = assert_comment_attachment_request(
             requests,
             "GET /api/v2/acta/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002/content ",
-            client.download_task_comment_attachment("ws", "ATL-1", COMMENT_ID, ATTACHMENT_ID),
+            client.acta().download_task_comment_attachment("ws", "ATL-1", COMMENT_ID, ATTACHMENT_ID),
         )
         .await;
         assert_eq!(data, b"ok");
@@ -3009,7 +852,7 @@ mod tests {
         assert_comment_attachment_request(
             requests,
             "DELETE /api/v2/acta/workspaces/ws/tasks/ATL-1/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002 ",
-            client.delete_task_comment_attachment("ws", "ATL-1", COMMENT_ID, ATTACHMENT_ID),
+            client.acta().delete_task_comment_attachment("ws", "ATL-1", COMMENT_ID, ATTACHMENT_ID),
         )
         .await;
 
@@ -3018,7 +861,7 @@ mod tests {
         assert_comment_attachment_request(
             requests,
             "POST /api/v2/acta/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments ",
-            client.upload_document_comment_attachment("ws", "note", COMMENT_ID, "note.txt", "text/plain", b"ok".to_vec()),
+            client.acta().upload_document_comment_attachment("ws", "note", COMMENT_ID, "note.txt", "text/plain", b"ok".to_vec()),
         )
         .await;
 
@@ -3027,7 +870,7 @@ mod tests {
         assert_comment_attachment_request(
             requests,
             "GET /api/v2/acta/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments ",
-            client.list_document_comment_attachments("ws", "note", COMMENT_ID),
+            client.acta().list_document_comment_attachments("ws", "note", COMMENT_ID),
         )
         .await;
 
@@ -3036,7 +879,7 @@ mod tests {
         assert_comment_attachment_request(
             requests,
             "GET /api/v2/acta/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002 ",
-            client.download_document_comment_attachment("ws", "note", COMMENT_ID, ATTACHMENT_ID),
+            client.acta().download_document_comment_attachment("ws", "note", COMMENT_ID, ATTACHMENT_ID),
         )
         .await;
 
@@ -3045,7 +888,7 @@ mod tests {
         assert_comment_attachment_request(
             requests,
             "DELETE /api/v2/acta/workspaces/ws/documents/note/comments/00000000-0000-0000-0000-000000000001/attachments/00000000-0000-0000-0000-000000000002 ",
-            client.delete_document_comment_attachment("ws", "note", COMMENT_ID, ATTACHMENT_ID),
+            client.acta().delete_document_comment_attachment("ws", "note", COMMENT_ID, ATTACHMENT_ID),
         )
         .await;
     }
@@ -3065,7 +908,9 @@ mod tests {
             requests,
             "POST /api/v2/acta/workspaces/ws/tasks/ATL-1/comment-drafts ",
             &["x-create-token: 00000000-0000-0000-0000-000000000002"],
-            client.create_task_comment_draft("ws", "ATL-1", CREATE_TOKEN),
+            client
+                .acta()
+                .create_task_comment_draft("ws", "ATL-1", CREATE_TOKEN),
         )
         .await;
         assert_eq!(task_draft.id, DRAFT_ID);
@@ -3076,7 +921,9 @@ mod tests {
             requests,
             "POST /api/v2/acta/workspaces/ws/documents/note/comment-drafts ",
             &["x-create-token: 00000000-0000-0000-0000-000000000002"],
-            client.create_document_comment_draft("ws", "note", CREATE_TOKEN),
+            client
+                .acta()
+                .create_document_comment_draft("ws", "note", CREATE_TOKEN),
         )
         .await;
         assert_eq!(
@@ -3093,7 +940,7 @@ mod tests {
                 "x-upload-token: 00000000-0000-0000-0000-000000000003",
                 "multipart/form-data; boundary=atlasboundary",
             ],
-            client.upload_task_draft_attachment(
+            client.acta().upload_task_draft_attachment(
                 "ws", "ATL-1", DRAFT_ID, UPLOAD_TOKEN, "note.txt", "text/plain", b"ok".to_vec(),
             ),
         )
@@ -3113,7 +960,7 @@ mod tests {
                 "x-file-name: note.txt",
                 "content-type: text/plain",
             ],
-            client.upload_document_draft_attachment(
+            client.acta().upload_document_draft_attachment(
                 "ws", "note", DRAFT_ID, UPLOAD_TOKEN, "note.txt", "text/plain", b"ok".to_vec(),
             ),
         )
@@ -3124,7 +971,7 @@ mod tests {
         assert_comment_attachment_request(
             requests,
             "DELETE /api/v2/acta/workspaces/ws/tasks/ATL-1/comment-drafts/00000000-0000-0000-0000-000000000001 ",
-            client.cancel_task_comment_draft("ws", "ATL-1", DRAFT_ID),
+            client.acta().cancel_task_comment_draft("ws", "ATL-1", DRAFT_ID),
         )
         .await;
 
@@ -3133,7 +980,7 @@ mod tests {
         assert_comment_attachment_request(
             requests,
             "DELETE /api/v2/acta/workspaces/ws/documents/note/comment-drafts/00000000-0000-0000-0000-000000000001 ",
-            client.cancel_document_comment_draft("ws", "note", DRAFT_ID),
+            client.acta().cancel_document_comment_draft("ws", "note", DRAFT_ID),
         )
         .await;
     }
@@ -3148,21 +995,23 @@ mod tests {
             r#"{"type":"urn:atlas:error:forbidden","title":"Forbidden","status":403}"#,
         ));
         assert!(matches!(
-            api.upload_task_comment_attachment(
-                "ws",
-                "ATL-1",
-                COMMENT_ID,
-                "note.txt",
-                "text/plain",
-                b"ok".to_vec(),
-            )
-            .await,
+            api.acta()
+                .upload_task_comment_attachment(
+                    "ws",
+                    "ATL-1",
+                    COMMENT_ID,
+                    "note.txt",
+                    "text/plain",
+                    b"ok".to_vec(),
+                )
+                .await,
             Err(ClientError::Api(_))
         ));
 
         let decode = AtlasClient::new(serve_once("200 OK", "not attachment metadata"));
         assert!(matches!(
             decode
+                .acta()
                 .list_document_comment_attachments("ws", "note", COMMENT_ID)
                 .await,
             Err(ClientError::Decode {
@@ -3177,6 +1026,7 @@ mod tests {
         let transport = AtlasClient::new(format!("http://{address}"));
         assert!(matches!(
             transport
+                .acta()
                 .delete_document_comment_attachment("ws", "note", COMMENT_ID, ATTACHMENT_ID)
                 .await,
             Err(ClientError::Transport(_))
@@ -3195,7 +1045,7 @@ mod tests {
         let page = assert_comment_attachment_request(
             requests,
             "GET /api/v2/acta/admin/trash?workspace_id=00000000-0000-0000-0000-000000000003&kind=document&cursor=next&limit=20 ",
-            client.list_trash(
+            client.acta().list_trash(
                 Some(uuid::uuid!("00000000-0000-0000-0000-000000000003")),
                 Some(TrashKindDto::Document),
                 Some("next"),
@@ -3213,7 +1063,9 @@ mod tests {
         assert_comment_attachment_request(
             requests,
             "POST /api/v2/acta/admin/trash/restore ",
-            client.restore_trash(TrashKindDto::Document, TARGET_ID),
+            client
+                .acta()
+                .restore_trash(TrashKindDto::Document, TARGET_ID),
         )
         .await;
 
@@ -3222,7 +1074,9 @@ mod tests {
         let response = assert_comment_attachment_request(
             requests,
             "POST /api/v2/acta/admin/trash/purge ",
-            client.purge_trash(TrashKindDto::Document, TARGET_ID, true),
+            client
+                .acta()
+                .purge_trash(TrashKindDto::Document, TARGET_ID, true),
         )
         .await;
         assert!(matches!(
@@ -3238,7 +1092,7 @@ mod tests {
         let status = assert_comment_attachment_request(
             requests,
             "GET /api/v2/acta/admin/trash/purges/00000000-0000-0000-0000-000000000002 ",
-            client.get_purge_status(OPERATION_ID),
+            client.acta().get_purge_status(OPERATION_ID),
         )
         .await;
         assert_eq!(status.operation_id, OPERATION_ID);
@@ -3248,7 +1102,9 @@ mod tests {
         let complete = assert_comment_attachment_request(
             requests,
             "POST /api/v2/acta/admin/trash/purge ",
-            client.purge_trash(TrashKindDto::Document, TARGET_ID, true),
+            client
+                .acta()
+                .purge_trash(TrashKindDto::Document, TARGET_ID, true),
         )
         .await;
         assert!(matches!(complete, PurgeTrashResult::Complete));
@@ -3258,7 +1114,7 @@ mod tests {
             r#"{"type":"urn:atlas:error:forbidden","title":"Forbidden","status":403}"#,
         ));
         assert!(matches!(
-            denied.restore_trash(TrashKindDto::Document, TARGET_ID).await,
+            denied.acta().restore_trash(TrashKindDto::Document, TARGET_ID).await,
             Err(ClientError::Api(problem)) if problem.status == 403
         ));
     }
@@ -3271,6 +1127,7 @@ mod tests {
 
         let (base_url, requests) = serve_once_observing("200 OK", COMPACT);
         let compact = AtlasClient::new(base_url)
+            .acta()
             .get_document_compact("ws", "note")
             .await
             .expect("compact document request succeeds");
@@ -3285,6 +1142,7 @@ mod tests {
 
         let (base_url, requests) = serve_once_observing("200 OK", RANGE);
         let range = AtlasClient::new(base_url)
+            .acta()
             .get_document_content_range(
                 "ws",
                 "note",
@@ -3307,6 +1165,7 @@ mod tests {
 
         let (base_url, requests) = serve_once_observing("200 OK", SEARCH);
         let search = AtlasClient::new(base_url)
+            .acta()
             .search_document_content(
                 "ws",
                 "note",
@@ -3349,6 +1208,7 @@ mod tests {
             r#"{"type":"urn:atlas:error:conflict","title":"Conflict","status":409,"hint":"restart the range read"}"#,
         );
         let error = AtlasClient::new(base_url)
+            .acta()
             .get_document_content_range("ws", "note", DocumentContentRangeQuery::default())
             .await
             .expect_err("stale continuation response is an API error");
@@ -3377,6 +1237,7 @@ mod tests {
 
         let (base_url, requests) = serve_once_observing("200 OK", DOCUMENT);
         let document = AtlasClient::new(base_url)
+            .acta()
             .edit_document_content_range("ws", "note", request.clone())
             .await
             .expect("line edit succeeds");
@@ -3398,7 +1259,7 @@ mod tests {
             "409 Conflict",
             r#"{"type":"urn:atlas:error:conflict","title":"Conflict","status":409,"current_revision_id":"00000000-0000-0000-0000-000000000004","current_seq":6,"base_to_current_patch":"@@ -1 +1 @@"}"#,
         ))
-        .edit_document_content_range("ws", "note", request)
+        .acta().edit_document_content_range("ws", "note", request)
         .await
         .expect_err("stale line edit returns a typed conflict");
         assert!(matches!(conflict, ClientError::Conflict(problem)
@@ -3415,6 +1276,7 @@ mod tests {
 
         let (base_url, requests) = serve_once_observing("200 OK", DOCUMENT);
         AtlasClient::new(base_url)
+            .acta()
             .edit_document_content_range(
                 "ws",
                 "note",
@@ -3449,6 +1311,7 @@ mod tests {
 
         let (base_url, requests) = serve_once_observing("200 OK", DOCUMENT);
         AtlasClient::new(base_url)
+            .acta()
             .edit_document_content_range(
                 "ws",
                 "note",
@@ -3497,7 +1360,7 @@ mod tests {
             "422 Unprocessable Content",
             r#"{"type":"urn:atlas:error:validation","title":"Validation failed","status":422,"hint":"position must be within the document line range"}"#,
         ))
-        .edit_document_content_range("ws", "note", request)
+        .acta().edit_document_content_range("ws", "note", request)
         .await
         .expect_err("invalid line edit returns the server validation problem");
 
@@ -3534,6 +1397,7 @@ mod tests {
         let (base_url, requests) = serve_once_observing("200 OK", RESPONSE);
 
         let outcomes = AtlasClient::new(base_url)
+            .acta()
             .move_documents_batch("ws", request)
             .await
             .expect("batch move succeeds with per-item outcomes");
