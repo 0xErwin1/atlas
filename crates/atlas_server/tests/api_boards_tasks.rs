@@ -168,11 +168,13 @@ async fn create_and_get_board_returns_201_and_board_data() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "board-crud-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("board-proj-1", "BP1"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "board-proj-1",
@@ -188,6 +190,7 @@ async fn create_and_get_board_returns_201_and_board_data() {
     assert_eq!(board.workspace_id, ws.id.0);
 
     let fetched = client
+        .acta()
         .get_board(&ws.slug, board.id)
         .await
         .expect("get board");
@@ -205,6 +208,7 @@ async fn task_creation_initial_references_are_atomic_and_legacy_requests_remain_
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "initial-refs").await;
 
     client
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -218,6 +222,7 @@ async fn task_creation_initial_references_are_atomic_and_legacy_requests_remain_
         .await
         .expect("create project");
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "initial-refs",
@@ -229,6 +234,7 @@ async fn task_creation_initial_references_are_atomic_and_legacy_requests_remain_
         .await
         .expect("create board");
     let column = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -243,6 +249,7 @@ async fn task_creation_initial_references_are_atomic_and_legacy_requests_remain_
         .expect("create column");
 
     let target = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -260,6 +267,7 @@ async fn task_creation_initial_references_are_atomic_and_legacy_requests_remain_
         .expect("create target");
 
     let source = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -280,6 +288,7 @@ async fn task_creation_initial_references_are_atomic_and_legacy_requests_remain_
         .await
         .expect("create source with initial reference");
     let references = client
+        .acta()
         .list_references(&ws.slug, &source.readable_id)
         .await
         .expect("list initial reference");
@@ -291,6 +300,7 @@ async fn task_creation_initial_references_are_atomic_and_legacy_requests_remain_
     assert_eq!(references[0].target_title.as_deref(), Some("Target"));
 
     let rejected = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -312,6 +322,7 @@ async fn task_creation_initial_references_are_atomic_and_legacy_requests_remain_
     assert!(matches!(rejected, Err(ClientError::Api(problem)) if problem.status == 404));
 
     let tasks = client
+        .acta()
         .list_tasks(&ws.slug, board.id, None, None)
         .await
         .expect("list tasks after rejected initial reference");
@@ -327,6 +338,7 @@ async fn task_creation_initial_references_are_atomic_and_legacy_requests_remain_
     );
 
     let mixed_rejected = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -355,6 +367,7 @@ async fn task_creation_initial_references_are_atomic_and_legacy_requests_remain_
     assert!(matches!(mixed_rejected, Err(ClientError::Api(problem)) if problem.status == 404));
 
     let private_board = client
+        .acta()
         .create_board(
             &ws.slug,
             "initial-refs",
@@ -366,6 +379,7 @@ async fn task_creation_initial_references_are_atomic_and_legacy_requests_remain_
         .await
         .expect("create private board");
     let private_column = client
+        .acta()
         .create_column(
             &ws.slug,
             private_board.id,
@@ -379,6 +393,7 @@ async fn task_creation_initial_references_are_atomic_and_legacy_requests_remain_
         .await
         .expect("create private column");
     let private_target = client
+        .acta()
         .create_task(
             &ws.slug,
             private_board.id,
@@ -405,6 +420,7 @@ async fn task_creation_initial_references_are_atomic_and_legacy_requests_remain_
     grant_board_editor(&db, ws.id, member_user.id, board.id).await;
 
     let unauthorized_rejected = member
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -431,10 +447,12 @@ async fn task_creation_initial_references_are_atomic_and_legacy_requests_remain_
     let (foreign_client, foreign_ws, _) =
         support::login_user_with_workspace(&server, &db, "initial-refs-foreign").await;
     foreign_client
+        .acta()
         .create_project(&foreign_ws.slug, project_req("initial-refs-foreign", "IRF"))
         .await
         .expect("create foreign project");
     let foreign_board = foreign_client
+        .acta()
         .create_board(
             &foreign_ws.slug,
             "initial-refs-foreign",
@@ -446,6 +464,7 @@ async fn task_creation_initial_references_are_atomic_and_legacy_requests_remain_
         .await
         .expect("create foreign board");
     let foreign_column = foreign_client
+        .acta()
         .create_column(
             &foreign_ws.slug,
             foreign_board.id,
@@ -459,6 +478,7 @@ async fn task_creation_initial_references_are_atomic_and_legacy_requests_remain_
         .await
         .expect("create foreign column");
     let foreign_target = foreign_client
+        .acta()
         .create_task(
             &foreign_ws.slug,
             foreign_board.id,
@@ -476,6 +496,7 @@ async fn task_creation_initial_references_are_atomic_and_legacy_requests_remain_
         .expect("create foreign target");
 
     let cross_tenant_rejected = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -499,6 +520,7 @@ async fn task_creation_initial_references_are_atomic_and_legacy_requests_remain_
     );
 
     let tasks_after_rejections = client
+        .acta()
         .list_tasks(&ws.slug, board.id, None, None)
         .await
         .expect("list tasks after all rejected initial references");
@@ -514,6 +536,7 @@ async fn task_creation_initial_references_are_atomic_and_legacy_requests_remain_
     );
 
     let legacy = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -541,10 +564,12 @@ async fn reference_batch_rejects_oversized_envelopes_before_processing_items() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "batch-limits").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("batch-limits", "BLM"))
         .await
         .expect("create project");
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "batch-limits",
@@ -556,6 +581,7 @@ async fn reference_batch_rejects_oversized_envelopes_before_processing_items() {
         .await
         .expect("create board");
     let column = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -569,6 +595,7 @@ async fn reference_batch_rejects_oversized_envelopes_before_processing_items() {
         .await
         .expect("create column");
     let source = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -585,6 +612,7 @@ async fn reference_batch_rejects_oversized_envelopes_before_processing_items() {
         .await
         .expect("create source");
     let target = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -625,6 +653,7 @@ async fn reference_batch_rejects_oversized_envelopes_before_processing_items() {
     assert_eq!(too_many.status(), reqwest::StatusCode::UNPROCESSABLE_ENTITY);
 
     let references = client
+        .acta()
         .list_references(&ws.slug, &source.readable_id)
         .await
         .expect("list references after 101-item rejection");
@@ -649,6 +678,7 @@ async fn reference_batch_rejects_oversized_envelopes_before_processing_items() {
     assert_eq!(too_large.status(), reqwest::StatusCode::PAYLOAD_TOO_LARGE);
 
     let references = client
+        .acta()
         .list_references(&ws.slug, &source.readable_id)
         .await
         .expect("list references after body rejection");
@@ -667,10 +697,12 @@ async fn reference_batch_preserves_input_order_failures_and_current_target_title
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "batch-results").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("batch-results", "BRS"))
         .await
         .expect("create project");
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "batch-results",
@@ -682,6 +714,7 @@ async fn reference_batch_preserves_input_order_failures_and_current_target_title
         .await
         .expect("create board");
     let column = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -695,6 +728,7 @@ async fn reference_batch_preserves_input_order_failures_and_current_target_title
         .await
         .expect("create column");
     let source = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -711,6 +745,7 @@ async fn reference_batch_preserves_input_order_failures_and_current_target_title
         .await
         .expect("create source");
     let task_target = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -727,6 +762,7 @@ async fn reference_batch_preserves_input_order_failures_and_current_target_title
         .await
         .expect("create task target");
     let document_target = client
+        .acta()
         .create_document(
             &ws.slug,
             "batch-results",
@@ -807,6 +843,7 @@ async fn reference_batch_preserves_input_order_failures_and_current_target_title
     }
 
     let references = client
+        .acta()
         .list_references(&ws.slug, &source.readable_id)
         .await
         .expect("list persisted references");
@@ -827,6 +864,7 @@ async fn reference_batch_conceals_inaccessible_and_cross_tenant_targets() {
         support::login_user_with_workspace(&server, &db, "batch-reference-owner").await;
 
     owner
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -841,6 +879,7 @@ async fn reference_batch_conceals_inaccessible_and_cross_tenant_targets() {
         .expect("create private project");
 
     let source_board = owner
+        .acta()
         .create_board(
             &ws.slug,
             "batch-private-references",
@@ -852,6 +891,7 @@ async fn reference_batch_conceals_inaccessible_and_cross_tenant_targets() {
         .await
         .expect("create source board");
     let target_board = owner
+        .acta()
         .create_board(
             &ws.slug,
             "batch-private-references",
@@ -863,6 +903,7 @@ async fn reference_batch_conceals_inaccessible_and_cross_tenant_targets() {
         .await
         .expect("create target board");
     let source_column = owner
+        .acta()
         .create_column(
             &ws.slug,
             source_board.id,
@@ -876,6 +917,7 @@ async fn reference_batch_conceals_inaccessible_and_cross_tenant_targets() {
         .await
         .expect("create source column");
     let target_column = owner
+        .acta()
         .create_column(
             &ws.slug,
             target_board.id,
@@ -889,6 +931,7 @@ async fn reference_batch_conceals_inaccessible_and_cross_tenant_targets() {
         .await
         .expect("create target column");
     let source = owner
+        .acta()
         .create_task(
             &ws.slug,
             source_board.id,
@@ -905,6 +948,7 @@ async fn reference_batch_conceals_inaccessible_and_cross_tenant_targets() {
         .await
         .expect("create source task");
     let private_task = owner
+        .acta()
         .create_task(
             &ws.slug,
             target_board.id,
@@ -921,6 +965,7 @@ async fn reference_batch_conceals_inaccessible_and_cross_tenant_targets() {
         .await
         .expect("create private task");
     let private_document = owner
+        .acta()
         .create_document(
             &ws.slug,
             "batch-private-references",
@@ -946,6 +991,7 @@ async fn reference_batch_conceals_inaccessible_and_cross_tenant_targets() {
     let (foreign_owner, foreign_ws, _) =
         support::login_user_with_workspace(&server, &db, "batch-reference-foreign").await;
     foreign_owner
+        .acta()
         .create_project(
             &foreign_ws.slug,
             project_req("batch-reference-foreign", "BRF"),
@@ -953,6 +999,7 @@ async fn reference_batch_conceals_inaccessible_and_cross_tenant_targets() {
         .await
         .expect("create foreign project");
     let foreign_board = foreign_owner
+        .acta()
         .create_board(
             &foreign_ws.slug,
             "batch-reference-foreign",
@@ -964,6 +1011,7 @@ async fn reference_batch_conceals_inaccessible_and_cross_tenant_targets() {
         .await
         .expect("create foreign board");
     let foreign_column = foreign_owner
+        .acta()
         .create_column(
             &foreign_ws.slug,
             foreign_board.id,
@@ -977,6 +1025,7 @@ async fn reference_batch_conceals_inaccessible_and_cross_tenant_targets() {
         .await
         .expect("create foreign column");
     let foreign_task = foreign_owner
+        .acta()
         .create_task(
             &foreign_ws.slug,
             foreign_board.id,
@@ -993,6 +1042,7 @@ async fn reference_batch_conceals_inaccessible_and_cross_tenant_targets() {
         .await
         .expect("create foreign task");
     let foreign_document = foreign_owner
+        .acta()
         .create_document(
             &foreign_ws.slug,
             "batch-reference-foreign",
@@ -1120,11 +1170,13 @@ async fn list_boards_returns_created_boards() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "board-list-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("board-list-proj", "BL"))
         .await
         .expect("create project");
 
     client
+        .acta()
         .create_board(
             &ws.slug,
             "board-list-proj",
@@ -1136,6 +1188,7 @@ async fn list_boards_returns_created_boards() {
         .await
         .expect("create board A");
     client
+        .acta()
         .create_board(
             &ws.slug,
             "board-list-proj",
@@ -1148,6 +1201,7 @@ async fn list_boards_returns_created_boards() {
         .expect("create board B");
 
     let page = client
+        .acta()
         .list_boards(&ws.slug, "board-list-proj", None, None)
         .await
         .expect("list boards");
@@ -1168,11 +1222,13 @@ async fn list_boards_reports_top_level_non_deleted_task_count() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "board-count-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("board-count-proj", "BC"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "board-count-proj",
@@ -1185,6 +1241,7 @@ async fn list_boards_reports_top_level_non_deleted_task_count() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -1199,6 +1256,7 @@ async fn list_boards_reports_top_level_non_deleted_task_count() {
         .expect("create column");
 
     let task_a = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -1216,6 +1274,7 @@ async fn list_boards_reports_top_level_non_deleted_task_count() {
         .expect("create task A");
 
     client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -1233,6 +1292,7 @@ async fn list_boards_reports_top_level_non_deleted_task_count() {
         .expect("create task B");
 
     let task_to_delete = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -1250,11 +1310,13 @@ async fn list_boards_reports_top_level_non_deleted_task_count() {
         .expect("create task to delete");
 
     client
+        .acta()
         .delete_task(&ws.slug, &task_to_delete.readable_id)
         .await
         .expect("delete task");
 
     client
+        .acta()
         .create_subtask(
             &ws.slug,
             &task_a.readable_id,
@@ -1264,6 +1326,7 @@ async fn list_boards_reports_top_level_non_deleted_task_count() {
         .expect("create subtask");
 
     let page = client
+        .acta()
         .list_boards(&ws.slug, "board-count-proj", None, None)
         .await
         .expect("list boards");
@@ -1284,11 +1347,13 @@ async fn update_board_renames_it() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "board-upd-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("board-upd-proj", "BU"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "board-upd-proj",
@@ -1301,6 +1366,7 @@ async fn update_board_renames_it() {
         .expect("create board");
 
     let updated = client
+        .acta()
         .update_board(
             &ws.slug,
             board.id,
@@ -1323,11 +1389,13 @@ async fn delete_board_makes_it_invisible() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "board-del-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("board-del-proj", "BD"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "board-del-proj",
@@ -1340,11 +1408,12 @@ async fn delete_board_makes_it_invisible() {
         .expect("create board");
 
     client
+        .acta()
         .delete_board(&ws.slug, board.id)
         .await
         .expect("delete board");
 
-    let result = client.get_board(&ws.slug, board.id).await;
+    let result = client.acta().get_board(&ws.slug, board.id).await;
 
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
@@ -1365,11 +1434,13 @@ async fn create_and_list_columns() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "col-crud-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("col-proj-1", "CP"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "col-proj-1",
@@ -1382,6 +1453,7 @@ async fn create_and_list_columns() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -1398,6 +1470,7 @@ async fn create_and_list_columns() {
     assert_eq!(col.name, "Todo");
 
     let cols = client
+        .acta()
         .list_columns(&ws.slug, board.id)
         .await
         .expect("list columns");
@@ -1415,11 +1488,13 @@ async fn update_column_renames_it() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "col-upd-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("col-upd-proj", "CU"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "col-upd-proj",
@@ -1432,6 +1507,7 @@ async fn update_column_renames_it() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -1446,6 +1522,7 @@ async fn update_column_renames_it() {
         .expect("create column");
 
     let updated = client
+        .acta()
         .update_column(
             &ws.slug,
             board.id,
@@ -1472,11 +1549,13 @@ async fn delete_column_removes_it_from_list() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "col-del-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("col-del-proj", "CD"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "col-del-proj",
@@ -1489,6 +1568,7 @@ async fn delete_column_removes_it_from_list() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -1503,11 +1583,13 @@ async fn delete_column_removes_it_from_list() {
         .expect("create column");
 
     client
+        .acta()
         .delete_column(&ws.slug, board.id, col.id)
         .await
         .expect("delete column");
 
     let cols = client
+        .acta()
         .list_columns(&ws.slug, board.id)
         .await
         .expect("list columns after delete");
@@ -1527,11 +1609,13 @@ async fn delete_column_with_live_task_is_rejected() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "col-del-busy").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("col-busy-proj", "CB"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "col-busy-proj",
@@ -1544,6 +1628,7 @@ async fn delete_column_with_live_task_is_rejected() {
         .expect("create board");
 
     let busy_col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -1558,6 +1643,7 @@ async fn delete_column_with_live_task_is_rejected() {
         .expect("create busy column");
 
     client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -1574,7 +1660,10 @@ async fn delete_column_with_live_task_is_rejected() {
         .await
         .expect("create task");
 
-    let result = client.delete_column(&ws.slug, board.id, busy_col.id).await;
+    let result = client
+        .acta()
+        .delete_column(&ws.slug, board.id, busy_col.id)
+        .await;
 
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 422),
@@ -1582,6 +1671,7 @@ async fn delete_column_with_live_task_is_rejected() {
     );
 
     let empty_col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -1596,6 +1686,7 @@ async fn delete_column_with_live_task_is_rejected() {
         .expect("create empty column");
 
     client
+        .acta()
         .delete_column(&ws.slug, board.id, empty_col.id)
         .await
         .expect("deleting an empty column must still succeed");
@@ -1614,11 +1705,13 @@ async fn get_task_returns_board_name_and_column_name() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "task-names-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("task-names-proj", "TN"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "task-names-proj",
@@ -1631,6 +1724,7 @@ async fn get_task_returns_board_name_and_column_name() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -1645,6 +1739,7 @@ async fn get_task_returns_board_name_and_column_name() {
         .expect("create column");
 
     let created = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -1662,6 +1757,7 @@ async fn get_task_returns_board_name_and_column_name() {
         .expect("create task");
 
     let fetched = client
+        .acta()
         .get_task(&ws.slug, &created.readable_id)
         .await
         .expect("get task");
@@ -1685,11 +1781,13 @@ async fn create_and_get_task_returns_201_and_task_data() {
     let (client, ws, user) = support::login_user_with_workspace(&server, &db, "task-crud-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("task-proj-1", "TK"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "task-proj-1",
@@ -1702,6 +1800,7 @@ async fn create_and_get_task_returns_201_and_task_data() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -1716,6 +1815,7 @@ async fn create_and_get_task_returns_201_and_task_data() {
         .expect("create column");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -1741,6 +1841,7 @@ async fn create_and_get_task_returns_201_and_task_data() {
     assert_eq!(task.created_by.id, user.id.0);
 
     let fetched = client
+        .acta()
         .get_task(&ws.slug, &task.readable_id)
         .await
         .expect("get task");
@@ -1760,11 +1861,13 @@ async fn list_tasks_returns_tasks_for_board() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "task-list-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("task-list-proj", "TL"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "task-list-proj",
@@ -1777,6 +1880,7 @@ async fn list_tasks_returns_tasks_for_board() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -1791,6 +1895,7 @@ async fn list_tasks_returns_tasks_for_board() {
         .expect("create column");
 
     client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -1808,6 +1913,7 @@ async fn list_tasks_returns_tasks_for_board() {
         .expect("create task 1");
 
     client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -1825,6 +1931,7 @@ async fn list_tasks_returns_tasks_for_board() {
         .expect("create task 2");
 
     let page = client
+        .acta()
         .list_tasks(&ws.slug, board.id, None, None)
         .await
         .expect("list tasks");
@@ -1856,11 +1963,13 @@ async fn list_tasks_includes_labels() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "task-labels-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("task-labels-proj", "TLB"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "task-labels-proj",
@@ -1873,6 +1982,7 @@ async fn list_tasks_includes_labels() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -1887,6 +1997,7 @@ async fn list_tasks_includes_labels() {
         .expect("create column");
 
     client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -1907,6 +2018,7 @@ async fn list_tasks_includes_labels() {
         .expect("create task");
 
     let page = client
+        .acta()
         .list_tasks(&ws.slug, board.id, None, None)
         .await
         .expect("list tasks");
@@ -1929,11 +2041,13 @@ async fn list_tasks_includes_assignees_with_names() {
         support::login_user_with_workspace(&server, &db, "task-assignees-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("task-asg-proj", "TAS"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "task-asg-proj",
@@ -1946,6 +2060,7 @@ async fn list_tasks_includes_assignees_with_names() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -1960,6 +2075,7 @@ async fn list_tasks_includes_assignees_with_names() {
         .expect("create column");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -1977,6 +2093,7 @@ async fn list_tasks_includes_assignees_with_names() {
         .expect("create task");
 
     client
+        .acta()
         .add_assignee(
             &ws.slug,
             &task.readable_id,
@@ -1989,6 +2106,7 @@ async fn list_tasks_includes_assignees_with_names() {
         .expect("add assignee");
 
     let page = client
+        .acta()
         .list_tasks(&ws.slug, board.id, None, None)
         .await
         .expect("list tasks");
@@ -2017,11 +2135,13 @@ async fn update_task_changes_title() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "task-upd-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("task-upd-proj", "TU"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "task-upd-proj",
@@ -2034,6 +2154,7 @@ async fn update_task_changes_title() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -2048,6 +2169,7 @@ async fn update_task_changes_title() {
         .expect("create column");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -2065,6 +2187,7 @@ async fn update_task_changes_title() {
         .expect("create task");
 
     let updated = client
+        .acta()
         .update_task(
             &ws.slug,
             &task.readable_id,
@@ -2093,11 +2216,13 @@ async fn delete_task_returns_404_on_subsequent_get() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "task-del-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("task-del-proj", "TD"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "task-del-proj",
@@ -2110,6 +2235,7 @@ async fn delete_task_returns_404_on_subsequent_get() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -2124,6 +2250,7 @@ async fn delete_task_returns_404_on_subsequent_get() {
         .expect("create column");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -2141,11 +2268,12 @@ async fn delete_task_returns_404_on_subsequent_get() {
         .expect("create task");
 
     client
+        .acta()
         .delete_task(&ws.slug, &task.readable_id)
         .await
         .expect("delete task");
 
-    let result = client.get_task(&ws.slug, &task.readable_id).await;
+    let result = client.acta().get_task(&ws.slug, &task.readable_id).await;
 
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
@@ -2162,11 +2290,13 @@ async fn move_task_changes_column() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "task-move-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("task-move-proj", "MV"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "task-move-proj",
@@ -2179,6 +2309,7 @@ async fn move_task_changes_column() {
         .expect("create board");
 
     let col_a = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -2193,6 +2324,7 @@ async fn move_task_changes_column() {
         .expect("create col A");
 
     let col_b = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -2207,6 +2339,7 @@ async fn move_task_changes_column() {
         .expect("create col B");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -2224,6 +2357,7 @@ async fn move_task_changes_column() {
         .expect("create task");
 
     let moved = client
+        .acta()
         .move_task(
             &ws.slug,
             &task.readable_id,
@@ -2252,11 +2386,13 @@ async fn patch_column_reorders_populated_columns_without_moving_tasks() {
         support::login_user_with_workspace(&server, &db, "column-reorder-populated").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("column-reorder-project", "CRP"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "column-reorder-project",
@@ -2269,6 +2405,7 @@ async fn patch_column_reorders_populated_columns_without_moving_tasks() {
         .expect("create board");
 
     let first = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -2282,6 +2419,7 @@ async fn patch_column_reorders_populated_columns_without_moving_tasks() {
         .await
         .expect("create first column");
     let second = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -2296,6 +2434,7 @@ async fn patch_column_reorders_populated_columns_without_moving_tasks() {
         .expect("create second column");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -2314,6 +2453,7 @@ async fn patch_column_reorders_populated_columns_without_moving_tasks() {
 
     // `before` names the column the moved one must follow: First goes after Second.
     client
+        .acta()
         .update_column(
             &ws.slug,
             board.id,
@@ -2329,6 +2469,7 @@ async fn patch_column_reorders_populated_columns_without_moving_tasks() {
         .expect("reorder populated column");
 
     let columns = client
+        .acta()
         .list_columns(&ws.slug, board.id)
         .await
         .expect("list reordered columns");
@@ -2341,6 +2482,7 @@ async fn patch_column_reorders_populated_columns_without_moving_tasks() {
 
     // `after` names the column the moved one must precede: First goes back on top.
     client
+        .acta()
         .update_column(
             &ws.slug,
             board.id,
@@ -2356,6 +2498,7 @@ async fn patch_column_reorders_populated_columns_without_moving_tasks() {
         .expect("place column before anchor");
 
     let after_columns = client
+        .acta()
         .list_columns(&ws.slug, board.id)
         .await
         .expect("list columns after after-anchor reorder");
@@ -2369,6 +2512,7 @@ async fn patch_column_reorders_populated_columns_without_moving_tasks() {
     );
 
     let unchanged_task = client
+        .acta()
         .get_task(&ws.slug, &task.readable_id)
         .await
         .expect("get task after column reorder");
@@ -2391,6 +2535,7 @@ async fn board_with_columns(
     Vec<atlas_api::dtos::boards_tasks::ColumnDto>,
 ) {
     let board = client
+        .acta()
         .create_board(
             ws_slug,
             project_slug,
@@ -2410,6 +2555,7 @@ async fn board_with_columns(
             .map(|c: &atlas_api::dtos::boards_tasks::ColumnDto| c.position_key.clone());
 
         let column = client
+            .acta()
             .create_column(
                 ws_slug,
                 board.id,
@@ -2440,6 +2586,7 @@ async fn patch_column_mid_list_reorder_uses_predecessor_successor_anchors() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "column-midlist").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("column-midlist-project", "CML"))
         .await
         .expect("create project");
@@ -2454,6 +2601,7 @@ async fn patch_column_mid_list_reorder_uses_predecessor_successor_anchors() {
     let (a, b, c) = (&columns[0], &columns[1], &columns[2]);
 
     let moved = client
+        .acta()
         .update_column(
             &ws.slug,
             board.id,
@@ -2470,6 +2618,7 @@ async fn patch_column_mid_list_reorder_uses_predecessor_successor_anchors() {
     assert_eq!(moved.id, c.id);
 
     let ordered = client
+        .acta()
         .list_columns(&ws.slug, board.id)
         .await
         .expect("list columns after mid-list reorder");
@@ -2480,6 +2629,7 @@ async fn patch_column_mid_list_reorder_uses_predecessor_successor_anchors() {
     );
 
     client
+        .acta()
         .update_column(
             &ws.slug,
             board.id,
@@ -2495,6 +2645,7 @@ async fn patch_column_mid_list_reorder_uses_predecessor_successor_anchors() {
         .expect("move to first must succeed");
 
     let ordered = client
+        .acta()
         .list_columns(&ws.slug, board.id)
         .await
         .expect("list columns after move to first");
@@ -2505,6 +2656,7 @@ async fn patch_column_mid_list_reorder_uses_predecessor_successor_anchors() {
     );
 
     client
+        .acta()
         .update_column(
             &ws.slug,
             board.id,
@@ -2520,6 +2672,7 @@ async fn patch_column_mid_list_reorder_uses_predecessor_successor_anchors() {
         .expect("move to last must succeed");
 
     let ordered = client
+        .acta()
         .list_columns(&ws.slug, board.id)
         .await
         .expect("list columns after move to last");
@@ -2542,6 +2695,7 @@ async fn column_anchors_reject_unparseable_keys() {
         support::login_user_with_workspace(&server, &db, "column-bad-anchor").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("column-bad-anchor-project", "CBA"))
         .await
         .expect("create project");
@@ -2550,6 +2704,7 @@ async fn column_anchors_reject_unparseable_keys() {
         board_with_columns(&client, &ws.slug, "column-bad-anchor-project", &["A", "B"]).await;
 
     let created = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -2567,6 +2722,7 @@ async fn column_anchors_reject_unparseable_keys() {
     );
 
     let updated = client
+        .acta()
         .update_column(
             &ws.slug,
             board.id,
@@ -2585,6 +2741,7 @@ async fn column_anchors_reject_unparseable_keys() {
     );
 
     let unchanged = client
+        .acta()
         .list_columns(&ws.slug, board.id)
         .await
         .expect("list columns after rejected anchors");
@@ -2606,11 +2763,13 @@ async fn move_task_with_task_id_anchor_succeeds() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "task-anchor-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("anchor-proj", "AN"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "anchor-proj",
@@ -2623,6 +2782,7 @@ async fn move_task_with_task_id_anchor_succeeds() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -2647,10 +2807,12 @@ async fn move_task_with_task_id_anchor_succeeds() {
     };
 
     let t1 = client
+        .acta()
         .create_task(&ws.slug, board.id, make("T1"))
         .await
         .expect("t1");
     let t2 = client
+        .acta()
         .create_task(&ws.slug, board.id, make("T2"))
         .await
         .expect("t2");
@@ -2658,6 +2820,7 @@ async fn move_task_with_task_id_anchor_succeeds() {
     // Anchor the move to T1 by its task id; before the fix this was treated as a
     // fractional key, was invalid, and returned 409 PositionExhausted.
     let moved = client
+        .acta()
         .move_task(
             &ws.slug,
             &t2.readable_id,
@@ -2684,15 +2847,18 @@ async fn move_task_across_boards_succeeds() {
     // Two projects, each with its own board and column, exercises updating both
     // board_id and project_id on the moved task.
     client
+        .acta()
         .create_project(&ws.slug, project_req("proj-a", "PA"))
         .await
         .expect("create project a");
     client
+        .acta()
         .create_project(&ws.slug, project_req("proj-b", "PB"))
         .await
         .expect("create project b");
 
     let board_a = client
+        .acta()
         .create_board(
             &ws.slug,
             "proj-a",
@@ -2704,6 +2870,7 @@ async fn move_task_across_boards_succeeds() {
         .await
         .expect("create board a");
     let board_b = client
+        .acta()
         .create_board(
             &ws.slug,
             "proj-b",
@@ -2716,6 +2883,7 @@ async fn move_task_across_boards_succeeds() {
         .expect("create board b");
 
     let col_a = client
+        .acta()
         .create_column(
             &ws.slug,
             board_a.id,
@@ -2729,6 +2897,7 @@ async fn move_task_across_boards_succeeds() {
         .await
         .expect("create column a");
     let col_b = client
+        .acta()
         .create_column(
             &ws.slug,
             board_b.id,
@@ -2743,6 +2912,7 @@ async fn move_task_across_boards_succeeds() {
         .expect("create column b");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board_a.id,
@@ -2760,6 +2930,7 @@ async fn move_task_across_boards_succeeds() {
         .expect("create task");
 
     let moved = client
+        .acta()
         .move_task(
             &ws.slug,
             &task.readable_id,
@@ -2784,6 +2955,7 @@ async fn move_task_across_boards_succeeds() {
     );
 
     let in_board_b = client
+        .acta()
         .list_tasks(&ws.slug, board_b.id, None, None)
         .await
         .expect("list board b tasks");
@@ -2806,11 +2978,13 @@ async fn add_and_list_assignees() {
     let (client, ws, user) = support::login_user_with_workspace(&server, &db, "assignee-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("assign-proj", "AS"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "assign-proj",
@@ -2823,6 +2997,7 @@ async fn add_and_list_assignees() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -2837,6 +3012,7 @@ async fn add_and_list_assignees() {
         .expect("create column");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -2854,6 +3030,7 @@ async fn add_and_list_assignees() {
         .expect("create task");
 
     let assignee = client
+        .acta()
         .add_assignee(
             &ws.slug,
             &task.readable_id,
@@ -2873,6 +3050,7 @@ async fn add_and_list_assignees() {
     );
 
     let list = client
+        .acta()
         .list_assignees(&ws.slug, &task.readable_id)
         .await
         .expect("list assignees");
@@ -2895,11 +3073,13 @@ async fn add_duplicate_assignee_returns_409() {
         support::login_user_with_workspace(&server, &db, "dup-assignee-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("dup-assign-proj", "DA"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "dup-assign-proj",
@@ -2912,6 +3092,7 @@ async fn add_duplicate_assignee_returns_409() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -2926,6 +3107,7 @@ async fn add_duplicate_assignee_returns_409() {
         .expect("create column");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -2943,6 +3125,7 @@ async fn add_duplicate_assignee_returns_409() {
         .expect("create task");
 
     client
+        .acta()
         .add_assignee(
             &ws.slug,
             &task.readable_id,
@@ -2955,6 +3138,7 @@ async fn add_duplicate_assignee_returns_409() {
         .expect("first add");
 
     let result = client
+        .acta()
         .add_assignee(
             &ws.slug,
             &task.readable_id,
@@ -2981,11 +3165,13 @@ async fn remove_assignee_unassigns_user() {
         support::login_user_with_workspace(&server, &db, "rm-assignee-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("rm-assign-proj", "RA"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "rm-assign-proj",
@@ -2998,6 +3184,7 @@ async fn remove_assignee_unassigns_user() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -3012,6 +3199,7 @@ async fn remove_assignee_unassigns_user() {
         .expect("create column");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -3029,6 +3217,7 @@ async fn remove_assignee_unassigns_user() {
         .expect("create task");
 
     client
+        .acta()
         .add_assignee(
             &ws.slug,
             &task.readable_id,
@@ -3041,11 +3230,13 @@ async fn remove_assignee_unassigns_user() {
         .expect("add assignee");
 
     client
+        .acta()
         .remove_assignee(&ws.slug, &task.readable_id, &format!("user:{}", user.id.0))
         .await
         .expect("remove assignee");
 
     let list = client
+        .acta()
         .list_assignees(&ws.slug, &task.readable_id)
         .await
         .expect("list assignees after remove");
@@ -3066,11 +3257,13 @@ async fn create_and_list_references() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "ref-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("ref-proj", "RF"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "ref-proj",
@@ -3083,6 +3276,7 @@ async fn create_and_list_references() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -3097,6 +3291,7 @@ async fn create_and_list_references() {
         .expect("create column");
 
     let task_a = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -3114,6 +3309,7 @@ async fn create_and_list_references() {
         .expect("create task A");
 
     let task_b = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -3131,6 +3327,7 @@ async fn create_and_list_references() {
         .expect("create task B");
 
     let reference = client
+        .acta()
         .create_reference(
             &ws.slug,
             &task_a.readable_id,
@@ -3146,6 +3343,7 @@ async fn create_and_list_references() {
     assert_eq!(reference.kind, "relates");
 
     let refs = client
+        .acta()
         .list_references(&ws.slug, &task_a.readable_id)
         .await
         .expect("list references");
@@ -3163,10 +3361,12 @@ async fn list_references_merges_manual_and_wikilink_origins() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "unified-ref").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("unified-ref-proj", "UR"))
         .await
         .expect("create project");
     let doc = client
+        .acta()
         .create_document(
             &ws.slug,
             "unified-ref-proj",
@@ -3179,6 +3379,7 @@ async fn list_references_merges_manual_and_wikilink_origins() {
         .await
         .expect("create document");
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "unified-ref-proj",
@@ -3190,6 +3391,7 @@ async fn list_references_merges_manual_and_wikilink_origins() {
         .await
         .expect("create board");
     let column = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -3203,6 +3405,7 @@ async fn list_references_merges_manual_and_wikilink_origins() {
         .await
         .expect("create column");
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -3219,6 +3422,7 @@ async fn list_references_merges_manual_and_wikilink_origins() {
         .await
         .expect("create task");
     let manual = client
+        .acta()
         .create_reference(
             &ws.slug,
             &task.readable_id,
@@ -3232,6 +3436,7 @@ async fn list_references_merges_manual_and_wikilink_origins() {
         .expect("create manual reference");
 
     let refs = client
+        .acta()
         .list_references(&ws.slug, &task.readable_id)
         .await
         .expect("list unified references");
@@ -3255,10 +3460,12 @@ async fn list_references_merges_manual_and_wikilink_origins() {
     assert_eq!(refs[1].target_title.as_deref(), Some("Missing document"));
 
     client
+        .acta()
         .delete_reference(&ws.slug, &task.readable_id, manual.id)
         .await
         .expect("delete manual reference");
     let refs = client
+        .acta()
         .list_references(&ws.slug, &task.readable_id)
         .await
         .expect("reload unified references");
@@ -3280,6 +3487,7 @@ async fn list_references_returns_three_distinct_resolved_wikilinks_exactly_once(
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "three-wikilinks").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("three-wikilinks-proj", "TW"))
         .await
         .expect("create project");
@@ -3297,6 +3505,7 @@ async fn list_references_returns_three_distinct_resolved_wikilinks_exactly_once(
     for document in documents {
         document_ids.push(
             client
+                .acta()
                 .create_document(&ws.slug, "three-wikilinks-proj", document)
                 .await
                 .expect("create linked document")
@@ -3305,6 +3514,7 @@ async fn list_references_returns_three_distinct_resolved_wikilinks_exactly_once(
     }
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "three-wikilinks-proj",
@@ -3316,6 +3526,7 @@ async fn list_references_returns_three_distinct_resolved_wikilinks_exactly_once(
         .await
         .expect("create board");
     let column = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -3329,6 +3540,7 @@ async fn list_references_returns_three_distinct_resolved_wikilinks_exactly_once(
         .await
         .expect("create column");
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -3346,6 +3558,7 @@ async fn list_references_returns_three_distinct_resolved_wikilinks_exactly_once(
         .expect("create task");
 
     let refs = client
+        .acta()
         .list_references(&ws.slug, &task.readable_id)
         .await
         .expect("list references");
@@ -3373,6 +3586,7 @@ async fn reference_read_and_delete_enforce_viewer_and_editor_boundaries() {
     let (owner, ws, _) = support::login_user_with_workspace(&server, &db, "reference-roles").await;
 
     owner
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -3386,6 +3600,7 @@ async fn reference_read_and_delete_enforce_viewer_and_editor_boundaries() {
         .await
         .expect("create project");
     let board = owner
+        .acta()
         .create_board(
             &ws.slug,
             "reference-roles-proj",
@@ -3397,6 +3612,7 @@ async fn reference_read_and_delete_enforce_viewer_and_editor_boundaries() {
         .await
         .expect("create board");
     let column = owner
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -3410,6 +3626,7 @@ async fn reference_read_and_delete_enforce_viewer_and_editor_boundaries() {
         .await
         .expect("create column");
     let source = owner
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -3426,6 +3643,7 @@ async fn reference_read_and_delete_enforce_viewer_and_editor_boundaries() {
         .await
         .expect("create source task");
     let target = owner
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -3442,6 +3660,7 @@ async fn reference_read_and_delete_enforce_viewer_and_editor_boundaries() {
         .await
         .expect("create target task");
     let reference = owner
+        .acta()
         .create_reference(
             &ws.slug,
             &source.readable_id,
@@ -3485,6 +3704,7 @@ async fn reference_read_and_delete_enforce_viewer_and_editor_boundaries() {
     }
 
     let viewer_refs = viewer
+        .acta()
         .list_references(&ws.slug, &source.readable_id)
         .await
         .expect("viewer lists references");
@@ -3492,6 +3712,7 @@ async fn reference_read_and_delete_enforce_viewer_and_editor_boundaries() {
     assert_eq!(viewer_refs[0].manual_reference_id, Some(reference.id));
 
     let viewer_delete = viewer
+        .acta()
         .delete_reference(&ws.slug, &source.readable_id, reference.id)
         .await;
     assert!(
@@ -3500,11 +3721,13 @@ async fn reference_read_and_delete_enforce_viewer_and_editor_boundaries() {
     );
 
     editor
+        .acta()
         .delete_reference(&ws.slug, &source.readable_id, reference.id)
         .await
         .expect("editor deletes reference");
 
     let refs_after_delete = owner
+        .acta()
         .list_references(&ws.slug, &source.readable_id)
         .await
         .expect("list references after editor delete");
@@ -3520,11 +3743,13 @@ async fn backlinks_surface_pending_references() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "backlink-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("backlink-proj", "BK"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "backlink-proj",
@@ -3537,6 +3762,7 @@ async fn backlinks_surface_pending_references() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -3551,6 +3777,7 @@ async fn backlinks_surface_pending_references() {
         .expect("create column");
 
     let task_a = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -3568,6 +3795,7 @@ async fn backlinks_surface_pending_references() {
         .expect("create task A");
 
     let task_b = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -3585,6 +3813,7 @@ async fn backlinks_surface_pending_references() {
         .expect("create task B");
 
     client
+        .acta()
         .create_reference(
             &ws.slug,
             &task_a.readable_id,
@@ -3598,6 +3827,7 @@ async fn backlinks_surface_pending_references() {
         .expect("create reference");
 
     let backlinks = client
+        .acta()
         .list_task_backlinks(&ws.slug, &task_b.readable_id)
         .await
         .expect("list backlinks on target");
@@ -3623,11 +3853,13 @@ async fn create_and_list_checklist_items() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "checklist-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("checklist-proj", "CL"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "checklist-proj",
@@ -3640,6 +3872,7 @@ async fn create_and_list_checklist_items() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -3654,6 +3887,7 @@ async fn create_and_list_checklist_items() {
         .expect("create column");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -3671,6 +3905,7 @@ async fn create_and_list_checklist_items() {
         .expect("create task");
 
     let item = client
+        .acta()
         .create_checklist_item(
             &ws.slug,
             &task.readable_id,
@@ -3687,6 +3922,7 @@ async fn create_and_list_checklist_items() {
     assert!(!item.checked);
 
     let list = client
+        .acta()
         .list_checklist(&ws.slug, &task.readable_id)
         .await
         .expect("list checklist");
@@ -3704,11 +3940,13 @@ async fn promote_checklist_item_returns_409_on_second_promote() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "promote-dup-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("promote-proj", "PR"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "promote-proj",
@@ -3721,6 +3959,7 @@ async fn promote_checklist_item_returns_409_on_second_promote() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -3735,6 +3974,7 @@ async fn promote_checklist_item_returns_409_on_second_promote() {
         .expect("create column");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -3752,6 +3992,7 @@ async fn promote_checklist_item_returns_409_on_second_promote() {
         .expect("create task");
 
     let item = client
+        .acta()
         .create_checklist_item(
             &ws.slug,
             &task.readable_id,
@@ -3765,6 +4006,7 @@ async fn promote_checklist_item_returns_409_on_second_promote() {
         .expect("create checklist item");
 
     client
+        .acta()
         .promote_checklist_item(
             &ws.slug,
             &task.readable_id,
@@ -3778,6 +4020,7 @@ async fn promote_checklist_item_returns_409_on_second_promote() {
         .expect("first promote");
 
     let result = client
+        .acta()
         .promote_checklist_item(
             &ws.slug,
             &task.readable_id,
@@ -3808,11 +4051,13 @@ async fn promote_checklist_item_always_persists_parent_reference() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "promote-ref-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("promref-proj", "PRF"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "promref-proj",
@@ -3825,6 +4070,7 @@ async fn promote_checklist_item_always_persists_parent_reference() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -3839,6 +4085,7 @@ async fn promote_checklist_item_always_persists_parent_reference() {
         .expect("create column");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -3856,6 +4103,7 @@ async fn promote_checklist_item_always_persists_parent_reference() {
         .expect("create task");
 
     let item = client
+        .acta()
         .create_checklist_item(
             &ws.slug,
             &task.readable_id,
@@ -3869,6 +4117,7 @@ async fn promote_checklist_item_always_persists_parent_reference() {
         .expect("create checklist item");
 
     let promotion = client
+        .acta()
         .promote_checklist_item(
             &ws.slug,
             &task.readable_id,
@@ -3903,6 +4152,7 @@ async fn promote_checklist_item_always_persists_parent_reference() {
 
     // The reference is durable: it surfaces as an inbound backlink on the parent.
     let backlinks = client
+        .acta()
         .list_task_backlinks(&ws.slug, &task.readable_id)
         .await
         .expect("list backlinks");
@@ -3931,11 +4181,13 @@ async fn task_description_wikilink_persists_resolved_link() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "wikilink-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("wiki-proj", "WK"))
         .await
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(
             &ws.slug,
             "wiki-proj",
@@ -3949,6 +4201,7 @@ async fn task_description_wikilink_persists_resolved_link() {
         .expect("create document");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "wiki-proj",
@@ -3961,6 +4214,7 @@ async fn task_description_wikilink_persists_resolved_link() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -3975,6 +4229,7 @@ async fn task_description_wikilink_persists_resolved_link() {
         .expect("create column");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -4010,11 +4265,13 @@ async fn task_description_id_bound_wikilink_resolves_by_id() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "wikilink-id-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("wiki-id-proj", "WI"))
         .await
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(
             &ws.slug,
             "wiki-id-proj",
@@ -4028,6 +4285,7 @@ async fn task_description_id_bound_wikilink_resolves_by_id() {
         .expect("create document");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "wiki-id-proj",
@@ -4040,6 +4298,7 @@ async fn task_description_id_bound_wikilink_resolves_by_id() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -4054,6 +4313,7 @@ async fn task_description_id_bound_wikilink_resolves_by_id() {
         .expect("create column");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -4089,11 +4349,13 @@ async fn task_description_wikilink_to_missing_doc_is_pending() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "wikilink-2").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("wiki2-proj", "WB"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "wiki2-proj",
@@ -4106,6 +4368,7 @@ async fn task_description_wikilink_to_missing_doc_is_pending() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -4120,6 +4383,7 @@ async fn task_description_wikilink_to_missing_doc_is_pending() {
         .expect("create column");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -4155,11 +4419,13 @@ async fn task_description_patch_replaces_wikilinks() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "wikilink-3").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("wiki3-proj", "WC"))
         .await
         .expect("create project");
 
     let alpha = client
+        .acta()
         .create_document(
             &ws.slug,
             "wiki3-proj",
@@ -4173,6 +4439,7 @@ async fn task_description_patch_replaces_wikilinks() {
         .expect("create alpha");
 
     let beta = client
+        .acta()
         .create_document(
             &ws.slug,
             "wiki3-proj",
@@ -4186,6 +4453,7 @@ async fn task_description_patch_replaces_wikilinks() {
         .expect("create beta");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "wiki3-proj",
@@ -4198,6 +4466,7 @@ async fn task_description_patch_replaces_wikilinks() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -4212,6 +4481,7 @@ async fn task_description_patch_replaces_wikilinks() {
         .expect("create column");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -4234,6 +4504,7 @@ async fn task_description_patch_replaces_wikilinks() {
     );
 
     client
+        .acta()
         .update_task(
             &ws.slug,
             &task.readable_id,
@@ -4265,11 +4536,13 @@ async fn activity_is_recorded_on_task_create() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "activity-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("activity-proj", "AC"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "activity-proj",
@@ -4282,6 +4555,7 @@ async fn activity_is_recorded_on_task_create() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -4296,6 +4570,7 @@ async fn activity_is_recorded_on_task_create() {
         .expect("create column");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -4313,6 +4588,7 @@ async fn activity_is_recorded_on_task_create() {
         .expect("create task");
 
     let activity = client
+        .acta()
         .list_activity(&ws.slug, &task.readable_id)
         .await
         .expect("list activity");
@@ -4334,10 +4610,12 @@ async fn description_edits_are_suppressed_and_other_fields_coalesce() {
         support::login_user_with_workspace(&server, &db, "activity-coalesce").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("coalesce-proj", "CO"))
         .await
         .expect("create project");
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "coalesce-proj",
@@ -4349,6 +4627,7 @@ async fn description_edits_are_suppressed_and_other_fields_coalesce() {
         .await
         .expect("create board");
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -4362,6 +4641,7 @@ async fn description_edits_are_suppressed_and_other_fields_coalesce() {
         .await
         .expect("create column");
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -4381,6 +4661,7 @@ async fn description_edits_are_suppressed_and_other_fields_coalesce() {
     // Description autosaves must never reach the activity feed, no matter how many.
     for draft in ["First draft", "Second draft", "Third draft"] {
         client
+            .acta()
             .update_task(
                 &ws.slug,
                 &task.readable_id,
@@ -4408,6 +4689,7 @@ async fn description_edits_are_suppressed_and_other_fields_coalesce() {
     // coalesce into a single entry.
     for renamed in ["Renamed A", "Renamed B"] {
         client
+            .acta()
             .update_task(
                 &ws.slug,
                 &task.readable_id,
@@ -4446,6 +4728,7 @@ async fn description_edits_are_suppressed_and_other_fields_coalesce() {
 
     // A change to a different field is a distinct entry — coalescing is field-scoped.
     client
+        .acta()
         .update_task(
             &ws.slug,
             &task.readable_id,
@@ -4486,11 +4769,13 @@ async fn cross_tenant_board_access_returns_404() {
         support::login_user_with_workspace(&server, &db, "ct-board-bob").await;
 
     client_a
+        .acta()
         .create_project(&ws_a.slug, project_req("ct-proj-a", "CTA"))
         .await
         .expect("create project");
 
     let board = client_a
+        .acta()
         .create_board(
             &ws_a.slug,
             "ct-proj-a",
@@ -4502,7 +4787,7 @@ async fn cross_tenant_board_access_returns_404() {
         .await
         .expect("create board");
 
-    let result = client_a.get_board(&ws_b.slug, board.id).await;
+    let result = client_a.acta().get_board(&ws_b.slug, board.id).await;
 
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
@@ -4523,11 +4808,13 @@ async fn cross_tenant_task_access_returns_404() {
         support::login_user_with_workspace(&server, &db, "ct-task-bob").await;
 
     client_a
+        .acta()
         .create_project(&ws_a.slug, project_req("ct-task-proj-a", "CTT"))
         .await
         .expect("create project");
 
     let board = client_a
+        .acta()
         .create_board(
             &ws_a.slug,
             "ct-task-proj-a",
@@ -4540,6 +4827,7 @@ async fn cross_tenant_task_access_returns_404() {
         .expect("create board");
 
     let col = client_a
+        .acta()
         .create_column(
             &ws_a.slug,
             board.id,
@@ -4554,6 +4842,7 @@ async fn cross_tenant_task_access_returns_404() {
         .expect("create column");
 
     let task = client_a
+        .acta()
         .create_task(
             &ws_a.slug,
             board.id,
@@ -4570,7 +4859,10 @@ async fn cross_tenant_task_access_returns_404() {
         .await
         .expect("create task");
 
-    let result = client_a.get_task(&ws_b.slug, &task.readable_id).await;
+    let result = client_a
+        .acta()
+        .get_task(&ws_b.slug, &task.readable_id)
+        .await;
 
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
@@ -4592,6 +4884,7 @@ async fn viewer_cannot_create_board() {
         support::login_user_with_workspace(&server, &db, "board-authz-owner").await;
 
     owner
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -4615,6 +4908,7 @@ async fn viewer_cannot_create_board() {
     .await;
 
     let result = viewer
+        .acta()
         .create_board(
             &ws.slug,
             "board-authz-proj",
@@ -4640,6 +4934,7 @@ async fn viewer_cannot_create_task() {
     let (owner, ws, _) = support::login_user_with_workspace(&server, &db, "task-authz-owner").await;
 
     owner
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -4654,6 +4949,7 @@ async fn viewer_cannot_create_task() {
         .expect("create project");
 
     let board = owner
+        .acta()
         .create_board(
             &ws.slug,
             "task-authz-proj",
@@ -4666,6 +4962,7 @@ async fn viewer_cannot_create_task() {
         .expect("create board");
 
     let col = owner
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -4683,6 +4980,7 @@ async fn viewer_cannot_create_task() {
         add_member(&db, &server, ws.id, "task-authz-viewer", MemberRole::Member).await;
 
     let result = viewer
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -4717,11 +5015,13 @@ async fn create_task_with_invalid_priority_returns_422() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "task-422-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("task-422-proj", "T4"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "task-422-proj",
@@ -4734,6 +5034,7 @@ async fn create_task_with_invalid_priority_returns_422() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -4748,6 +5049,7 @@ async fn create_task_with_invalid_priority_returns_422() {
         .expect("create column");
 
     let result = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -4784,11 +5086,13 @@ async fn create_task_with_negative_estimate_returns_422() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "task-neg-est-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("task-neg-proj", "NE"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "task-neg-proj",
@@ -4801,6 +5105,7 @@ async fn create_task_with_negative_estimate_returns_422() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -4815,6 +5120,7 @@ async fn create_task_with_negative_estimate_returns_422() {
         .expect("create column");
 
     let result = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -4908,6 +5214,7 @@ async fn setup_idor(
         support::login_user_with_workspace(server, db, &format!("{prefix}-owner")).await;
 
     owner
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -4927,6 +5234,7 @@ async fn setup_idor(
         let proj_slug = format!("{prefix}-proj");
         async move {
             let board = owner
+                .acta()
                 .create_board(
                     &ws.slug,
                     &proj_slug,
@@ -4938,6 +5246,7 @@ async fn setup_idor(
                 .await
                 .expect("create board");
             let col = owner
+                .acta()
                 .create_column(
                     &ws.slug,
                     board.id,
@@ -4951,6 +5260,7 @@ async fn setup_idor(
                 .await
                 .expect("create column");
             let task = owner
+                .acta()
                 .create_task(
                     &ws.slug,
                     board.id,
@@ -4967,6 +5277,7 @@ async fn setup_idor(
                 .await
                 .expect("create task");
             let item = owner
+                .acta()
                 .create_checklist_item(
                     &ws.slug,
                     &task.readable_id,
@@ -4979,6 +5290,7 @@ async fn setup_idor(
                 .await
                 .expect("create checklist item");
             let other_task = owner
+                .acta()
                 .create_task(
                     &ws.slug,
                     board.id,
@@ -4995,6 +5307,7 @@ async fn setup_idor(
                 .await
                 .expect("create other task");
             let reference = owner
+                .acta()
                 .create_reference(
                     &ws.slug,
                     &task.readable_id,
@@ -5056,6 +5369,7 @@ async fn idor_checklist_item_cross_task_is_404() {
     // Attacker authorizes task A (has editor on board A) but targets B's item.
     let patch = f
         .attacker
+        .acta()
         .update_checklist_item(
             &f.ws.slug,
             &f.task_a_readable,
@@ -5073,6 +5387,7 @@ async fn idor_checklist_item_cross_task_is_404() {
 
     let delete = f
         .attacker
+        .acta()
         .delete_checklist_item(&f.ws.slug, &f.task_a_readable, f.item_b)
         .await;
     assert!(
@@ -5083,6 +5398,7 @@ async fn idor_checklist_item_cross_task_is_404() {
     // Legitimate same-task op still works: create an item on A, then patch it.
     let own_item = f
         .attacker
+        .acta()
         .create_checklist_item(
             &f.ws.slug,
             &f.task_a_readable,
@@ -5096,6 +5412,7 @@ async fn idor_checklist_item_cross_task_is_404() {
         .expect("create own item");
     let ok = f
         .attacker
+        .acta()
         .update_checklist_item(
             &f.ws.slug,
             &f.task_a_readable,
@@ -5123,6 +5440,7 @@ async fn idor_promote_cross_task_is_404() {
 
     let promote = f
         .attacker
+        .acta()
         .promote_checklist_item(
             &f.ws.slug,
             &f.task_a_readable,
@@ -5150,6 +5468,7 @@ async fn idor_reference_cross_task_is_404() {
 
     let delete = f
         .attacker
+        .acta()
         .delete_reference(&f.ws.slug, &f.task_a_readable, f.ref_b)
         .await;
     assert!(
@@ -5170,6 +5489,7 @@ async fn idor_column_cross_board_is_404() {
 
     let patch = f
         .attacker
+        .acta()
         .update_column(
             &f.ws.slug,
             f.board_a,
@@ -5189,6 +5509,7 @@ async fn idor_column_cross_board_is_404() {
 
     let delete = f
         .attacker
+        .acta()
         .delete_column(&f.ws.slug, f.board_a, f.col_b)
         .await;
     assert!(
@@ -5199,6 +5520,7 @@ async fn idor_column_cross_board_is_404() {
     // Legitimate same-board op still works.
     let ok = f
         .attacker
+        .acta()
         .update_column(
             &f.ws.slug,
             f.board_a,
@@ -5229,6 +5551,7 @@ async fn idor_create_task_into_foreign_column_is_rejected() {
 
     let result = f
         .attacker
+        .acta()
         .create_task(
             &f.ws.slug,
             f.board_a,
@@ -5260,6 +5583,7 @@ async fn idor_move_task_into_foreign_column_is_rejected() {
 
     let result = f
         .attacker
+        .acta()
         .move_task(
             &f.ws.slug,
             &f.task_a_readable,
@@ -5276,7 +5600,11 @@ async fn idor_move_task_into_foreign_column_is_rejected() {
     );
 
     // Sanity: B's task is untouched and out of reach for the attacker.
-    let b = f.attacker.get_task(&f.ws.slug, &f.task_b_readable).await;
+    let b = f
+        .attacker
+        .acta()
+        .get_task(&f.ws.slug, &f.task_b_readable)
+        .await;
     assert!(
         is_404(&b),
         "attacker must not see task B at all, got: {b:?}"
@@ -5348,6 +5676,7 @@ async fn board_scoped_grant_is_honored_by_resolution() {
     // Private project: no membership-derived visibility, so a non-owner needs an
     // explicit grant to access the board.
     owner
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -5362,6 +5691,7 @@ async fn board_scoped_grant_is_honored_by_resolution() {
         .expect("create project");
 
     let board = owner
+        .acta()
         .create_board(
             &ws.slug,
             "bgrant-proj",
@@ -5378,7 +5708,7 @@ async fn board_scoped_grant_is_honored_by_resolution() {
 
     // Before any grant: grantee cannot access the board (private project, no grants).
     // Private resources use existence concealment, so the response is 404, not 403.
-    let before = grantee.get_board(&ws.slug, board.id).await;
+    let before = grantee.acta().get_board(&ws.slug, board.id).await;
     assert!(
         before.is_err(),
         "grantee must be denied before any grant, got: {before:?}"
@@ -5406,7 +5736,7 @@ async fn board_scoped_grant_is_honored_by_resolution() {
         .expect("upsert board grant");
 
     // After the board grant: the grantee can read the board.
-    let after = grantee.get_board(&ws.slug, board.id).await;
+    let after = grantee.acta().get_board(&ws.slug, board.id).await;
     assert!(
         after.is_ok(),
         "board-scoped grant must be honored, got: {after:?}"
@@ -5426,6 +5756,7 @@ async fn board_scoped_grant_grants_task_access() {
         support::login_user_with_workspace(&server, &db, "bgrant-task-owner").await;
 
     owner
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -5440,6 +5771,7 @@ async fn board_scoped_grant_grants_task_access() {
         .expect("create project");
 
     let board = owner
+        .acta()
         .create_board(
             &ws.slug,
             "bgrant-task-proj",
@@ -5452,6 +5784,7 @@ async fn board_scoped_grant_grants_task_access() {
         .expect("create board");
 
     let col = owner
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -5466,6 +5799,7 @@ async fn board_scoped_grant_grants_task_access() {
         .expect("create column");
 
     let task = owner
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -5492,7 +5826,7 @@ async fn board_scoped_grant_grants_task_access() {
     .await;
 
     // No grant yet: task is inaccessible on the private project (existence concealment → 404).
-    let before = grantee.get_task(&ws.slug, &task.readable_id).await;
+    let before = grantee.acta().get_task(&ws.slug, &task.readable_id).await;
     assert!(
         before.is_err(),
         "task must be denied before board grant, got: {before:?}"
@@ -5519,7 +5853,7 @@ async fn board_scoped_grant_grants_task_access() {
         .expect("upsert board grant");
 
     // After the board grant: the task on that board becomes accessible.
-    let after = grantee.get_task(&ws.slug, &task.readable_id).await;
+    let after = grantee.acta().get_task(&ws.slug, &task.readable_id).await;
     assert!(
         after.is_ok(),
         "board-scoped grant must propagate to tasks, got: {after:?}"
@@ -5538,6 +5872,7 @@ async fn no_board_grant_remains_denied() {
     let (owner, ws, _) = support::login_user_with_workspace(&server, &db, "no-bgrant-owner").await;
 
     owner
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -5552,6 +5887,7 @@ async fn no_board_grant_remains_denied() {
         .expect("create project");
 
     let board = owner
+        .acta()
         .create_board(
             &ws.slug,
             "no-bgrant-proj",
@@ -5567,7 +5903,7 @@ async fn no_board_grant_remains_denied() {
         add_member(&db, &server, ws.id, "no-bgrant-member", MemberRole::Member).await;
 
     // Private project: existence concealment → 404 for members without any grant.
-    let result = non_grantee.get_board(&ws.slug, board.id).await;
+    let result = non_grantee.acta().get_board(&ws.slug, board.id).await;
     assert!(
         result.is_err(),
         "member without any grant must be denied on private board, got: {result:?}"
@@ -5590,11 +5926,13 @@ async fn duplicate_reference_returns_409() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "dup-ref-409-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("dup-ref-proj", "DR"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "dup-ref-proj",
@@ -5607,6 +5945,7 @@ async fn duplicate_reference_returns_409() {
         .expect("board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -5621,6 +5960,7 @@ async fn duplicate_reference_returns_409() {
         .expect("col");
 
     let task_a = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -5638,6 +5978,7 @@ async fn duplicate_reference_returns_409() {
         .expect("task A");
 
     let task_b = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -5655,6 +5996,7 @@ async fn duplicate_reference_returns_409() {
         .expect("task B");
 
     client
+        .acta()
         .create_reference(
             &ws.slug,
             &task_a.readable_id,
@@ -5668,6 +6010,7 @@ async fn duplicate_reference_returns_409() {
         .expect("first reference");
 
     let result = client
+        .acta()
         .create_reference(
             &ws.slug,
             &task_a.readable_id,
@@ -5702,11 +6045,13 @@ async fn delete_blocks_reference_records_correct_kind_in_activity() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "del-ref-kind-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("del-ref-proj", "DRK"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "del-ref-proj",
@@ -5719,6 +6064,7 @@ async fn delete_blocks_reference_records_correct_kind_in_activity() {
         .expect("board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -5733,6 +6079,7 @@ async fn delete_blocks_reference_records_correct_kind_in_activity() {
         .expect("col");
 
     let task_a = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -5750,6 +6097,7 @@ async fn delete_blocks_reference_records_correct_kind_in_activity() {
         .expect("task A");
 
     let task_b = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -5767,6 +6115,7 @@ async fn delete_blocks_reference_records_correct_kind_in_activity() {
         .expect("task B");
 
     let reference = client
+        .acta()
         .create_reference(
             &ws.slug,
             &task_a.readable_id,
@@ -5780,6 +6129,7 @@ async fn delete_blocks_reference_records_correct_kind_in_activity() {
         .expect("create blocks reference");
 
     client
+        .acta()
         .delete_reference(&ws.slug, &task_a.readable_id, reference.id)
         .await
         .expect("delete reference");
@@ -5823,11 +6173,13 @@ async fn create_reference_without_target_returns_422() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "ref-notarget-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("ref-notarget-proj", "RNT"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "ref-notarget-proj",
@@ -5840,6 +6192,7 @@ async fn create_reference_without_target_returns_422() {
         .expect("board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -5854,6 +6207,7 @@ async fn create_reference_without_target_returns_422() {
         .expect("col");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -5871,6 +6225,7 @@ async fn create_reference_without_target_returns_422() {
         .expect("task");
 
     let result = client
+        .acta()
         .create_reference(
             &ws.slug,
             &task.readable_id,
@@ -5898,11 +6253,13 @@ async fn create_reference_with_both_targets_returns_422() {
         support::login_user_with_workspace(&server, &db, "ref-bothtarget-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("ref-bothtarget-proj", "RBT"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "ref-bothtarget-proj",
@@ -5915,6 +6272,7 @@ async fn create_reference_with_both_targets_returns_422() {
         .expect("board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -5929,6 +6287,7 @@ async fn create_reference_with_both_targets_returns_422() {
         .expect("col");
 
     let task_a = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -5946,6 +6305,7 @@ async fn create_reference_with_both_targets_returns_422() {
         .expect("task A");
 
     let task_b = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -5963,6 +6323,7 @@ async fn create_reference_with_both_targets_returns_422() {
         .expect("task B");
 
     let doc = client
+        .acta()
         .create_document(
             &ws.slug,
             "ref-bothtarget-proj",
@@ -5976,6 +6337,7 @@ async fn create_reference_with_both_targets_returns_422() {
         .expect("doc");
 
     let result = client
+        .acta()
         .create_reference(
             &ws.slug,
             &task_a.readable_id,
@@ -6005,11 +6367,13 @@ async fn create_reference_unknown_task_target_returns_404_and_no_row() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "ref-notask-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("ref-notask-proj", "RNK"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "ref-notask-proj",
@@ -6022,6 +6386,7 @@ async fn create_reference_unknown_task_target_returns_404_and_no_row() {
         .expect("board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -6036,6 +6401,7 @@ async fn create_reference_unknown_task_target_returns_404_and_no_row() {
         .expect("col");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -6053,6 +6419,7 @@ async fn create_reference_unknown_task_target_returns_404_and_no_row() {
         .expect("task");
 
     let result = client
+        .acta()
         .create_reference(
             &ws.slug,
             &task.readable_id,
@@ -6101,16 +6468,19 @@ async fn create_reference_cross_tenant_document_target_returns_404() {
         support::login_user_with_workspace(&server, &db, "ref-ctdoc-bob").await;
 
     client_a
+        .acta()
         .create_project(&ws_a.slug, project_req("ref-ctdoc-proj-a", "RCA"))
         .await
         .expect("create project A");
 
     client_b
+        .acta()
         .create_project(&ws_b.slug, project_req("ref-ctdoc-proj-b", "RCB"))
         .await
         .expect("create project B");
 
     let board_a = client_a
+        .acta()
         .create_board(
             &ws_a.slug,
             "ref-ctdoc-proj-a",
@@ -6123,6 +6493,7 @@ async fn create_reference_cross_tenant_document_target_returns_404() {
         .expect("board A");
 
     let col_a = client_a
+        .acta()
         .create_column(
             &ws_a.slug,
             board_a.id,
@@ -6137,6 +6508,7 @@ async fn create_reference_cross_tenant_document_target_returns_404() {
         .expect("col A");
 
     let task_a = client_a
+        .acta()
         .create_task(
             &ws_a.slug,
             board_a.id,
@@ -6155,6 +6527,7 @@ async fn create_reference_cross_tenant_document_target_returns_404() {
 
     // Bob creates a document in workspace B.
     let doc_b = client_b
+        .acta()
         .create_document(
             &ws_b.slug,
             "ref-ctdoc-proj-b",
@@ -6169,6 +6542,7 @@ async fn create_reference_cross_tenant_document_target_returns_404() {
 
     // Alice tries to reference Bob's document — must be rejected.
     let result = client_a
+        .acta()
         .create_reference(
             &ws_a.slug,
             &task_a.readable_id,
@@ -6218,11 +6592,13 @@ async fn add_unknown_assignee_returns_404() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "assignee-404-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("assignee-404-proj", "A4"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "assignee-404-proj",
@@ -6235,6 +6611,7 @@ async fn add_unknown_assignee_returns_404() {
         .expect("board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -6249,6 +6626,7 @@ async fn add_unknown_assignee_returns_404() {
         .expect("col");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -6267,6 +6645,7 @@ async fn add_unknown_assignee_returns_404() {
 
     let ghost_id = uuid::Uuid::new_v4();
     let result = client
+        .acta()
         .add_assignee(
             &ws.slug,
             &task.readable_id,
@@ -6296,11 +6675,13 @@ async fn add_duplicate_assignee_returns_409_explicit() {
         support::login_user_with_workspace(&server, &db, "dup-assign-explicit-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("dup-assign-expl-proj", "DAE"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "dup-assign-expl-proj",
@@ -6313,6 +6694,7 @@ async fn add_duplicate_assignee_returns_409_explicit() {
         .expect("board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -6327,6 +6709,7 @@ async fn add_duplicate_assignee_returns_409_explicit() {
         .expect("col");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -6344,6 +6727,7 @@ async fn add_duplicate_assignee_returns_409_explicit() {
         .expect("task");
 
     client
+        .acta()
         .add_assignee(
             &ws.slug,
             &task.readable_id,
@@ -6356,6 +6740,7 @@ async fn add_duplicate_assignee_returns_409_explicit() {
         .expect("first add");
 
     let result = client
+        .acta()
         .add_assignee(
             &ws.slug,
             &task.readable_id,
@@ -6388,11 +6773,13 @@ async fn unassign_non_existent_returns_404_and_no_activity() {
         support::login_user_with_workspace(&server, &db, "unassign-404-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("unassign-404-proj", "UA"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "unassign-404-proj",
@@ -6405,6 +6792,7 @@ async fn unassign_non_existent_returns_404_and_no_activity() {
         .expect("board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -6419,6 +6807,7 @@ async fn unassign_non_existent_returns_404_and_no_activity() {
         .expect("col");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -6436,6 +6825,7 @@ async fn unassign_non_existent_returns_404_and_no_activity() {
         .expect("task");
 
     let result = client
+        .acta()
         .remove_assignee(&ws.slug, &task.readable_id, &format!("user:{}", user.id.0))
         .await;
 
@@ -6469,6 +6859,7 @@ async fn promote_into_foreign_board_same_workspace_is_rejected_and_writes_no_tas
     // Board B's task count before the attempted promotion.
     let before = f
         .owner
+        .acta()
         .list_tasks(&f.ws.slug, f.board_b, None, None)
         .await
         .expect("list board B tasks before");
@@ -6478,6 +6869,7 @@ async fn promote_into_foreign_board_same_workspace_is_rejected_and_writes_no_tas
     // board B as the destination — this is the write-side IDOR escalation.
     let result = f
         .attacker
+        .acta()
         .promote_checklist_item(
             &f.ws.slug,
             &f.task_a_readable,
@@ -6497,6 +6889,7 @@ async fn promote_into_foreign_board_same_workspace_is_rejected_and_writes_no_tas
     // Board B must be untouched: no task was written there.
     let after = f
         .owner
+        .acta()
         .list_tasks(&f.ws.slug, f.board_b, None, None)
         .await
         .expect("list board B tasks after");
@@ -6511,6 +6904,7 @@ async fn promote_into_foreign_board_same_workspace_is_rejected_and_writes_no_tas
     // The checklist item on task A must still be unpromoted.
     let checklist = f
         .attacker
+        .acta()
         .list_checklist(&f.ws.slug, &f.task_a_readable)
         .await
         .expect("list checklist");
@@ -6544,6 +6938,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
         support::login_user_with_workspace(&server, &db, "reference-title-owner").await;
 
     owner
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -6558,6 +6953,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
         .expect("create private project");
 
     let source_board = owner
+        .acta()
         .create_board(
             &ws.slug,
             "private-references",
@@ -6569,6 +6965,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
         .await
         .expect("create source board");
     let target_board = owner
+        .acta()
         .create_board(
             &ws.slug,
             "private-references",
@@ -6581,6 +6978,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
         .expect("create target board");
 
     let source_column = owner
+        .acta()
         .create_column(
             &ws.slug,
             source_board.id,
@@ -6594,6 +6992,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
         .await
         .expect("create source column");
     let target_column = owner
+        .acta()
         .create_column(
             &ws.slug,
             target_board.id,
@@ -6608,6 +7007,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
         .expect("create target column");
 
     let source = owner
+        .acta()
         .create_task(
             &ws.slug,
             source_board.id,
@@ -6624,6 +7024,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
         .await
         .expect("create source task");
     let private_task = owner
+        .acta()
         .create_task(
             &ws.slug,
             target_board.id,
@@ -6640,6 +7041,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
         .await
         .expect("create private task");
     let private_document = owner
+        .acta()
         .create_document(
             &ws.slug,
             "private-references",
@@ -6663,6 +7065,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
     grant_board_editor(&db, ws.id, attacker_user.id, source_board.id).await;
 
     let inaccessible_task_create = attacker
+        .acta()
         .create_reference(
             &ws.slug,
             &source.readable_id,
@@ -6679,6 +7082,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
     );
 
     let inaccessible_document_create = attacker
+        .acta()
         .create_reference(
             &ws.slug,
             &source.readable_id,
@@ -6695,6 +7099,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
 
     let missing_document_problem = not_found_problem(
         attacker
+            .acta()
             .create_reference(
                 &ws.slug,
                 &source.readable_id,
@@ -6709,6 +7114,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
     );
 
     let deleted_document = owner
+        .acta()
         .create_document(
             &ws.slug,
             "private-references",
@@ -6721,6 +7127,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
         .await
         .expect("create deleted document target");
     owner
+        .acta()
         .delete_document(
             &ws.slug,
             deleted_document
@@ -6732,6 +7139,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
         .expect("delete document target");
     let deleted_document_problem = not_found_problem(
         attacker
+            .acta()
             .create_reference(
                 &ws.slug,
                 &source.readable_id,
@@ -6748,6 +7156,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
     let (foreign_owner, foreign_workspace, _) =
         support::login_user_with_workspace(&server, &db, "reference-foreign-owner").await;
     foreign_owner
+        .acta()
         .create_project(
             &foreign_workspace.slug,
             project_req("private-references", "FR"),
@@ -6755,6 +7164,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
         .await
         .expect("create foreign project");
     let foreign_document = foreign_owner
+        .acta()
         .create_document(
             &foreign_workspace.slug,
             "private-references",
@@ -6768,6 +7178,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
         .expect("create foreign document target");
     let cross_tenant_document_problem = not_found_problem(
         attacker
+            .acta()
             .create_reference(
                 &ws.slug,
                 &source.readable_id,
@@ -6786,6 +7197,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
     assert_same_not_found_problem(&missing_document_problem, &cross_tenant_document_problem);
 
     let wikilink_source = owner
+        .acta()
         .create_task(
             &ws.slug,
             source_board.id,
@@ -6806,6 +7218,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
         .expect("create wikilink source task");
 
     let owner_wikilink_references = owner
+        .acta()
         .list_references(&ws.slug, &wikilink_source.readable_id)
         .await
         .expect("owner lists resolved wikilink");
@@ -6819,6 +7232,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
     );
 
     let attacker_wikilink_references = attacker
+        .acta()
         .list_references(&ws.slug, &wikilink_source.readable_id)
         .await
         .expect("attacker lists source-visible wikilink");
@@ -6833,6 +7247,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
     );
 
     owner
+        .acta()
         .create_reference(
             &ws.slug,
             &source.readable_id,
@@ -6845,6 +7260,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
         .await
         .expect("owner creates task reference");
     owner
+        .acta()
         .create_reference(
             &ws.slug,
             &source.readable_id,
@@ -6858,6 +7274,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
         .expect("owner creates document reference");
 
     let owner_references = owner
+        .acta()
         .list_references(&ws.slug, &source.readable_id)
         .await
         .expect("owner lists resolved references");
@@ -6879,6 +7296,7 @@ async fn inaccessible_reference_targets_do_not_disclose_titles() {
     );
 
     let attacker_references = attacker
+        .acta()
         .list_references(&ws.slug, &source.readable_id)
         .await
         .expect("attacker lists source references");
@@ -6910,11 +7328,13 @@ async fn reference_target_resolved_false_after_target_task_soft_deleted() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "ref-resolved-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("ref-res-proj", "RR"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "ref-res-proj",
@@ -6927,6 +7347,7 @@ async fn reference_target_resolved_false_after_target_task_soft_deleted() {
         .expect("board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -6941,6 +7362,7 @@ async fn reference_target_resolved_false_after_target_task_soft_deleted() {
         .expect("col");
 
     let source = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -6958,6 +7380,7 @@ async fn reference_target_resolved_false_after_target_task_soft_deleted() {
         .expect("source task");
 
     let target = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -6975,6 +7398,7 @@ async fn reference_target_resolved_false_after_target_task_soft_deleted() {
         .expect("target task");
 
     let created_ref = client
+        .acta()
         .create_reference(
             &ws.slug,
             &source.readable_id,
@@ -7004,6 +7428,7 @@ async fn reference_target_resolved_false_after_target_task_soft_deleted() {
     );
 
     client
+        .acta()
         .update_task(
             &ws.slug,
             &target.readable_id,
@@ -7021,6 +7446,7 @@ async fn reference_target_resolved_false_after_target_task_soft_deleted() {
         .expect("rename target task");
 
     let refs_before = client
+        .acta()
         .list_references(&ws.slug, &source.readable_id)
         .await
         .expect("list references before delete");
@@ -7045,11 +7471,13 @@ async fn reference_target_resolved_false_after_target_task_soft_deleted() {
     );
 
     client
+        .acta()
         .delete_task(&ws.slug, &target.readable_id)
         .await
         .expect("delete target task");
 
     let refs_after = client
+        .acta()
         .list_references(&ws.slug, &source.readable_id)
         .await
         .expect("list references after delete");
@@ -7069,12 +7497,14 @@ async fn reference_target_resolved_false_after_target_task_soft_deleted() {
     );
 
     client
+        .acta()
         .delete_project(&ws.slug, "ref-res-proj")
         .await
         .expect("delete source project");
 
     assert!(
         client
+            .acta()
             .list_references(&ws.slug, &source.readable_id)
             .await
             .is_err(),
@@ -7108,11 +7538,13 @@ async fn assign_non_member_principal_returns_404() {
     );
 
     client_a
+        .acta()
         .create_project(&ws_a.slug, project_req("assign-nm-proj", "ANM"))
         .await
         .expect("create project");
 
     let board = client_a
+        .acta()
         .create_board(
             &ws_a.slug,
             "assign-nm-proj",
@@ -7125,6 +7557,7 @@ async fn assign_non_member_principal_returns_404() {
         .expect("board");
 
     let col = client_a
+        .acta()
         .create_column(
             &ws_a.slug,
             board.id,
@@ -7139,6 +7572,7 @@ async fn assign_non_member_principal_returns_404() {
         .expect("col");
 
     let task = client_a
+        .acta()
         .create_task(
             &ws_a.slug,
             board.id,
@@ -7156,6 +7590,7 @@ async fn assign_non_member_principal_returns_404() {
         .expect("task");
 
     let result = client_a
+        .acta()
         .add_assignee(
             &ws_a.slug,
             &task.readable_id,
@@ -7208,11 +7643,13 @@ async fn create_task_with_title_over_200_chars_returns_422() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "cap-title-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("cap-proj-1", "CP1"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "cap-proj-1",
@@ -7225,6 +7662,7 @@ async fn create_task_with_title_over_200_chars_returns_422() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -7240,6 +7678,7 @@ async fn create_task_with_title_over_200_chars_returns_422() {
 
     let long_title = "x".repeat(201);
     let result = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -7271,11 +7710,13 @@ async fn create_task_with_empty_title_returns_422() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "cap-empty-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("cap-empty-proj", "CE"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "cap-empty-proj",
@@ -7288,6 +7729,7 @@ async fn create_task_with_empty_title_returns_422() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -7302,6 +7744,7 @@ async fn create_task_with_empty_title_returns_422() {
         .expect("create column");
 
     let result = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -7335,11 +7778,13 @@ async fn create_task_with_too_many_labels_returns_422() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "cap-labels-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("cap-labels-proj", "CL"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "cap-labels-proj",
@@ -7352,6 +7797,7 @@ async fn create_task_with_too_many_labels_returns_422() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -7367,6 +7813,7 @@ async fn create_task_with_too_many_labels_returns_422() {
 
     let labels: Vec<String> = (0..51).map(|i| format!("label-{i}")).collect();
     let result = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -7401,12 +7848,14 @@ async fn create_document_with_title_over_200_chars_returns_422() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "cap-doc-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("cap-doc-proj", "CD"))
         .await
         .expect("create project");
 
     let long_title = "d".repeat(201);
     let result = client
+        .acta()
         .create_document(
             &ws.slug,
             "cap-doc-proj",
@@ -7433,11 +7882,13 @@ async fn update_task_clears_estimate_with_explicit_null() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "task-clr-est").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("task-clr-proj", "TC"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "task-clr-proj",
@@ -7450,6 +7901,7 @@ async fn update_task_clears_estimate_with_explicit_null() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -7464,6 +7916,7 @@ async fn update_task_clears_estimate_with_explicit_null() {
         .expect("create column");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -7486,6 +7939,7 @@ async fn update_task_clears_estimate_with_explicit_null() {
 
     // An explicit JSON null must clear the estimate (an absent field would leave it).
     let updated = client
+        .acta()
         .update_task(
             &ws.slug,
             &task.readable_id,
@@ -7517,11 +7971,13 @@ async fn create_column_with_valid_color_returns_color_in_response_and_listing() 
         support::login_user_with_workspace(&server, &db, "col-color-create-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("col-color-proj-1", "CC1"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "col-color-proj-1",
@@ -7534,6 +7990,7 @@ async fn create_column_with_valid_color_returns_color_in_response_and_listing() 
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -7550,6 +8007,7 @@ async fn create_column_with_valid_color_returns_color_in_response_and_listing() 
     assert_eq!(col.color.as_deref(), Some("blue"));
 
     let cols = client
+        .acta()
         .list_columns(&ws.slug, board.id)
         .await
         .expect("list columns");
@@ -7573,11 +8031,13 @@ async fn create_column_without_color_omits_color_field() {
         support::login_user_with_workspace(&server, &db, "col-color-absent-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("col-color-proj-2", "CC2"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "col-color-proj-2",
@@ -7590,6 +8050,7 @@ async fn create_column_without_color_omits_color_field() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -7616,11 +8077,13 @@ async fn patch_column_sets_color() {
         support::login_user_with_workspace(&server, &db, "col-color-patch-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("col-color-proj-3", "CC3"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "col-color-proj-3",
@@ -7633,6 +8096,7 @@ async fn patch_column_sets_color() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -7649,6 +8113,7 @@ async fn patch_column_sets_color() {
     assert_eq!(col.color, None);
 
     let updated = client
+        .acta()
         .update_column(
             &ws.slug,
             board.id,
@@ -7670,6 +8135,7 @@ async fn patch_column_sets_color() {
     );
 
     let cols = client
+        .acta()
         .list_columns(&ws.slug, board.id)
         .await
         .expect("list columns");
@@ -7691,11 +8157,13 @@ async fn patch_column_clears_color_with_explicit_null() {
         support::login_user_with_workspace(&server, &db, "col-color-clear-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("col-color-proj-4", "CC4"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "col-color-proj-4",
@@ -7708,6 +8176,7 @@ async fn patch_column_clears_color_with_explicit_null() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -7724,6 +8193,7 @@ async fn patch_column_clears_color_with_explicit_null() {
     assert_eq!(col.color.as_deref(), Some("amber"));
 
     let cleared = client
+        .acta()
         .update_column(
             &ws.slug,
             board.id,
@@ -7741,6 +8211,7 @@ async fn patch_column_clears_color_with_explicit_null() {
     assert_eq!(cleared.color, None, "explicit null must clear the color");
 
     let cols = client
+        .acta()
         .list_columns(&ws.slug, board.id)
         .await
         .expect("list columns");
@@ -7761,11 +8232,13 @@ async fn patch_column_absent_color_leaves_color_unchanged() {
         support::login_user_with_workspace(&server, &db, "col-color-unchanged-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("col-color-proj-5", "CC5"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "col-color-proj-5",
@@ -7778,6 +8251,7 @@ async fn patch_column_absent_color_leaves_color_unchanged() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -7792,6 +8266,7 @@ async fn patch_column_absent_color_leaves_color_unchanged() {
         .expect("create column with color");
 
     let renamed = client
+        .acta()
         .update_column(
             &ws.slug,
             board.id,
@@ -7824,11 +8299,13 @@ async fn create_column_with_invalid_swatch_id_returns_422() {
         support::login_user_with_workspace(&server, &db, "col-color-invalid-create-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("col-color-proj-6", "CC6"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "col-color-proj-6",
@@ -7841,6 +8318,7 @@ async fn create_column_with_invalid_swatch_id_returns_422() {
         .expect("create board");
 
     let result = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -7869,11 +8347,13 @@ async fn patch_column_with_invalid_swatch_id_returns_422() {
         support::login_user_with_workspace(&server, &db, "col-color-invalid-patch-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("col-color-proj-7", "CC7"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "col-color-proj-7",
@@ -7886,6 +8366,7 @@ async fn patch_column_with_invalid_swatch_id_returns_422() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -7900,6 +8381,7 @@ async fn patch_column_with_invalid_swatch_id_returns_422() {
         .expect("create column");
 
     let result = client
+        .acta()
         .update_column(
             &ws.slug,
             board.id,
@@ -7935,11 +8417,13 @@ async fn revoked_api_key_assignee_is_hidden_after_revoke() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "rvk-key-asgn-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("rvk-proj", "RVK"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "rvk-proj",
@@ -7952,6 +8436,7 @@ async fn revoked_api_key_assignee_is_hidden_after_revoke() {
         .expect("board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -7966,6 +8451,7 @@ async fn revoked_api_key_assignee_is_hidden_after_revoke() {
         .expect("col");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -7983,6 +8469,7 @@ async fn revoked_api_key_assignee_is_hidden_after_revoke() {
         .expect("task");
 
     let api_key = client
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "agent-to-revoke".to_string(),
             r#type: None,
@@ -7997,6 +8484,7 @@ async fn revoked_api_key_assignee_is_hidden_after_revoke() {
         .expect("create api key");
 
     client
+        .acta()
         .add_assignee(
             &ws.slug,
             &task.readable_id,
@@ -8010,6 +8498,7 @@ async fn revoked_api_key_assignee_is_hidden_after_revoke() {
 
     // Verify the assignee is present before revoke.
     let before = client
+        .acta()
         .list_assignees(&ws.slug, &task.readable_id)
         .await
         .expect("list assignees before revoke");
@@ -8018,12 +8507,14 @@ async fn revoked_api_key_assignee_is_hidden_after_revoke() {
 
     // Revoke the key — this should atomically delete its task_assignees rows.
     client
+        .custos()
         .revoke_user_api_key(api_key.id)
         .await
         .expect("revoke api key");
 
     // Part A: list_assignees must return empty (read-side filter).
     let after = client
+        .acta()
         .list_assignees(&ws.slug, &task.readable_id)
         .await
         .expect("list assignees after revoke");
@@ -8034,6 +8525,7 @@ async fn revoked_api_key_assignee_is_hidden_after_revoke() {
 
     // Part A: list_tasks (board) must not include the revoked assignee.
     let page = client
+        .acta()
         .list_tasks(&ws.slug, board.id, None, None)
         .await
         .expect("list tasks after revoke");
@@ -8076,10 +8568,12 @@ async fn task_graph_walks_references_subtasks_and_documents_both_ways() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "graph-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("graph-proj", "GR"))
         .await
         .expect("create project");
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "graph-proj",
@@ -8091,6 +8585,7 @@ async fn task_graph_walks_references_subtasks_and_documents_both_ways() {
         .await
         .expect("create board");
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -8110,6 +8605,7 @@ async fn task_graph_walks_references_subtasks_and_documents_both_ways() {
         let title = title.to_string();
         async move {
             client
+                .acta()
                 .create_task(
                     &ws_slug,
                     board.id,
@@ -8134,6 +8630,7 @@ async fn task_graph_walks_references_subtasks_and_documents_both_ways() {
     let far = task("Two hops away").await;
 
     let spec = client
+        .acta()
         .create_document(
             &ws.slug,
             "graph-proj",
@@ -8147,6 +8644,7 @@ async fn task_graph_walks_references_subtasks_and_documents_both_ways() {
         .expect("create document");
 
     let child = client
+        .acta()
         .create_subtask(
             &ws.slug,
             &root.readable_id,
@@ -8162,6 +8660,7 @@ async fn task_graph_walks_references_subtasks_and_documents_both_ways() {
         (&root, "spec", None, Some(spec.id)),
     ] {
         client
+            .acta()
             .create_reference(
                 &ws.slug,
                 &source.readable_id,
@@ -8176,6 +8675,7 @@ async fn task_graph_walks_references_subtasks_and_documents_both_ways() {
     }
 
     let graph = client
+        .acta()
         .get_task_graph(&ws.slug, &root.readable_id, Some(1))
         .await
         .expect("depth 1 graph");
@@ -8212,6 +8712,7 @@ async fn task_graph_walks_references_subtasks_and_documents_both_ways() {
     assert!(!graph.truncated);
 
     let deeper = client
+        .acta()
         .get_task_graph(&ws.slug, &root.readable_id, Some(2))
         .await
         .expect("depth 2 graph");
@@ -8240,10 +8741,12 @@ async fn task_graph_omits_nodes_the_caller_cannot_read() {
     let (owner, ws, _) = support::login_user_with_workspace(&server, &db, "graph-owner").await;
 
     owner
+        .acta()
         .create_project(&ws.slug, project_req("graph-open", "GO"))
         .await
         .expect("create open project");
     owner
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -8260,6 +8763,7 @@ async fn task_graph_omits_nodes_the_caller_cannot_read() {
     let mut boards = Vec::new();
     for project in ["graph-open", "graph-private"] {
         let board = owner
+            .acta()
             .create_board(
                 &ws.slug,
                 project,
@@ -8271,6 +8775,7 @@ async fn task_graph_omits_nodes_the_caller_cannot_read() {
             .await
             .expect("create board");
         let column = owner
+            .acta()
             .create_column(
                 &ws.slug,
                 board.id,
@@ -8284,6 +8789,7 @@ async fn task_graph_omits_nodes_the_caller_cannot_read() {
             .await
             .expect("create column");
         let task = owner
+            .acta()
             .create_task(
                 &ws.slug,
                 board.id,
@@ -8305,6 +8811,7 @@ async fn task_graph_omits_nodes_the_caller_cannot_read() {
     let private_task = &boards[1];
 
     owner
+        .acta()
         .create_reference(
             &ws.slug,
             &open_task.readable_id,
@@ -8331,6 +8838,7 @@ async fn task_graph_omits_nodes_the_caller_cannot_read() {
         .expect("add plain member");
 
     let graph = member
+        .acta()
         .get_task_graph(&ws.slug, &open_task.readable_id, Some(2))
         .await
         .expect("member reads the graph of a task they can see");
@@ -8368,10 +8876,12 @@ async fn an_archived_board_reads_but_refuses_every_write() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "archive-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("archive-proj", "ARC"))
         .await
         .expect("create project");
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "archive-proj",
@@ -8383,6 +8893,7 @@ async fn an_archived_board_reads_but_refuses_every_write() {
         .await
         .expect("create board");
     let column = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -8396,6 +8907,7 @@ async fn an_archived_board_reads_but_refuses_every_write() {
         .await
         .expect("create column");
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -8413,6 +8925,7 @@ async fn an_archived_board_reads_but_refuses_every_write() {
         .expect("create task");
 
     let archived = client
+        .acta()
         .archive_board(&ws.slug, board.id)
         .await
         .expect("archive board");
@@ -8420,12 +8933,14 @@ async fn an_archived_board_reads_but_refuses_every_write() {
 
     // Reads keep working: archiving closes the board, it does not hide it.
     let read_back = client
+        .acta()
         .get_board(&ws.slug, board.id)
         .await
         .expect("an archived board still reads");
     assert!(read_back.archived_at.is_some());
     assert!(
         client
+            .acta()
             .list_tasks(&ws.slug, board.id, None, None)
             .await
             .expect("tasks still list")
@@ -8436,6 +8951,7 @@ async fn an_archived_board_reads_but_refuses_every_write() {
 
     let problem = archived_problem(
         client
+            .acta()
             .create_task(
                 &ws.slug,
                 board.id,
@@ -8459,6 +8975,7 @@ async fn an_archived_board_reads_but_refuses_every_write() {
     assert_eq!(
         archived_problem(
             client
+                .acta()
                 .update_task(
                     &ws.slug,
                     &task.readable_id,
@@ -8476,6 +8993,7 @@ async fn an_archived_board_reads_but_refuses_every_write() {
     assert_eq!(
         archived_problem(
             client
+                .acta()
                 .update_column(
                     &ws.slug,
                     board.id,
@@ -8493,12 +9011,14 @@ async fn an_archived_board_reads_but_refuses_every_write() {
     );
 
     let reopened = client
+        .acta()
         .unarchive_board(&ws.slug, board.id)
         .await
         .expect("unarchive board");
     assert!(reopened.archived_at.is_none());
 
     client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -8525,10 +9045,12 @@ async fn archiving_twice_keeps_the_original_timestamp() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "archive-2").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("archive-idem", "AID"))
         .await
         .expect("create project");
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "archive-idem",
@@ -8541,10 +9063,12 @@ async fn archiving_twice_keeps_the_original_timestamp() {
         .expect("create board");
 
     let first = client
+        .acta()
         .archive_board(&ws.slug, board.id)
         .await
         .expect("archive board");
     let second = client
+        .acta()
         .archive_board(&ws.slug, board.id)
         .await
         .expect("archiving an archived board is not an error");
@@ -8555,6 +9079,7 @@ async fn archiving_twice_keeps_the_original_timestamp() {
     );
 
     let summaries = client
+        .acta()
         .list_boards(&ws.slug, "archive-idem", None, None)
         .await
         .expect("list boards");
