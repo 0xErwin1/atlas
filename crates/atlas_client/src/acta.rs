@@ -52,10 +52,7 @@ use atlas_api::{
 
 use crate::{
     ATTACHMENT_TRANSFER_TIMEOUT, AtlasClient, ClientError, Component, PurgeTrashResult, Req,
-    build_comment_feed_path, build_document_list_path, build_document_range_path,
-    build_paginated_path, build_search_path, build_semantic_search_path, build_trash_list_path,
-    build_webhook_deliveries_path, build_webhooks_list_path, build_workspace_activity_path,
-    build_workspace_tasks_path, decode_attachment_content, decode_empty_response,
+    build_paginated_path, encode_query_value,
 };
 
 /// The acta-owned methods on [`AtlasClient`]: workspaces, projects, boards
@@ -3044,5 +3041,455 @@ impl Acta<'_> {
         let response = self.get(Component::Acta, &path).send().await?;
         self.decode_response(response, "list_workspace_activity_with_cursor")
             .await
+    }
+}
+
+fn build_search_path(
+    ws: &str,
+    q: &str,
+    type_filter: Option<&str>,
+    sort: Option<&str>,
+    cursor: Option<&str>,
+    limit: Option<u32>,
+    mode: Option<&str>,
+) -> String {
+    let mut params = search_params(q, type_filter, cursor, limit);
+    if let Some(s) = sort {
+        params.insert(2.min(params.len()), format!("sort={s}"));
+    }
+    if let Some(mode) = mode {
+        params.push(format!("mode={mode}"));
+    }
+
+    format!("/workspaces/{ws}/search?{}", params.join("&"))
+}
+
+fn build_document_range_path(ws: &str, slug: &str, query: &DocumentContentRangeQuery) -> String {
+    let base = format!("/workspaces/{ws}/documents/{slug}/content/range");
+    let mut params = Vec::new();
+
+    if let Some(start_line) = query.start_line {
+        params.push(format!("start_line={start_line}"));
+    }
+    if let Some(end_line) = query.end_line {
+        params.push(format!("end_line={end_line}"));
+    }
+    if let Some(line_limit) = query.line_limit {
+        params.push(format!("line_limit={line_limit}"));
+    }
+    if let Some(byte_limit) = query.byte_limit {
+        params.push(format!("byte_limit={byte_limit}"));
+    }
+    if let Some(continuation) = query.continuation.as_deref() {
+        params.push(format!("continuation={}", encode_query_value(continuation)));
+    }
+
+    if params.is_empty() {
+        base
+    } else {
+        format!("{}?{}", base, params.join("&"))
+    }
+}
+
+fn build_semantic_search_path(
+    ws: &str,
+    q: &str,
+    type_filter: Option<&str>,
+    cursor: Option<&str>,
+    limit: Option<u32>,
+) -> String {
+    format!(
+        "/workspaces/{ws}/semantic-search?{}",
+        search_params(q, type_filter, cursor, limit).join("&")
+    )
+}
+
+fn search_params(
+    q: &str,
+    type_filter: Option<&str>,
+    cursor: Option<&str>,
+    limit: Option<u32>,
+) -> Vec<String> {
+    let encoded_q = encode_query_value(q);
+    let mut params = vec![format!("q={encoded_q}")];
+
+    if let Some(t) = type_filter {
+        params.push(format!("type={t}"));
+    }
+    if let Some(c) = cursor {
+        params.push(format!("cursor={c}"));
+    }
+    if let Some(l) = limit {
+        params.push(format!("limit={l}"));
+    }
+    params
+}
+
+fn build_workspace_tasks_path(ws: &str, q: &WorkspaceTaskQueryParams) -> String {
+    let base = format!("/workspaces/{ws}/tasks");
+    let mut params: Vec<String> = Vec::new();
+
+    if let Some(a) = &q.assignee {
+        params.push(format!("assignee={a}"));
+    }
+    if let Some(a) = &q.actor {
+        params.push(format!("actor={a}"));
+    }
+    for col in &q.column_ids {
+        params.push(format!("column_id={col}"));
+    }
+    for pri in &q.priorities {
+        params.push(format!("priority={pri}"));
+    }
+    for lbl in &q.labels {
+        params.push(format!("label={lbl}"));
+    }
+    if let Some(b) = &q.board_id {
+        params.push(format!("board_id={b}"));
+    }
+    if let Some(s) = &q.sort {
+        params.push(format!("sort={s}"));
+    }
+    if let Some(c) = &q.cursor {
+        params.push(format!("cursor={c}"));
+    }
+    if let Some(l) = q.limit {
+        params.push(format!("limit={l}"));
+    }
+
+    if params.is_empty() {
+        base
+    } else {
+        format!("{}?{}", base, params.join("&"))
+    }
+}
+
+fn build_workspace_activity_path(
+    ws: &str,
+    actor: Option<&str>,
+    from: Option<&str>,
+    to: Option<&str>,
+    cursor: Option<&str>,
+    limit: Option<u32>,
+) -> String {
+    let base = format!("/workspaces/{ws}/activity");
+    let mut params: Vec<String> = Vec::new();
+    if let Some(a) = actor {
+        params.push(format!("actor={a}"));
+    }
+    if let Some(f) = from {
+        params.push(format!("from={}", encode_query_value(f)));
+    }
+    if let Some(t) = to {
+        params.push(format!("to={}", encode_query_value(t)));
+    }
+    if let Some(c) = cursor {
+        params.push(format!("cursor={c}"));
+    }
+    if let Some(l) = limit {
+        params.push(format!("limit={l}"));
+    }
+    if params.is_empty() {
+        base
+    } else {
+        format!("{}?{}", base, params.join("&"))
+    }
+}
+
+fn build_document_list_path(
+    base: &str,
+    cursor: Option<&str>,
+    limit: Option<u32>,
+    unfiled: Option<bool>,
+    preview: bool,
+) -> String {
+    let mut path = build_paginated_path(base, cursor, limit);
+
+    if let Some(value) = unfiled {
+        path = append_query_flag(path, "unfiled", value);
+    }
+    if preview {
+        path = append_query_flag(path, "preview", true);
+    }
+
+    path
+}
+
+fn append_query_flag(path: String, name: &str, value: bool) -> String {
+    let separator = if path.contains('?') { '&' } else { '?' };
+
+    format!("{path}{separator}{name}={value}")
+}
+
+fn build_trash_list_path(
+    workspace_id: Option<uuid::Uuid>,
+    kind: Option<TrashKindDto>,
+    cursor: Option<&str>,
+    limit: Option<u32>,
+) -> String {
+    let mut params = Vec::new();
+
+    if let Some(workspace_id) = workspace_id {
+        params.push(format!("workspace_id={workspace_id}"));
+    }
+    if let Some(kind) = kind {
+        params.push(format!("kind={}", trash_kind_query(kind)));
+    }
+    if let Some(cursor) = cursor {
+        params.push(format!("cursor={}", encode_query_value(cursor)));
+    }
+    if let Some(limit) = limit {
+        params.push(format!("limit={limit}"));
+    }
+
+    if params.is_empty() {
+        "/admin/trash".to_string()
+    } else {
+        format!("/admin/trash?{}", params.join("&"))
+    }
+}
+
+fn trash_kind_query(kind: TrashKindDto) -> &'static str {
+    match kind {
+        TrashKindDto::Project => "project",
+        TrashKindDto::Folder => "folder",
+        TrashKindDto::Document => "document",
+        TrashKindDto::Comment => "comment",
+        TrashKindDto::Attachment => "attachment",
+    }
+}
+
+fn build_comment_feed_path(base: &str, cursor: Option<&str>, limit: Option<u32>) -> String {
+    let mut params = vec!["feed=full".to_string()];
+    if let Some(cursor) = cursor {
+        params.push(format!("cursor={cursor}"));
+    }
+    if let Some(limit) = limit {
+        params.push(format!("limit={limit}"));
+    }
+    format!("{}?{}", base, params.join("&"))
+}
+
+async fn decode_empty_response(response: reqwest::Response) -> Result<(), ClientError> {
+    if response.status().is_success() {
+        return Ok(());
+    }
+    let problem = response
+        .json()
+        .await
+        .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+    Err(ClientError::Api(problem))
+}
+
+async fn decode_attachment_content(
+    response: reqwest::Response,
+) -> Result<(Vec<u8>, Option<String>), ClientError> {
+    if !response.status().is_success() {
+        let problem = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        return Err(ClientError::Api(problem));
+    }
+
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|value| value.to_str().ok())
+        .map(ToString::to_string);
+    let bytes = response.bytes().await?;
+    Ok((bytes.to_vec(), content_type))
+}
+
+/// Builds the `GET /api/v2/acta/workspaces/{ws}/webhooks` path.
+///
+/// The webhook list route paginates on `after` (forward cursor) rather than the
+/// generic `cursor` param, so it cannot reuse [`build_paginated_path`].
+fn build_webhooks_list_path(ws: &str, after: Option<&str>, limit: Option<u32>) -> String {
+    let base = format!("/workspaces/{ws}/webhooks");
+
+    let mut params: Vec<String> = Vec::new();
+    if let Some(a) = after {
+        params.push(format!("after={a}"));
+    }
+    if let Some(l) = limit {
+        params.push(format!("limit={l}"));
+    }
+
+    if params.is_empty() {
+        base
+    } else {
+        format!("{}?{}", base, params.join("&"))
+    }
+}
+
+/// Builds the `GET /api/v2/acta/workspaces/{ws}/webhooks/{webhook_id}/deliveries` path.
+///
+/// Delivery attempts paginate newest-first on `before`, so this route also
+/// cannot reuse [`build_paginated_path`].
+fn build_webhook_deliveries_path(
+    ws: &str,
+    webhook_id: uuid::Uuid,
+    before: Option<&str>,
+    limit: Option<u32>,
+) -> String {
+    let base = format!("/workspaces/{ws}/webhooks/{webhook_id}/deliveries");
+
+    let mut params: Vec<String> = Vec::new();
+    if let Some(b) = before {
+        params.push(format!("before={b}"));
+    }
+    if let Some(l) = limit {
+        params.push(format!("limit={l}"));
+    }
+
+    if params.is_empty() {
+        base
+    } else {
+        format!("{}?{}", base, params.join("&"))
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_search_path_includes_required_q() {
+        let path = build_search_path("my-ws", "hello world", None, None, None, None, None);
+        assert!(path.starts_with("/workspaces/my-ws/search?q="));
+        assert!(
+            path.contains("hello%20world")
+                || path.contains("hello+world")
+                || path.contains("hello")
+        );
+    }
+
+    #[test]
+    fn build_search_path_includes_optional_params() {
+        let path = build_search_path(
+            "ws1",
+            "query",
+            Some("task"),
+            Some("updated"),
+            Some("abc"),
+            Some(10),
+            Some("hybrid"),
+        );
+        assert!(path.contains("type=task"));
+        assert!(path.contains("sort=updated"));
+        assert!(path.contains("cursor=abc"));
+        assert!(path.contains("limit=10"));
+        assert!(path.contains("mode=hybrid"));
+    }
+
+    #[test]
+    fn build_search_path_omits_optional_params_when_none() {
+        let path = build_search_path("ws1", "query", None, None, None, None, None);
+        assert!(!path.contains("type="));
+        assert!(!path.contains("sort="));
+        assert!(!path.contains("cursor="));
+        assert!(!path.contains("limit="));
+        assert!(!path.contains("mode="));
+    }
+
+    #[test]
+    fn build_document_list_path_omits_unfiled_when_filter_is_any() {
+        let path = build_document_list_path("/documents", Some("cursor"), Some(20), None, false);
+        assert_eq!(path, "/documents?cursor=cursor&limit=20");
+    }
+
+    #[test]
+    fn build_document_list_path_keeps_true_and_false_unfiled_states() {
+        let unfiled = build_document_list_path("/documents", None, None, Some(true), false);
+        let filed = build_document_list_path("/documents", None, None, Some(false), false);
+
+        assert_eq!(unfiled, "/documents?unfiled=true");
+        assert_eq!(filed, "/documents?unfiled=false");
+    }
+
+    #[test]
+    fn build_document_list_path_appends_preview_only_when_opted_in() {
+        let without = build_document_list_path("/documents", None, None, None, false);
+        let with = build_document_list_path("/documents", None, None, None, true);
+        let combined = build_document_list_path("/documents", None, Some(10), Some(true), true);
+
+        assert_eq!(without, "/documents");
+        assert_eq!(with, "/documents?preview=true");
+        assert_eq!(combined, "/documents?limit=10&unfiled=true&preview=true");
+    }
+
+    #[test]
+    fn build_semantic_search_path_targets_separate_route() {
+        let path = build_semantic_search_path(
+            "ws1",
+            "concept drift",
+            Some("document"),
+            Some("cur"),
+            Some(25),
+        );
+        assert!(path.starts_with("/workspaces/ws1/semantic-search?q="));
+        assert!(!path.starts_with("/workspaces/ws1/search"));
+        assert!(path.contains("concept%20drift"));
+        assert!(path.contains("type=document"));
+        assert!(path.contains("cursor=cur"));
+        assert!(path.contains("limit=25"));
+    }
+
+    #[test]
+    fn build_semantic_search_path_omits_optional_params_when_none() {
+        let path = build_semantic_search_path("ws1", "query", None, None, None);
+        assert_eq!(path, "/workspaces/ws1/semantic-search?q=query");
+    }
+
+    #[test]
+    fn build_webhooks_list_path_uses_after_cursor() {
+        let path = build_webhooks_list_path("ws1", Some("cur0"), Some(25));
+        assert_eq!(path, "/workspaces/ws1/webhooks?after=cur0&limit=25");
+    }
+
+    #[test]
+    fn build_webhooks_list_path_omits_params_when_none() {
+        let path = build_webhooks_list_path("ws1", None, None);
+        assert_eq!(path, "/workspaces/ws1/webhooks");
+        assert!(!path.contains("cursor="));
+        assert!(!path.contains("after="));
+    }
+
+    #[test]
+    fn build_webhook_deliveries_path_uses_before_cursor() {
+        let id = uuid::Uuid::nil();
+        let path = build_webhook_deliveries_path("ws1", id, Some("cur9"), Some(10));
+        assert_eq!(
+            path,
+            format!("/workspaces/ws1/webhooks/{id}/deliveries?before=cur9&limit=10")
+        );
+    }
+
+    #[test]
+    fn build_webhook_deliveries_path_omits_params_when_none() {
+        let id = uuid::Uuid::nil();
+        let path = build_webhook_deliveries_path("ws1", id, None, None);
+        assert_eq!(path, format!("/workspaces/ws1/webhooks/{id}/deliveries"));
+        assert!(!path.contains("before="));
+    }
+
+    #[test]
+    fn build_comment_feed_path_keeps_feed_before_pagination() {
+        assert_eq!(
+            build_comment_feed_path(
+                "/workspaces/ws/tasks/ATL-1/comments",
+                Some("cursor"),
+                Some(25)
+            ),
+            "/workspaces/ws/tasks/ATL-1/comments?feed=full&cursor=cursor&limit=25"
+        );
+    }
+
+    #[test]
+    fn build_comment_feed_path_always_requests_full_feed() {
+        assert_eq!(
+            build_comment_feed_path("/workspaces/ws/documents/doc/comments", None, None),
+            "/workspaces/ws/documents/doc/comments?feed=full"
+        );
     }
 }

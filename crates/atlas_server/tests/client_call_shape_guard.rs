@@ -104,7 +104,7 @@ fn client_production_source(file_name: &str) -> String {
 /// implementations outside `lib.rs`, populated one at a time as PR3-PR5
 /// split the client (`custos.rs` in PR3). Each one is walked in full by
 /// [`derive_method_namespace_map`], on equal footing with `lib.rs`.
-const SPLIT_PRODUCTION_FILES: &[&str] = &["custos.rs", "acta.rs"];
+const SPLIT_PRODUCTION_FILES: &[&str] = &["custos.rs", "acta.rs", "platform.rs"];
 
 /// The names of every `pub async fn` in `source` whose attribute block
 /// carries `#[doc(hidden)]` (doc-comment lines may sit between the
@@ -318,20 +318,24 @@ fn hidden_forwarder_names_match_only_doc_hidden_pub_async_fns() {
 }
 
 #[test]
-fn lib_rs_forwarders_are_the_pr3_custos_and_pr4_acta_moves() {
+fn lib_rs_forwarders_are_the_pr3_pr4_and_pr5_moves() {
     let names = hidden_forwarder_names(&client_production_source("lib.rs"));
 
     assert_eq!(
         names.len(),
-        191,
-        "PR3 added 34 custos() forwarders and PR4 added 157 acta() forwarders"
+        195,
+        "PR3 added 34 custos() forwarders, PR4 added 157 acta() forwarders, \
+         PR5 added 4 platform() forwarders"
     );
     assert!(names.contains("me"));
     assert!(names.contains("list_workspace_audit"));
     assert!(names.contains("list_projects"));
     assert!(names.contains("list_workspace_activity_with_cursor"));
+    assert!(names.contains("get_ui_state"));
+    assert!(names.contains("doctor"));
     assert!(hidden_forwarder_names(&client_production_source("custos.rs")).is_empty());
     assert!(hidden_forwarder_names(&client_production_source("acta.rs")).is_empty());
+    assert!(hidden_forwarder_names(&client_production_source("platform.rs")).is_empty());
 }
 
 #[test]
@@ -508,8 +512,11 @@ const ATLAS_CLI_PIN: usize = 149;
 /// `crates/atlas_mcp/src/lib.rs`'s flat-call count.
 const ATLAS_MCP_PIN: usize = 128;
 
-/// `crates/atlas_client/src/helpers.rs`'s flat-call count.
-const ATLAS_CLIENT_HELPERS_PIN: usize = 6;
+/// `crates/atlas_client/src/helpers.rs`'s flat-call count. Flipped to 0 in
+/// PR5 (T5.7): its six sites (`list_projects`, `list_boards`,
+/// `list_columns`) are namespaced directly, with no shim, since `helpers.rs`
+/// is a client-internal consumer of the `acta` namespace it depends on.
+const ATLAS_CLIENT_HELPERS_PIN: usize = 0;
 
 /// Every `crates/atlas_server/tests/*.rs` file with a nonzero flat-call
 /// count, pinned individually (design T2.4: "pin each file's count
@@ -688,8 +695,13 @@ fn reverse_check_mismatches(
         .collect()
 }
 
+/// `atlas_client::helpers.rs` is excluded here: PR5 (T5.7) namespaces its
+/// six sites directly, with no shim, since it is a client-internal consumer
+/// migrated in the same PR as the namespace it depends on. Its own reverse
+/// check lives in
+/// [`atlas_client_helpers_namespaced_sites_match_their_declared_home`].
 #[test]
-fn no_namespaced_call_site_exists_anywhere_yet() {
+fn no_namespaced_call_site_exists_anywhere_yet_outside_atlas_client_helpers() {
     let derived = derive_method_namespace_map();
     let mut all_sites = Vec::new();
 
@@ -699,9 +711,6 @@ fn no_namespaced_call_site_exists_anywhere_yet() {
     all_sites.extend(namespaced_call_sites(&masked_code(
         &repo_root().join("crates/atlas_mcp/src/lib.rs"),
     )));
-    all_sites.extend(namespaced_call_sites(&masked_code(
-        &repo_root().join("crates/atlas_client/src/helpers.rs"),
-    )));
     for path in atlas_server_test_files() {
         all_sites.extend(namespaced_call_sites(&masked_code(&path)));
     }
@@ -709,13 +718,36 @@ fn no_namespaced_call_site_exists_anywhere_yet() {
     assert_eq!(
         all_sites.len(),
         0,
-        "found a namespaced call site before any sub-client exists: {all_sites:?}"
+        "found a namespaced call site outside atlas_client::helpers.rs before its consumer PR migrated: \
+         {all_sites:?}"
     );
 
     // The reverse check runs and reports zero mismatches over zero sites —
     // distinct from "did not run at all" (design T2.5's non-vacuous-by-construction
     // requirement).
     let mismatches = reverse_check_mismatches(&all_sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+/// T5.6/T5.7 — `atlas_client::helpers.rs`'s six sites are namespaced
+/// directly in PR5, with no shim. Every one must resolve to `acta` (its
+/// declared home per [`derive_method_namespace_map`]) or this test names
+/// the mismatch.
+#[test]
+fn atlas_client_helpers_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_client/src/helpers.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        6,
+        "expected 6 namespaced sites in atlas_client::helpers.rs (list_projects x2, \
+         list_boards x2, list_columns x2), found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
     assert_eq!(mismatches, Vec::<String>::new());
 }
 

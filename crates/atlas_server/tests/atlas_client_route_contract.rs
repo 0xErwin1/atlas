@@ -451,7 +451,6 @@ fn normalize_template(path: &str) -> String {
 /// skips; `lib.rs` is the sole file allowed to carry it at any point (D4.4's
 /// totality assertion: "no second `Mixed` file").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // Platform is wired for a real file in PR5
 enum FileComponent {
     Acta,
     Custos,
@@ -479,15 +478,21 @@ struct SourceMapping {
 }
 
 /// Every production file in `crates/atlas_client/src/` at this PR's ground
-/// truth. `lib.rs` stays `Mixed` while it still holds Platform methods plus
-/// `login`/`health` (PR5 finishes the split); `custos.rs` (PR3, D2.2) and
-/// `acta.rs` (PR4, D2.2) carry only their own component's methods and are
-/// each mapped to their own component.
+/// truth. `lib.rs` stays `Mixed` permanently (design R10, D4.4): it holds
+/// `login` (a custos wire call that mutates `self.token`, an effect a
+/// `&self` sub-client cannot perform) and `health`/`root_get` (no owning
+/// component on the wire) — the two named exceptions that never move to a
+/// sub-client. `custos.rs` (PR3, D2.2), `acta.rs` (PR4, D2.2) and
+/// `platform.rs` (PR5, D2.2) carry only their own component's methods and
+/// are each mapped to their own component. `lib.rs` is the only file the
+/// totality check ([`walked_source_file_set_is_total`]) permits to carry
+/// `Mixed` at any point.
 const PRODUCTION_SOURCE_MAPPINGS: &[SourceMapping] = &[
     SourceMapping {
         file_name: "lib.rs",
         component: FileComponent::Mixed,
-        reason: "root file, not yet fully split; still holds platform methods, login, and health until PR5",
+        reason: "root client — holds login (a custos wire call whose effect is self.token = …, \
+                 incompatible with a &self sub-client) and health/root_get (no owning component)",
     },
     SourceMapping {
         file_name: "custos.rs",
@@ -498,6 +503,11 @@ const PRODUCTION_SOURCE_MAPPINGS: &[SourceMapping] = &[
         file_name: "acta.rs",
         component: FileComponent::Acta,
         reason: "acta-owned client methods, split out of lib.rs in PR4",
+    },
+    SourceMapping {
+        file_name: "platform.rs",
+        component: FileComponent::Platform,
+        reason: "platform-owned client methods, split out of lib.rs in PR5",
     },
 ];
 
@@ -1005,8 +1015,8 @@ fn every_migrated_call_matches_a_declared_v2_route_both_directions() {
 }
 
 /// D4.4 — every real `crates/atlas_client/src/*.rs` file is mapped or
-/// allowlisted; there is exactly one `Mixed`-mapped file (`lib.rs`, until
-/// PR3-PR5 split it).
+/// allowlisted; there is exactly one `Mixed`-mapped file (`lib.rs`,
+/// permanently, per R10 — it holds `login` and `health`).
 #[test]
 fn every_client_source_file_is_mapped_or_allowlisted() {
     let unmapped = unmapped_source_files(&real_client_source_file_names());
@@ -1115,11 +1125,12 @@ fn extracted_call_count_is_pinned() {
 }
 
 /// D4.6, per-file — `custos.rs` split out exactly the 34 custos-owned call
-/// sites in PR3 and `acta.rs` split out exactly the 154 acta-owned call
-/// sites in PR4, leaving `lib.rs` with the rest (6: 4 platform calls, the
-/// one `login` custos call, and `health`'s `root_get`). Catches a call
-/// silently dropped or duplicated during the move that the total-count pin
-/// above cannot distinguish from a compensating change elsewhere.
+/// sites in PR3, `acta.rs` split out exactly the 154 acta-owned call sites
+/// in PR4, and `platform.rs` split out exactly the 4 platform-owned call
+/// sites in PR5, leaving `lib.rs` with the rest (2: the one `login` custos
+/// call and `health`'s `root_get`). Catches a call silently dropped or
+/// duplicated during the move that the total-count pin above cannot
+/// distinguish from a compensating change elsewhere.
 #[test]
 fn extracted_call_count_is_pinned_per_file() {
     let per_file = all_mapped_calls();
@@ -1131,7 +1142,7 @@ fn extracted_call_count_is_pinned_per_file() {
 
     assert_eq!(
         counts.get("lib.rs").copied(),
-        Some(6),
+        Some(2),
         "lib.rs's own call count moved"
     );
     assert_eq!(
@@ -1143,6 +1154,11 @@ fn extracted_call_count_is_pinned_per_file() {
         counts.get("acta.rs").copied(),
         Some(154),
         "acta.rs's own call count moved"
+    );
+    assert_eq!(
+        counts.get("platform.rs").copied(),
+        Some(4),
+        "platform.rs's own call count moved"
     );
 }
 
