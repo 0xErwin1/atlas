@@ -532,7 +532,7 @@ const ATLAS_SERVER_TEST_PINS: &[(&str, usize)] = &[
     ("api_audit_read.rs", 14),
     ("api_audit_writes.rs", 44),
     ("api_auth.rs", 8),
-    ("api_boards_tasks.rs", 526),
+    ("api_boards_tasks.rs", 0),
     ("api_capability_sweep.rs", 113),
     ("api_comment_attachments.rs", 50),
     ("api_comments.rs", 125),
@@ -708,21 +708,27 @@ fn reverse_check_mismatches(
 /// `crates/atlas_mcp/src/lib.rs` is excluded here too: PR7 namespaces all
 /// 128 of its sites directly, with no shim. Its own reverse check lives in
 /// [`atlas_mcp_namespaced_sites_match_their_declared_home`].
+/// `crates/atlas_server/tests/api_boards_tasks.rs` is excluded here too: PR8
+/// namespaces all 526 of its sites directly, with no shim. Its own reverse
+/// check lives in [`api_boards_tasks_namespaced_sites_match_their_declared_home`].
 #[test]
-fn no_namespaced_call_site_exists_anywhere_yet_outside_atlas_client_helpers_and_atlas_cli_and_atlas_mcp()
+fn no_namespaced_call_site_exists_anywhere_yet_outside_atlas_client_helpers_and_atlas_cli_and_atlas_mcp_and_api_boards_tasks()
  {
     let derived = derive_method_namespace_map();
     let mut all_sites = Vec::new();
 
     for path in atlas_server_test_files() {
+        if file_name(&path) == "api_boards_tasks.rs" {
+            continue;
+        }
         all_sites.extend(namespaced_call_sites(&masked_code(&path)));
     }
 
     assert_eq!(
         all_sites.len(),
         0,
-        "found a namespaced call site outside atlas_client::helpers.rs / atlas_cli / atlas_mcp \
-         before its consumer PR migrated: {all_sites:?}"
+        "found a namespaced call site outside atlas_client::helpers.rs / atlas_cli / atlas_mcp / \
+         api_boards_tasks.rs before its consumer PR migrated: {all_sites:?}"
     );
 
     // The reverse check runs and reports zero mismatches over zero sites —
@@ -783,6 +789,24 @@ fn atlas_mcp_namespaced_sites_match_their_declared_home() {
         sites.len(),
         128,
         "expected 128 namespaced sites in crates/atlas_mcp/src/lib.rs (PR7), found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_boards_tasks_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_boards_tasks.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        526,
+        "expected 526 namespaced sites in crates/atlas_server/tests/api_boards_tasks.rs (PR8), \
+         found: {sites:?}"
     );
 
     let mismatches = reverse_check_mismatches(&sites, &derived.map);
