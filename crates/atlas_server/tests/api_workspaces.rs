@@ -25,7 +25,11 @@ async fn list_workspaces_returns_the_users_own_workspace() {
 
     let (client, ws, _user) = login_user_with_workspace(&server, &db, "ws-list-owner").await;
 
-    let workspaces = client.list_workspaces().await.expect("list_workspaces");
+    let workspaces = client
+        .acta()
+        .list_workspaces()
+        .await
+        .expect("list_workspaces");
 
     assert!(
         workspaces.iter().any(|w| w.slug == ws.slug),
@@ -45,6 +49,7 @@ async fn list_workspaces_does_not_leak_other_tenants_workspace() {
         login_user_with_workspace(&server, &db, "ws-list-tenant-b").await;
 
     let workspaces_b = client_b
+        .acta()
         .list_workspaces()
         .await
         .expect("list_workspaces for tenant-b");
@@ -63,6 +68,7 @@ async fn list_workspaces_returns_401_for_unauthenticated() {
 
     let err = server
         .client()
+        .acta()
         .list_workspaces()
         .await
         .expect_err("unauthenticated list_workspaces must fail");
@@ -87,11 +93,13 @@ async fn create_workspace_seeds_a_default_project_and_board() {
     let (client, _ws, _user) = login_user_with_workspace(&server, &db, "ws-seed-owner").await;
 
     let created = client
+        .acta()
         .create_workspace("Seed Target")
         .await
         .expect("create_workspace");
 
     let projects = client
+        .acta()
         .list_projects(&created.slug, None, None)
         .await
         .expect("list_projects");
@@ -104,6 +112,7 @@ async fn create_workspace_seeds_a_default_project_and_board() {
     assert_eq!(project.slug, "general");
 
     let boards = client
+        .acta()
         .list_boards(&created.slug, &project.slug, None, None)
         .await
         .expect("list_boards");
@@ -115,6 +124,7 @@ async fn create_workspace_seeds_a_default_project_and_board() {
     let board = &boards.items[0];
 
     let columns = client
+        .acta()
         .list_columns(&created.slug, board.id)
         .await
         .expect("list_columns");
@@ -136,6 +146,7 @@ async fn rename_workspace_member_can_rename() {
     let (client, ws, _user) = login_user_with_workspace(&server, &db, "ws-rename-member").await;
 
     let updated = client
+        .acta()
         .update_workspace(
             &ws.slug,
             UpdateWorkspaceRequest {
@@ -159,6 +170,7 @@ async fn rename_workspace_persists() {
     let (client, ws, _user) = login_user_with_workspace(&server, &db, "ws-rename-persist").await;
 
     client
+        .acta()
         .update_workspace(
             &ws.slug,
             UpdateWorkspaceRequest {
@@ -169,6 +181,7 @@ async fn rename_workspace_persists() {
         .expect("update_workspace");
 
     let fetched = client
+        .acta()
         .get_workspace(&ws.slug)
         .await
         .expect("get_workspace after rename");
@@ -190,6 +203,7 @@ async fn rename_workspace_non_member_gets_404() {
         login_user_with_workspace(&server, &db, "ws-rename-nonmember").await;
 
     let err = non_member
+        .acta()
         .update_workspace(
             &ws.slug,
             UpdateWorkspaceRequest {
@@ -250,6 +264,7 @@ async fn rename_workspace_agent_without_config_update_gets_403() {
         .expect("create agent key without config:update");
 
     owner
+        .custos()
         .create_workspace_grant(
             &ws.slug,
             CreateGrantRequest {
@@ -266,6 +281,7 @@ async fn rename_workspace_agent_without_config_update_gets_403() {
     let agent = atlas_client::AtlasClient::new(server.base_url().to_string()).with_token(plain);
 
     let err = agent
+        .acta()
         .update_workspace(
             &ws.slug,
             UpdateWorkspaceRequest {
@@ -329,6 +345,7 @@ async fn rename_workspace_agent_with_config_update_succeeds() {
         .expect("create agent key with config:update");
 
     owner
+        .custos()
         .create_workspace_grant(
             &ws.slug,
             CreateGrantRequest {
@@ -345,6 +362,7 @@ async fn rename_workspace_agent_with_config_update_succeeds() {
     let agent = atlas_client::AtlasClient::new(server.base_url().to_string()).with_token(plain);
 
     let updated = agent
+        .acta()
         .update_workspace(
             &ws.slug,
             UpdateWorkspaceRequest {
@@ -378,6 +396,7 @@ async fn admin_list_workspaces_root_sees_all() {
     let root = support::login_root_user(&server, &db).await;
 
     let all = root
+        .acta()
         .admin_list_workspaces()
         .await
         .expect("admin_list_workspaces");
@@ -403,6 +422,7 @@ async fn admin_list_workspaces_non_root_gets_403() {
         login_user_with_workspace(&server, &db, "ws-admin-list-nonroot").await;
 
     let err = non_root
+        .acta()
         .admin_list_workspaces()
         .await
         .expect_err("non-root must be denied");
@@ -429,6 +449,7 @@ async fn admin_update_workspace_changes_slug() {
     let root = support::login_root_user(&server, &db).await;
 
     let updated = root
+        .acta()
         .admin_update_workspace(
             &ws.slug,
             AdminUpdateWorkspaceRequest {
@@ -443,12 +464,13 @@ async fn admin_update_workspace_changes_slug() {
     assert_eq!(updated.id, ws.id.0, "id must be stable across a re-slug");
 
     let fetched = owner
+        .acta()
         .get_workspace("brand-new-slug")
         .await
         .expect("get_workspace by the new slug");
     assert_eq!(fetched.id, ws.id.0);
 
-    let old = owner.get_workspace(&ws.slug).await;
+    let old = owner.acta().get_workspace(&ws.slug).await;
     match old {
         Err(ClientError::Api(p)) => assert_eq!(p.status, 404, "old slug must 404"),
         other => panic!("old slug must no longer resolve, got {other:?}"),
@@ -468,6 +490,7 @@ async fn admin_update_workspace_rejects_taken_slug() {
     let root = support::login_root_user(&server, &db).await;
 
     let err = root
+        .acta()
         .admin_update_workspace(
             &ws_a.slug,
             AdminUpdateWorkspaceRequest {
@@ -496,6 +519,7 @@ async fn admin_update_workspace_rejects_invalid_slug() {
     let root = support::login_root_user(&server, &db).await;
 
     let err = root
+        .acta()
         .admin_update_workspace(
             &ws.slug,
             AdminUpdateWorkspaceRequest {
@@ -522,6 +546,7 @@ async fn admin_update_workspace_non_root_gets_403() {
     let (owner, ws, _user) = login_user_with_workspace(&server, &db, "ws-reslug-nonroot").await;
 
     let err = owner
+        .acta()
         .admin_update_workspace(
             &ws.slug,
             AdminUpdateWorkspaceRequest {
@@ -551,11 +576,13 @@ async fn admin_delete_workspace_hides_it_everywhere() {
 
     let root = support::login_root_user(&server, &db).await;
 
-    root.admin_delete_workspace(&ws.slug)
+    root.acta()
+        .admin_delete_workspace(&ws.slug)
         .await
         .expect("admin_delete_workspace");
 
     let admin_list = root
+        .acta()
         .admin_list_workspaces()
         .await
         .expect("admin_list_workspaces after delete");
@@ -565,6 +592,7 @@ async fn admin_delete_workspace_hides_it_everywhere() {
     );
 
     let owner_list = owner
+        .acta()
         .list_workspaces()
         .await
         .expect("owner list_workspaces after delete");
@@ -573,7 +601,7 @@ async fn admin_delete_workspace_hides_it_everywhere() {
         "a soft-deleted workspace must not appear in the owner's list"
     );
 
-    let get = owner.get_workspace(&ws.slug).await;
+    let get = owner.acta().get_workspace(&ws.slug).await;
     match get {
         Err(ClientError::Api(p)) => assert_eq!(p.status, 404, "deleted workspace must 404"),
         other => panic!("deleted workspace must no longer resolve, got {other:?}"),
@@ -590,6 +618,7 @@ async fn admin_delete_workspace_unknown_slug_gets_404() {
     let root = support::login_root_user(&server, &db).await;
 
     let err = root
+        .acta()
         .admin_delete_workspace("no-such-workspace")
         .await
         .expect_err("deleting an unknown workspace must fail");
@@ -610,6 +639,7 @@ async fn admin_delete_workspace_non_root_gets_403() {
     let (owner, ws, _user) = login_user_with_workspace(&server, &db, "ws-delete-nonroot").await;
 
     let err = owner
+        .acta()
         .admin_delete_workspace(&ws.slug)
         .await
         .expect_err("a non-admin must not delete via the admin endpoint");
@@ -656,6 +686,7 @@ async fn api_key_with_grant_sees_workspace_in_list() {
         .expect("create api key");
 
     owner
+        .custos()
         .create_workspace_grant(
             &ws.slug,
             CreateGrantRequest {
@@ -672,6 +703,7 @@ async fn api_key_with_grant_sees_workspace_in_list() {
     let agent = atlas_client::AtlasClient::new(server.base_url().to_string()).with_token(plain);
 
     let workspaces = agent
+        .acta()
         .list_workspaces()
         .await
         .expect("api_key list_workspaces must succeed");
@@ -724,6 +756,7 @@ async fn api_key_with_grants_in_two_workspaces_sees_both_distinct() {
         .expect("create api key");
 
     owner_a
+        .custos()
         .create_workspace_grant(
             &ws_a.slug,
             CreateGrantRequest {
@@ -779,6 +812,7 @@ async fn api_key_with_grants_in_two_workspaces_sees_both_distinct() {
     let agent = atlas_client::AtlasClient::new(server.base_url().to_string()).with_token(plain);
 
     let workspaces = agent
+        .acta()
         .list_workspaces()
         .await
         .expect("api_key list_workspaces must succeed");
@@ -837,6 +871,7 @@ async fn api_key_with_no_grant_sees_empty_workspace_list() {
     let agent = atlas_client::AtlasClient::new(server.base_url().to_string()).with_token(plain);
 
     let workspaces = agent
+        .acta()
         .list_workspaces()
         .await
         .expect("api_key with no grant: list_workspaces must return 200");
@@ -865,6 +900,7 @@ async fn list_workspaces_user_still_sees_own_workspaces_after_fix() {
         login_user_with_workspace(&server, &db, "ws-regression-b").await;
 
     let workspaces = client_a
+        .acta()
         .list_workspaces()
         .await
         .expect("user list_workspaces must succeed");
@@ -917,12 +953,17 @@ async fn global_api_key_created_by_root_lists_all_workspaces() {
         .await
         .expect("create root-owned key");
 
-    root.set_api_key_global(key.id.0, true)
+    root.custos()
+        .set_api_key_global(key.id.0, true)
         .await
         .expect("root marks own key global");
 
     let agent = atlas_client::AtlasClient::new(server.base_url().to_string()).with_token(plain);
-    let workspaces = agent.list_workspaces().await.expect("list_workspaces");
+    let workspaces = agent
+        .acta()
+        .list_workspaces()
+        .await
+        .expect("list_workspaces");
     let slugs: Vec<String> = workspaces.iter().map(|w| w.slug.clone()).collect();
 
     assert!(

@@ -77,6 +77,7 @@ async fn seed_board_with_task(
     task_prefix: &str,
 ) -> (String, uuid::Uuid, uuid::Uuid, String) {
     let project = owner_client
+        .acta()
         .create_project(
             ws_slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -91,6 +92,7 @@ async fn seed_board_with_task(
         .expect("create project");
 
     let board = owner_client
+        .acta()
         .create_board(
             ws_slug,
             &project.slug,
@@ -103,6 +105,7 @@ async fn seed_board_with_task(
         .expect("create board");
 
     let col = owner_client
+        .acta()
         .create_column(
             ws_slug,
             board.id,
@@ -119,6 +122,7 @@ async fn seed_board_with_task(
     let _ = server; // kept for symmetry with other helpers
 
     let task = owner_client
+        .acta()
         .create_task(
             ws_slug,
             board.id,
@@ -158,6 +162,7 @@ async fn ungranted_api_key_denied_on_all_workspace_endpoints() {
 
     // (a) GET /api/workspaces/{ws}/tasks → must be 404, not 200 over-returning all tasks
     let result = agent
+        .acta()
         .list_workspace_tasks(&ws.slug, &Default::default())
         .await;
     assert!(
@@ -166,21 +171,24 @@ async fn ungranted_api_key_denied_on_all_workspace_endpoints() {
     );
 
     // (b) GET /api/workspaces/{ws}/tasks/{rid} → must be 404
-    let result = agent.get_task(&ws.slug, &task_rid).await;
+    let result = agent.acta().get_task(&ws.slug, &task_rid).await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
         "ungranted key: get_task must be 404, got: {result:?}"
     );
 
     // (c) GET /api/workspaces/{ws}/projects → must be 404
-    let result = agent.list_projects(&ws.slug, None, None).await;
+    let result = agent.acta().list_projects(&ws.slug, None, None).await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
         "ungranted key: list_projects must be 404, got: {result:?}"
     );
 
     // (d) GET /api/workspaces/{ws}/projects/{slug}/boards via list_boards
-    let result = agent.list_boards(&ws.slug, &project_slug, None, None).await;
+    let result = agent
+        .acta()
+        .list_boards(&ws.slug, &project_slug, None, None)
+        .await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
         "ungranted key: list_boards must be 404, got: {result:?}"
@@ -188,6 +196,7 @@ async fn ungranted_api_key_denied_on_all_workspace_endpoints() {
 
     // (e) PATCH /api/workspaces/{ws}/tasks/{rid} (write) → must be 404
     let result = agent
+        .acta()
         .update_task(
             &ws.slug,
             &task_rid,
@@ -226,6 +235,7 @@ async fn granted_api_key_accesses_all_workspace_endpoints_consistently() {
 
     // Grant the key workspace-level editor access
     owner
+        .custos()
         .create_workspace_grant(
             &ws.slug,
             CreateGrantRequest {
@@ -243,6 +253,7 @@ async fn granted_api_key_accesses_all_workspace_endpoints_consistently() {
 
     // (a) workspace task list → 200 with the task
     let page = agent
+        .acta()
         .list_workspace_tasks(&ws.slug, &Default::default())
         .await
         .expect("granted key: list_workspace_tasks must succeed");
@@ -254,24 +265,28 @@ async fn granted_api_key_accesses_all_workspace_endpoints_consistently() {
 
     // (b) get_task → 200
     agent
+        .acta()
         .get_task(&ws.slug, &task_rid)
         .await
         .expect("granted key: get_task must succeed");
 
     // (c) list_projects → 200
     agent
+        .acta()
         .list_projects(&ws.slug, None, None)
         .await
         .expect("granted key: list_projects must succeed");
 
     // (d) list_boards → 200
     agent
+        .acta()
         .list_boards(&ws.slug, &project_slug, None, None)
         .await
         .expect("granted key: list_boards must succeed");
 
     // (e) write (update_task title) → 200 within editor cap
     agent
+        .acta()
         .update_task(
             &ws.slug,
             &task_rid,
@@ -297,6 +312,7 @@ async fn granted_api_key_is_denied_after_its_creator_is_disabled() {
         create_ungrant_key(&db, ws.id, owner_user.id, "disabled-creator-key").await;
 
     owner
+        .custos()
         .create_workspace_grant(
             &ws.slug,
             CreateGrantRequest {
@@ -348,6 +364,7 @@ async fn granted_api_key_cannot_manage_grants() {
 
     // Grant workspace editor
     owner
+        .custos()
         .create_workspace_grant(
             &ws.slug,
             CreateGrantRequest {
@@ -363,6 +380,7 @@ async fn granted_api_key_cannot_manage_grants() {
 
     // Create a project to try sharing
     owner
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -407,6 +425,7 @@ async fn granted_api_key_cannot_manage_grants() {
 
     // Agent must NOT be able to create a project grant (share action)
     let result = agent
+        .custos()
         .create_project_grant(
             &ws.slug,
             "b2-03-proj",
@@ -453,6 +472,7 @@ async fn api_key_granted_in_workspace_a_denied_in_workspace_b() {
 
     // Grant only in WS-A
     owner_a
+        .custos()
         .create_workspace_grant(
             &ws_a.slug,
             CreateGrantRequest {
@@ -470,12 +490,14 @@ async fn api_key_granted_in_workspace_a_denied_in_workspace_b() {
 
     // Key must work in WS-A
     agent
+        .acta()
         .list_workspace_tasks(&ws_a.slug, &Default::default())
         .await
         .expect("key must work in workspace-a");
 
     // Key must be denied in WS-B (no grant there)
     let result_b = agent
+        .acta()
         .list_workspace_tasks(&ws_b.slug, &Default::default())
         .await;
     assert!(
@@ -483,7 +505,7 @@ async fn api_key_granted_in_workspace_a_denied_in_workspace_b() {
         "key with grant in WS-A must be denied in WS-B (404), got: {result_b:?}"
     );
 
-    let result_b_task = agent.list_projects(&ws_b.slug, None, None).await;
+    let result_b_task = agent.acta().list_projects(&ws_b.slug, None, None).await;
     assert!(
         matches!(result_b_task, Err(ClientError::Api(ref p)) if p.status == 404),
         "key: list_projects in WS-B must be 404, got: {result_b_task:?}"
@@ -624,6 +646,7 @@ async fn revoking_grant_denies_key_access() {
 
     // Grant workspace editor
     let grant = owner
+        .custos()
         .create_workspace_grant(
             &ws.slug,
             CreateGrantRequest {
@@ -641,18 +664,21 @@ async fn revoking_grant_denies_key_access() {
 
     // Key must work after grant
     agent
+        .acta()
         .list_workspace_tasks(&ws.slug, &Default::default())
         .await
         .expect("key must work after grant");
 
     // Delete the grant
     owner
+        .custos()
         .delete_workspace_grant(&ws.slug, grant.id)
         .await
         .expect("delete workspace grant");
 
     // Key must now be denied again
     let result = agent
+        .acta()
         .list_workspace_tasks(&ws.slug, &Default::default())
         .await;
     assert!(
@@ -685,6 +711,7 @@ async fn global_agent_reaches_creators_workspaces_not_others_and_is_reversible()
 
     // Baseline: a non-global key with no grant is denied in W1.
     let result = agent
+        .acta()
         .list_workspace_tasks(&w1.slug, &Default::default())
         .await;
     assert!(
@@ -694,6 +721,7 @@ async fn global_agent_reaches_creators_workspaces_not_others_and_is_reversible()
 
     // Mark the key global (the owner does this).
     let dto = a_client
+        .custos()
         .set_api_key_global(key_id, true)
         .await
         .expect("owner marks key global");
@@ -702,10 +730,12 @@ async fn global_agent_reaches_creators_workspaces_not_others_and_is_reversible()
     // The creator owns W1, so the global agent reaches it at editor: it can read
     // and write without holding any grant.
     agent
+        .acta()
         .list_workspace_tasks(&w1.slug, &Default::default())
         .await
         .expect("global agent reads W1 (creator is owner)");
     agent
+        .acta()
         .create_task(
             &w1.slug,
             board_id,
@@ -724,6 +754,7 @@ async fn global_agent_reaches_creators_workspaces_not_others_and_is_reversible()
 
     // The creator is not a member of W2, so the global agent cannot reach it.
     let result = agent
+        .acta()
         .list_workspace_tasks(&w2.slug, &Default::default())
         .await;
     assert!(
@@ -733,10 +764,12 @@ async fn global_agent_reaches_creators_workspaces_not_others_and_is_reversible()
 
     // Reversible: turning global off restores the ungranted-deny behavior in W1.
     a_client
+        .custos()
         .set_api_key_global(key_id, false)
         .await
         .expect("owner unmarks global");
     let result = agent
+        .acta()
         .list_workspace_tasks(&w1.slug, &Default::default())
         .await;
     assert!(
@@ -757,13 +790,17 @@ async fn set_api_key_global_is_owner_scoped() {
 
     // The owner can toggle global on their own key.
     a_client
+        .custos()
         .set_api_key_global(key_id, true)
         .await
         .expect("owner toggles own key");
 
     // A different user cannot toggle someone else's key: 404 (no existence probe).
     let (other_client, _w2, _other) = login_user_with_workspace(&server, &db, "glob-c-other").await;
-    let result = other_client.set_api_key_global(key_id, false).await;
+    let result = other_client
+        .custos()
+        .set_api_key_global(key_id, false)
+        .await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
         "non-owner must not toggle another user's key, got: {result:?}"

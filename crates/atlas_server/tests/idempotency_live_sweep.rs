@@ -409,10 +409,12 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
             "/users/{user_id}/reset-password" => {
                 let root = login_root_user(&server, &db).await;
                 let ws = root
+                    .acta()
                     .create_workspace("sweep-reset-ws")
                     .await
                     .expect("create workspace");
                 let created = root
+                    .custos()
                     .create_user(CreateUserRequest {
                         username: format!("sweep-reset-{}", uuid::Uuid::now_v7().as_simple()),
                         display_name: "Reset Target".to_string(),
@@ -432,10 +434,12 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
             "/users/{user_id}/activation-link" => {
                 let root = login_root_user(&server, &db).await;
                 let ws = root
+                    .acta()
                     .create_workspace("sweep-actlink-ws")
                     .await
                     .expect("create workspace");
                 let created = root
+                    .custos()
                     .create_user(CreateUserRequest {
                         username: format!("sweep-actlink-{}", uuid::Uuid::now_v7().as_simple()),
                         display_name: "Activation Target".to_string(),
@@ -472,6 +476,7 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                 let (client, ws, _user) =
                     login_user_with_workspace(&server, &db, "sweep-projgrant").await;
                 let project = client
+                    .acta()
                     .create_project(
                         &ws.slug,
                         CreateProjectRequest {
@@ -486,6 +491,7 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                     .expect("create project");
                 let second_user_id = second_platform_user(&db, "sweep-projgrant-2").await;
                 client
+                    .acta()
                     .add_member(&ws.slug, second_user_id, "member")
                     .await
                     .expect("add second user to workspace so it is a valid grant target");
@@ -510,6 +516,7 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                     login_user_with_workspace(&server, &db, "sweep-wsgrant").await;
                 let second_user_id = second_platform_user(&db, "sweep-wsgrant-2").await;
                 client
+                    .acta()
                     .add_member(&ws.slug, second_user_id, "member")
                     .await
                     .expect("add second user to workspace so it is a valid grant target");
@@ -539,6 +546,7 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                 let (client, ws, _user) =
                     login_user_with_workspace(&server, &db, "sweep-groupmember").await;
                 let group = client
+                    .custos()
                     .create_group(
                         &ws.slug,
                         atlas_api::dtos::groups::CreateGroupRequest {
@@ -549,6 +557,7 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                     .expect("create group");
                 let second_user_id = second_platform_user(&db, "sweep-groupmember-2").await;
                 client
+                    .acta()
                     .add_member(&ws.slug, second_user_id, "member")
                     .await
                     .expect("add second user to workspace so it is a valid group-member target");
@@ -689,10 +698,12 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                 let admin_server = TestServer::spawn(&admin_db).await;
                 let root = login_root_user(&admin_server, &admin_db).await;
                 let ws = root
+                    .acta()
                     .create_workspace("sweep-purge-ws")
                     .await
                     .expect("create workspace");
                 let project = root
+                    .acta()
                     .create_project(
                         &ws.slug,
                         CreateProjectRequest {
@@ -705,7 +716,8 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                     )
                     .await
                     .expect("create project");
-                root.delete_project(&ws.slug, &project.slug)
+                root.acta()
+                    .delete_project(&ws.slug, &project.slug)
                     .await
                     .expect("soft-delete project so trash/purge has a target");
                 let body = ReqBody::Json(serde_json::json!({
@@ -730,6 +742,7 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                 let (client, ws, user) =
                     login_user_with_workspace(&server, &db, "sweep-board").await;
                 let project = client
+                    .acta()
                     .create_project(
                         &ws.slug,
                         CreateProjectRequest {
@@ -799,6 +812,7 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                 let (client, ws, task, _second_id) =
                     provision_task(&server, &db, "sweep-assignee").await;
                 let self_id = client
+                    .custos()
                     .me()
                     .await
                     .expect("fetch self")
@@ -901,6 +915,7 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                     &format!("/workspaces/{}/boards/{}/tasks", ws.slug, board_id),
                 );
                 let task: atlas_api::dtos::boards_tasks::TaskDto = client
+                    .acta()
                     .create_task(
                         &ws.slug,
                         board_id,
@@ -918,6 +933,7 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                     .expect("create parent task");
                 let _ = &path_create;
                 let item = client
+                    .acta()
                     .create_checklist_item(
                         &ws.slug,
                         &task.readable_id,
@@ -969,6 +985,7 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                 let (client, ws, board_id, column_id) =
                     provision_board(&server, &db, "sweep-promotesub").await;
                 let parent = client
+                    .acta()
                     .create_task(
                         &ws.slug,
                         board_id,
@@ -985,6 +1002,7 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                     .await
                     .expect("create parent task");
                 let subtask = client
+                    .acta()
                     .create_subtask(
                         &ws.slug,
                         &parent.readable_id,
@@ -1031,6 +1049,7 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                 let (client, ws, _user) =
                     login_user_with_workspace(&server, &db, "sweep-doc").await;
                 let project = client
+                    .acta()
                     .create_project(
                         &ws.slug,
                         CreateProjectRequest {
@@ -1101,6 +1120,7 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                 let (client, ws, _user) =
                     login_user_with_workspace(&server, &db, "sweep-folder").await;
                 let project = client
+                    .acta()
                     .create_project(
                         &ws.slug,
                         CreateProjectRequest {
@@ -1126,6 +1146,7 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                 let (client, ws, _user) =
                     login_user_with_workspace(&server, &db, "sweep-foldercopy").await;
                 let project = client
+                    .acta()
                     .create_project(
                         &ws.slug,
                         CreateProjectRequest {
@@ -1139,6 +1160,7 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                     .await
                     .expect("create project");
                 let folder = client
+                    .acta()
                     .create_folder(
                         &ws.slug,
                         &project.slug,
@@ -1240,6 +1262,7 @@ async fn declared_idempotent_false_sample_ignores_the_header() {
         let (client, ws, board_id, _column_id) =
             provision_board(&server, &db, "sweep-false-board").await;
         let self_id = client
+            .custos()
             .me()
             .await
             .expect("fetch self")
@@ -1306,6 +1329,7 @@ async fn declared_idempotent_false_sample_ignores_the_header() {
     {
         let (client, ws, doc_slug) = provision_document(&server, &db, "sweep-false-search").await;
         let self_id = client
+            .custos()
             .me()
             .await
             .expect("fetch self")
@@ -1331,6 +1355,7 @@ async fn declared_idempotent_false_sample_ignores_the_header() {
         let (client, ws, doc_slug) =
             provision_document(&server, &db, "sweep-false-movebatch").await;
         let self_id = client
+            .custos()
             .me()
             .await
             .expect("fetch self")
@@ -1366,6 +1391,7 @@ async fn provision_board(
 ) {
     let (client, ws, user) = login_user_with_workspace(server, db, username).await;
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -1380,6 +1406,7 @@ async fn provision_board(
         .expect("create project");
     let _ = &user;
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             &project.slug,
@@ -1391,6 +1418,7 @@ async fn provision_board(
         .await
         .expect("create board");
     let column = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -1422,6 +1450,7 @@ async fn provision_task(
 ) {
     let (client, ws, board_id, column_id) = provision_board(server, db, username).await;
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board_id,
@@ -1438,6 +1467,7 @@ async fn provision_task(
         .await
         .expect("create task");
     let self_id = client
+        .custos()
         .me()
         .await
         .expect("fetch self")
@@ -1461,6 +1491,7 @@ async fn provision_task_pair(
 ) {
     let (client, ws, board_id, column_id) = provision_board(server, db, username).await;
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board_id,
@@ -1477,6 +1508,7 @@ async fn provision_task_pair(
         .await
         .expect("create source task");
     let second_task = client
+        .acta()
         .create_task(
             &ws.slug,
             board_id,
@@ -1508,6 +1540,7 @@ async fn provision_document(
 ) {
     let (client, ws, _user) = login_user_with_workspace(server, db, username).await;
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -1521,6 +1554,7 @@ async fn provision_document(
         .await
         .expect("create project");
     let document = client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
