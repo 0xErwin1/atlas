@@ -172,6 +172,27 @@ pub struct ComponentProbeDto {
     pub reason: Option<String>,
 }
 
+/// One finding from `POST /api/v2/platform/doctor` (E11-S3b design D6.2):
+/// the shipped four-field shape, unchanged from `atlas_core::ops::doctor`'s
+/// `DoctorFinding` — `severity` is `"info"`, `"warning"`, or `"critical"`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct DoctorFindingDto {
+    pub component: String,
+    pub severity: String,
+    pub finding: String,
+    pub action: String,
+}
+
+/// Response from `POST /api/v2/platform/doctor`: every present component's
+/// findings, concatenated in aggregation order. Always 200, whether or not
+/// `findings` is empty (SHELL-OPS-4).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct DoctorReportDto {
+    pub findings: Vec<DoctorFindingDto>,
+}
+
 /// Request body for `POST /api/users/{user_id}/system-admin`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
@@ -768,6 +789,36 @@ mod tests {
                 )
             );
         }
+    }
+
+    #[test]
+    fn doctor_report_dto_round_trips_the_shipped_four_field_shape() {
+        let report = DoctorReportDto {
+            findings: vec![DoctorFindingDto {
+                component: "acta".to_string(),
+                severity: "warning".to_string(),
+                finding: "worker acta.webhook_dispatcher is Failed".to_string(),
+                action: "restart the dispatcher worker".to_string(),
+            }],
+        };
+
+        let json = serde_json::to_string(&report).expect("serialize");
+        let round_tripped: DoctorReportDto = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(
+            json,
+            r#"{"findings":[{"component":"acta","severity":"warning","finding":"worker acta.webhook_dispatcher is Failed","action":"restart the dispatcher worker"}]}"#
+        );
+        assert_eq!(round_tripped.findings.len(), 1);
+    }
+
+    #[test]
+    fn doctor_report_dto_serializes_an_empty_findings_list() {
+        let report = DoctorReportDto { findings: vec![] };
+
+        let json = serde_json::to_string(&report).expect("serialize");
+
+        assert_eq!(json, r#"{"findings":[]}"#);
     }
 
     #[test]

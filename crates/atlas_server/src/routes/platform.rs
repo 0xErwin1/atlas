@@ -90,7 +90,7 @@ mod public {
 /// Routes behind `require_authn` → `require_rate_limit` → CSRF-for-cookie-
 /// mutations today (`lib.rs`'s `protected` router, pre-PR2: `lib.rs:178-184`).
 mod protected {
-    use crate::routes::{health, ui_state};
+    use crate::routes::{health, platform_doctor, ui_state};
     use crate::state::AppState;
 
     crate::component_routes! {
@@ -100,6 +100,10 @@ mod protected {
             put(ui_state::set_ui_state, exempt)
         ];
         "/meta" => [ get(health::meta, exempt) ];
+        // `RequireUserAdmin`, not an `Authorized<...>` extractor (E11-S3b
+        // design D6.1) — the same exemption category `admin/status-templates`
+        // already uses for its own `RequireUserAdmin`-guarded routes.
+        "/doctor" => [ post(platform_doctor::doctor, exempt) ];
     }
 }
 
@@ -167,15 +171,19 @@ pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
         crate::routes::health::meta,
         crate::routes::ui_state::get_ui_state,
         crate::routes::ui_state::set_ui_state,
+        crate::routes::platform_doctor::doctor,
     ),
     components(schemas(
         atlas_api::dtos::ServerMetaDto,
         atlas_api::dtos::UiStateDto,
         atlas_api::dtos::UpdateUiStateRequest,
+        atlas_api::dtos::DoctorReportDto,
+        atlas_api::dtos::DoctorFindingDto,
     )),
     tags(
         (name = "meta", description = "Server metadata"),
         (name = "ui-state", description = "Per-user UI state"),
+        (name = "doctor", description = "Platform-admin diagnostic report"),
     )
 )]
 struct PlatformOpenApi;

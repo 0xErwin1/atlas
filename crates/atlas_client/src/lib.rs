@@ -7,10 +7,10 @@ use atlas_api::{
         ActivationLinkResponse, AdminUpdateWorkspaceRequest, ApiKeyCreated, ApiKeyDto,
         ApiKeyGrantDto, ApiKeyScope, ChangePasswordRequest, CreateGrantRequest,
         CreateProjectRequest, CreateUserApiKeyRequest, CreateUserRequest, CreateUserResponse,
-        CreateWorkspaceRequest, GrantDto, HealthResponse, LoginRequest, LoginResponse, MeResponse,
-        PrincipalDto, ProjectDto, ResetPasswordRequest, ServerMetaDto, UiStateDto, UpdateMeRequest,
-        UpdateProjectRequest, UpdateUiStateRequest, UpdateWorkspaceRequest, UserDto,
-        UserMembershipDto, WorkspaceDto,
+        CreateWorkspaceRequest, DoctorReportDto, GrantDto, HealthResponse, LoginRequest,
+        LoginResponse, MeResponse, PrincipalDto, ProjectDto, ResetPasswordRequest, ServerMetaDto,
+        UiStateDto, UpdateMeRequest, UpdateProjectRequest, UpdateUiStateRequest,
+        UpdateWorkspaceRequest, UserDto, UserMembershipDto, WorkspaceDto,
         boards_tasks::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CommentDto, CommentFeedEntryDto, CreateBoardRequest,
@@ -454,6 +454,21 @@ impl AtlasClient {
     pub async fn server_meta(&self) -> Result<ServerMetaDto, ClientError> {
         let response = self.get(Component::Platform, "/meta").send().await?;
         self.decode_response(response, "server_meta").await
+    }
+
+    /// `POST /api/v2/platform/doctor`
+    ///
+    /// Runs every present component's doctor check. Platform admin or root
+    /// only. Always 200 on success, whether or not findings are present
+    /// (SHELL-OPS-4) — the CLI's exit code, not the HTTP status, signals a
+    /// `Critical` finding.
+    pub async fn doctor(&self) -> Result<DoctorReportDto, ClientError> {
+        let response = self
+            .post(Component::Platform, "/doctor")
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        self.decode_response(response, "doctor").await
     }
 
     /// `GET /api/v2/custos/users`

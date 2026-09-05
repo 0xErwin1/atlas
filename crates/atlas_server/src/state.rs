@@ -26,6 +26,13 @@ use crate::services::{CommentService, DocumentService, TaskService};
 /// orchestrator probe interval.
 pub const DEFAULT_READINESS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
+/// The default per-component bound `POST /api/v2/platform/doctor` enforces
+/// via `TokioDeadline` (E11-S3b design D6.1): larger than
+/// [`DEFAULT_READINESS_TIMEOUT`] because a doctor check may write a probe
+/// file or make one bounded object-store/embedding round trip, unlike
+/// readiness's cheaper checks.
+pub const DEFAULT_DOCTOR_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// Shared application state injected into every route handler.
 #[derive(Clone)]
 pub struct AppState {
@@ -77,6 +84,11 @@ pub struct AppState {
     /// [`Self::with_readiness_timeout`] to prove the budget path without a
     /// multi-second real wait.
     pub readiness_timeout: std::time::Duration,
+    /// The per-component bound `POST /api/v2/platform/doctor` enforces via
+    /// `TokioDeadline` (design D6.1). Independent from `readiness_timeout`:
+    /// doctor's checks are allowed a larger budget (see
+    /// [`DEFAULT_DOCTOR_TIMEOUT`]).
+    pub doctor_timeout: std::time::Duration,
     /// The single source of worker state handles, keyed by `WorkerId`
     /// (E11-S3b design D3, D8): built from the registry alone before the
     /// rest of this state, and shared by the workers that write it and by
@@ -136,6 +148,7 @@ impl AppState {
             registry,
             diagnostics,
             readiness_timeout: DEFAULT_READINESS_TIMEOUT,
+            doctor_timeout: DEFAULT_DOCTOR_TIMEOUT,
             workers,
         })
     }
@@ -218,6 +231,7 @@ impl AppState {
             registry,
             diagnostics,
             readiness_timeout: DEFAULT_READINESS_TIMEOUT,
+            doctor_timeout: DEFAULT_DOCTOR_TIMEOUT,
             workers,
         })
     }

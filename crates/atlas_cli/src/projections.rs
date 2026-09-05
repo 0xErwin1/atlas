@@ -28,8 +28,8 @@ use atlas_api::dtos::tags::TagDto;
 use atlas_api::dtos::task_views::{TaskViewDto, TaskViewFiltersDto};
 use atlas_api::dtos::{
     ActivationLinkResponse, ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, ApiKeyScope,
-    CreateUserResponse, GrantDto, GrantPrincipal, GrantedByDto, PrincipalDto, ProjectDto, UserDto,
-    UserMembershipDto, WorkspaceDto,
+    CreateUserResponse, DoctorFindingDto, GrantDto, GrantPrincipal, GrantedByDto, PrincipalDto,
+    ProjectDto, UserDto, UserMembershipDto, WorkspaceDto,
 };
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -2174,6 +2174,47 @@ impl TableRow for AuditEntryProjection {
 }
 
 // ---------------------------------------------------------------------------
+// Doctor
+// ---------------------------------------------------------------------------
+
+/// One row of `atlas doctor`'s human-readable table (E11-S3b design D6.3):
+/// the shipped server-side finding, rendered verbatim, ordered by severity
+/// before the caller builds these rows.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct DoctorFindingProjection {
+    pub(crate) component: String,
+    pub(crate) severity: String,
+    pub(crate) finding: String,
+    pub(crate) action: String,
+}
+
+impl From<DoctorFindingDto> for DoctorFindingProjection {
+    fn from(dto: DoctorFindingDto) -> Self {
+        Self {
+            component: dto.component,
+            severity: dto.severity,
+            finding: dto.finding,
+            action: dto.action,
+        }
+    }
+}
+
+impl TableRow for DoctorFindingProjection {
+    fn headers() -> &'static [&'static str] {
+        &["Severity", "Component", "Finding", "Action"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.severity.clone(),
+            self.component.clone(),
+            self.finding.clone(),
+            self.action.clone(),
+        ]
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -4030,6 +4071,32 @@ mod tests {
         assert!(
             value.get("size_bytes").is_none(),
             "raw size_bytes must be absent"
+        );
+    }
+
+    #[test]
+    fn doctor_finding_projection_renders_the_shipped_four_fields_verbatim() {
+        let dto = DoctorFindingDto {
+            component: "acta".to_string(),
+            severity: "warning".to_string(),
+            finding: "worker acta.webhook_dispatcher is Failed".to_string(),
+            action: "restart the dispatcher worker".to_string(),
+        };
+
+        let projection = DoctorFindingProjection::from(dto);
+
+        assert_eq!(
+            DoctorFindingProjection::headers(),
+            &["Severity", "Component", "Finding", "Action"]
+        );
+        assert_eq!(
+            projection.row(),
+            vec![
+                "warning".to_string(),
+                "acta".to_string(),
+                "worker acta.webhook_dispatcher is Failed".to_string(),
+                "restart the dispatcher worker".to_string(),
+            ]
         );
     }
 }
