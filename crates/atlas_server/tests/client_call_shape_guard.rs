@@ -104,7 +104,7 @@ fn client_production_source(file_name: &str) -> String {
 /// implementations outside `lib.rs`, populated one at a time as PR3-PR5
 /// split the client (`custos.rs` in PR3). Each one is walked in full by
 /// [`derive_method_namespace_map`], on equal footing with `lib.rs`.
-const SPLIT_PRODUCTION_FILES: &[&str] = &["custos.rs"];
+const SPLIT_PRODUCTION_FILES: &[&str] = &["custos.rs", "acta.rs"];
 
 /// The names of every `pub async fn` in `source` whose attribute block
 /// carries `#[doc(hidden)]` (doc-comment lines may sit between the
@@ -318,13 +318,20 @@ fn hidden_forwarder_names_match_only_doc_hidden_pub_async_fns() {
 }
 
 #[test]
-fn lib_rs_forwarders_are_the_pr3_custos_moves() {
+fn lib_rs_forwarders_are_the_pr3_custos_and_pr4_acta_moves() {
     let names = hidden_forwarder_names(&client_production_source("lib.rs"));
 
-    assert_eq!(names.len(), 34, "PR3 added exactly 34 custos() forwarders");
+    assert_eq!(
+        names.len(),
+        191,
+        "PR3 added 34 custos() forwarders and PR4 added 157 acta() forwarders"
+    );
     assert!(names.contains("me"));
     assert!(names.contains("list_workspace_audit"));
+    assert!(names.contains("list_projects"));
+    assert!(names.contains("list_workspace_activity_with_cursor"));
     assert!(hidden_forwarder_names(&client_production_source("custos.rs")).is_empty());
+    assert!(hidden_forwarder_names(&client_production_source("acta.rs")).is_empty());
 }
 
 #[test]

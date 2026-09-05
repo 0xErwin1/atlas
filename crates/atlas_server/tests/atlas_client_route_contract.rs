@@ -303,8 +303,19 @@ fn resolve_relative(
             Some(literal)
         } else {
             let callee = call_target_name(&rhs)?;
-            let callee_body = function_body(source, boundaries, &callee)?;
-            first_path_literal(callee_body)
+            // The owning helper's own body is looked up first in `source`
+            // (the calling method's own file), then in `lib.rs` — these
+            // private path-builder free functions have not moved with the
+            // per-component split (D2.2), so a call from `acta.rs`/
+            // `custos.rs` resolves its callee's body in the root file.
+            if let Some(callee_body) = function_body(source, boundaries, &callee) {
+                first_path_literal(callee_body)
+            } else {
+                let root_source = production_source();
+                let root_boundaries = function_boundaries(&root_source);
+                let callee_body = function_body(&root_source, &root_boundaries, &callee)?;
+                first_path_literal(callee_body)
+            }
         }
     } else {
         None
@@ -468,20 +479,25 @@ struct SourceMapping {
 }
 
 /// Every production file in `crates/atlas_client/src/` at this PR's ground
-/// truth. `lib.rs` stays `Mixed` while it still holds Acta and Platform
-/// methods plus `login`/`health` (PR4/PR5 finish the split); `custos.rs`
-/// (PR3, D2.2) carries only custos-owned methods and is mapped to its own
-/// component.
+/// truth. `lib.rs` stays `Mixed` while it still holds Platform methods plus
+/// `login`/`health` (PR5 finishes the split); `custos.rs` (PR3, D2.2) and
+/// `acta.rs` (PR4, D2.2) carry only their own component's methods and are
+/// each mapped to their own component.
 const PRODUCTION_SOURCE_MAPPINGS: &[SourceMapping] = &[
     SourceMapping {
         file_name: "lib.rs",
         component: FileComponent::Mixed,
-        reason: "root file, not yet fully split; still holds acta/platform methods, login, and health until PR4-PR5",
+        reason: "root file, not yet fully split; still holds platform methods, login, and health until PR5",
     },
     SourceMapping {
         file_name: "custos.rs",
         component: FileComponent::Custos,
         reason: "custos-owned client methods, split out of lib.rs in PR3",
+    },
+    SourceMapping {
+        file_name: "acta.rs",
+        component: FileComponent::Acta,
+        reason: "acta-owned client methods, split out of lib.rs in PR4",
     },
 ];
 
@@ -1099,7 +1115,9 @@ fn extracted_call_count_is_pinned() {
 }
 
 /// D4.6, per-file — `custos.rs` split out exactly the 34 custos-owned call
-/// sites in PR3, leaving `lib.rs` with the rest (160). Catches a call
+/// sites in PR3 and `acta.rs` split out exactly the 154 acta-owned call
+/// sites in PR4, leaving `lib.rs` with the rest (6: 4 platform calls, the
+/// one `login` custos call, and `health`'s `root_get`). Catches a call
 /// silently dropped or duplicated during the move that the total-count pin
 /// above cannot distinguish from a compensating change elsewhere.
 #[test]
@@ -1113,13 +1131,18 @@ fn extracted_call_count_is_pinned_per_file() {
 
     assert_eq!(
         counts.get("lib.rs").copied(),
-        Some(160),
+        Some(6),
         "lib.rs's own call count moved"
     );
     assert_eq!(
         counts.get("custos.rs").copied(),
         Some(34),
         "custos.rs's own call count moved"
+    );
+    assert_eq!(
+        counts.get("acta.rs").copied(),
+        Some(154),
+        "acta.rs's own call count moved"
     );
 }
 
