@@ -1,8 +1,10 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+pub mod acta;
 pub mod custos;
 pub mod helpers;
 
+pub use acta::Acta;
 pub use custos::Custos;
 
 use atlas_api::{
@@ -10,10 +12,9 @@ use atlas_api::{
         ActivationLinkResponse, AdminUpdateWorkspaceRequest, ApiKeyCreated, ApiKeyDto,
         ApiKeyGrantDto, ApiKeyScope, ChangePasswordRequest, CreateGrantRequest,
         CreateProjectRequest, CreateUserApiKeyRequest, CreateUserRequest, CreateUserResponse,
-        CreateWorkspaceRequest, DoctorReportDto, GrantDto, HealthResponse, LoginRequest,
-        LoginResponse, MeResponse, PrincipalDto, ProjectDto, ServerMetaDto, UiStateDto,
-        UpdateMeRequest, UpdateProjectRequest, UpdateUiStateRequest, UpdateWorkspaceRequest,
-        UserDto, UserMembershipDto, WorkspaceDto,
+        DoctorReportDto, GrantDto, HealthResponse, LoginRequest, LoginResponse, MeResponse,
+        PrincipalDto, ProjectDto, ServerMetaDto, UiStateDto, UpdateMeRequest, UpdateProjectRequest,
+        UpdateUiStateRequest, UpdateWorkspaceRequest, UserDto, UserMembershipDto, WorkspaceDto,
         boards_tasks::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CommentDto, CommentFeedEntryDto, CreateBoardRequest,
@@ -28,22 +29,16 @@ use atlas_api::{
         },
         documents::{
             AttachmentDto, BacklinkDto, CommentAttachmentDto, CommentDraftDto, ConflictProblemDto,
-            CopyDocumentRequest, CreateDocumentRequest, DocumentCompactDto,
-            DocumentContentEditRequest, DocumentContentRangeDto, DocumentContentRangeQuery,
-            DocumentContentSearchDto, DocumentContentSearchRequest, DocumentDto,
-            DocumentMoveBatchRequest, DocumentMoveBatchResultDto, DocumentSummaryDto,
-            FrontmatterDto, MoveDocumentRequest, RenameAttachmentRequest, RevisionContentDto,
-            RevisionMetaDto, UpdateContentRequest, UpdateDocumentRequest, WorkspaceAttachmentDto,
+            CreateDocumentRequest, DocumentCompactDto, DocumentContentEditRequest,
+            DocumentContentRangeDto, DocumentContentRangeQuery, DocumentContentSearchDto,
+            DocumentContentSearchRequest, DocumentDto, DocumentMoveBatchRequest,
+            DocumentMoveBatchResultDto, DocumentSummaryDto, FrontmatterDto, MoveDocumentRequest,
+            RenameAttachmentRequest, RevisionContentDto, RevisionMetaDto, UpdateContentRequest,
+            UpdateDocumentRequest, WorkspaceAttachmentDto,
         },
-        folders::{
-            CopyFolderRequest, CreateFolderRequest, FolderDto, MoveFolderRequest,
-            RenameFolderRequest,
-        },
+        folders::{CreateFolderRequest, FolderDto, MoveFolderRequest, RenameFolderRequest},
         groups::{AddGroupMemberRequest, CreateGroupRequest, GroupDto, GroupMemberDto},
-        lifecycle::{
-            PurgeStatusDtoResponse, PurgeTrashItemRequest, RestoreTrashItemRequest, TrashItemDto,
-            TrashKindDto,
-        },
+        lifecycle::{PurgeStatusDtoResponse, TrashItemDto, TrashKindDto},
         property_definitions::{CreatePropertyDefinitionRequest, PropertyDefinitionDto},
         saved_searches::{CreateSavedSearchRequest, RenameSavedSearchRequest, SavedSearchDto},
         search::SearchHitDto,
@@ -267,6 +262,13 @@ impl AtlasClient {
     /// configuration stay single-point on `self` (INV-SINGLE-AUTH-CONFIG).
     pub fn custos(&self) -> Custos<'_> {
         Custos(self)
+    }
+
+    /// Borrowing sub-client for every method mounted at `/api/v2/acta`
+    /// (D1). Carries no state of its own, so authentication and CSRF
+    /// configuration stay single-point on `self` (INV-SINGLE-AUTH-CONFIG).
+    pub fn acta(&self) -> Acta<'_> {
+        Acta(self)
     }
 
     /// Resolves `component`'s `/api/v2/<component>` mount plus `relative`
@@ -585,82 +587,48 @@ impl AtlasClient {
         self.custos().delete_api_key_grant(key_id, grant_id).await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/projects`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn create_project(
         &self,
         ws: &str,
         body: CreateProjectRequest,
     ) -> Result<ProjectDto, ClientError> {
-        let response = self
-            .post(Component::Acta, &format!("/workspaces/{ws}/projects"))
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "create_project").await
+        self.acta().create_project(ws, body).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/projects`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_projects(
         &self,
         ws: &str,
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<ProjectDto>, ClientError> {
-        let path = build_paginated_path(&format!("/workspaces/{ws}/projects"), cursor, limit);
-        let response = self.get(Component::Acta, &path).send().await?;
-        self.decode_response(response, "list_projects").await
+        self.acta().list_projects(ws, cursor, limit).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/projects/{project_slug}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn get_project(&self, ws: &str, slug: &str) -> Result<ProjectDto, ClientError> {
-        let response = self
-            .get(
-                Component::Acta,
-                &format!("/workspaces/{ws}/projects/{slug}"),
-            )
-            .send()
-            .await?;
-        self.decode_response(response, "get_project").await
+        self.acta().get_project(ws, slug).await
     }
 
-    /// `PATCH /api/v2/acta/workspaces/{ws}/projects/{project_slug}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn update_project(
         &self,
         ws: &str,
         slug: &str,
         body: UpdateProjectRequest,
     ) -> Result<ProjectDto, ClientError> {
-        let response = self
-            .patch(
-                Component::Acta,
-                &format!("/workspaces/{ws}/projects/{slug}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "update_project").await
+        self.acta().update_project(ws, slug, body).await
     }
 
-    /// `DELETE /api/v2/acta/workspaces/{ws}/projects/{project_slug}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn delete_project(&self, ws: &str, slug: &str) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Acta,
-                &format!("/workspaces/{ws}/projects/{slug}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
-            .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
+        self.acta().delete_project(ws, slug).await
     }
 
     #[doc(hidden)]
@@ -730,200 +698,99 @@ impl AtlasClient {
         self.custos().delete_workspace_grant(ws, grant_id).await
     }
 
-    /// `POST /api/v2/acta/workspaces`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn create_workspace(&self, name: &str) -> Result<WorkspaceDto, ClientError> {
-        let body = CreateWorkspaceRequest {
-            name: name.to_string(),
-        };
-        let response = self
-            .post(Component::Acta, "/workspaces")
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "create_workspace").await
+        self.acta().create_workspace(name).await
     }
 
-    /// `GET /api/v2/acta/workspaces`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_workspaces(&self) -> Result<Vec<WorkspaceDto>, ClientError> {
-        let response = self.get(Component::Acta, "/workspaces").send().await?;
-        self.decode_response(response, "list_workspaces").await
+        self.acta().list_workspaces().await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn get_workspace(&self, ws: &str) -> Result<WorkspaceDto, ClientError> {
-        let response = self
-            .get(Component::Acta, &format!("/workspaces/{ws}"))
-            .send()
-            .await?;
-        self.decode_response(response, "get_workspace").await
+        self.acta().get_workspace(ws).await
     }
 
-    /// `PATCH /api/v2/acta/workspaces/{ws}`
-    ///
-    /// Renames the workspace display name. The slug is never changed.
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn update_workspace(
         &self,
         ws: &str,
         body: UpdateWorkspaceRequest,
     ) -> Result<WorkspaceDto, ClientError> {
-        let response = self
-            .patch(Component::Acta, &format!("/workspaces/{ws}"))
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "update_workspace").await
+        self.acta().update_workspace(ws, body).await
     }
 
-    /// `GET /api/v2/acta/admin/workspaces`
-    ///
-    /// Returns all workspaces in the system. Requires root/admin privileges.
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn admin_list_workspaces(&self) -> Result<Vec<WorkspaceDto>, ClientError> {
-        let response = self
-            .get(Component::Acta, "/admin/workspaces")
-            .send()
-            .await?;
-        self.decode_response(response, "admin_list_workspaces")
-            .await
+        self.acta().admin_list_workspaces().await
     }
 
-    /// `PATCH /api/v2/acta/admin/workspaces/{ws}`
-    ///
-    /// Updates a workspace's name and/or slug. Requires root/admin privileges.
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn admin_update_workspace(
         &self,
         ws: &str,
         body: AdminUpdateWorkspaceRequest,
     ) -> Result<WorkspaceDto, ClientError> {
-        let response = self
-            .patch(Component::Acta, &format!("/admin/workspaces/{ws}"))
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "admin_update_workspace")
-            .await
+        self.acta().admin_update_workspace(ws, body).await
     }
 
-    /// `DELETE /api/v2/acta/admin/workspaces/{ws}`
-    ///
-    /// Soft-deletes a workspace. Requires root/admin privileges.
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn admin_delete_workspace(&self, ws: &str) -> Result<(), ClientError> {
-        let response = self
-            .delete(Component::Acta, &format!("/admin/workspaces/{ws}"))
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
-            .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
+        self.acta().admin_delete_workspace(ws).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/members`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_workspace_members(&self, ws: &str) -> Result<Vec<PrincipalDto>, ClientError> {
-        let response = self
-            .get(Component::Acta, &format!("/workspaces/{ws}/members"))
-            .send()
-            .await?;
-        self.decode_response(response, "list_workspace_members")
-            .await
+        self.acta().list_workspace_members(ws).await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/members`
-    ///
-    /// Adds an existing user to the workspace at `role`. Returns the new member
-    /// as a `PrincipalDto` on success (HTTP 201).
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn add_member(
         &self,
         ws: &str,
         user_id: uuid::Uuid,
         role: &str,
     ) -> Result<PrincipalDto, ClientError> {
-        use atlas_api::dtos::AddMemberRequest;
-        let response = self
-            .post(Component::Acta, &format!("/workspaces/{ws}/members"))
-            .header("x-atlas-csrf", "1")
-            .json(&AddMemberRequest {
-                user_id,
-                role: role.to_string(),
-            })
-            .send()
-            .await?;
-        self.decode_response(response, "add_member").await
+        self.acta().add_member(ws, user_id, role).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/assignable-users`
-    ///
-    /// Lists the active, non-disabled users who are not yet members of the
-    /// workspace — the candidates the member picker can add.
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_assignable_users(&self, ws: &str) -> Result<Vec<UserDto>, ClientError> {
-        let response = self
-            .get(
-                Component::Acta,
-                &format!("/workspaces/{ws}/assignable-users"),
-            )
-            .send()
-            .await?;
-        self.decode_response(response, "list_assignable_users")
-            .await
+        self.acta().list_assignable_users(ws).await
     }
 
-    /// `PATCH /api/v2/acta/workspaces/{ws}/members/{user_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn update_member_role(
         &self,
         ws: &str,
         user_id: uuid::Uuid,
         role: &str,
     ) -> Result<PrincipalDto, ClientError> {
-        use atlas_api::dtos::UpdateMemberRoleRequest;
-        let response = self
-            .patch(
-                Component::Acta,
-                &format!("/workspaces/{ws}/members/{user_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&UpdateMemberRoleRequest {
-                role: role.to_string(),
-            })
-            .send()
-            .await?;
-        self.decode_response(response, "update_member_role").await
+        self.acta().update_member_role(ws, user_id, role).await
     }
 
-    /// `DELETE /api/v2/acta/workspaces/{ws}/members/{user_id}`
-    ///
-    /// Returns the raw HTTP status code so callers can assert on 204.
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn remove_member(&self, ws: &str, user_id: uuid::Uuid) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Acta,
-                &format!("/workspaces/{ws}/members/{user_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: atlas_api::problem::ProblemDetails =
-            response.json().await.unwrap_or_else(|_| {
-                atlas_api::problem::ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0)
-            });
-        Err(ClientError::Api(problem))
+        self.acta().remove_member(ws, user_id).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/search`
-    ///
-    /// Calls the unified full-text search endpoint. `q` is required; the
-    /// remaining parameters are optional and map directly to the query-string
-    /// parameters accepted by the server.
     #[allow(clippy::too_many_arguments)]
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn search(
         &self,
         ws: &str,
@@ -934,12 +801,13 @@ impl AtlasClient {
         limit: Option<u32>,
         mode: Option<&str>,
     ) -> Result<Page<SearchHitDto>, ClientError> {
-        let path = build_search_path(ws, q, type_filter, sort, cursor, limit, mode);
-        let response = self.get(Component::Acta, &path).send().await?;
-        self.decode_response(response, "search").await
+        self.acta()
+            .search(ws, q, type_filter, sort, cursor, limit, mode)
+            .await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/semantic-search`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn semantic_search(
         &self,
         ws: &str,
@@ -948,31 +816,24 @@ impl AtlasClient {
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<SemanticSearchHitDto>, ClientError> {
-        let path = build_semantic_search_path(ws, q, type_filter, cursor, limit);
-        let response = self.get(Component::Acta, &path).send().await?;
-        self.decode_response(response, "semantic_search").await
+        self.acta()
+            .semantic_search(ws, q, type_filter, cursor, limit)
+            .await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/projects/{project_slug}/folders`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn create_folder(
         &self,
         ws: &str,
         project_slug: &str,
         body: CreateFolderRequest,
     ) -> Result<FolderDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/projects/{project_slug}/folders"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "create_folder").await
+        self.acta().create_folder(ws, project_slug, body).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/projects/{project_slug}/folders`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_folders(
         &self,
         ws: &str,
@@ -980,128 +841,75 @@ impl AtlasClient {
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<FolderDto>, ClientError> {
-        let path = build_paginated_path(
-            &format!("/workspaces/{ws}/projects/{project_slug}/folders"),
-            cursor,
-            limit,
-        );
-        let response = self.get(Component::Acta, &path).send().await?;
-        self.decode_response(response, "list_folders").await
+        self.acta()
+            .list_folders(ws, project_slug, cursor, limit)
+            .await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/folders/{folder_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn get_folder(
         &self,
         ws: &str,
         folder_id: uuid::Uuid,
     ) -> Result<FolderDto, ClientError> {
-        let response = self
-            .get(
-                Component::Acta,
-                &format!("/workspaces/{ws}/folders/{folder_id}"),
-            )
-            .send()
-            .await?;
-        self.decode_response(response, "get_folder").await
+        self.acta().get_folder(ws, folder_id).await
     }
 
-    /// `PATCH /api/v2/acta/workspaces/{ws}/folders/{folder_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn rename_folder(
         &self,
         ws: &str,
         folder_id: uuid::Uuid,
         body: RenameFolderRequest,
     ) -> Result<FolderDto, ClientError> {
-        let response = self
-            .patch(
-                Component::Acta,
-                &format!("/workspaces/{ws}/folders/{folder_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "rename_folder").await
+        self.acta().rename_folder(ws, folder_id, body).await
     }
 
-    /// `PATCH /api/v2/acta/workspaces/{ws}/folders/{folder_id}/move`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn move_folder(
         &self,
         ws: &str,
         folder_id: uuid::Uuid,
         body: MoveFolderRequest,
     ) -> Result<FolderDto, ClientError> {
-        let response = self
-            .patch(
-                Component::Acta,
-                &format!("/workspaces/{ws}/folders/{folder_id}/move"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "move_folder").await
+        self.acta().move_folder(ws, folder_id, body).await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/folders/{folder_id}/copy`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn copy_folder(
         &self,
         ws: &str,
         folder_id: uuid::Uuid,
         parent_folder_id: Option<uuid::Uuid>,
     ) -> Result<FolderDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/folders/{folder_id}/copy"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&CopyFolderRequest { parent_folder_id })
-            .send()
-            .await?;
-        self.decode_response(response, "copy_folder").await
-    }
-
-    /// `DELETE /api/v2/acta/workspaces/{ws}/folders/{folder_id}`
-    pub async fn delete_folder(&self, ws: &str, folder_id: uuid::Uuid) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Acta,
-                &format!("/workspaces/{ws}/folders/{folder_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
+        self.acta()
+            .copy_folder(ws, folder_id, parent_folder_id)
             .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/projects/{project_slug}/documents`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
+    pub async fn delete_folder(&self, ws: &str, folder_id: uuid::Uuid) -> Result<(), ClientError> {
+        self.acta().delete_folder(ws, folder_id).await
+    }
+
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn create_document(
         &self,
         ws: &str,
         project_slug: &str,
         body: CreateDocumentRequest,
     ) -> Result<DocumentDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/projects/{project_slug}/documents"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "create_document").await
+        self.acta().create_document(ws, project_slug, body).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/projects/{project_slug}/documents`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_documents(
         &self,
         ws: &str,
@@ -1109,14 +917,13 @@ impl AtlasClient {
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<DocumentSummaryDto>, ClientError> {
-        self.list_documents_with_unfiled_filter(ws, project_slug, cursor, limit, None)
+        self.acta()
+            .list_documents(ws, project_slug, cursor, limit)
             .await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/projects/{project_slug}/documents?unfiled={bool}`
-    ///
-    /// `None` lists all documents, `Some(true)` only unfiled documents, and
-    /// `Some(false)` only filed documents.
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_documents_with_unfiled_filter(
         &self,
         ws: &str,
@@ -1125,14 +932,13 @@ impl AtlasClient {
         limit: Option<u32>,
         unfiled: Option<bool>,
     ) -> Result<Page<DocumentSummaryDto>, ClientError> {
-        self.list_documents_with_options(ws, project_slug, cursor, limit, unfiled, false)
+        self.acta()
+            .list_documents_with_unfiled_filter(ws, project_slug, cursor, limit, unfiled)
             .await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/projects/{project_slug}/documents?unfiled={bool}&preview={bool}`
-    ///
-    /// `preview` opts every row into a body preview; listings default to omitting
-    /// it so bulk reads stay cheap.
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_documents_with_options(
         &self,
         ws: &str,
@@ -1142,178 +948,94 @@ impl AtlasClient {
         unfiled: Option<bool>,
         preview: bool,
     ) -> Result<Page<DocumentSummaryDto>, ClientError> {
-        let path = build_document_list_path(
-            &format!("/workspaces/{ws}/projects/{project_slug}/documents"),
-            cursor,
-            limit,
-            unfiled,
-            preview,
-        );
-        let response = self.get(Component::Acta, &path).send().await?;
-        self.decode_response(response, "list_documents").await
+        self.acta()
+            .list_documents_with_options(ws, project_slug, cursor, limit, unfiled, preview)
+            .await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/documents/{slug}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn get_document(&self, ws: &str, slug: &str) -> Result<DocumentDto, ClientError> {
-        let response = self
-            .get(
-                Component::Acta,
-                &format!("/workspaces/{ws}/documents/{slug}"),
-            )
-            .send()
-            .await?;
-        self.decode_response(response, "get_document").await
+        self.acta().get_document(ws, slug).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/documents/{slug}/compact`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn get_document_compact(
         &self,
         ws: &str,
         slug: &str,
     ) -> Result<DocumentCompactDto, ClientError> {
-        let response = self
-            .get(
-                Component::Acta,
-                &format!("/workspaces/{ws}/documents/{slug}/compact"),
-            )
-            .send()
-            .await?;
-        self.decode_response(response, "get_document_compact").await
+        self.acta().get_document_compact(ws, slug).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/documents/{slug}/content/range`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn get_document_content_range(
         &self,
         ws: &str,
         slug: &str,
         query: DocumentContentRangeQuery,
     ) -> Result<DocumentContentRangeDto, ClientError> {
-        let path = build_document_range_path(ws, slug, &query);
-        let response = self.get(Component::Acta, &path).send().await?;
-        self.decode_response(response, "get_document_content_range")
+        self.acta()
+            .get_document_content_range(ws, slug, query)
             .await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/documents/{slug}/content/search`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn search_document_content(
         &self,
         ws: &str,
         slug: &str,
         body: DocumentContentSearchRequest,
     ) -> Result<DocumentContentSearchDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/documents/{slug}/content/search"),
-            )
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "search_document_content")
-            .await
+        self.acta().search_document_content(ws, slug, body).await
     }
 
-    /// `PATCH /api/v2/acta/workspaces/{ws}/documents/{slug}/content/range`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn edit_document_content_range(
         &self,
         ws: &str,
         slug: &str,
         body: DocumentContentEditRequest,
     ) -> Result<DocumentCompactDto, ClientError> {
-        let response = self
-            .patch(
-                Component::Acta,
-                &format!("/workspaces/{ws}/documents/{slug}/content/range"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-
-        if response.status() == reqwest::StatusCode::CONFLICT {
-            let bytes = response.bytes().await?;
-            let conflict: ConflictProblemDto =
-                serde_json::from_slice(&bytes).map_err(|source| ClientError::Decode {
-                    context: "edit_document_content_range_conflict",
-                    source,
-                })?;
-            return Err(ClientError::Conflict(conflict));
-        }
-
-        self.decode_response(response, "edit_document_content_range")
+        self.acta()
+            .edit_document_content_range(ws, slug, body)
             .await
     }
 
-    /// `PATCH /api/v2/acta/workspaces/{ws}/documents/{slug}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn update_document(
         &self,
         ws: &str,
         slug: &str,
         body: UpdateDocumentRequest,
     ) -> Result<DocumentDto, ClientError> {
-        let response = self
-            .patch(
-                Component::Acta,
-                &format!("/workspaces/{ws}/documents/{slug}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "update_document").await
+        self.acta().update_document(ws, slug, body).await
     }
 
-    /// `PUT /api/v2/acta/workspaces/{ws}/documents/{slug}/content`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn update_content(
         &self,
         ws: &str,
         slug: &str,
         body: UpdateContentRequest,
     ) -> Result<DocumentDto, ClientError> {
-        let response = self
-            .put(
-                Component::Acta,
-                &format!("/workspaces/{ws}/documents/{slug}/content"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-
-        if response.status() == reqwest::StatusCode::CONFLICT {
-            let bytes = response.bytes().await?;
-            let conflict: ConflictProblemDto =
-                serde_json::from_slice(&bytes).map_err(|source| ClientError::Decode {
-                    context: "update_content_conflict",
-                    source,
-                })?;
-            return Err(ClientError::Conflict(conflict));
-        }
-
-        self.decode_response(response, "update_content").await
+        self.acta().update_content(ws, slug, body).await
     }
 
-    /// `DELETE /api/v2/acta/workspaces/{ws}/documents/{slug}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn delete_document(&self, ws: &str, slug: &str) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Acta,
-                &format!("/workspaces/{ws}/documents/{slug}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
-            .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
+        self.acta().delete_document(ws, slug).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/documents/{slug}/history`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_document_history(
         &self,
         ws: &str,
@@ -1321,34 +1043,24 @@ impl AtlasClient {
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<RevisionMetaDto>, ClientError> {
-        let path = build_paginated_path(
-            &format!("/workspaces/{ws}/documents/{slug}/history"),
-            cursor,
-            limit,
-        );
-        let response = self.get(Component::Acta, &path).send().await?;
-        self.decode_response(response, "list_document_history")
+        self.acta()
+            .list_document_history(ws, slug, cursor, limit)
             .await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/documents/{slug}/revisions/{seq}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn get_revision_content(
         &self,
         ws: &str,
         slug: &str,
         seq: i64,
     ) -> Result<RevisionContentDto, ClientError> {
-        let response = self
-            .get(
-                Component::Acta,
-                &format!("/workspaces/{ws}/documents/{slug}/revisions/{seq}"),
-            )
-            .send()
-            .await?;
-        self.decode_response(response, "get_revision_content").await
+        self.acta().get_revision_content(ws, slug, seq).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/documents/{slug}/backlinks`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_backlinks(
         &self,
         ws: &str,
@@ -1356,35 +1068,21 @@ impl AtlasClient {
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<BacklinkDto>, ClientError> {
-        let path = build_paginated_path(
-            &format!("/workspaces/{ws}/documents/{slug}/backlinks"),
-            cursor,
-            limit,
-        );
-        let response = self.get(Component::Acta, &path).send().await?;
-        self.decode_response(response, "list_backlinks").await
+        self.acta().list_backlinks(ws, slug, cursor, limit).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/documents/{slug}/frontmatter`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn get_frontmatter(
         &self,
         ws: &str,
         slug: &str,
     ) -> Result<FrontmatterDto, ClientError> {
-        let response = self
-            .get(
-                Component::Acta,
-                &format!("/workspaces/{ws}/documents/{slug}/frontmatter"),
-            )
-            .send()
-            .await?;
-        self.decode_response(response, "get_frontmatter").await
+        self.acta().get_frontmatter(ws, slug).await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/documents/{slug}/attachments`
-    ///
-    /// Uploads raw binary content. Pass `file_name` via the `X-File-Name` header
-    /// and the MIME type via `Content-Type`.
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn upload_attachment(
         &self,
         ws: &str,
@@ -1393,22 +1091,13 @@ impl AtlasClient {
         content_type: &str,
         data: Vec<u8>,
     ) -> Result<AttachmentDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/documents/{slug}/attachments"),
-            )
-            .header("x-atlas-csrf", "1")
-            .header("x-file-name", file_name)
-            .header("content-type", content_type)
-            .body(data)
-            .timeout(ATTACHMENT_TRANSFER_TIMEOUT)
-            .send()
-            .await?;
-        self.decode_response(response, "upload_attachment").await
+        self.acta()
+            .upload_attachment(ws, slug, file_name, content_type, data)
+            .await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/documents/{slug}/attachments`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_attachments(
         &self,
         ws: &str,
@@ -1416,107 +1105,57 @@ impl AtlasClient {
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<AttachmentDto>, ClientError> {
-        let path = build_paginated_path(
-            &format!("/workspaces/{ws}/documents/{slug}/attachments"),
-            cursor,
-            limit,
-        );
-        let response = self.get(Component::Acta, &path).send().await?;
-        self.decode_response(response, "list_attachments").await
+        self.acta().list_attachments(ws, slug, cursor, limit).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/attachments`
-    ///
-    /// Lists every attachment in the workspace the principal may see, across
-    /// notes, tasks, and the comments of either.
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_workspace_attachments(
         &self,
         ws: &str,
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<WorkspaceAttachmentDto>, ClientError> {
-        let path = build_paginated_path(&format!("/workspaces/{ws}/attachments"), cursor, limit);
-        let response = self.get(Component::Acta, &path).send().await?;
-        self.decode_response(response, "list_workspace_attachments")
+        self.acta()
+            .list_workspace_attachments(ws, cursor, limit)
             .await
     }
 
-    /// `PATCH /api/v2/acta/workspaces/{ws}/attachments/{attachment_id}`
-    ///
-    /// Renames the attachment and rewrites the `[[file:…]]` links addressing it.
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn rename_workspace_attachment(
         &self,
         ws: &str,
         attachment_id: uuid::Uuid,
         body: RenameAttachmentRequest,
     ) -> Result<WorkspaceAttachmentDto, ClientError> {
-        let response = self
-            .patch(
-                Component::Acta,
-                &format!("/workspaces/{ws}/attachments/{attachment_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "rename_workspace_attachment")
+        self.acta()
+            .rename_workspace_attachment(ws, attachment_id, body)
             .await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/attachments/{attachment_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn download_attachment(
         &self,
         ws: &str,
         attachment_id: uuid::Uuid,
     ) -> Result<Vec<u8>, ClientError> {
-        let response = self
-            .get(
-                Component::Acta,
-                &format!("/workspaces/{ws}/attachments/{attachment_id}"),
-            )
-            .timeout(ATTACHMENT_TRANSFER_TIMEOUT)
-            .send()
-            .await?;
-        if !response.status().is_success() {
-            let problem: ProblemDetails = response
-                .json()
-                .await
-                .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-            return Err(ClientError::Api(problem));
-        }
-        let bytes = response.bytes().await?;
-        Ok(bytes.to_vec())
+        self.acta().download_attachment(ws, attachment_id).await
     }
 
-    /// `DELETE /api/v2/acta/workspaces/{ws}/attachments/{attachment_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn delete_attachment(
         &self,
         ws: &str,
         attachment_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Acta,
-                &format!("/workspaces/{ws}/attachments/{attachment_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
-            .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
+        self.acta().delete_attachment(ws, attachment_id).await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/attachments`
-    ///
-    /// Uploads a file as `multipart/form-data` with a single part named `file`.
-    /// The multipart body is assembled by hand so the client does not need
-    /// reqwest's `multipart` feature.
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn upload_task_attachment(
         &self,
         ws: &str,
@@ -1525,93 +1164,36 @@ impl AtlasClient {
         content_type: &str,
         data: Vec<u8>,
     ) -> Result<TaskAttachmentDto, ClientError> {
-        let boundary = format!("atlasboundary{}", uuid::Uuid::now_v7().as_simple());
-
-        let mut body: Vec<u8> = Vec::new();
-        body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
-        body.extend_from_slice(
-            format!("Content-Disposition: form-data; name=\"file\"; filename=\"{file_name}\"\r\n")
-                .as_bytes(),
-        );
-        body.extend_from_slice(format!("Content-Type: {content_type}\r\n\r\n").as_bytes());
-        body.extend_from_slice(&data);
-        body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
-
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/attachments"),
-            )
-            .header("x-atlas-csrf", "1")
-            .header(
-                "content-type",
-                format!("multipart/form-data; boundary={boundary}"),
-            )
-            .body(body)
-            .timeout(ATTACHMENT_TRANSFER_TIMEOUT)
-            .send()
-            .await?;
-        self.decode_response(response, "upload_task_attachment")
+        self.acta()
+            .upload_task_attachment(ws, readable_id, file_name, content_type, data)
             .await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/attachments`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_task_attachments(
         &self,
         ws: &str,
         readable_id: &str,
     ) -> Result<Vec<TaskAttachmentDto>, ClientError> {
-        let response = self
-            .get(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/attachments"),
-            )
-            .send()
-            .await?;
-        self.decode_response(response, "list_task_attachments")
-            .await
+        self.acta().list_task_attachments(ws, readable_id).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content`
-    ///
-    /// Returns the streamed bytes together with the response `Content-Type`, so a
-    /// caller can assert the content round-trips.
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn download_task_attachment(
         &self,
         ws: &str,
         readable_id: &str,
         attachment_id: uuid::Uuid,
     ) -> Result<(Vec<u8>, Option<String>), ClientError> {
-        let response = self
-            .get(
-                Component::Acta,
-                &format!(
-                    "/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content"
-                ),
-            )
-            .timeout(ATTACHMENT_TRANSFER_TIMEOUT)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            let problem: ProblemDetails = response
-                .json()
-                .await
-                .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-            return Err(ClientError::Api(problem));
-        }
-
-        let content_type = response
-            .headers()
-            .get("content-type")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string());
-
-        let bytes = response.bytes().await?;
-        Ok((bytes.to_vec(), content_type))
+        self.acta()
+            .download_task_attachment(ws, readable_id, attachment_id)
+            .await
     }
 
-    /// `PATCH /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn rename_task_attachment(
         &self,
         ws: &str,
@@ -1619,106 +1201,60 @@ impl AtlasClient {
         attachment_id: uuid::Uuid,
         body: RenameTaskAttachmentRequest,
     ) -> Result<TaskAttachmentDto, ClientError> {
-        let response = self
-            .patch(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "rename_task_attachment")
+        self.acta()
+            .rename_task_attachment(ws, readable_id, attachment_id, body)
             .await
     }
 
-    /// `DELETE /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn delete_task_attachment(
         &self,
         ws: &str,
         readable_id: &str,
         attachment_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
+        self.acta()
+            .delete_task_attachment(ws, readable_id, attachment_id)
             .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
     }
 
-    /// `PATCH /api/v2/acta/workspaces/{ws}/documents/{slug}/move`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn move_document(
         &self,
         ws: &str,
         slug: &str,
         body: MoveDocumentRequest,
     ) -> Result<DocumentDto, ClientError> {
-        let response = self
-            .patch(
-                Component::Acta,
-                &format!("/workspaces/{ws}/documents/{slug}/move"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "move_document").await
+        self.acta().move_document(ws, slug, body).await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/documents/moves/batch`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn move_documents_batch(
         &self,
         ws: &str,
         body: DocumentMoveBatchRequest,
     ) -> Result<Vec<DocumentMoveBatchResultDto>, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/documents/moves/batch"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "move_documents_batch").await
+        self.acta().move_documents_batch(ws, body).await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/documents/{slug}/copy`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn copy_document(
         &self,
         ws: &str,
         slug: &str,
         folder_id: Option<uuid::Uuid>,
     ) -> Result<DocumentDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/documents/{slug}/copy"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&CopyDocumentRequest { folder_id })
-            .send()
-            .await?;
-        self.decode_response(response, "copy_document").await
+        self.acta().copy_document(ws, slug, folder_id).await
     }
 
     // ---- Admin Trash -----------------------------------------------------------
 
-    /// `GET /api/v2/acta/admin/trash`
-    ///
-    /// This root/system-admin human-only endpoint lists the five recoverable
-    /// resource kinds. API keys are rejected by the server.
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_trash(
         &self,
         workspace_id: Option<uuid::Uuid>,
@@ -1726,176 +1262,97 @@ impl AtlasClient {
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<TrashItemDto>, ClientError> {
-        let path = build_trash_list_path(workspace_id, kind, cursor, limit);
-        let response = self.get(Component::Acta, &path).send().await?;
-        self.decode_response(response, "list_trash").await
+        self.acta()
+            .list_trash(workspace_id, kind, cursor, limit)
+            .await
     }
 
-    /// `POST /api/v2/acta/admin/trash/restore`
-    ///
-    /// Restores one recoverably deleted resource. This requires a root or
-    /// system-admin human session; API keys are rejected by the server.
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn restore_trash(
         &self,
         kind: TrashKindDto,
         target_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
-        let response = self
-            .post(Component::Acta, "/admin/trash/restore")
-            .header("x-atlas-csrf", "1")
-            .json(&RestoreTrashItemRequest { kind, target_id })
-            .send()
-            .await?;
-        decode_empty_response(response).await
+        self.acta().restore_trash(kind, target_id).await
     }
 
-    /// `POST /api/v2/acta/admin/trash/purge`
-    ///
-    /// Permanently purges a recoverably deleted resource only when `confirm` is
-    /// true. A 204 becomes [`PurgeTrashResult::Complete`]; a 202 carries the
-    /// durable pending cleanup status.
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn purge_trash(
         &self,
         kind: TrashKindDto,
         target_id: uuid::Uuid,
         confirm: bool,
     ) -> Result<PurgeTrashResult, ClientError> {
-        let response = self
-            .post(Component::Acta, "/admin/trash/purge")
-            .header("x-atlas-csrf", "1")
-            .json(&PurgeTrashItemRequest {
-                kind,
-                target_id,
-                confirm,
-            })
-            .send()
-            .await?;
-
-        if response.status() == reqwest::StatusCode::NO_CONTENT {
-            return Ok(PurgeTrashResult::Complete);
-        }
-
-        let status = self.decode_response(response, "purge_trash").await?;
-        Ok(PurgeTrashResult::Pending(status))
+        self.acta().purge_trash(kind, target_id, confirm).await
     }
 
-    /// `GET /api/v2/acta/admin/trash/purges/{operation_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn get_purge_status(
         &self,
         operation_id: uuid::Uuid,
     ) -> Result<PurgeStatusDtoResponse, ClientError> {
-        let response = self
-            .get(
-                Component::Acta,
-                &format!("/admin/trash/purges/{operation_id}"),
-            )
-            .send()
-            .await?;
-        self.decode_response(response, "get_purge_status").await
+        self.acta().get_purge_status(operation_id).await
     }
 
     // ---- Webhooks --------------------------------------------------------------
 
-    /// `POST /api/v2/acta/workspaces/{ws}/webhooks`
-    ///
-    /// Creates a webhook subscription. The response carries the plaintext HMAC
-    /// signing secret (`whsec_…`) exactly once; it is never retrievable again.
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn create_webhook(
         &self,
         ws: &str,
         body: CreateWebhookRequest,
     ) -> Result<WebhookCreatedDto, ClientError> {
-        let response = self
-            .post(Component::Acta, &format!("/workspaces/{ws}/webhooks"))
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "create_webhook").await
+        self.acta().create_webhook(ws, body).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/webhooks`
-    ///
-    /// The list endpoint pages forward with an opaque `after` cursor (not the
-    /// generic `cursor` param used elsewhere), so the query string is built here
-    /// with the parameter name this route expects.
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_webhooks(
         &self,
         ws: &str,
         after: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<WebhookDto>, ClientError> {
-        let path = build_webhooks_list_path(ws, after, limit);
-        let response = self.get(Component::Acta, &path).send().await?;
-        self.decode_response(response, "list_webhooks").await
+        self.acta().list_webhooks(ws, after, limit).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/webhooks/{webhook_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn get_webhook(
         &self,
         ws: &str,
         webhook_id: uuid::Uuid,
     ) -> Result<WebhookDto, ClientError> {
-        let response = self
-            .get(
-                Component::Acta,
-                &format!("/workspaces/{ws}/webhooks/{webhook_id}"),
-            )
-            .send()
-            .await?;
-        self.decode_response(response, "get_webhook").await
+        self.acta().get_webhook(ws, webhook_id).await
     }
 
-    /// `PATCH /api/v2/acta/workspaces/{ws}/webhooks/{webhook_id}`
-    ///
-    /// PATCH semantics: omitted fields are left unchanged. The signing secret is
-    /// never rotated through this endpoint.
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn update_webhook(
         &self,
         ws: &str,
         webhook_id: uuid::Uuid,
         body: UpdateWebhookRequest,
     ) -> Result<WebhookDto, ClientError> {
-        let response = self
-            .patch(
-                Component::Acta,
-                &format!("/workspaces/{ws}/webhooks/{webhook_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "update_webhook").await
+        self.acta().update_webhook(ws, webhook_id, body).await
     }
 
-    /// `DELETE /api/v2/acta/workspaces/{ws}/webhooks/{webhook_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn delete_webhook(
         &self,
         ws: &str,
         webhook_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Acta,
-                &format!("/workspaces/{ws}/webhooks/{webhook_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
-            .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
+        self.acta().delete_webhook(ws, webhook_id).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/webhooks/{webhook_id}/deliveries`
-    ///
-    /// Delivery attempts page newest-first with an opaque `before` cursor, so the
-    /// query string is built here with the parameter name this route expects.
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_webhook_deliveries(
         &self,
         ws: &str,
@@ -1903,34 +1360,26 @@ impl AtlasClient {
         before: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<WebhookDeliveryDto>, ClientError> {
-        let path = build_webhook_deliveries_path(ws, webhook_id, before, limit);
-        let response = self.get(Component::Acta, &path).send().await?;
-        self.decode_response(response, "list_webhook_deliveries")
+        self.acta()
+            .list_webhook_deliveries(ws, webhook_id, before, limit)
             .await
     }
 
     // ---- Boards ----------------------------------------------------------------
 
-    /// `POST /api/v2/acta/workspaces/{ws}/projects/{project_slug}/boards`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn create_board(
         &self,
         ws: &str,
         project_slug: &str,
         body: CreateBoardRequest,
     ) -> Result<BoardDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/projects/{project_slug}/boards"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "create_board").await
+        self.acta().create_board(ws, project_slug, body).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/projects/{project_slug}/boards`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_boards(
         &self,
         ws: &str,
@@ -1938,566 +1387,311 @@ impl AtlasClient {
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<BoardSummaryDto>, ClientError> {
-        let path = build_paginated_path(
-            &format!("/workspaces/{ws}/projects/{project_slug}/boards"),
-            cursor,
-            limit,
-        );
-        let response = self.get(Component::Acta, &path).send().await?;
-        self.decode_response(response, "list_boards").await
+        self.acta()
+            .list_boards(ws, project_slug, cursor, limit)
+            .await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/boards/{board_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn get_board(&self, ws: &str, board_id: uuid::Uuid) -> Result<BoardDto, ClientError> {
-        let response = self
-            .get(
-                Component::Acta,
-                &format!("/workspaces/{ws}/boards/{board_id}"),
-            )
-            .send()
-            .await?;
-        self.decode_response(response, "get_board").await
+        self.acta().get_board(ws, board_id).await
     }
 
-    /// `PATCH /api/v2/acta/workspaces/{ws}/boards/{board_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn update_board(
         &self,
         ws: &str,
         board_id: uuid::Uuid,
         body: UpdateBoardRequest,
     ) -> Result<BoardDto, ClientError> {
-        let response = self
-            .patch(
-                Component::Acta,
-                &format!("/workspaces/{ws}/boards/{board_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "update_board").await
+        self.acta().update_board(ws, board_id, body).await
     }
 
-    /// `PATCH /api/v2/acta/workspaces/{ws}/boards/{board_id}/move`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn move_board(
         &self,
         ws: &str,
         board_id: uuid::Uuid,
         body: MoveBoardRequest,
     ) -> Result<BoardDto, ClientError> {
-        let response = self
-            .patch(
-                Component::Acta,
-                &format!("/workspaces/{ws}/boards/{board_id}/move"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "move_board").await
+        self.acta().move_board(ws, board_id, body).await
     }
 
-    /// `DELETE /api/v2/acta/workspaces/{ws}/boards/{board_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn delete_board(&self, ws: &str, board_id: uuid::Uuid) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Acta,
-                &format!("/workspaces/{ws}/boards/{board_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
-            .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
+        self.acta().delete_board(ws, board_id).await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/boards/{board_id}/columns`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn create_column(
         &self,
         ws: &str,
         board_id: uuid::Uuid,
         body: CreateColumnRequest,
     ) -> Result<ColumnDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/boards/{board_id}/columns"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "create_column").await
+        self.acta().create_column(ws, board_id, body).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/boards/{board_id}/columns`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_columns(
         &self,
         ws: &str,
         board_id: uuid::Uuid,
     ) -> Result<Vec<ColumnDto>, ClientError> {
-        let response = self
-            .get(
-                Component::Acta,
-                &format!("/workspaces/{ws}/boards/{board_id}/columns"),
-            )
-            .send()
-            .await?;
-        self.decode_response(response, "list_columns").await
+        self.acta().list_columns(ws, board_id).await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/tags`
-    ///
-    /// Idempotent by case-insensitive name: an existing tag is returned with 200,
-    /// a new one with 201. Both are surfaced as a successful `TagDto`.
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn create_tag(
         &self,
         ws: &str,
         body: CreateTagRequest,
     ) -> Result<TagDto, ClientError> {
-        let response = self
-            .post(Component::Acta, &format!("/workspaces/{ws}/tags"))
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "create_tag").await
+        self.acta().create_tag(ws, body).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/tags`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_tags(&self, ws: &str) -> Result<Vec<TagDto>, ClientError> {
-        let response = self
-            .get(Component::Acta, &format!("/workspaces/{ws}/tags"))
-            .send()
-            .await?;
-        self.decode_response(response, "list_tags").await
+        self.acta().list_tags(ws).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/tags/used`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_used_labels(&self, ws: &str) -> Result<Vec<String>, ClientError> {
-        let response = self
-            .get(Component::Acta, &format!("/workspaces/{ws}/tags/used"))
-            .send()
-            .await?;
-        self.decode_response(response, "list_used_labels").await
+        self.acta().list_used_labels(ws).await
     }
 
-    /// `PATCH /api/v2/acta/workspaces/{ws}/tags/{tag_id}`
-    ///
-    /// Updates a tag's name and/or color. Returns the updated tag.
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn update_tag(
         &self,
         ws: &str,
         tag_id: uuid::Uuid,
         body: UpdateTagRequest,
     ) -> Result<TagDto, ClientError> {
-        let response = self
-            .patch(Component::Acta, &format!("/workspaces/{ws}/tags/{tag_id}"))
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "update_tag").await
+        self.acta().update_tag(ws, tag_id, body).await
     }
 
-    /// `DELETE /api/v2/acta/workspaces/{ws}/tags/{tag_id}`
-    ///
-    /// Soft-deletes a tag. Task label strings are preserved.
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn delete_tag(&self, ws: &str, tag_id: uuid::Uuid) -> Result<(), ClientError> {
-        let response = self
-            .delete(Component::Acta, &format!("/workspaces/{ws}/tags/{tag_id}"))
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
-            .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
+        self.acta().delete_tag(ws, tag_id).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/property-definitions`
-    ///
-    /// Optionally filters by applicability (`task` | `document` | `both`).
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_property_definitions(
         &self,
         ws: &str,
         applies_to: Option<&str>,
     ) -> Result<Vec<PropertyDefinitionDto>, ClientError> {
-        let mut path = format!("/workspaces/{ws}/property-definitions");
-        if let Some(applies_to) = applies_to {
-            path.push_str(&format!("?applies_to={applies_to}"));
-        }
-        let response = self.get(Component::Acta, &path).send().await?;
-        self.decode_response(response, "list_property_definitions")
-            .await
+        self.acta().list_property_definitions(ws, applies_to).await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/property-definitions`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn create_property_definition(
         &self,
         ws: &str,
         body: CreatePropertyDefinitionRequest,
     ) -> Result<PropertyDefinitionDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/property-definitions"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "create_property_definition")
-            .await
+        self.acta().create_property_definition(ws, body).await
     }
 
-    /// `DELETE /api/v2/acta/workspaces/{ws}/property-definitions/{property_definition_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn delete_property_definition(
         &self,
         ws: &str,
         property_definition_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Acta,
-                &format!("/workspaces/{ws}/property-definitions/{property_definition_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
+        self.acta()
+            .delete_property_definition(ws, property_definition_id)
             .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/saved-searches`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn create_saved_search(
         &self,
         ws: &str,
         body: CreateSavedSearchRequest,
     ) -> Result<SavedSearchDto, ClientError> {
-        let response = self
-            .post(Component::Acta, &format!("/workspaces/{ws}/saved-searches"))
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "create_saved_search").await
+        self.acta().create_saved_search(ws, body).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/saved-searches`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_saved_searches(&self, ws: &str) -> Result<Vec<SavedSearchDto>, ClientError> {
-        let response = self
-            .get(Component::Acta, &format!("/workspaces/{ws}/saved-searches"))
-            .send()
-            .await?;
-        self.decode_response(response, "list_saved_searches").await
+        self.acta().list_saved_searches(ws).await
     }
 
-    /// `PATCH /api/v2/acta/workspaces/{ws}/saved-searches/{id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn rename_saved_search(
         &self,
         ws: &str,
         id: uuid::Uuid,
         body: RenameSavedSearchRequest,
     ) -> Result<SavedSearchDto, ClientError> {
-        let response = self
-            .patch(
-                Component::Acta,
-                &format!("/workspaces/{ws}/saved-searches/{id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "rename_saved_search").await
+        self.acta().rename_saved_search(ws, id, body).await
     }
 
-    /// `DELETE /api/v2/acta/workspaces/{ws}/saved-searches/{id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn delete_saved_search(&self, ws: &str, id: uuid::Uuid) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Acta,
-                &format!("/workspaces/{ws}/saved-searches/{id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
-            .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
+        self.acta().delete_saved_search(ws, id).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/task-views`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_task_views(&self, ws: &str) -> Result<Vec<TaskViewDto>, ClientError> {
-        let response = self
-            .get(Component::Acta, &format!("/workspaces/{ws}/task-views"))
-            .send()
-            .await?;
-        self.decode_response(response, "list_task_views").await
+        self.acta().list_task_views(ws).await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/task-views`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn create_task_view(
         &self,
         ws: &str,
         body: CreateTaskViewRequest,
     ) -> Result<TaskViewDto, ClientError> {
-        let response = self
-            .post(Component::Acta, &format!("/workspaces/{ws}/task-views"))
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "create_task_view").await
+        self.acta().create_task_view(ws, body).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/task-views/{id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn get_task_view(
         &self,
         ws: &str,
         id: uuid::Uuid,
     ) -> Result<TaskViewDto, ClientError> {
-        let response = self
-            .get(
-                Component::Acta,
-                &format!("/workspaces/{ws}/task-views/{id}"),
-            )
-            .send()
-            .await?;
-        self.decode_response(response, "get_task_view").await
+        self.acta().get_task_view(ws, id).await
     }
 
-    /// `PATCH /api/v2/acta/workspaces/{ws}/task-views/{id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn update_task_view(
         &self,
         ws: &str,
         id: uuid::Uuid,
         body: UpdateTaskViewRequest,
     ) -> Result<TaskViewDto, ClientError> {
-        let response = self
-            .patch(
-                Component::Acta,
-                &format!("/workspaces/{ws}/task-views/{id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "update_task_view").await
+        self.acta().update_task_view(ws, id, body).await
     }
 
-    /// `DELETE /api/v2/acta/workspaces/{ws}/task-views/{id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn delete_task_view(&self, ws: &str, id: uuid::Uuid) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Acta,
-                &format!("/workspaces/{ws}/task-views/{id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
-            .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
+        self.acta().delete_task_view(ws, id).await
     }
 
     // ---- Status templates -------------------------------------------------------
 
-    /// `GET /api/v2/acta/workspaces/{ws}/status-templates`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_status_templates(
         &self,
         ws: &str,
     ) -> Result<Vec<StatusTemplateDto>, ClientError> {
-        let response = self
-            .get(
-                Component::Acta,
-                &format!("/workspaces/{ws}/status-templates"),
-            )
-            .send()
-            .await?;
-        self.decode_response(response, "list_status_templates")
-            .await
+        self.acta().list_status_templates(ws).await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/status-templates`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn create_status_template(
         &self,
         ws: &str,
         body: CreateStatusTemplateRequest,
     ) -> Result<StatusTemplateDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/status-templates"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "create_status_template")
-            .await
+        self.acta().create_status_template(ws, body).await
     }
 
-    /// `PATCH /api/v2/acta/workspaces/{ws}/status-templates/{template_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn update_status_template(
         &self,
         ws: &str,
         template_id: uuid::Uuid,
         body: UpdateStatusTemplateRequest,
     ) -> Result<StatusTemplateDto, ClientError> {
-        let response = self
-            .patch(
-                Component::Acta,
-                &format!("/workspaces/{ws}/status-templates/{template_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "update_status_template")
+        self.acta()
+            .update_status_template(ws, template_id, body)
             .await
     }
 
-    /// `DELETE /api/v2/acta/workspaces/{ws}/status-templates/{template_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn delete_status_template(
         &self,
         ws: &str,
         template_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Acta,
-                &format!("/workspaces/{ws}/status-templates/{template_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
-            .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
+        self.acta().delete_status_template(ws, template_id).await
     }
 
     // ---- Platform status templates (Atlas-wide defaults, admin-only) -------------
 
-    /// `GET /api/v2/acta/admin/status-templates`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_platform_status_templates(
         &self,
     ) -> Result<Vec<PlatformStatusTemplateDto>, ClientError> {
-        let response = self
-            .get(Component::Acta, "/admin/status-templates")
-            .send()
-            .await?;
-        self.decode_response(response, "list_platform_status_templates")
-            .await
+        self.acta().list_platform_status_templates().await
     }
 
-    /// `POST /api/v2/acta/admin/status-templates`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn create_platform_status_template(
         &self,
         body: CreateStatusTemplateRequest,
     ) -> Result<PlatformStatusTemplateDto, ClientError> {
-        let response = self
-            .post(Component::Acta, "/admin/status-templates")
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "create_platform_status_template")
-            .await
+        self.acta().create_platform_status_template(body).await
     }
 
-    /// `PATCH /api/v2/acta/admin/status-templates/{template_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn update_platform_status_template(
         &self,
         template_id: uuid::Uuid,
         body: UpdateStatusTemplateRequest,
     ) -> Result<PlatformStatusTemplateDto, ClientError> {
-        let response = self
-            .patch(
-                Component::Acta,
-                &format!("/admin/status-templates/{template_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "update_platform_status_template")
+        self.acta()
+            .update_platform_status_template(template_id, body)
             .await
     }
 
-    /// `DELETE /api/v2/acta/admin/status-templates/{template_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn delete_platform_status_template(
         &self,
         template_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Acta,
-                &format!("/admin/status-templates/{template_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
+        self.acta()
+            .delete_platform_status_template(template_id)
             .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/boards/{board_id}/apply-status-templates`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn apply_status_templates(
         &self,
         ws: &str,
         board_id: uuid::Uuid,
     ) -> Result<Vec<atlas_api::dtos::boards_tasks::ColumnDto>, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/boards/{board_id}/apply-status-templates"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        self.decode_response(response, "apply_status_templates")
-            .await
+        self.acta().apply_status_templates(ws, board_id).await
     }
 
-    /// `PATCH /api/v2/acta/workspaces/{ws}/boards/{board_id}/columns/{column_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn update_column(
         &self,
         ws: &str,
@@ -2505,78 +1699,50 @@ impl AtlasClient {
         column_id: uuid::Uuid,
         body: UpdateColumnRequest,
     ) -> Result<ColumnDto, ClientError> {
-        let response = self
-            .patch(
-                Component::Acta,
-                &format!("/workspaces/{ws}/boards/{board_id}/columns/{column_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "update_column").await
+        self.acta()
+            .update_column(ws, board_id, column_id, body)
+            .await
     }
 
-    /// `DELETE /api/v2/acta/workspaces/{ws}/boards/{board_id}/columns/{column_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn delete_column(
         &self,
         ws: &str,
         board_id: uuid::Uuid,
         column_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Acta,
-                &format!("/workspaces/{ws}/boards/{board_id}/columns/{column_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
-            .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
+        self.acta().delete_column(ws, board_id, column_id).await
     }
 
     // ---- Tasks ----------------------------------------------------------------
 
-    /// `POST /api/v2/acta/workspaces/{ws}/boards/{board_id}/tasks`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn create_task(
         &self,
         ws: &str,
         board_id: uuid::Uuid,
         body: CreateTaskRequest,
     ) -> Result<TaskDto, ClientError> {
-        Ok(self
-            .create_task_with_references(ws, board_id, body)
-            .await?
-            .task)
+        self.acta().create_task(ws, board_id, body).await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/boards/{board_id}/tasks`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn create_task_with_references(
         &self,
         ws: &str,
         board_id: uuid::Uuid,
         body: CreateTaskRequest,
     ) -> Result<CreateTaskResponseDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/boards/{board_id}/tasks"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "create_task").await
+        self.acta()
+            .create_task_with_references(ws, board_id, body)
+            .await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/boards/{board_id}/tasks`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_tasks(
         &self,
         ws: &str,
@@ -2584,338 +1750,200 @@ impl AtlasClient {
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<TaskSummaryDto>, ClientError> {
-        let path = build_paginated_path(
-            &format!("/workspaces/{ws}/boards/{board_id}/tasks"),
-            cursor,
-            limit,
-        );
-        let response = self.get(Component::Acta, &path).send().await?;
-        self.decode_response(response, "list_tasks").await
+        self.acta().list_tasks(ws, board_id, cursor, limit).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/tasks`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_workspace_tasks(
         &self,
         ws: &str,
         query: &WorkspaceTaskQueryParams,
     ) -> Result<Page<TaskSummaryDto>, ClientError> {
-        let path = build_workspace_tasks_path(ws, query);
-        let response = self.get(Component::Acta, &path).send().await?;
-        self.decode_response(response, "list_workspace_tasks").await
+        self.acta().list_workspace_tasks(ws, query).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn get_task(&self, ws: &str, readable_id: &str) -> Result<TaskDto, ClientError> {
-        let response = self
-            .get(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}"),
-            )
-            .send()
-            .await?;
-        self.decode_response(response, "get_task").await
+        self.acta().get_task(ws, readable_id).await
     }
 
-    /// `PATCH /api/v2/acta/workspaces/{ws}/tasks/{readable_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn update_task(
         &self,
         ws: &str,
         readable_id: &str,
         body: UpdateTaskRequest,
     ) -> Result<TaskDto, ClientError> {
-        let response = self
-            .patch(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "update_task").await
+        self.acta().update_task(ws, readable_id, body).await
     }
 
-    /// `DELETE /api/v2/acta/workspaces/{ws}/tasks/{readable_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn delete_task(&self, ws: &str, readable_id: &str) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
-            .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
+        self.acta().delete_task(ws, readable_id).await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/move`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn move_task(
         &self,
         ws: &str,
         readable_id: &str,
         body: MoveTaskRequest,
     ) -> Result<TaskDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/move"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "move_task").await
+        self.acta().move_task(ws, readable_id, body).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/assignees`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_assignees(
         &self,
         ws: &str,
         readable_id: &str,
     ) -> Result<Vec<AssigneeDto>, ClientError> {
-        let response = self
-            .get(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/assignees"),
-            )
-            .send()
-            .await?;
-        self.decode_response(response, "list_assignees").await
+        self.acta().list_assignees(ws, readable_id).await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/assignees`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn add_assignee(
         &self,
         ws: &str,
         readable_id: &str,
         body: AddAssigneeRequest,
     ) -> Result<AssigneeDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/assignees"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "add_assignee").await
+        self.acta().add_assignee(ws, readable_id, body).await
     }
 
-    /// `DELETE /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn remove_assignee(
         &self,
         ws: &str,
         readable_id: &str,
         assignee_ref: &str,
     ) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
+        self.acta()
+            .remove_assignee(ws, readable_id, assignee_ref)
             .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/references`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_references(
         &self,
         ws: &str,
         readable_id: &str,
     ) -> Result<Vec<UnifiedReferenceDto>, ClientError> {
-        let response = self
-            .get(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/references"),
-            )
-            .send()
-            .await?;
-        self.decode_response(response, "list_references").await
+        self.acta().list_references(ws, readable_id).await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/references`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn create_reference(
         &self,
         ws: &str,
         readable_id: &str,
         body: CreateReferenceRequest,
     ) -> Result<ReferenceDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/references"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "create_reference").await
+        self.acta().create_reference(ws, readable_id, body).await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/references/batch`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn create_reference_batch(
         &self,
         ws: &str,
         readable_id: &str,
         body: CreateReferenceBatchRequest,
     ) -> Result<Vec<CreateReferenceBatchResultDto>, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/references/batch"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "create_reference_batch")
+        self.acta()
+            .create_reference_batch(ws, readable_id, body)
             .await
     }
 
-    /// `DELETE /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn delete_reference(
         &self,
         ws: &str,
         readable_id: &str,
         reference_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
+        self.acta()
+            .delete_reference(ws, readable_id, reference_id)
             .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/backlinks`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_task_backlinks(
         &self,
         ws: &str,
         readable_id: &str,
     ) -> Result<Page<TaskBacklinkDto>, ClientError> {
-        let response = self
-            .get(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/backlinks"),
-            )
-            .send()
-            .await?;
-        self.decode_response(response, "list_task_backlinks").await
+        self.acta().list_task_backlinks(ws, readable_id).await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/boards/{board_id}/archive`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn archive_board(
         &self,
         ws: &str,
         board_id: uuid::Uuid,
     ) -> Result<BoardDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/boards/{board_id}/archive"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        self.decode_response(response, "archive_board").await
+        self.acta().archive_board(ws, board_id).await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/boards/{board_id}/unarchive`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn unarchive_board(
         &self,
         ws: &str,
         board_id: uuid::Uuid,
     ) -> Result<BoardDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/boards/{board_id}/unarchive"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        self.decode_response(response, "unarchive_board").await
+        self.acta().unarchive_board(ws, board_id).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/graph`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn get_task_graph(
         &self,
         ws: &str,
         readable_id: &str,
         depth: Option<u32>,
     ) -> Result<TaskGraphDto, ClientError> {
-        let path = match depth {
-            Some(depth) => format!("/workspaces/{ws}/tasks/{readable_id}/graph?depth={depth}"),
-            None => format!("/workspaces/{ws}/tasks/{readable_id}/graph"),
-        };
-        let response = self.get(Component::Acta, &path).send().await?;
-        self.decode_response(response, "get_task_graph").await
+        self.acta().get_task_graph(ws, readable_id, depth).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/checklist`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_checklist(
         &self,
         ws: &str,
         readable_id: &str,
     ) -> Result<Vec<ChecklistItemDto>, ClientError> {
-        let response = self
-            .get(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/checklist"),
-            )
-            .send()
-            .await?;
-        self.decode_response(response, "list_checklist").await
+        self.acta().list_checklist(ws, readable_id).await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/checklist`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn create_checklist_item(
         &self,
         ws: &str,
         readable_id: &str,
         body: CreateChecklistItemRequest,
     ) -> Result<ChecklistItemDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/checklist"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "create_checklist_item")
+        self.acta()
+            .create_checklist_item(ws, readable_id, body)
             .await
     }
 
-    /// `PATCH /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn update_checklist_item(
         &self,
         ws: &str,
@@ -2923,45 +1951,26 @@ impl AtlasClient {
         item_id: uuid::Uuid,
         body: UpdateChecklistItemRequest,
     ) -> Result<ChecklistItemDto, ClientError> {
-        let response = self
-            .patch(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "update_checklist_item")
+        self.acta()
+            .update_checklist_item(ws, readable_id, item_id, body)
             .await
     }
 
-    /// `DELETE /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn delete_checklist_item(
         &self,
         ws: &str,
         readable_id: &str,
         item_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
+        self.acta()
+            .delete_checklist_item(ws, readable_id, item_id)
             .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn promote_checklist_item(
         &self,
         ws: &str,
@@ -2969,107 +1978,65 @@ impl AtlasClient {
         item_id: uuid::Uuid,
         body: PromoteChecklistItemRequest,
     ) -> Result<PromotionDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "promote_checklist_item")
+        self.acta()
+            .promote_checklist_item(ws, readable_id, item_id, body)
             .await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/subtasks`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_subtasks(
         &self,
         ws: &str,
         readable_id: &str,
     ) -> Result<Vec<TaskSummaryDto>, ClientError> {
-        let response = self
-            .get(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/subtasks"),
-            )
-            .send()
-            .await?;
-        self.decode_response(response, "list_subtasks").await
+        self.acta().list_subtasks(ws, readable_id).await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/subtasks`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn create_subtask(
         &self,
         ws: &str,
         readable_id: &str,
         body: CreateSubtaskRequest,
     ) -> Result<CreateTaskResponseDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/subtasks"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "create_subtask").await
+        self.acta().create_subtask(ws, readable_id, body).await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/promote`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn promote_subtask(
         &self,
         ws: &str,
         readable_id: &str,
     ) -> Result<TaskDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/promote"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        self.decode_response(response, "promote_subtask").await
+        self.acta().promote_subtask(ws, readable_id).await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/parent`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn set_task_parent(
         &self,
         ws: &str,
         readable_id: &str,
         body: SetTaskParentRequest,
     ) -> Result<TaskDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/parent"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "set_task_parent").await
+        self.acta().set_task_parent(ws, readable_id, body).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/activity`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_activity(
         &self,
         ws: &str,
         readable_id: &str,
     ) -> Result<Page<ActivityEntryDto>, ClientError> {
-        let response = self
-            .get(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/activity"),
-            )
-            .send()
-            .await?;
-        self.decode_response(response, "list_activity").await
+        self.acta().list_activity(ws, readable_id).await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_comments(
         &self,
         ws: &str,
@@ -3077,16 +2044,13 @@ impl AtlasClient {
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<CommentDto>, ClientError> {
-        let path = build_paginated_path(
-            &format!("/workspaces/{ws}/tasks/{readable_id}/comments"),
-            cursor,
-            limit,
-        );
-        let response = self.get(Component::Acta, &path).send().await?;
-        self.decode_response(response, "list_comments").await
+        self.acta()
+            .list_comments(ws, readable_id, cursor, limit)
+            .await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments?feed=full`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_comment_feed(
         &self,
         ws: &str,
@@ -3094,16 +2058,13 @@ impl AtlasClient {
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<CommentFeedEntryDto>, ClientError> {
-        let path = build_comment_feed_path(
-            &format!("/workspaces/{ws}/tasks/{readable_id}/comments"),
-            cursor,
-            limit,
-        );
-        let response = self.get(Component::Acta, &path).send().await?;
-        self.decode_response(response, "list_comment_feed").await
+        self.acta()
+            .list_comment_feed(ws, readable_id, cursor, limit)
+            .await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn upload_task_comment_attachment(
         &self,
         ws: &str,
@@ -3113,56 +2074,34 @@ impl AtlasClient {
         content_type: &str,
         data: Vec<u8>,
     ) -> Result<CommentAttachmentDto, ClientError> {
-        let boundary = format!("atlasboundary{}", uuid::Uuid::now_v7().as_simple());
-        let mut body = Vec::new();
-        body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
-        body.extend_from_slice(
-            format!("Content-Disposition: form-data; name=\"file\"; filename=\"{file_name}\"\r\n")
-                .as_bytes(),
-        );
-        body.extend_from_slice(format!("Content-Type: {content_type}\r\n\r\n").as_bytes());
-        body.extend_from_slice(&data);
-        body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
-
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments"),
+        self.acta()
+            .upload_task_comment_attachment(
+                ws,
+                readable_id,
+                comment_id,
+                file_name,
+                content_type,
+                data,
             )
-            .header("x-atlas-csrf", "1")
-            .header(
-                "content-type",
-                format!("multipart/form-data; boundary={boundary}"),
-            )
-            .body(body)
-            .send()
-            .await?;
-        self.decode_response(response, "upload_task_comment_attachment")
             .await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comment-drafts`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn create_task_comment_draft(
         &self,
         ws: &str,
         readable_id: &str,
         create_token: uuid::Uuid,
     ) -> Result<CommentDraftDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/comment-drafts"),
-            )
-            .header("x-atlas-csrf", "1")
-            .header("x-create-token", create_token.to_string())
-            .send()
-            .await?;
-        self.decode_response(response, "create_task_comment_draft")
+        self.acta()
+            .create_task_comment_draft(ws, readable_id, create_token)
             .await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments`
     #[allow(clippy::too_many_arguments)]
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn upload_task_draft_attachment(
         &self,
         ws: &str,
@@ -3173,74 +2112,47 @@ impl AtlasClient {
         content_type: &str,
         data: Vec<u8>,
     ) -> Result<CommentAttachmentDto, ClientError> {
-        let boundary = format!("atlasboundary{}", uuid::Uuid::now_v7().as_simple());
-        let mut body = Vec::new();
-        body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
-        body.extend_from_slice(
-            format!("Content-Disposition: form-data; name=\"file\"; filename=\"{file_name}\"\r\n")
-                .as_bytes(),
-        );
-        body.extend_from_slice(format!("Content-Type: {content_type}\r\n\r\n").as_bytes());
-        body.extend_from_slice(&data);
-        body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
-
-        let response = self
-            .post(
-                Component::Acta,
-                &format!(
-                    "/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments"
-                ),
+        self.acta()
+            .upload_task_draft_attachment(
+                ws,
+                readable_id,
+                draft_id,
+                upload_token,
+                file_name,
+                content_type,
+                data,
             )
-            .header("x-atlas-csrf", "1")
-            .header("x-upload-token", upload_token.to_string())
-            .header(
-                "content-type",
-                format!("multipart/form-data; boundary={boundary}"),
-            )
-            .body(body)
-            .send()
-            .await?;
-        self.decode_response(response, "upload_task_draft_attachment")
             .await
     }
 
-    /// `DELETE /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn cancel_task_comment_draft(
         &self,
         ws: &str,
         readable_id: &str,
         draft_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        decode_empty_response(response).await
+        self.acta()
+            .cancel_task_comment_draft(ws, readable_id, draft_id)
+            .await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_task_comment_attachments(
         &self,
         ws: &str,
         readable_id: &str,
         comment_id: uuid::Uuid,
     ) -> Result<Vec<CommentAttachmentDto>, ClientError> {
-        let response = self
-            .get(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments"),
-            )
-            .send()
-            .await?;
-        self.decode_response(response, "list_task_comment_attachments")
+        self.acta()
+            .list_task_comment_attachments(ws, readable_id, comment_id)
             .await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn download_task_comment_attachment(
         &self,
         ws: &str,
@@ -3248,16 +2160,13 @@ impl AtlasClient {
         comment_id: uuid::Uuid,
         attachment_id: uuid::Uuid,
     ) -> Result<(Vec<u8>, Option<String>), ClientError> {
-        let response = self
-            .get(Component::Acta, &format!(
-                "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content"
-            ))
-            .send()
-            .await?;
-        decode_attachment_content(response).await
+        self.acta()
+            .download_task_comment_attachment(ws, readable_id, comment_id, attachment_id)
+            .await
     }
 
-    /// `DELETE /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn delete_task_comment_attachment(
         &self,
         ws: &str,
@@ -3265,36 +2174,24 @@ impl AtlasClient {
         comment_id: uuid::Uuid,
         attachment_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
-        let response = self
-            .delete(Component::Acta, &format!(
-                "/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}"
-            ))
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        decode_empty_response(response).await
+        self.acta()
+            .delete_task_comment_attachment(ws, readable_id, comment_id, attachment_id)
+            .await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn add_comment(
         &self,
         ws: &str,
         readable_id: &str,
         body: CreateCommentRequest,
     ) -> Result<CommentDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/comments"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "add_comment").await
+        self.acta().add_comment(ws, readable_id, body).await
     }
 
-    /// `PATCH /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn update_comment(
         &self,
         ws: &str,
@@ -3302,44 +2199,26 @@ impl AtlasClient {
         comment_id: uuid::Uuid,
         body: UpdateCommentRequest,
     ) -> Result<CommentDto, ClientError> {
-        let response = self
-            .patch(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "update_comment").await
+        self.acta()
+            .update_comment(ws, readable_id, comment_id, body)
+            .await
     }
 
-    /// `DELETE /api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn delete_comment(
         &self,
         ws: &str,
         readable_id: &str,
         comment_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Acta,
-                &format!("/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
+        self.acta()
+            .delete_comment(ws, readable_id, comment_id)
             .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/documents/{slug}/comments`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_document_comments(
         &self,
         ws: &str,
@@ -3347,17 +2226,13 @@ impl AtlasClient {
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<CommentDto>, ClientError> {
-        let path = build_paginated_path(
-            &format!("/workspaces/{ws}/documents/{slug}/comments"),
-            cursor,
-            limit,
-        );
-        let response = self.get(Component::Acta, &path).send().await?;
-        self.decode_response(response, "list_document_comments")
+        self.acta()
+            .list_document_comments(ws, slug, cursor, limit)
             .await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/documents/{slug}/comments?feed=full`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_document_comment_feed(
         &self,
         ws: &str,
@@ -3365,17 +2240,13 @@ impl AtlasClient {
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<CommentFeedEntryDto>, ClientError> {
-        let path = build_comment_feed_path(
-            &format!("/workspaces/{ws}/documents/{slug}/comments"),
-            cursor,
-            limit,
-        );
-        let response = self.get(Component::Acta, &path).send().await?;
-        self.decode_response(response, "list_document_comment_feed")
+        self.acta()
+            .list_document_comment_feed(ws, slug, cursor, limit)
             .await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn upload_document_comment_attachment(
         &self,
         ws: &str,
@@ -3385,43 +2256,27 @@ impl AtlasClient {
         content_type: &str,
         data: Vec<u8>,
     ) -> Result<CommentAttachmentDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments"),
-            )
-            .header("x-atlas-csrf", "1")
-            .header("x-file-name", file_name)
-            .header("content-type", content_type)
-            .body(data)
-            .send()
-            .await?;
-        self.decode_response(response, "upload_document_comment_attachment")
+        self.acta()
+            .upload_document_comment_attachment(ws, slug, comment_id, file_name, content_type, data)
             .await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/documents/{slug}/comment-drafts`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn create_document_comment_draft(
         &self,
         ws: &str,
         slug: &str,
         create_token: uuid::Uuid,
     ) -> Result<CommentDraftDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/documents/{slug}/comment-drafts"),
-            )
-            .header("x-atlas-csrf", "1")
-            .header("x-create-token", create_token.to_string())
-            .send()
-            .await?;
-        self.decode_response(response, "create_document_comment_draft")
+        self.acta()
+            .create_document_comment_draft(ws, slug, create_token)
             .await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments`
     #[allow(clippy::too_many_arguments)]
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn upload_document_draft_attachment(
         &self,
         ws: &str,
@@ -3432,59 +2287,47 @@ impl AtlasClient {
         content_type: &str,
         data: Vec<u8>,
     ) -> Result<CommentAttachmentDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments"),
+        self.acta()
+            .upload_document_draft_attachment(
+                ws,
+                slug,
+                draft_id,
+                upload_token,
+                file_name,
+                content_type,
+                data,
             )
-            .header("x-atlas-csrf", "1")
-            .header("x-upload-token", upload_token.to_string())
-            .header("x-file-name", file_name)
-            .header("content-type", content_type)
-            .body(data)
-            .send()
-            .await?;
-        self.decode_response(response, "upload_document_draft_attachment")
             .await
     }
 
-    /// `DELETE /api/v2/acta/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn cancel_document_comment_draft(
         &self,
         ws: &str,
         slug: &str,
         draft_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Acta,
-                &format!("/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        decode_empty_response(response).await
+        self.acta()
+            .cancel_document_comment_draft(ws, slug, draft_id)
+            .await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_document_comment_attachments(
         &self,
         ws: &str,
         slug: &str,
         comment_id: uuid::Uuid,
     ) -> Result<Vec<CommentAttachmentDto>, ClientError> {
-        let response = self
-            .get(
-                Component::Acta,
-                &format!("/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments"),
-            )
-            .send()
-            .await?;
-        self.decode_response(response, "list_document_comment_attachments")
+        self.acta()
+            .list_document_comment_attachments(ws, slug, comment_id)
             .await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn download_document_comment_attachment(
         &self,
         ws: &str,
@@ -3492,16 +2335,13 @@ impl AtlasClient {
         comment_id: uuid::Uuid,
         attachment_id: uuid::Uuid,
     ) -> Result<(Vec<u8>, Option<String>), ClientError> {
-        let response = self
-            .get(Component::Acta, &format!(
-                "/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}"
-            ))
-            .send()
-            .await?;
-        decode_attachment_content(response).await
+        self.acta()
+            .download_document_comment_attachment(ws, slug, comment_id, attachment_id)
+            .await
     }
 
-    /// `DELETE /api/v2/acta/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn delete_document_comment_attachment(
         &self,
         ws: &str,
@@ -3509,36 +2349,24 @@ impl AtlasClient {
         comment_id: uuid::Uuid,
         attachment_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
-        let response = self
-            .delete(Component::Acta, &format!(
-                "/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}"
-            ))
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        decode_empty_response(response).await
+        self.acta()
+            .delete_document_comment_attachment(ws, slug, comment_id, attachment_id)
+            .await
     }
 
-    /// `POST /api/v2/acta/workspaces/{ws}/documents/{slug}/comments`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn add_document_comment(
         &self,
         ws: &str,
         slug: &str,
         body: CreateCommentRequest,
     ) -> Result<CommentDto, ClientError> {
-        let response = self
-            .post(
-                Component::Acta,
-                &format!("/workspaces/{ws}/documents/{slug}/comments"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "add_document_comment").await
+        self.acta().add_document_comment(ws, slug, body).await
     }
 
-    /// `PATCH /api/v2/acta/workspaces/{ws}/documents/{slug}/comments/{comment_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn update_document_comment(
         &self,
         ws: &str,
@@ -3546,45 +2374,26 @@ impl AtlasClient {
         comment_id: uuid::Uuid,
         body: UpdateCommentRequest,
     ) -> Result<CommentDto, ClientError> {
-        let response = self
-            .patch(
-                Component::Acta,
-                &format!("/workspaces/{ws}/documents/{slug}/comments/{comment_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "update_document_comment")
+        self.acta()
+            .update_document_comment(ws, slug, comment_id, body)
             .await
     }
 
-    /// `DELETE /api/v2/acta/workspaces/{ws}/documents/{slug}/comments/{comment_id}`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn delete_document_comment(
         &self,
         ws: &str,
         slug: &str,
         comment_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Acta,
-                &format!("/workspaces/{ws}/documents/{slug}/comments/{comment_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
+        self.acta()
+            .delete_document_comment(ws, slug, comment_id)
             .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/activity`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_workspace_activity(
         &self,
         ws: &str,
@@ -3593,13 +2402,13 @@ impl AtlasClient {
         to: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<ActivityEntryDto>, ClientError> {
-        let path = build_workspace_activity_path(ws, actor, from, to, None, limit);
-        let response = self.get(Component::Acta, &path).send().await?;
-        self.decode_response(response, "list_workspace_activity")
+        self.acta()
+            .list_workspace_activity(ws, actor, from, to, limit)
             .await
     }
 
-    /// `GET /api/v2/acta/workspaces/{ws}/activity`
+    #[doc(hidden)]
+    /// Forwarder to `acta()`; removed in PR12 of this slice.
     pub async fn list_workspace_activity_with_cursor(
         &self,
         ws: &str,
@@ -3608,9 +2417,8 @@ impl AtlasClient {
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<ActivityEntryDto>, ClientError> {
-        let path = build_workspace_activity_path(ws, actor, from, None, cursor, limit);
-        let response = self.get(Component::Acta, &path).send().await?;
-        self.decode_response(response, "list_workspace_activity_with_cursor")
+        self.acta()
+            .list_workspace_activity_with_cursor(ws, actor, from, cursor, limit)
             .await
     }
 
