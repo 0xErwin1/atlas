@@ -509,8 +509,10 @@ fn file_name(path: &Path) -> String {
 /// crate-wide sum (design D7's PR6 migrates the whole crate in one PR).
 const ATLAS_CLI_PIN: usize = 0;
 
-/// `crates/atlas_mcp/src/lib.rs`'s flat-call count.
-const ATLAS_MCP_PIN: usize = 128;
+/// `crates/atlas_mcp/src/lib.rs`'s flat-call count. Flipped to 0 in PR7:
+/// all 128 sites (123 acta, 5 custos) are namespaced directly, with no
+/// shim, mirroring PR6's `atlas_cli` migration.
+const ATLAS_MCP_PIN: usize = 0;
 
 /// `crates/atlas_client/src/helpers.rs`'s flat-call count. Flipped to 0 in
 /// PR5 (T5.7): its six sites (`list_projects`, `list_boards`,
@@ -703,14 +705,15 @@ fn reverse_check_mismatches(
 /// `crates/atlas_cli/src` is excluded here too: PR6 namespaces all 149 of its
 /// sites directly, with no shim. Its own reverse check lives in
 /// [`atlas_cli_namespaced_sites_match_their_declared_home`].
+/// `crates/atlas_mcp/src/lib.rs` is excluded here too: PR7 namespaces all
+/// 128 of its sites directly, with no shim. Its own reverse check lives in
+/// [`atlas_mcp_namespaced_sites_match_their_declared_home`].
 #[test]
-fn no_namespaced_call_site_exists_anywhere_yet_outside_atlas_client_helpers_and_atlas_cli() {
+fn no_namespaced_call_site_exists_anywhere_yet_outside_atlas_client_helpers_and_atlas_cli_and_atlas_mcp()
+ {
     let derived = derive_method_namespace_map();
     let mut all_sites = Vec::new();
 
-    all_sites.extend(namespaced_call_sites(&masked_code(
-        &repo_root().join("crates/atlas_mcp/src/lib.rs"),
-    )));
     for path in atlas_server_test_files() {
         all_sites.extend(namespaced_call_sites(&masked_code(&path)));
     }
@@ -718,8 +721,8 @@ fn no_namespaced_call_site_exists_anywhere_yet_outside_atlas_client_helpers_and_
     assert_eq!(
         all_sites.len(),
         0,
-        "found a namespaced call site outside atlas_client::helpers.rs / atlas_cli before its \
-         consumer PR migrated: {all_sites:?}"
+        "found a namespaced call site outside atlas_client::helpers.rs / atlas_cli / atlas_mcp \
+         before its consumer PR migrated: {all_sites:?}"
     );
 
     // The reverse check runs and reports zero mismatches over zero sites —
@@ -763,6 +766,23 @@ fn atlas_cli_namespaced_sites_match_their_declared_home() {
         sites.len(),
         149,
         "expected 149 namespaced sites in crates/atlas_cli/src (PR6), found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn atlas_mcp_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_mcp/src/lib.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        128,
+        "expected 128 namespaced sites in crates/atlas_mcp/src/lib.rs (PR7), found: {sites:?}"
     );
 
     let mismatches = reverse_check_mismatches(&sites, &derived.map);
