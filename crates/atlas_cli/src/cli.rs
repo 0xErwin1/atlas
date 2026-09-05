@@ -32,7 +32,7 @@ use crate::commands::workspaces::WorkspacesArgs;
 /// Exit-code documentation shown in `atlas --help` (long form).
 ///
 /// Must stay in sync with `CliError::exit_code`.
-const EXIT_CODES_HELP: &str = "Exit codes:
+pub(crate) const EXIT_CODES_HELP: &str = "Exit codes:
   0  success
   1  generic failure (API error, I/O, decode, resolution)
   2  usage error (invalid arguments or failed validation)

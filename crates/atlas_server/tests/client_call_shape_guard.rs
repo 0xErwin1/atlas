@@ -718,6 +718,7 @@ const ATLAS_CLI_PINS: &[(&str, usize)] = &[
     ("config.rs", 0),
     ("ctx.rs", 0),
     ("error.rs", 0),
+    ("help_group.rs", 0),
     ("main.rs", 0),
     ("output.rs", 0),
     ("projections.rs", 0),
