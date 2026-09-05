@@ -1,6 +1,9 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+pub mod custos;
 pub mod helpers;
+
+pub use custos::Custos;
 
 use atlas_api::{
     dtos::{
@@ -8,9 +11,9 @@ use atlas_api::{
         ApiKeyGrantDto, ApiKeyScope, ChangePasswordRequest, CreateGrantRequest,
         CreateProjectRequest, CreateUserApiKeyRequest, CreateUserRequest, CreateUserResponse,
         CreateWorkspaceRequest, DoctorReportDto, GrantDto, HealthResponse, LoginRequest,
-        LoginResponse, MeResponse, PrincipalDto, ProjectDto, ResetPasswordRequest, ServerMetaDto,
-        UiStateDto, UpdateMeRequest, UpdateProjectRequest, UpdateUiStateRequest,
-        UpdateWorkspaceRequest, UserDto, UserMembershipDto, WorkspaceDto,
+        LoginResponse, MeResponse, PrincipalDto, ProjectDto, ServerMetaDto, UiStateDto,
+        UpdateMeRequest, UpdateProjectRequest, UpdateUiStateRequest, UpdateWorkspaceRequest,
+        UserDto, UserMembershipDto, WorkspaceDto,
         boards_tasks::{
             ActivityEntryDto, AddAssigneeRequest, AssigneeDto, BoardDto, BoardSummaryDto,
             ChecklistItemDto, ColumnDto, CommentDto, CommentFeedEntryDto, CreateBoardRequest,
@@ -259,6 +262,13 @@ impl AtlasClient {
         &self.http
     }
 
+    /// Borrowing sub-client for every method mounted at `/api/v2/custos`
+    /// (D1). Carries no state of its own, so authentication and CSRF
+    /// configuration stay single-point on `self` (INV-SINGLE-AUTH-CONFIG).
+    pub fn custos(&self) -> Custos<'_> {
+        Custos(self)
+    }
+
     /// Resolves `component`'s `/api/v2/<component>` mount plus `relative`
     /// into an absolute URL. The only place a component namespace is
     /// assembled into a concrete URL inside this crate.
@@ -385,39 +395,22 @@ impl AtlasClient {
         Ok(login)
     }
 
-    /// `GET /api/v2/custos/auth/me`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn me(&self) -> Result<MeResponse, ClientError> {
-        let response = self.get(Component::Custos, "/auth/me").send().await?;
-        self.decode_response(response, "me").await
+        self.custos().me().await
     }
 
-    /// `POST /api/v2/custos/auth/change-password`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn change_password(&self, body: ChangePasswordRequest) -> Result<(), ClientError> {
-        let response = self
-            .post(Component::Custos, "/auth/change-password")
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
-            .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
+        self.custos().change_password(body).await
     }
 
-    /// `PATCH /api/v2/custos/users/me`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn update_me(&self, body: UpdateMeRequest) -> Result<UserDto, ClientError> {
-        let response = self
-            .patch(Component::Custos, "/users/me")
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "update_me").await
+        self.custos().update_me(body).await
     }
 
     /// `GET /api/v2/platform/me/ui-state`
@@ -471,238 +464,125 @@ impl AtlasClient {
         self.decode_response(response, "doctor").await
     }
 
-    /// `GET /api/v2/custos/users`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn list_users(&self) -> Result<Vec<UserDto>, ClientError> {
-        let response = self.get(Component::Custos, "/users").send().await?;
-        self.decode_response(response, "list_users").await
+        self.custos().list_users().await
     }
 
-    /// `POST /api/v2/custos/users`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn create_user(
         &self,
         body: CreateUserRequest,
     ) -> Result<CreateUserResponse, ClientError> {
-        let response = self
-            .post(Component::Custos, "/users")
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "create_user").await
+        self.custos().create_user(body).await
     }
 
-    /// `POST /api/v2/custos/users/{user_id}/activation-link`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn regenerate_activation_link(
         &self,
         user_id: uuid::Uuid,
     ) -> Result<ActivationLinkResponse, ClientError> {
-        let response = self
-            .post(
-                Component::Custos,
-                &format!("/users/{user_id}/activation-link"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        self.decode_response(response, "regenerate_activation_link")
-            .await
+        self.custos().regenerate_activation_link(user_id).await
     }
 
-    /// `POST /api/v2/custos/users/{user_id}/disable`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn disable_user(&self, user_id: uuid::Uuid) -> Result<(), ClientError> {
-        let response = self
-            .post(Component::Custos, &format!("/users/{user_id}/disable"))
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
-            .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
+        self.custos().disable_user(user_id).await
     }
 
-    /// `POST /api/v2/custos/users/{user_id}/enable`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn enable_user(&self, user_id: uuid::Uuid) -> Result<(), ClientError> {
-        let response = self
-            .post(Component::Custos, &format!("/users/{user_id}/enable"))
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
-            .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
+        self.custos().enable_user(user_id).await
     }
 
-    /// `POST /api/v2/custos/users/{user_id}/reset-password`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn reset_user_password(
         &self,
         user_id: uuid::Uuid,
         new_password: impl Into<String>,
     ) -> Result<(), ClientError> {
-        let response = self
-            .post(
-                Component::Custos,
-                &format!("/users/{user_id}/reset-password"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&ResetPasswordRequest {
-                new_password: new_password.into(),
-            })
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
+        self.custos()
+            .reset_user_password(user_id, new_password)
             .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
     }
 
-    /// `GET /api/v2/custos/users/{user_id}/memberships`
-    ///
-    /// Lists every workspace the target user belongs to, with the membership
-    /// role. Requires root/admin privileges.
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn list_user_memberships(
         &self,
         user_id: uuid::Uuid,
     ) -> Result<Vec<UserMembershipDto>, ClientError> {
-        let response = self
-            .get(Component::Custos, &format!("/users/{user_id}/memberships"))
-            .send()
-            .await?;
-        self.decode_response(response, "list_user_memberships")
-            .await
+        self.custos().list_user_memberships(user_id).await
     }
 
-    /// `POST /api/v2/custos/api-keys`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn create_user_api_key(
         &self,
         body: CreateUserApiKeyRequest,
     ) -> Result<ApiKeyCreated, ClientError> {
-        let response = self
-            .post(Component::Custos, "/api-keys")
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "create_user_api_key").await
+        self.custos().create_user_api_key(body).await
     }
 
-    /// `GET /api/v2/custos/api-keys`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn list_user_api_keys(
         &self,
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<ApiKeyDto>, ClientError> {
-        let path = build_paginated_path("/api-keys", cursor, limit);
-        let response = self.get(Component::Custos, &path).send().await?;
-        self.decode_response(response, "list_user_api_keys").await
+        self.custos().list_user_api_keys(cursor, limit).await
     }
 
-    /// `DELETE /api/v2/custos/api-keys/{key_id}`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn revoke_user_api_key(&self, key_id: uuid::Uuid) -> Result<(), ClientError> {
-        let response = self
-            .delete(Component::Custos, &format!("/api-keys/{key_id}"))
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
-            .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
+        self.custos().revoke_user_api_key(key_id).await
     }
 
-    /// `PATCH /api/v2/custos/api-keys/{key_id}`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn set_api_key_global(
         &self,
         key_id: uuid::Uuid,
         is_global: bool,
     ) -> Result<ApiKeyDto, ClientError> {
-        use atlas_api::dtos::UpdateApiKeyRequest;
-
-        let body = UpdateApiKeyRequest {
-            is_global: Some(is_global),
-            scopes: None,
-        };
-        let response = self
-            .patch(Component::Custos, &format!("/api-keys/{key_id}"))
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "set_api_key_global").await
+        self.custos().set_api_key_global(key_id, is_global).await
     }
 
-    /// `PATCH /api/v2/custos/api-keys/{key_id}`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn set_api_key_scopes(
         &self,
         key_id: uuid::Uuid,
         scopes: Vec<ApiKeyScope>,
     ) -> Result<ApiKeyDto, ClientError> {
-        use atlas_api::dtos::UpdateApiKeyRequest;
-
-        let body = UpdateApiKeyRequest {
-            is_global: None,
-            scopes: Some(scopes),
-        };
-        let response = self
-            .patch(Component::Custos, &format!("/api-keys/{key_id}"))
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "set_api_key_scopes").await
+        self.custos().set_api_key_scopes(key_id, scopes).await
     }
 
-    /// `GET /api/v2/custos/api-keys/{key_id}/grants`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn list_api_key_grants(
         &self,
         key_id: uuid::Uuid,
     ) -> Result<Vec<ApiKeyGrantDto>, ClientError> {
-        let response = self
-            .get(Component::Custos, &format!("/api-keys/{key_id}/grants"))
-            .send()
-            .await?;
-        self.decode_response(response, "list_api_key_grants").await
+        self.custos().list_api_key_grants(key_id).await
     }
 
-    /// `DELETE /api/v2/custos/api-keys/{key_id}/grants/{grant_id}`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn delete_api_key_grant(
         &self,
         key_id: uuid::Uuid,
         grant_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Custos,
-                &format!("/api-keys/{key_id}/grants/{grant_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
-            .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
+        self.custos().delete_api_key_grant(key_id, grant_id).await
     }
 
     /// `POST /api/v2/acta/workspaces/{ws}/projects`
@@ -783,26 +663,19 @@ impl AtlasClient {
         Err(ClientError::Api(problem))
     }
 
-    /// `POST /api/v2/custos/workspaces/{ws}/projects/{slug}/grants`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn create_project_grant(
         &self,
         ws: &str,
         slug: &str,
         body: CreateGrantRequest,
     ) -> Result<GrantDto, ClientError> {
-        let response = self
-            .post(
-                Component::Custos,
-                &format!("/workspaces/{ws}/projects/{slug}/grants"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "create_project_grant").await
+        self.custos().create_project_grant(ws, slug, body).await
     }
 
-    /// `GET /api/v2/custos/workspaces/{ws}/projects/{slug}/grants`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn list_project_grants(
         &self,
         ws: &str,
@@ -810,91 +683,51 @@ impl AtlasClient {
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<GrantDto>, ClientError> {
-        let path = build_paginated_path(
-            &format!("/workspaces/{ws}/projects/{slug}/grants"),
-            cursor,
-            limit,
-        );
-        let response = self.get(Component::Custos, &path).send().await?;
-        self.decode_response(response, "list_project_grants").await
+        self.custos()
+            .list_project_grants(ws, slug, cursor, limit)
+            .await
     }
 
-    /// `DELETE /api/v2/custos/workspaces/{ws}/projects/{slug}/grants/{grant_id}`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn delete_project_grant(
         &self,
         ws: &str,
         slug: &str,
         grant_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Custos,
-                &format!("/workspaces/{ws}/projects/{slug}/grants/{grant_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
-            .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
+        self.custos().delete_project_grant(ws, slug, grant_id).await
     }
 
-    /// `POST /api/v2/custos/workspaces/{ws}/grants`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn create_workspace_grant(
         &self,
         ws: &str,
         body: CreateGrantRequest,
     ) -> Result<GrantDto, ClientError> {
-        let response = self
-            .post(Component::Custos, &format!("/workspaces/{ws}/grants"))
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "create_workspace_grant")
-            .await
+        self.custos().create_workspace_grant(ws, body).await
     }
 
-    /// `GET /api/v2/custos/workspaces/{ws}/grants`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn list_workspace_grants(
         &self,
         ws: &str,
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<GrantDto>, ClientError> {
-        let path = build_paginated_path(&format!("/workspaces/{ws}/grants"), cursor, limit);
-        let response = self.get(Component::Custos, &path).send().await?;
-        self.decode_response(response, "list_workspace_grants")
-            .await
+        self.custos().list_workspace_grants(ws, cursor, limit).await
     }
 
-    /// `DELETE /api/v2/custos/workspaces/{ws}/grants/{grant_id}`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn delete_workspace_grant(
         &self,
         ws: &str,
         grant_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Custos,
-                &format!("/workspaces/{ws}/grants/{grant_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
-            .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
+        self.custos().delete_workspace_grant(ws, grant_id).await
     }
 
     /// `POST /api/v2/acta/workspaces`
@@ -3781,7 +3614,8 @@ impl AtlasClient {
             .await
     }
 
-    /// `GET /api/v2/custos/workspaces/{ws}/audit`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn list_workspace_audit(
         &self,
         ws: &str,
@@ -3791,20 +3625,13 @@ impl AtlasClient {
         to: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<atlas_api::dtos::audit::AuditEntryDto>, ClientError> {
-        let path = build_audit_path(
-            &format!("/workspaces/{ws}/audit"),
-            actor,
-            action,
-            from,
-            to,
-            None,
-            limit,
-        );
-        let response = self.get(Component::Custos, &path).send().await?;
-        self.decode_response(response, "list_workspace_audit").await
+        self.custos()
+            .list_workspace_audit(ws, actor, action, from, to, limit)
+            .await
     }
 
-    /// `GET /api/v2/custos/workspaces/{ws}/audit`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn list_workspace_audit_with_cursor(
         &self,
         ws: &str,
@@ -3814,21 +3641,13 @@ impl AtlasClient {
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<atlas_api::dtos::audit::AuditEntryDto>, ClientError> {
-        let path = build_audit_path(
-            &format!("/workspaces/{ws}/audit"),
-            actor,
-            action,
-            from,
-            None,
-            cursor,
-            limit,
-        );
-        let response = self.get(Component::Custos, &path).send().await?;
-        self.decode_response(response, "list_workspace_audit_with_cursor")
+        self.custos()
+            .list_workspace_audit_with_cursor(ws, actor, action, from, cursor, limit)
             .await
     }
 
-    /// `GET /api/v2/custos/admin/audit`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn list_platform_audit(
         &self,
         actor: Option<&str>,
@@ -3837,12 +3656,13 @@ impl AtlasClient {
         to: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<atlas_api::dtos::audit::AuditEntryDto>, ClientError> {
-        let path = build_audit_path("/admin/audit", actor, action, from, to, None, limit);
-        let response = self.get(Component::Custos, &path).send().await?;
-        self.decode_response(response, "list_platform_audit").await
+        self.custos()
+            .list_platform_audit(actor, action, from, to, limit)
+            .await
     }
 
-    /// `GET /api/v2/custos/admin/audit`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn list_platform_audit_with_cursor(
         &self,
         actor: Option<&str>,
@@ -3851,135 +3671,73 @@ impl AtlasClient {
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<atlas_api::dtos::audit::AuditEntryDto>, ClientError> {
-        let path = build_audit_path("/admin/audit", actor, action, from, None, cursor, limit);
-        let response = self.get(Component::Custos, &path).send().await?;
-        self.decode_response(response, "list_platform_audit_with_cursor")
+        self.custos()
+            .list_platform_audit_with_cursor(actor, action, from, cursor, limit)
             .await
     }
 
-    /// `POST /api/v2/custos/auth/logout`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn logout(&self) -> Result<(), ClientError> {
-        let response = self
-            .post(Component::Custos, "/auth/logout")
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            let problem: ProblemDetails = response
-                .json()
-                .await
-                .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-            return Err(ClientError::Api(problem));
-        }
-
-        Ok(())
+        self.custos().logout().await
     }
 
     // ---- Groups ----------------------------------------------------------------
 
-    /// `POST /api/v2/custos/workspaces/{ws}/groups`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn create_group(
         &self,
         ws: &str,
         body: CreateGroupRequest,
     ) -> Result<GroupDto, ClientError> {
-        let response = self
-            .post(Component::Custos, &format!("/workspaces/{ws}/groups"))
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "create_group").await
+        self.custos().create_group(ws, body).await
     }
 
-    /// `GET /api/v2/custos/workspaces/{ws}/groups`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn list_groups(&self, ws: &str) -> Result<Vec<GroupDto>, ClientError> {
-        let response = self
-            .get(Component::Custos, &format!("/workspaces/{ws}/groups"))
-            .send()
-            .await?;
-        self.decode_response(response, "list_groups").await
+        self.custos().list_groups(ws).await
     }
 
-    /// `DELETE /api/v2/custos/workspaces/{ws}/groups/{group_id}`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn delete_group(&self, ws: &str, group_id: uuid::Uuid) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Custos,
-                &format!("/workspaces/{ws}/groups/{group_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
-            .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
+        self.custos().delete_group(ws, group_id).await
     }
 
-    /// `POST /api/v2/custos/workspaces/{ws}/groups/{group_id}/members`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn add_group_member(
         &self,
         ws: &str,
         group_id: uuid::Uuid,
         body: AddGroupMemberRequest,
     ) -> Result<GroupMemberDto, ClientError> {
-        let response = self
-            .post(
-                Component::Custos,
-                &format!("/workspaces/{ws}/groups/{group_id}/members"),
-            )
-            .header("x-atlas-csrf", "1")
-            .json(&body)
-            .send()
-            .await?;
-        self.decode_response(response, "add_group_member").await
+        self.custos().add_group_member(ws, group_id, body).await
     }
 
-    /// `DELETE /api/v2/custos/workspaces/{ws}/groups/{group_id}/members/{user_id}`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn remove_group_member(
         &self,
         ws: &str,
         group_id: uuid::Uuid,
         user_id: uuid::Uuid,
     ) -> Result<(), ClientError> {
-        let response = self
-            .delete(
-                Component::Custos,
-                &format!("/workspaces/{ws}/groups/{group_id}/members/{user_id}"),
-            )
-            .header("x-atlas-csrf", "1")
-            .send()
-            .await?;
-        if response.status().is_success() {
-            return Ok(());
-        }
-        let problem: ProblemDetails = response
-            .json()
+        self.custos()
+            .remove_group_member(ws, group_id, user_id)
             .await
-            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
-        Err(ClientError::Api(problem))
     }
 
-    /// `GET /api/v2/custos/workspaces/{ws}/groups/{group_id}/members`
+    #[doc(hidden)]
+    /// Forwarder to `custos()`; removed in PR12 of this slice.
     pub async fn list_group_members(
         &self,
         ws: &str,
         group_id: uuid::Uuid,
     ) -> Result<Vec<GroupMemberDto>, ClientError> {
-        let response = self
-            .get(
-                Component::Custos,
-                &format!("/workspaces/{ws}/groups/{group_id}/members"),
-            )
-            .send()
-            .await?;
-        self.decode_response(response, "list_group_members").await
+        self.custos().list_group_members(ws, group_id).await
     }
 }
 
