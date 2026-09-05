@@ -2,6 +2,7 @@
 
 pub(crate) mod path;
 pub(crate) mod route_matrix;
+pub(crate) mod scan;
 
 use atlas_acta::actor::Actor;
 use atlas_acta::actor::WorkspaceCtx;
