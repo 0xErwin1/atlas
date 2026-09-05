@@ -236,12 +236,28 @@ impl AppState {
         })
     }
 
-    /// Consumes this state and returns it with the worker state table
-    /// replaced — the test seam a container test uses to force one
-    /// worker's state (e.g. `Failed`) without a real process kill (design
-    /// R11, T1.34).
-    pub fn with_workers(mut self, workers: Arc<crate::ops::workers::WorkerStates>) -> Self {
-        self.workers = workers;
+    /// Consumes this state and returns it with every worker's state set to
+    /// the one `workers` reports — the test seam a container test uses to
+    /// force one worker's state (e.g. `Failed`) without a real process kill
+    /// (design R11, T1.34). The states are mirrored into the table this
+    /// state already shares with its diagnostics implementers rather than
+    /// swapping the table, so the doctors observe the forced state too.
+    pub fn with_workers(self, workers: Arc<crate::ops::workers::WorkerStates>) -> Self {
+        use atlas_core::ops::state::WorkerState;
+
+        for status in workers.all() {
+            let Some(handle) = self.workers.handle(&status.id) else {
+                continue;
+            };
+
+            match status.state {
+                WorkerState::Running => handle.running(),
+                WorkerState::Stopped => handle.stopped(),
+                WorkerState::Failed { cause } => handle.failed(cause),
+                WorkerState::Inactive { reason } => handle.inactive(reason),
+            }
+        }
+
         self
     }
 
