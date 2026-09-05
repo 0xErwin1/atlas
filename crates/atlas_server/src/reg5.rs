@@ -207,7 +207,7 @@ fn platform_entry() -> ComponentEntry {
         diagnostics: Diagnostics {
             health: true,
             readiness: true,
-            doctor: false,
+            doctor: true,
         },
         experience: Experience {
             navigation_providers: vec![],
@@ -558,7 +558,7 @@ fn custos_entry() -> ComponentEntry {
         diagnostics: Diagnostics {
             health: true,
             readiness: true,
-            doctor: false,
+            doctor: true,
         },
         experience: Experience {
             navigation_providers: vec![],
@@ -2064,7 +2064,7 @@ fn acta_entry() -> ComponentEntry {
         diagnostics: Diagnostics {
             health: true,
             readiness: true,
-            doctor: false,
+            doctor: true,
         },
         experience: Experience {
             navigation_providers: vec![],
@@ -2201,7 +2201,7 @@ fn minimal_module(
         diagnostics: Diagnostics {
             health: false,
             readiness: false,
-            doctor: false,
+            doctor: true,
         },
         experience: Experience {
             navigation_providers: vec![],

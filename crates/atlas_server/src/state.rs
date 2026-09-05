@@ -109,6 +109,8 @@ impl AppState {
             attachments.clone(),
             embedding_provider.clone(),
             &cfg.modules.storage,
+            workers.clone(),
+            std::time::Duration::from_millis(cfg.acta.dispatcher.poll_interval_ms),
         )?);
 
         Ok(Self {
@@ -189,6 +191,8 @@ impl AppState {
             attachments.clone(),
             embedding_provider.clone(),
             &storage,
+            workers.clone(),
+            std::time::Duration::from_millis(DispatcherConfig::default().poll_interval_ms),
         )?);
 
         Ok(Self {

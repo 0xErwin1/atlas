@@ -17,8 +17,9 @@ pub mod workers;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Duration;
 
-use atlas_core::capabilities::{Health, Readiness};
+use atlas_core::capabilities::{Doctor, Health, Readiness};
 use atlas_core::registry::{ComponentId, Registry};
 use sea_orm::{DatabaseConnection, DbErr};
 
@@ -27,18 +28,32 @@ use crate::reg5::{StorageBackend, reg5_component_entries};
 use atlas_acta::ports::attachment_store::AttachmentStore;
 use atlas_acta::semantic_search::EmbeddingProvider;
 
-use self::acta::ActaDiagnostics;
-use self::custos::CustosDiagnostics;
+use self::acta::{ActaDiagnostics, ActaDoctor};
+use self::custos::{CustosDiagnostics, CustosDoctor};
 use self::modules::{
-    DiskStorageDiagnostics, S3StorageDiagnostics, SearchLexicalDiagnostics,
-    SearchSemanticDiagnostics,
+    DiskStorageDiagnostics, DiskStorageDoctor, S3StorageDiagnostics, S3StorageDoctor,
+    SearchLexicalDiagnostics, SearchLexicalDoctor, SearchSemanticDiagnostics, SearchSemanticDoctor,
 };
-use self::platform::PlatformDiagnostics;
+use self::platform::{PlatformDiagnostics, PlatformDoctor};
+use self::workers::WorkerStates;
 
-/// One component's bound diagnostics implementers.
+/// The active storage Module's bound identity plus its three diagnostics
+/// implementers, returned by the `storage` match in `default_registry`.
+type StorageDiagnosticsParts = (
+    ComponentId,
+    Arc<dyn Health>,
+    Arc<dyn Readiness>,
+    Arc<dyn Doctor>,
+);
+
+/// One component's bound diagnostics implementers. `doctor` is optional: a
+/// component may bind health/readiness with no doctor implementer, but a
+/// registry entry declaring `diagnostics.doctor == true` MUST have one
+/// (enforced by `bind`).
 pub struct ComponentDiagnostics {
     pub health: Arc<dyn Health>,
     pub readiness: Arc<dyn Readiness>,
+    pub doctor: Option<Arc<dyn Doctor>>,
 }
 
 /// One binding drift between the registry and the implementers `bind` was
@@ -51,6 +66,12 @@ pub enum DiagnosticsBindError {
     UnboundComponent { component: ComponentId },
     /// A bound table row's id matches no entry in the registry at all.
     UnknownComponent { component: ComponentId },
+    /// A registry entry declares `diagnostics.doctor == true` but its bound
+    /// row has no `doctor` implementer (design D5).
+    DeclaredDoctorWithNoImplementer { component: ComponentId },
+    /// A bound row carries a `doctor` implementer for a component whose
+    /// entry does not declare `diagnostics.doctor == true`.
+    ImplementerForUndeclaredDoctor { component: ComponentId },
 }
 
 /// A validated table of diagnostics implementers keyed by `ComponentId`
@@ -87,6 +108,17 @@ impl DiagnosticsRegistry {
                     component: entry.identity.stable_id.clone(),
                 });
             }
+
+            if entry.diagnostics.doctor {
+                let has_doctor = bound
+                    .get(&entry.identity.stable_id)
+                    .is_some_and(|diagnostics| diagnostics.doctor.is_some());
+                if !has_doctor {
+                    errors.push(DiagnosticsBindError::DeclaredDoctorWithNoImplementer {
+                        component: entry.identity.stable_id.clone(),
+                    });
+                }
+            }
         }
 
         for id in bound.keys() {
@@ -94,6 +126,19 @@ impl DiagnosticsRegistry {
                 errors.push(DiagnosticsBindError::UnknownComponent {
                     component: id.clone(),
                 });
+            }
+        }
+
+        for (id, diagnostics) in &bound {
+            if diagnostics.doctor.is_some() {
+                let declares_doctor = registry
+                    .get(id)
+                    .is_some_and(|entry| entry.diagnostics.doctor);
+                if !declares_doctor {
+                    errors.push(DiagnosticsBindError::ImplementerForUndeclaredDoctor {
+                        component: id.clone(),
+                    });
+                }
             }
         }
 
@@ -130,6 +175,26 @@ impl DiagnosticsRegistry {
     /// this result directly, with no aggregation).
     pub fn get(&self, id: &ComponentId) -> Option<&ComponentDiagnostics> {
         self.table.get(id)
+    }
+
+    /// Every doctor-bearing component (`Registry::doctor_components()`)
+    /// paired with its bound `Doctor` implementer, in the registry's own
+    /// order — `POST /api/v2/platform/doctor`'s input to `run_doctor`
+    /// (design D5). `bind` already guarantees every declared doctor has an
+    /// implementer, so a missing row here is silently skipped rather than
+    /// panicking: this accessor stays total even if that invariant is ever
+    /// violated by a future caller.
+    pub fn doctor_set(&self, registry: &Registry) -> Vec<(ComponentId, &dyn Doctor)> {
+        registry
+            .doctor_components()
+            .into_iter()
+            .filter_map(|id| {
+                self.table
+                    .get(&id)
+                    .and_then(|diagnostics| diagnostics.doctor.as_deref())
+                    .map(|doctor| (id, doctor))
+            })
+            .collect()
     }
 }
 
@@ -177,31 +242,42 @@ pub fn default_registry(
     attachments: Arc<dyn AttachmentStore>,
     embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
     storage: &StorageConfig,
+    workers: Arc<WorkerStates>,
+    dispatcher_poll_interval: Duration,
 ) -> Result<DiagnosticsRegistry, anyhow::Error> {
     let platform = Arc::new(PlatformDiagnostics::new(db.clone()));
+    let platform_doctor = Arc::new(PlatformDoctor::new(registry));
     let custos = Arc::new(CustosDiagnostics::new(db.clone()));
+    let custos_doctor = Arc::new(CustosDoctor::new(db.clone()));
     let lexical = Arc::new(SearchLexicalDiagnostics::new(db.clone()));
+    let lexical_doctor = Arc::new(SearchLexicalDoctor::new(db.clone()));
     let semantic = Arc::new(SearchSemanticDiagnostics::new(
         db.clone(),
-        embedding_provider,
+        embedding_provider.clone(),
     ));
+    let semantic_doctor = Arc::new(SearchSemanticDoctor::new(db.clone(), embedding_provider));
 
-    let (storage_id, storage_health, storage_readiness): (
-        ComponentId,
-        Arc<dyn Health>,
-        Arc<dyn Readiness>,
-    ) = match storage {
-        StorageConfig::Disk { root } => {
-            let disk = Arc::new(DiskStorageDiagnostics::new(root.clone()));
-            (component("storage.filesystem"), disk.clone(), disk)
-        }
-        StorageConfig::S3 { .. } => {
-            let s3 = Arc::new(S3StorageDiagnostics::new(attachments));
-            (component("storage.s3"), s3.clone(), s3)
-        }
-    };
+    let (storage_id, storage_health, storage_readiness, storage_doctor): StorageDiagnosticsParts =
+        match storage {
+            StorageConfig::Disk { root } => {
+                let disk = Arc::new(DiskStorageDiagnostics::new(root.clone()));
+                let doctor = Arc::new(DiskStorageDoctor::new(root.clone()));
+                (component("storage.filesystem"), disk.clone(), disk, doctor)
+            }
+            StorageConfig::S3 { bucket, .. } => {
+                let s3 = Arc::new(S3StorageDiagnostics::new(attachments.clone()));
+                let doctor = Arc::new(S3StorageDoctor::new(attachments, bucket.clone()));
+                (component("storage.s3"), s3.clone(), s3, doctor)
+            }
+        };
 
-    let acta = Arc::new(ActaDiagnostics::new(db, storage_readiness.clone()));
+    let acta = Arc::new(ActaDiagnostics::new(db.clone(), storage_readiness.clone()));
+    let acta_doctor = Arc::new(ActaDoctor::new(
+        db,
+        storage_readiness.clone(),
+        workers,
+        dispatcher_poll_interval,
+    ));
 
     let table: Vec<(ComponentId, ComponentDiagnostics)> = vec![
         (
@@ -209,6 +285,7 @@ pub fn default_registry(
             ComponentDiagnostics {
                 health: platform.clone(),
                 readiness: platform,
+                doctor: Some(platform_doctor),
             },
         ),
         (
@@ -216,6 +293,7 @@ pub fn default_registry(
             ComponentDiagnostics {
                 health: custos.clone(),
                 readiness: custos,
+                doctor: Some(custos_doctor),
             },
         ),
         (
@@ -223,6 +301,7 @@ pub fn default_registry(
             ComponentDiagnostics {
                 health: acta.clone(),
                 readiness: acta,
+                doctor: Some(acta_doctor),
             },
         ),
         (
@@ -230,6 +309,7 @@ pub fn default_registry(
             ComponentDiagnostics {
                 health: lexical.clone(),
                 readiness: lexical,
+                doctor: Some(lexical_doctor),
             },
         ),
         (
@@ -237,6 +317,7 @@ pub fn default_registry(
             ComponentDiagnostics {
                 health: semantic.clone(),
                 readiness: semantic,
+                doctor: Some(semantic_doctor),
             },
         ),
         (
@@ -244,6 +325,7 @@ pub fn default_registry(
             ComponentDiagnostics {
                 health: storage_health,
                 readiness: storage_readiness,
+                doctor: Some(storage_doctor),
             },
         ),
     ];
@@ -277,14 +359,39 @@ mod tests {
         }
     }
 
+    #[async_trait]
+    impl Doctor for Stub {
+        async fn doctor(&self) -> Vec<atlas_core::capabilities::DoctorFinding> {
+            vec![]
+        }
+    }
+
     fn stub_diagnostics() -> ComponentDiagnostics {
         ComponentDiagnostics {
             health: Arc::new(Stub),
             readiness: Arc::new(Stub),
+            doctor: None,
+        }
+    }
+
+    fn stub_diagnostics_with_doctor() -> ComponentDiagnostics {
+        ComponentDiagnostics {
+            health: Arc::new(Stub),
+            readiness: Arc::new(Stub),
+            doctor: Some(Arc::new(Stub)),
         }
     }
 
     fn minimal_entry(stable_id: &str, health: bool, readiness: bool) -> ComponentEntry {
+        minimal_entry_with_doctor(stable_id, health, readiness, false)
+    }
+
+    fn minimal_entry_with_doctor(
+        stable_id: &str,
+        health: bool,
+        readiness: bool,
+        doctor: bool,
+    ) -> ComponentEntry {
         ComponentEntry {
             identity: Identity {
                 stable_id: component(stable_id),
@@ -312,7 +419,7 @@ mod tests {
             diagnostics: Diagnostics {
                 health,
                 readiness,
-                doctor: false,
+                doctor,
             },
             experience: Experience {
                 navigation_providers: vec![],
@@ -443,6 +550,74 @@ mod tests {
         assert_eq!(ids, registry.readiness_components());
     }
 
+    #[test]
+    fn bind_refuses_a_declared_doctor_with_no_bound_implementer() {
+        let registry = registry_with(vec![minimal_entry_with_doctor("custos", true, true, true)]);
+
+        let errors = expect_bind_err(
+            DiagnosticsRegistry::bind(&registry, vec![(component("custos"), stub_diagnostics())]),
+            "custos declares a doctor but its row has none",
+        );
+
+        assert_eq!(
+            errors,
+            vec![DiagnosticsBindError::DeclaredDoctorWithNoImplementer {
+                component: component("custos")
+            }]
+        );
+    }
+
+    #[test]
+    fn bind_refuses_an_implementer_for_an_undeclared_doctor() {
+        let registry = registry_with(vec![minimal_entry_with_doctor("custos", true, true, false)]);
+
+        let errors = expect_bind_err(
+            DiagnosticsRegistry::bind(
+                &registry,
+                vec![(component("custos"), stub_diagnostics_with_doctor())],
+            ),
+            "custos does not declare a doctor but its row has one",
+        );
+
+        assert_eq!(
+            errors,
+            vec![DiagnosticsBindError::ImplementerForUndeclaredDoctor {
+                component: component("custos")
+            }]
+        );
+    }
+
+    #[test]
+    fn doctor_set_follows_the_registry_doctor_order() {
+        let registry = registry_with(vec![
+            minimal_entry_with_doctor("platform", true, true, true),
+            minimal_entry_with_doctor("custos", true, true, true),
+            minimal_entry_with_doctor("storage.filesystem", false, false, false),
+        ]);
+
+        let bound = DiagnosticsRegistry::bind(
+            &registry,
+            vec![
+                (component("custos"), stub_diagnostics_with_doctor()),
+                (component("platform"), stub_diagnostics_with_doctor()),
+                (component("storage.filesystem"), stub_diagnostics()),
+            ],
+        )
+        .expect("valid binding");
+
+        let ids: Vec<ComponentId> = bound
+            .doctor_set(&registry)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+
+        assert_eq!(ids, registry.doctor_components());
+        assert!(
+            !ids.is_empty(),
+            "must be non-vacuous over the two doctor-bearing entries"
+        );
+    }
+
     struct UnusedAttachmentStore;
 
     #[async_trait]
@@ -473,6 +648,8 @@ mod tests {
             Arc::new(UnusedAttachmentStore),
             None,
             storage,
+            Arc::new(WorkerStates::from_registry(&registry)),
+            Duration::from_secs(60),
         )
         .expect("default table binds against the reg5 registry")
     }

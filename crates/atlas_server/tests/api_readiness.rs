@@ -31,8 +31,29 @@ fn fake(health: HealthStatus, readiness: ReadinessStatus) -> ComponentDiagnostic
     ));
     ComponentDiagnostics {
         health: fake.clone(),
-        readiness: fake,
+        readiness: fake.clone(),
+        doctor: Some(fake),
     }
+}
+
+/// Every Module present under the filesystem backend declares a doctor
+/// (E11-S3b), so `bind` refuses a table without their rows. The scenarios
+/// here only steer the three components; the Modules get healthy fakes.
+fn with_module_rows(
+    mut table: Vec<(ComponentId, ComponentDiagnostics)>,
+) -> Vec<(ComponentId, ComponentDiagnostics)> {
+    for id in [
+        "storage.filesystem",
+        "search.postgres_fts",
+        "search.pgvector_embeddings",
+    ] {
+        let module = component(id);
+        if table.iter().all(|(bound, _)| *bound != module) {
+            table.push((module, fake(HealthStatus::Ok, ReadinessStatus::Ready)));
+        }
+    }
+
+    table
 }
 
 /// A `Readiness` implementer that never resolves within any reasonable
@@ -56,9 +77,15 @@ impl Readiness for NeverResolves {
 
 fn never_resolves() -> ComponentDiagnostics {
     let stalling = Arc::new(NeverResolves);
+    let doctor: Arc<FakeDiagnostics> = Arc::new(FakeDiagnostics::new(
+        HealthStatus::Ok,
+        ReadinessStatus::Ready,
+        Vec::<DoctorFinding>::new(),
+    ));
     ComponentDiagnostics {
         health: stalling.clone(),
         readiness: stalling,
+        doctor: Some(doctor),
     }
 }
 
@@ -92,7 +119,8 @@ async fn sh2_custos_not_ready_yields_503_naming_only_custos() {
             fake(HealthStatus::Ok, ReadinessStatus::Ready),
         ),
     ];
-    let diagnostics = DiagnosticsRegistry::bind(&registry, table).expect("valid binding");
+    let diagnostics =
+        DiagnosticsRegistry::bind(&registry, with_module_rows(table)).expect("valid binding");
 
     let state = atlas_server::state::AppState::for_test(db.conn().clone())
         .await
@@ -150,7 +178,8 @@ async fn all_mandatory_ready_yields_200() {
             fake(HealthStatus::Ok, ReadinessStatus::Ready),
         ),
     ];
-    let diagnostics = DiagnosticsRegistry::bind(&registry, table).expect("valid binding");
+    let diagnostics =
+        DiagnosticsRegistry::bind(&registry, with_module_rows(table)).expect("valid binding");
 
     let state = atlas_server::state::AppState::for_test(db.conn().clone())
         .await
@@ -206,7 +235,8 @@ async fn multiple_not_ready_components_are_all_named() {
             ),
         ),
     ];
-    let diagnostics = DiagnosticsRegistry::bind(&registry, table).expect("valid binding");
+    let diagnostics =
+        DiagnosticsRegistry::bind(&registry, with_module_rows(table)).expect("valid binding");
 
     let state = atlas_server::state::AppState::for_test(db.conn().clone())
         .await
@@ -249,7 +279,8 @@ async fn readiness_budget_bounds_the_worst_case_and_lists_every_stalling_compone
         (component("custos"), never_resolves()),
         (component("acta"), never_resolves()),
     ];
-    let diagnostics = DiagnosticsRegistry::bind(&registry, table).expect("valid binding");
+    let diagnostics =
+        DiagnosticsRegistry::bind(&registry, with_module_rows(table)).expect("valid binding");
 
     let per_component = Duration::from_millis(200);
     let state = atlas_server::state::AppState::for_test(db.conn().clone())
@@ -309,7 +340,8 @@ async fn readiness_failure_reason_names_no_secret_or_connection_string() {
             fake(HealthStatus::Ok, ReadinessStatus::Ready),
         ),
     ];
-    let diagnostics = DiagnosticsRegistry::bind(&registry, table).expect("valid binding");
+    let diagnostics =
+        DiagnosticsRegistry::bind(&registry, with_module_rows(table)).expect("valid binding");
 
     let state = atlas_server::state::AppState::for_test(db.conn().clone())
         .await
@@ -365,7 +397,8 @@ async fn a_components_own_health_probe_reflects_its_own_signal_only() {
             ),
         ),
     ];
-    let diagnostics = DiagnosticsRegistry::bind(&registry, table).expect("valid binding");
+    let diagnostics =
+        DiagnosticsRegistry::bind(&registry, with_module_rows(table)).expect("valid binding");
 
     let state = atlas_server::state::AppState::for_test(db.conn().clone())
         .await
@@ -408,7 +441,8 @@ async fn a_components_readiness_probe_is_bounded_by_the_shared_deadline() {
         ),
         (component("acta"), never_resolves()),
     ];
-    let diagnostics = DiagnosticsRegistry::bind(&registry, table).expect("valid binding");
+    let diagnostics =
+        DiagnosticsRegistry::bind(&registry, with_module_rows(table)).expect("valid binding");
 
     let per_component = Duration::from_millis(200);
     let state = atlas_server::state::AppState::for_test(db.conn().clone())
@@ -464,7 +498,8 @@ async fn a_components_readiness_probe_is_not_reinterpreted_by_the_shell() {
             fake(HealthStatus::Ok, ReadinessStatus::Ready),
         ),
     ];
-    let diagnostics = DiagnosticsRegistry::bind(&registry, table).expect("valid binding");
+    let diagnostics =
+        DiagnosticsRegistry::bind(&registry, with_module_rows(table)).expect("valid binding");
 
     let state = atlas_server::state::AppState::for_test(db.conn().clone())
         .await

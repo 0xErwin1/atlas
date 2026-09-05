@@ -2,16 +2,22 @@
 //! `storage.filesystem`, `storage.s3`, `search.postgres_fts`,
 //! `search.pgvector_embeddings`. None of these Modules has an HTTP surface
 //! (SHELL-CAP-3/CAP-5) — their signal reaches the wire only through `acta`'s
-//! composed readiness (`ops::acta::ActaDiagnostics`).
+//! composed readiness (`ops::acta::ActaDiagnostics`). Also their four
+//! `Doctor` implementers (design D5), reported the same way: each Module has
+//! no HTTP surface of its own, so its doctor findings reach
+//! `POST /api/v2/platform/doctor` through `doctor_set` naming the Module's
+//! own `ComponentId`, independent of `acta`'s doctor.
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use atlas_core::capabilities::{Health, HealthStatus, Readiness, ReadinessStatus};
-use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement};
+use atlas_core::capabilities::{
+    Doctor, DoctorFinding, Health, HealthStatus, Readiness, ReadinessStatus, Severity,
+};
+use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, FromQueryResult, Statement};
 
 use atlas_acta::ports::attachment_store::AttachmentStore;
-use atlas_acta::semantic_search::EmbeddingProvider;
+use atlas_acta::semantic_search::{EmbeddingInput, EmbeddingProvider};
 
 use super::db_error_kind;
 use crate::state::probe_semantic_search_schema;
@@ -220,6 +226,283 @@ impl Readiness for SearchSemanticDiagnostics {
     }
 }
 
+/// The prefix of the probe file a disk-storage doctor run creates and
+/// removes inside the configured root. Doctor **writes** where S3a's
+/// readiness deliberately only stats (design D5) — a metadata check alone
+/// cannot prove the root is writable. Each run appends its process id and
+/// a fresh UUID so concurrent runs, in one process or across replicas
+/// sharing the root, never touch the same path.
+const DISK_PROBE_FILE_PREFIX: &str = ".atlas-doctor-probe";
+
+/// Creates and removes one uniquely named probe file under `root`. A probe
+/// removed underneath us by another cleaner still proves the root writable.
+fn write_and_remove_probe(root: &str) -> std::io::Result<()> {
+    let name = format!(
+        "{DISK_PROBE_FILE_PREFIX}-{}-{}",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    );
+    let path = std::path::Path::new(root).join(name);
+
+    std::fs::write(&path, b"atlas doctor probe")?;
+
+    match std::fs::remove_file(&path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        result => result,
+    }
+}
+
+/// `storage.filesystem`'s doctor (design D5): the root exists, is a
+/// directory, and a uniquely named probe file can be created and removed.
+pub struct DiskStorageDoctor {
+    root: String,
+}
+
+impl DiskStorageDoctor {
+    pub fn new(root: String) -> Self {
+        Self { root }
+    }
+}
+
+#[async_trait]
+impl Doctor for DiskStorageDoctor {
+    async fn doctor(&self) -> Vec<DoctorFinding> {
+        let component = super::component("storage.filesystem");
+        let root = self.root.clone();
+
+        let probe = tokio::task::spawn_blocking(move || write_and_remove_probe(&root)).await;
+
+        match probe {
+            Ok(Ok(())) => vec![],
+            _ => vec![DoctorFinding {
+                component,
+                severity: Severity::Critical,
+                finding: "the storage root cannot be written to and read back".to_string(),
+                action: "check the storage root's existence and write permissions".to_string(),
+            }],
+        }
+    }
+}
+
+/// `storage.s3`'s doctor (design D5): one bounded `exists` HeadObject, plus
+/// confirming the configured bucket name is not empty. Never echoes the
+/// endpoint, key id, or bucket credentials (INV-NO-SECRET).
+pub struct S3StorageDoctor {
+    attachments: Arc<dyn AttachmentStore>,
+    bucket: String,
+}
+
+impl S3StorageDoctor {
+    pub fn new(attachments: Arc<dyn AttachmentStore>, bucket: String) -> Self {
+        Self {
+            attachments,
+            bucket,
+        }
+    }
+}
+
+#[async_trait]
+impl Doctor for S3StorageDoctor {
+    async fn doctor(&self) -> Vec<DoctorFinding> {
+        let component = super::component("storage.s3");
+        let mut findings = Vec::new();
+
+        if self.bucket.trim().is_empty() {
+            findings.push(DoctorFinding {
+                component: component.clone(),
+                severity: Severity::Critical,
+                finding: "no bucket is configured".to_string(),
+                action: "set the object store's bucket name".to_string(),
+            });
+        }
+
+        if let Err(_error) = self.attachments.exists(EMPTY_SHA256).await {
+            tracing::warn!(
+                target: "ops.storage.s3",
+                event = "doctor_failed",
+                "storage.s3 doctor probe failed: object store unreachable"
+            );
+            findings.push(DoctorFinding {
+                component,
+                severity: Severity::Critical,
+                finding: "object store is unreachable".to_string(),
+                action: "check object store connectivity and credentials".to_string(),
+            });
+        }
+
+        findings
+    }
+}
+
+#[derive(FromQueryResult)]
+struct FtsIndexPresent {
+    present: bool,
+}
+
+/// `search.postgres_fts`'s doctor (design D5): database reachability, then
+/// whether any index on `acta.documents` covers `search_vector`.
+pub struct SearchLexicalDoctor {
+    db: Arc<DatabaseConnection>,
+}
+
+impl SearchLexicalDoctor {
+    pub fn new(db: Arc<DatabaseConnection>) -> Self {
+        Self { db }
+    }
+}
+
+#[async_trait]
+impl Doctor for SearchLexicalDoctor {
+    async fn doctor(&self) -> Vec<DoctorFinding> {
+        let component = super::component("search.postgres_fts");
+
+        let probe = self
+            .db
+            .query_one_raw(Statement::from_string(
+                DatabaseBackend::Postgres,
+                "SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'acta' \
+                 AND tablename = 'documents' AND indexdef ILIKE '%search_vector%') AS present",
+            ))
+            .await
+            .and_then(|row| {
+                row.ok_or_else(|| {
+                    sea_orm::DbErr::Custom("fts index probe returned no row".to_owned())
+                })
+                .and_then(|row| FtsIndexPresent::from_query_result(&row, ""))
+            });
+
+        match probe {
+            Ok(FtsIndexPresent { present: true }) => vec![],
+            Ok(FtsIndexPresent { present: false }) => vec![DoctorFinding {
+                component,
+                severity: Severity::Warning,
+                finding: "no full-text search index covers `acta.documents`".to_string(),
+                action: "run the pending migration that adds the full-text search index"
+                    .to_string(),
+            }],
+            Err(error) => {
+                tracing::warn!(
+                    target: "ops.search.postgres_fts",
+                    event = "doctor_failed",
+                    error_kind = db_error_kind(&error),
+                    "search.postgres_fts doctor probe failed: database unreachable"
+                );
+                vec![DoctorFinding {
+                    component,
+                    severity: Severity::Critical,
+                    finding: "database is unreachable".to_string(),
+                    action: "restore database connectivity".to_string(),
+                }]
+            }
+        }
+    }
+}
+
+#[derive(FromQueryResult)]
+struct IndexQueueBacklogCount {
+    count: i64,
+}
+
+/// `search.pgvector_embeddings`'s doctor (design D5): absent provider is one
+/// `Info` (SHELL-OPS-5's "absence is not degradation"), never Critical or
+/// Warning; a configured provider gets one bounded embed round trip plus a
+/// `search_index_queue` backlog count. The backlog query never runs when no
+/// provider is configured — nothing drains the queue in that case, so
+/// counting it would be noise, not a finding (mirrors S3a's readiness
+/// discipline of never running a costly check for an absent capability).
+pub struct SearchSemanticDoctor {
+    db: Arc<DatabaseConnection>,
+    embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+}
+
+impl SearchSemanticDoctor {
+    pub fn new(
+        db: Arc<DatabaseConnection>,
+        embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+    ) -> Self {
+        Self {
+            db,
+            embedding_provider,
+        }
+    }
+}
+
+#[async_trait]
+impl Doctor for SearchSemanticDoctor {
+    async fn doctor(&self) -> Vec<DoctorFinding> {
+        let component = super::component("search.pgvector_embeddings");
+
+        let Some(provider) = &self.embedding_provider else {
+            return vec![DoctorFinding {
+                component,
+                severity: Severity::Info,
+                finding: "no embedding provider is configured".to_string(),
+                action: "no action required — optional capability not configured".to_string(),
+            }];
+        };
+
+        let mut findings = Vec::new();
+
+        let probe = provider
+            .embed(&[EmbeddingInput {
+                text: "atlas doctor probe".to_string(),
+            }])
+            .await;
+
+        if probe.is_err() {
+            tracing::warn!(
+                target: "ops.search.pgvector_embeddings",
+                event = "doctor_failed",
+                "search.pgvector_embeddings doctor probe failed: embedding round trip failed"
+            );
+            findings.push(DoctorFinding {
+                component: component.clone(),
+                severity: Severity::Warning,
+                finding: "the embedding provider round trip failed".to_string(),
+                action: "check the embedding provider's connectivity and credentials".to_string(),
+            });
+        }
+
+        let backlog = self
+            .db
+            .query_one_raw(Statement::from_string(
+                DatabaseBackend::Postgres,
+                "SELECT count(*) AS count FROM acta.search_index_queue",
+            ))
+            .await
+            .and_then(|row| {
+                row.ok_or_else(|| {
+                    sea_orm::DbErr::Custom("index queue probe returned no row".to_owned())
+                })
+                .and_then(|row| IndexQueueBacklogCount::from_query_result(&row, ""))
+            });
+
+        match backlog {
+            Ok(IndexQueueBacklogCount { count }) if count > 0 => {
+                findings.push(DoctorFinding {
+                    component,
+                    severity: Severity::Warning,
+                    finding: format!(
+                        "{count} resources are waiting in the semantic search index queue"
+                    ),
+                    action: "check the search index worker for failures".to_string(),
+                });
+            }
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!(
+                    target: "ops.search.pgvector_embeddings",
+                    event = "doctor_failed",
+                    error_kind = db_error_kind(&error),
+                    "search.pgvector_embeddings doctor backlog probe failed: database unreachable"
+                );
+            }
+        }
+
+        findings
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -387,5 +670,34 @@ mod tests {
                 reason: "no embedding provider is configured".to_string()
             }
         );
+    }
+
+    #[tokio::test]
+    async fn concurrent_disk_doctor_runs_on_one_root_never_collide_and_leave_it_empty() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let doctor = DiskStorageDoctor::new(root.path().to_string_lossy().into_owned());
+
+        let (first, second, third) =
+            tokio::join!(doctor.doctor(), doctor.doctor(), doctor.doctor());
+
+        assert!(
+            first.is_empty() && second.is_empty() && third.is_empty(),
+            "a healthy root must yield no finding from any concurrent run: {first:?} {second:?} {third:?}"
+        );
+        let leftovers = std::fs::read_dir(root.path()).expect("read root").count();
+        assert_eq!(leftovers, 0, "every probe file must be removed");
+    }
+
+    #[tokio::test]
+    async fn disk_doctor_reports_a_missing_root_as_critical() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let missing = root.path().join("absent");
+        let doctor = DiskStorageDoctor::new(missing.to_string_lossy().into_owned());
+
+        let findings = doctor.doctor().await;
+
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].severity, Severity::Critical);
+        assert_eq!(findings[0].component.as_str(), "storage.filesystem");
     }
 }

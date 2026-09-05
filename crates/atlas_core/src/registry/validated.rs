@@ -63,21 +63,34 @@ impl Registry {
     /// a permanent rule: once every mandatory component declares a worker,
     /// `startup_order()` alone determines the whole result.
     pub fn readiness_components(&self) -> Vec<ComponentId> {
-        let mandatory: Vec<&ComponentId> = self
+        self.components_where(|entry| entry.diagnostics.readiness)
+    }
+
+    /// The doctor-bearing component set (E11-S3b design D5): every entry
+    /// with `diagnostics.doctor == true`, ordered the same way as
+    /// [`Self::readiness_components`] — `startup_order()` for the
+    /// components present in it, then every other doctor-bearing component
+    /// in `entries()` insertion order.
+    pub fn doctor_components(&self) -> Vec<ComponentId> {
+        self.components_where(|entry| entry.diagnostics.doctor)
+    }
+
+    fn components_where(&self, predicate: impl Fn(&ComponentEntry) -> bool) -> Vec<ComponentId> {
+        let matching: Vec<&ComponentId> = self
             .entries
             .iter()
-            .filter(|entry| entry.diagnostics.readiness)
+            .filter(|entry| predicate(entry))
             .map(|entry| &entry.identity.stable_id)
             .collect();
 
-        let mut ordered: Vec<ComponentId> = mandatory
+        let mut ordered: Vec<ComponentId> = matching
             .iter()
             .filter(|id| !self.startup_order.contains(id))
             .map(|id| (*id).clone())
             .collect();
 
         for id in &self.startup_order {
-            if mandatory.contains(&id) {
+            if matching.contains(&id) {
                 ordered.push(id.clone());
             }
         }
@@ -288,5 +301,63 @@ mod tests {
             .map(|id| id.as_str().to_string())
             .collect();
         assert_eq!(mandatory, vec!["platform"]);
+    }
+
+    fn doctor_entry(stable_id: &str, doctor: bool) -> ComponentEntry {
+        let mut entry = minimal_entry(stable_id);
+        entry.diagnostics.doctor = doctor;
+        entry
+    }
+
+    #[test]
+    fn doctor_components_mirrors_readiness_components_ordering_rule() {
+        let entries = vec![
+            doctor_entry("platform", true),
+            doctor_entry("custos", true),
+            doctor_entry("acta", true),
+        ];
+        let index: BTreeMap<ComponentId, usize> = entries
+            .iter()
+            .enumerate()
+            .map(|(position, entry)| (entry.identity.stable_id.clone(), position))
+            .collect();
+        let migration_order = vec![
+            ComponentId::new("platform").expect("valid component id"),
+            ComponentId::new("custos").expect("valid component id"),
+            ComponentId::new("acta").expect("valid component id"),
+        ];
+        let startup_order = vec![ComponentId::new("acta").expect("valid component id")];
+
+        let registry = Registry::new(entries, index, migration_order, startup_order);
+
+        let doctors: Vec<String> = registry
+            .doctor_components()
+            .into_iter()
+            .map(|id| id.as_str().to_string())
+            .collect();
+        assert_eq!(
+            doctors,
+            vec!["platform", "custos", "acta"],
+            "workerless doctor components precede worker-bearing ones, same as readiness_components"
+        );
+    }
+
+    #[test]
+    fn doctor_components_is_empty_when_no_entry_declares_a_doctor() {
+        let entries = vec![
+            doctor_entry("platform", false),
+            doctor_entry("custos", false),
+        ];
+        let index: BTreeMap<ComponentId, usize> = entries
+            .iter()
+            .enumerate()
+            .map(|(position, entry)| (entry.identity.stable_id.clone(), position))
+            .collect();
+        let migration_order = vec![ComponentId::new("platform").expect("valid component id")];
+        let startup_order = Vec::new();
+
+        let registry = Registry::new(entries, index, migration_order, startup_order);
+
+        assert!(registry.doctor_components().is_empty());
     }
 }
