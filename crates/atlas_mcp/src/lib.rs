@@ -3219,6 +3219,7 @@ impl AtlasMcp {
         let mode = resolve_search_mode(params.mode.as_deref(), &params.query)?;
 
         let page = client
+            .acta()
             .search(
                 &params.workspace,
                 &params.query,
@@ -3244,6 +3245,7 @@ impl AtlasMcp {
         let result = match parse_detail(params.detail.as_deref()) {
             Detail::Compact => {
                 let doc = client
+                    .acta()
                     .get_document_compact(&params.workspace, &params.slug)
                     .await
                     .map_err(|e| enrich_client_error(e, "get_document_compact"))?;
@@ -3251,6 +3253,7 @@ impl AtlasMcp {
             }
             Detail::Full => {
                 let doc = client
+                    .acta()
                     .get_document(&params.workspace, &params.slug)
                     .await
                     .map_err(|e| enrich_client_error(e, "get_document"))?;
@@ -3268,6 +3271,7 @@ impl AtlasMcp {
     ) -> Result<String, String> {
         let client = self.resolve_client(&ctx)?;
         let result = client
+            .acta()
             .get_document_content_range(
                 &params.workspace,
                 &params.slug,
@@ -3301,6 +3305,7 @@ impl AtlasMcp {
         };
         let client = self.resolve_client(&ctx)?;
         let result = client
+            .acta()
             .search_document_content(
                 &params.workspace,
                 &params.slug,
@@ -3373,6 +3378,7 @@ impl AtlasMcp {
         };
 
         let page = client
+            .acta()
             .list_workspace_tasks(&params.workspace, &query)
             .await
             .map_err(|e| enrich_client_error(e, "list_tasks"))?;
@@ -3389,6 +3395,7 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
 
         let task = client
+            .acta()
             .get_task(&params.workspace, &params.readable_id)
             .await
             .map_err(|e| enrich_client_error(e, "get_task"))?;
@@ -3397,18 +3404,21 @@ impl AtlasMcp {
             Detail::Compact => project_task_compact(&task),
             Detail::Full => {
                 let refs = client
+                    .acta()
                     .list_references(&params.workspace, &params.readable_id)
                     .await
                     .map(|v| v.into_iter().map(project_reference).collect::<Vec<_>>())
                     .map_err(|e| enrich_client_error(e, "list_references"));
 
                 let subtasks = client
+                    .acta()
                     .list_subtasks(&params.workspace, &params.readable_id)
                     .await
                     .map(|v| v.into_iter().map(project_task_row).collect::<Vec<_>>())
                     .map_err(|e| enrich_client_error(e, "list_subtasks"));
 
                 let assignees = client
+                    .acta()
                     .list_assignees(&params.workspace, &params.readable_id)
                     .await
                     .map(|v| v.into_iter().map(project_assignee).collect::<Vec<_>>())
@@ -3430,6 +3440,7 @@ impl AtlasMcp {
         let limit = params.limit.unwrap_or(20).clamp(1, 200);
 
         let page = client
+            .acta()
             .list_documents_with_options(
                 &params.workspace,
                 &params.project,
@@ -3454,6 +3465,7 @@ impl AtlasMcp {
         let limit = params.limit.unwrap_or(20).clamp(1, 200);
 
         let page = client
+            .acta()
             .list_folders(
                 &params.workspace,
                 &params.project,
@@ -3476,6 +3488,7 @@ impl AtlasMcp {
         let limit = params.limit.unwrap_or(20).clamp(1, 200);
 
         let page = client
+            .acta()
             .list_boards(
                 &params.workspace,
                 &params.project,
@@ -3499,6 +3512,7 @@ impl AtlasMcp {
         let board_uuid = resolve_board_uuid(&client, &params.workspace, &params.board).await?;
 
         let cols = client
+            .acta()
             .list_columns(&params.workspace, board_uuid)
             .await
             .map_err(|e| enrich_client_error(e, "list_columns"))?;
@@ -3515,6 +3529,7 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
 
         let tags = client
+            .acta()
             .list_tags(&params.workspace)
             .await
             .map_err(|e| enrich_client_error(e, "list_tags"))?;
@@ -3531,6 +3546,7 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
 
         let labels = client
+            .acta()
             .list_used_labels(&params.workspace)
             .await
             .map_err(|e| enrich_client_error(e, "list_used_labels"))?;
@@ -3547,6 +3563,7 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
 
         let members = client
+            .acta()
             .list_workspace_members(&params.workspace)
             .await
             .map_err(|e| enrich_client_error(e, "list_members"))?;
@@ -3563,6 +3580,7 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
 
         let workspaces = client
+            .acta()
             .list_workspaces()
             .await
             .map_err(|e| enrich_client_error(e, "list_workspaces"))?;
@@ -3579,6 +3597,7 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
 
         let me = client
+            .custos()
             .me()
             .await
             .map_err(|e| enrich_client_error(e, "get_agent_identity"))?;
@@ -3607,6 +3626,7 @@ impl AtlasMcp {
         let limit = params.limit.unwrap_or(20).clamp(1, 200);
 
         let page = client
+            .acta()
             .list_projects(&params.workspace, params.cursor.as_deref(), Some(limit))
             .await
             .map_err(|e| enrich_client_error(e, "list_projects"))?;
@@ -3623,6 +3643,7 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
 
         let searches = client
+            .acta()
             .list_saved_searches(&params.workspace)
             .await
             .map_err(|e| enrich_client_error(e, "list_saved_searches"))?;
@@ -3639,6 +3660,7 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
 
         let views = client
+            .acta()
             .list_task_views(&params.workspace)
             .await
             .map_err(|e| enrich_client_error(e, "list_task_views"))?;
@@ -3655,6 +3677,7 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
 
         let refs = client
+            .acta()
             .list_references(&params.workspace, &params.readable_id)
             .await
             .map_err(|e| enrich_client_error(e, "get_task_references"))?;
@@ -3671,6 +3694,7 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
 
         let graph = client
+            .acta()
             .get_task_graph(&params.workspace, &params.readable_id, params.depth)
             .await
             .map_err(|e| enrich_client_error(e, "get_task_graph"))?;
@@ -3687,6 +3711,7 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
 
         let page = client
+            .acta()
             .list_task_backlinks(&params.workspace, &params.readable_id)
             .await
             .map_err(|e| enrich_client_error(e, "get_task_backlinks"))?;
@@ -3704,6 +3729,7 @@ impl AtlasMcp {
         let limit = params.limit.unwrap_or(20).clamp(1, 200);
 
         let page = client
+            .acta()
             .list_backlinks(
                 &params.workspace,
                 &params.slug,
@@ -3725,6 +3751,7 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
 
         let items = client
+            .acta()
             .list_checklist(&params.workspace, &params.readable_id)
             .await
             .map_err(|e| enrich_client_error(e, "list_checklist"))?;
@@ -3741,6 +3768,7 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
 
         let page = client
+            .acta()
             .list_activity(&params.workspace, &params.readable_id)
             .await
             .map_err(|e| enrich_client_error(e, "list_activity"))?;
@@ -3758,6 +3786,7 @@ impl AtlasMcp {
         let limit = params.limit.unwrap_or(50).clamp(1, 200);
 
         let page = client
+            .acta()
             .list_comments(
                 &params.workspace,
                 &params.readable_id,
@@ -3779,6 +3808,7 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
         let limit = params.limit.unwrap_or(50).clamp(1, 200);
         let page = client
+            .acta()
             .list_comment_feed(
                 &params.workspace,
                 &params.readable_id,
@@ -3800,6 +3830,7 @@ impl AtlasMcp {
         let comment_id = parse_uuid_param("comment_id", &params.comment_id)?;
         let data = decode_comment_attachment_data(&params.data_base64)?;
         let attachment = client
+            .acta()
             .upload_task_comment_attachment(
                 &params.workspace,
                 &params.readable_id,
@@ -3821,6 +3852,7 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
         let comment_id = parse_uuid_param("comment_id", &params.comment_id)?;
         let attachments = client
+            .acta()
             .list_task_comment_attachments(&params.workspace, &params.readable_id, comment_id)
             .await
             .map_err(|e| enrich_client_error(e, "list_task_comment_attachments"))?;
@@ -3844,6 +3876,7 @@ impl AtlasMcp {
                 .ok_or_else(|| "attachment_id is required".to_string())?,
         )?;
         let (data, content_type) = client
+            .acta()
             .download_task_comment_attachment(
                 &params.workspace,
                 &params.readable_id,
@@ -3871,6 +3904,7 @@ impl AtlasMcp {
                 .ok_or_else(|| "attachment_id is required".to_string())?,
         )?;
         client
+            .acta()
             .delete_task_comment_attachment(
                 &params.workspace,
                 &params.readable_id,
@@ -3893,6 +3927,7 @@ impl AtlasMcp {
 
         let page = if params.cursor.is_some() {
             client
+                .acta()
                 .list_workspace_activity_with_cursor(
                     &params.workspace,
                     params.actor.as_deref(),
@@ -3904,6 +3939,7 @@ impl AtlasMcp {
                 .map_err(|e| enrich_client_error(e, "list_workspace_activity"))?
         } else {
             client
+                .acta()
                 .list_workspace_activity(
                     &params.workspace,
                     params.actor.as_deref(),
@@ -3928,6 +3964,7 @@ impl AtlasMcp {
         let limit = params.limit.unwrap_or(20).clamp(1, 200);
 
         let page = client
+            .acta()
             .list_document_history(
                 &params.workspace,
                 &params.slug,
@@ -3949,6 +3986,7 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
 
         let rev = client
+            .acta()
             .get_revision_content(&params.workspace, &params.slug, params.seq)
             .await
             .map_err(|e| enrich_client_error(e, "get_document_revision"))?;
@@ -3966,6 +4004,7 @@ impl AtlasMcp {
         let limit = params.limit.unwrap_or(20).clamp(1, 200);
 
         let page = client
+            .acta()
             .list_attachments(
                 &params.workspace,
                 &params.slug,
@@ -3987,6 +4026,7 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
 
         let items = client
+            .acta()
             .list_task_attachments(&params.workspace, &params.readable_id)
             .await
             .map_err(|e| enrich_client_error(e, "list_task_attachments"))?;
@@ -4005,6 +4045,7 @@ impl AtlasMcp {
         let attachment_id = parse_uuid_param("attachment_id", &params.attachment_id)?;
 
         let (bytes, content_type) = client
+            .acta()
             .download_task_attachment(&params.workspace, &params.readable_id, attachment_id)
             .await
             .map_err(|e| enrich_client_error(e, "get_task_attachment"))?;
@@ -4062,6 +4103,7 @@ impl AtlasMcp {
         let board_uuid = resolve_board_uuid(&client, &params.workspace, &params.board).await?;
 
         let cols = client
+            .acta()
             .list_columns(&params.workspace, board_uuid)
             .await
             .map_err(|e| enrich_client_error(e, "list_columns"))?;
@@ -4088,6 +4130,7 @@ impl AtlasMcp {
         };
 
         let created = client
+            .acta()
             .create_task_with_references(&params.workspace, board_uuid, body)
             .await
             .map_err(|e| enrich_client_error(e, "create_task"))?;
@@ -4136,6 +4179,7 @@ impl AtlasMcp {
         };
 
         let task = client
+            .acta()
             .update_task(&params.workspace, &params.readable_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "update_task"))?;
@@ -4158,6 +4202,7 @@ impl AtlasMcp {
             None => {
                 // No board supplied: fetch the task first to get its board_id.
                 let task = client
+                    .acta()
                     .get_task(&params.workspace, &params.readable_id)
                     .await
                     .map_err(|e| enrich_client_error(e, "get_task"))?;
@@ -4168,6 +4213,7 @@ impl AtlasMcp {
         let board_uuid = parse_resolved_board_uuid(&board_id_str)?;
 
         let cols = client
+            .acta()
             .list_columns(&params.workspace, board_uuid)
             .await
             .map_err(|e| enrich_client_error(e, "list_columns"))?;
@@ -4181,6 +4227,7 @@ impl AtlasMcp {
         };
 
         let task = client
+            .acta()
             .move_task(&params.workspace, &params.readable_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "move_task"))?;
@@ -4198,6 +4245,7 @@ impl AtlasMcp {
         require_confirm(params.confirm, "task", &params.readable_id)?;
 
         client
+            .acta()
             .delete_task(&params.workspace, &params.readable_id)
             .await
             .map_err(|e| enrich_client_error(e, "delete_task"))?;
@@ -4228,6 +4276,7 @@ impl AtlasMcp {
         };
 
         let assignee = client
+            .acta()
             .add_assignee(&params.workspace, &params.readable_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "add_task_assignee"))?;
@@ -4244,6 +4293,7 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
 
         client
+            .acta()
             .remove_assignee(&params.workspace, &params.readable_id, &params.assignee_ref)
             .await
             .map_err(|e| enrich_client_error(e, "remove_task_assignee"))?;
@@ -4271,6 +4321,7 @@ impl AtlasMcp {
         };
 
         let doc = client
+            .acta()
             .create_document(&params.workspace, &params.project, body)
             .await
             .map_err(|e| enrich_client_error(e, "create_document"))?;
@@ -4294,6 +4345,7 @@ impl AtlasMcp {
         };
 
         let doc = client
+            .acta()
             .update_document(&params.workspace, &params.slug, body)
             .await
             .map_err(|e| enrich_client_error(e, "update_document_metadata"))?;
@@ -4322,6 +4374,7 @@ impl AtlasMcp {
         };
 
         let doc = client
+            .acta()
             .update_content(&params.workspace, &params.slug, body)
             .await
             .map_err(|e| enrich_client_error(e, "update_document_content"))?;
@@ -4338,6 +4391,7 @@ impl AtlasMcp {
         let body = build_document_line_edit_request(&params)?;
         let client = self.resolve_client(&ctx)?;
         let doc = client
+            .acta()
             .edit_document_content_range(&params.workspace, &params.slug, body)
             .await
             .map_err(|e| enrich_client_error(e, "edit_document_lines"))?;
@@ -4354,6 +4408,7 @@ impl AtlasMcp {
         require_confirm(params.confirm, "document", &params.slug)?;
 
         client
+            .acta()
             .delete_document(&params.workspace, &params.slug)
             .await
             .map_err(|e| enrich_client_error(e, "delete_document"))?;
@@ -4377,6 +4432,7 @@ impl AtlasMcp {
         let body = MoveDocumentRequest { folder_id };
 
         let doc = client
+            .acta()
             .move_document(&params.workspace, &params.slug, body)
             .await
             .map_err(|e| enrich_client_error(e, "move_document"))?;
@@ -4409,6 +4465,7 @@ impl AtlasMcp {
             .collect::<Result<Vec<_>, String>>()?;
 
         let results = client
+            .acta()
             .move_documents_batch(&params.workspace, DocumentMoveBatchRequest { moves })
             .await
             .map_err(|e| enrich_client_error(e, "move_documents_batch"))?
@@ -4449,6 +4506,7 @@ impl AtlasMcp {
         let folder_id = parse_optional_uuid_param("folder_id", params.folder_id.as_deref())?;
 
         let doc = client
+            .acta()
             .copy_document(&params.workspace, &params.slug, folder_id)
             .await
             .map_err(|e| enrich_client_error(e, "copy_document"))?;
@@ -4473,6 +4531,7 @@ impl AtlasMcp {
         };
 
         let folder = client
+            .acta()
             .create_folder(&params.workspace, &params.project, body)
             .await
             .map_err(|e| enrich_client_error(e, "create_folder"))?;
@@ -4496,6 +4555,7 @@ impl AtlasMcp {
         let body = RenameFolderRequest { name: params.name };
 
         let folder = client
+            .acta()
             .rename_folder(&params.workspace, folder_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "rename_folder"))?;
@@ -4522,6 +4582,7 @@ impl AtlasMcp {
         let body = MoveFolderRequest { parent_folder_id };
 
         let folder = client
+            .acta()
             .move_folder(&params.workspace, folder_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "move_folder"))?;
@@ -4546,6 +4607,7 @@ impl AtlasMcp {
             parse_optional_uuid_param("parent_folder_id", params.parent_folder_id.as_deref())?;
 
         let folder = client
+            .acta()
             .copy_folder(&params.workspace, folder_id, parent_folder_id)
             .await
             .map_err(|e| enrich_client_error(e, "copy_folder"))?;
@@ -4568,6 +4630,7 @@ impl AtlasMcp {
             .map_err(|_| format!("folder_id '{}' is not a valid UUID", params.folder_id))?;
 
         client
+            .acta()
             .delete_folder(&params.workspace, folder_id)
             .await
             .map_err(|e| enrich_client_error(e, "delete_folder"))?;
@@ -4592,6 +4655,7 @@ impl AtlasMcp {
         };
 
         let board = client
+            .acta()
             .create_board(&params.workspace, &params.project, body)
             .await
             .map_err(|e| enrich_client_error(e, "create_board"))?;
@@ -4599,6 +4663,7 @@ impl AtlasMcp {
         // A new board is auto-seeded with the workspace's default columns; return
         // them so the caller does not recreate the statuses that already exist.
         let columns = client
+            .acta()
             .list_columns(&params.workspace, board.id)
             .await
             .map_err(|e| enrich_client_error(e, "list_columns"))?;
@@ -4625,6 +4690,7 @@ impl AtlasMcp {
         let body = UpdateBoardRequest { name: params.name };
 
         let board = client
+            .acta()
             .update_board(&params.workspace, board_uuid, body)
             .await
             .map_err(|e| enrich_client_error(e, "update_board"))?;
@@ -4649,6 +4715,7 @@ impl AtlasMcp {
         let board_uuid = resolve_board_uuid(&client, &params.workspace, &params.board).await?;
 
         client
+            .acta()
             .delete_board(&params.workspace, board_uuid)
             .await
             .map_err(|e| enrich_client_error(e, "delete_board"))?;
@@ -4677,6 +4744,7 @@ impl AtlasMcp {
         };
 
         let col = client
+            .acta()
             .create_column(&params.workspace, board_uuid, body)
             .await
             .map_err(|e| enrich_client_error(e, "create_column"))?;
@@ -4695,6 +4763,7 @@ impl AtlasMcp {
         let board_uuid = resolve_board_uuid(&client, &params.workspace, &params.board).await?;
 
         let cols = client
+            .acta()
             .list_columns(&params.workspace, board_uuid)
             .await
             .map_err(|e| enrich_client_error(e, "list_columns"))?;
@@ -4711,6 +4780,7 @@ impl AtlasMcp {
         };
 
         let col = client
+            .acta()
             .update_column(&params.workspace, board_uuid, column_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "update_column"))?;
@@ -4730,6 +4800,7 @@ impl AtlasMcp {
         let board_uuid = resolve_board_uuid(&client, &params.workspace, &params.board).await?;
 
         let cols = client
+            .acta()
             .list_columns(&params.workspace, board_uuid)
             .await
             .map_err(|e| enrich_client_error(e, "list_columns"))?;
@@ -4737,6 +4808,7 @@ impl AtlasMcp {
         let column_id = resolve_column_id_on_board(&params.column, &cols)?;
 
         client
+            .acta()
             .delete_column(&params.workspace, board_uuid, column_id)
             .await
             .map_err(|e| enrich_client_error(e, "delete_column"))?;
@@ -4762,6 +4834,7 @@ impl AtlasMcp {
         let body = CreateTagRequest { name: params.name };
 
         let tag = client
+            .acta()
             .create_tag(&params.workspace, body)
             .await
             .map_err(|e| enrich_client_error(e, "create_tag"))?;
@@ -4788,6 +4861,7 @@ impl AtlasMcp {
         };
 
         let tag = client
+            .acta()
             .update_tag(&params.workspace, tag_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "update_tag"))?;
@@ -4809,6 +4883,7 @@ impl AtlasMcp {
             .map_err(|_| format!("tag_id '{}' is not a valid UUID", params.tag_id))?;
 
         client
+            .acta()
             .delete_tag(&params.workspace, tag_id)
             .await
             .map_err(|e| enrich_client_error(e, "delete_tag"))?;
@@ -4847,6 +4922,7 @@ impl AtlasMcp {
         };
 
         let reference = client
+            .acta()
             .create_reference(&params.workspace, &params.readable_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "add_task_reference"))?;
@@ -4890,6 +4966,7 @@ impl AtlasMcp {
             .collect::<Result<Vec<_>, String>>()?;
 
         let results = client
+            .acta()
             .create_reference_batch(
                 &params.workspace,
                 &params.readable_id,
@@ -4937,6 +5014,7 @@ impl AtlasMcp {
             .map_err(|_| format!("reference_id '{}' is not a valid UUID", params.reference_id))?;
 
         client
+            .acta()
             .delete_reference(&params.workspace, &params.readable_id, reference_id)
             .await
             .map_err(|e| enrich_client_error(e, "remove_task_reference"))?;
@@ -4962,6 +5040,7 @@ impl AtlasMcp {
         };
 
         let item = client
+            .acta()
             .create_checklist_item(&params.workspace, &params.readable_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "add_checklist_item"))?;
@@ -4990,6 +5069,7 @@ impl AtlasMcp {
         };
 
         let item = client
+            .acta()
             .update_checklist_item(&params.workspace, &params.readable_id, item_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "update_checklist_item"))?;
@@ -5011,6 +5091,7 @@ impl AtlasMcp {
             .map_err(|_| format!("item_id '{}' is not a valid UUID", params.item_id))?;
 
         client
+            .acta()
             .delete_checklist_item(&params.workspace, &params.readable_id, item_id)
             .await
             .map_err(|e| enrich_client_error(e, "delete_checklist_item"))?;
@@ -5032,6 +5113,7 @@ impl AtlasMcp {
         let body = CreateCommentRequest::published(params.body);
 
         let comment = client
+            .acta()
             .add_comment(&params.workspace, &params.readable_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "add_comment"))?;
@@ -5055,6 +5137,7 @@ impl AtlasMcp {
         let body = UpdateCommentRequest { body: params.body };
 
         let comment = client
+            .acta()
             .update_comment(&params.workspace, &params.readable_id, comment_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "update_comment"))?;
@@ -5076,6 +5159,7 @@ impl AtlasMcp {
             .map_err(|_| format!("comment_id '{}' is not a valid UUID", params.comment_id))?;
 
         client
+            .acta()
             .delete_comment(&params.workspace, &params.readable_id, comment_id)
             .await
             .map_err(|e| enrich_client_error(e, "delete_comment"))?;
@@ -5096,6 +5180,7 @@ impl AtlasMcp {
         let limit = params.limit.unwrap_or(50).clamp(1, 200);
 
         let page = client
+            .acta()
             .list_document_comments(
                 &params.workspace,
                 &params.slug,
@@ -5117,6 +5202,7 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
         let limit = params.limit.unwrap_or(50).clamp(1, 200);
         let page = client
+            .acta()
             .list_document_comment_feed(
                 &params.workspace,
                 &params.slug,
@@ -5138,6 +5224,7 @@ impl AtlasMcp {
         let comment_id = parse_uuid_param("comment_id", &params.comment_id)?;
         let data = decode_comment_attachment_data(&params.data_base64)?;
         let attachment = client
+            .acta()
             .upload_document_comment_attachment(
                 &params.workspace,
                 &params.slug,
@@ -5159,6 +5246,7 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
         let comment_id = parse_uuid_param("comment_id", &params.comment_id)?;
         let attachments = client
+            .acta()
             .list_document_comment_attachments(&params.workspace, &params.slug, comment_id)
             .await
             .map_err(|e| enrich_client_error(e, "list_document_comment_attachments"))?;
@@ -5182,6 +5270,7 @@ impl AtlasMcp {
                 .ok_or_else(|| "attachment_id is required".to_string())?,
         )?;
         let (data, content_type) = client
+            .acta()
             .download_document_comment_attachment(
                 &params.workspace,
                 &params.slug,
@@ -5209,6 +5298,7 @@ impl AtlasMcp {
                 .ok_or_else(|| "attachment_id is required".to_string())?,
         )?;
         client
+            .acta()
             .delete_document_comment_attachment(
                 &params.workspace,
                 &params.slug,
@@ -5231,6 +5321,7 @@ impl AtlasMcp {
         let body = CreateCommentRequest::published(params.body);
 
         let comment = client
+            .acta()
             .add_document_comment(&params.workspace, &params.slug, body)
             .await
             .map_err(|e| enrich_client_error(e, "add_document_comment"))?;
@@ -5254,6 +5345,7 @@ impl AtlasMcp {
         let body = UpdateCommentRequest { body: params.body };
 
         let comment = client
+            .acta()
             .update_document_comment(&params.workspace, &params.slug, comment_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "update_document_comment"))?;
@@ -5275,6 +5367,7 @@ impl AtlasMcp {
             .map_err(|_| format!("comment_id '{}' is not a valid UUID", params.comment_id))?;
 
         client
+            .acta()
             .delete_document_comment(&params.workspace, &params.slug, comment_id)
             .await
             .map_err(|e| enrich_client_error(e, "delete_document_comment"))?;
@@ -5301,6 +5394,7 @@ impl AtlasMcp {
         let board_uuid = resolve_board_uuid(&client, &params.workspace, &params.board).await?;
 
         let cols = client
+            .acta()
             .list_columns(&params.workspace, board_uuid)
             .await
             .map_err(|e| enrich_client_error(e, "list_columns"))?;
@@ -5313,6 +5407,7 @@ impl AtlasMcp {
         };
 
         let promotion = client
+            .acta()
             .promote_checklist_item(&params.workspace, &params.readable_id, item_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "promote_checklist_item"))?;
@@ -5335,11 +5430,13 @@ impl AtlasMcp {
         let column_id = match params.column.as_deref() {
             Some(column) => {
                 let parent = client
+                    .acta()
                     .get_task(&params.workspace, &params.readable_id)
                     .await
                     .map_err(|e| enrich_client_error(e, "get_task"))?;
 
                 let cols = client
+                    .acta()
                     .list_columns(&params.workspace, parent.board_id)
                     .await
                     .map_err(|e| enrich_client_error(e, "list_columns"))?;
@@ -5369,6 +5466,7 @@ impl AtlasMcp {
         };
 
         let created = client
+            .acta()
             .create_subtask(&params.workspace, &params.readable_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "create_subtask"))?;
@@ -5402,6 +5500,7 @@ impl AtlasMcp {
         };
 
         let task = client
+            .acta()
             .set_task_parent(&params.workspace, &params.readable_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "set_task_parent"))?;
@@ -5418,6 +5517,7 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
 
         let task = client
+            .acta()
             .promote_subtask(&params.workspace, &params.readable_id)
             .await
             .map_err(|e| enrich_client_error(e, "promote_subtask"))?;
@@ -5446,6 +5546,7 @@ impl AtlasMcp {
         };
 
         let project = client
+            .acta()
             .create_project(&params.workspace, body)
             .await
             .map_err(|e| enrich_client_error(e, "create_project"))?;
@@ -5469,6 +5570,7 @@ impl AtlasMcp {
         };
 
         let project = client
+            .acta()
             .update_project(&params.workspace, &params.slug, body)
             .await
             .map_err(|e| enrich_client_error(e, "update_project"))?;
@@ -5486,6 +5588,7 @@ impl AtlasMcp {
         require_confirm(params.confirm, "project", &params.slug)?;
 
         client
+            .acta()
             .delete_project(&params.workspace, &params.slug)
             .await
             .map_err(|e| enrich_client_error(e, "delete_project"))?;
@@ -5506,6 +5609,7 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
 
         let templates = client
+            .acta()
             .list_status_templates(&params.workspace)
             .await
             .map_err(|e| enrich_client_error(e, "list_status_templates"))?;
@@ -5529,6 +5633,7 @@ impl AtlasMcp {
         };
 
         let template = client
+            .acta()
             .create_status_template(&params.workspace, body)
             .await
             .map_err(|e| enrich_client_error(e, "create_status_template"))?;
@@ -5559,6 +5664,7 @@ impl AtlasMcp {
         };
 
         let template = client
+            .acta()
             .update_status_template(&params.workspace, id, body)
             .await
             .map_err(|e| enrich_client_error(e, "update_status_template"))?;
@@ -5580,6 +5686,7 @@ impl AtlasMcp {
             .map_err(|_| format!("invalid UUID for id: '{}'", params.id))?;
 
         client
+            .acta()
             .delete_status_template(&params.workspace, id)
             .await
             .map_err(|e| enrich_client_error(e, "delete_status_template"))?;
@@ -5599,6 +5706,7 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
 
         let templates = client
+            .acta()
             .list_platform_status_templates()
             .await
             .map_err(|e| enrich_client_error(e, "list_platform_status_templates"))?;
@@ -5625,6 +5733,7 @@ impl AtlasMcp {
         };
 
         let template = client
+            .acta()
             .create_platform_status_template(body)
             .await
             .map_err(|e| enrich_client_error(e, "create_platform_status_template"))?;
@@ -5655,6 +5764,7 @@ impl AtlasMcp {
         };
 
         let template = client
+            .acta()
             .update_platform_status_template(id, body)
             .await
             .map_err(|e| enrich_client_error(e, "update_platform_status_template"))?;
@@ -5676,6 +5786,7 @@ impl AtlasMcp {
             .map_err(|_| format!("invalid UUID for id: '{}'", params.id))?;
 
         client
+            .acta()
             .delete_platform_status_template(id)
             .await
             .map_err(|e| enrich_client_error(e, "delete_platform_status_template"))?;
@@ -5705,6 +5816,7 @@ impl AtlasMcp {
         };
 
         let search = client
+            .acta()
             .create_saved_search(&params.workspace, body)
             .await
             .map_err(|e| enrich_client_error(e, "create_saved_search"))?;
@@ -5728,6 +5840,7 @@ impl AtlasMcp {
         let body = RenameSavedSearchRequest { name: params.name };
 
         let search = client
+            .acta()
             .rename_saved_search(&params.workspace, id, body)
             .await
             .map_err(|e| enrich_client_error(e, "rename_saved_search"))?;
@@ -5749,6 +5862,7 @@ impl AtlasMcp {
             .map_err(|_| format!("invalid UUID for id: '{}'", params.id))?;
 
         client
+            .acta()
             .delete_saved_search(&params.workspace, id)
             .await
             .map_err(|e| enrich_client_error(e, "delete_saved_search"))?;
@@ -5781,6 +5895,7 @@ impl AtlasMcp {
         };
 
         let view = client
+            .acta()
             .create_task_view(&params.workspace, body)
             .await
             .map_err(|e| enrich_client_error(e, "create_task_view"))?;
@@ -5810,6 +5925,7 @@ impl AtlasMcp {
         };
 
         let view = client
+            .acta()
             .update_task_view(&params.workspace, id, body)
             .await
             .map_err(|e| enrich_client_error(e, "update_task_view"))?;
@@ -5831,6 +5947,7 @@ impl AtlasMcp {
             .map_err(|_| format!("invalid UUID for id: '{}'", params.id))?;
 
         client
+            .acta()
             .delete_task_view(&params.workspace, id)
             .await
             .map_err(|e| enrich_client_error(e, "delete_task_view"))?;
@@ -5849,6 +5966,7 @@ impl AtlasMcp {
 
         let page = if params.cursor.is_some() {
             client
+                .custos()
                 .list_workspace_audit_with_cursor(
                     &params.workspace,
                     params.actor.as_deref(),
@@ -5861,6 +5979,7 @@ impl AtlasMcp {
                 .map_err(|e| enrich_client_error(e, "get_workspace_audit"))?
         } else {
             client
+                .custos()
                 .list_workspace_audit(
                     &params.workspace,
                     params.actor.as_deref(),
@@ -5887,6 +6006,7 @@ impl AtlasMcp {
 
         let page = if params.cursor.is_some() {
             client
+                .custos()
                 .list_platform_audit_with_cursor(
                     params.actor.as_deref(),
                     params.action.as_deref(),
@@ -5898,6 +6018,7 @@ impl AtlasMcp {
                 .map_err(|e| enrich_client_error(e, "get_platform_audit"))?
         } else {
             client
+                .custos()
                 .list_platform_audit(
                     params.actor.as_deref(),
                     params.action.as_deref(),
@@ -5932,6 +6053,7 @@ impl AtlasMcp {
         let client = self.resolve_client(&ctx)?;
 
         let page = client
+            .acta()
             .list_webhooks(&params.workspace, params.cursor.as_deref(), params.limit)
             .await
             .map_err(|e| enrich_client_error(e, "list_webhooks"))?;
@@ -5949,6 +6071,7 @@ impl AtlasMcp {
         let webhook_id = parse_webhook_id(&params.webhook_id)?;
 
         let webhook = client
+            .acta()
             .get_webhook(&params.workspace, webhook_id)
             .await
             .map_err(|e| enrich_client_error(e, "get_webhook"))?;
@@ -5966,6 +6089,7 @@ impl AtlasMcp {
         let webhook_id = parse_webhook_id(&params.webhook_id)?;
 
         let page = client
+            .acta()
             .list_webhook_deliveries(
                 &params.workspace,
                 webhook_id,
@@ -5997,6 +6121,7 @@ impl AtlasMcp {
         };
 
         let created = client
+            .acta()
             .create_webhook(&params.workspace, body)
             .await
             .map_err(|e| enrich_client_error(e, "create_webhook"))?;
@@ -6026,6 +6151,7 @@ impl AtlasMcp {
         };
 
         let webhook = client
+            .acta()
             .update_webhook(&params.workspace, webhook_id, body)
             .await
             .map_err(|e| enrich_client_error(e, "update_webhook"))?;
@@ -6044,6 +6170,7 @@ impl AtlasMcp {
         let webhook_id = parse_webhook_id(&params.webhook_id)?;
 
         client
+            .acta()
             .delete_webhook(&params.workspace, webhook_id)
             .await
             .map_err(|e| enrich_client_error(e, "delete_webhook"))?;
@@ -6118,6 +6245,7 @@ impl ServerHandler for AtlasMcp {
             .map_err(|e| McpError::invalid_params(e, None))?;
 
         let doc = client
+            .acta()
             .get_document(&workspace, &slug)
             .await
             .map_err(|e| read_resource_error(e, uri))?;
