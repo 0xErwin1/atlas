@@ -2,6 +2,7 @@
 
 mod cli;
 mod commands;
+mod component;
 mod config;
 mod ctx;
 mod error;
