@@ -31,7 +31,8 @@ fn fake(health: HealthStatus, readiness: ReadinessStatus) -> ComponentDiagnostic
     ));
     ComponentDiagnostics {
         health: fake.clone(),
-        readiness: fake,
+        readiness: fake.clone(),
+        doctor: Some(fake),
     }
 }
 
@@ -59,6 +60,7 @@ fn never_resolves() -> ComponentDiagnostics {
     ComponentDiagnostics {
         health: stalling.clone(),
         readiness: stalling,
+        doctor: None,
     }
 }
 

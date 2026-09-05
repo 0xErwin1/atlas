@@ -335,3 +335,50 @@ fn acta_workers_declaration_order_mirrors_todays_spawn_order() {
         );
     }
 }
+
+/// T2.23 (E11-S3b design D5, orchestrator resolution on T2.18): `custos`,
+/// `acta`, `platform` and the four Modules all declare `diagnostics.doctor
+/// == true` — every REG-5 entry declares a doctor in this slice.
+#[test]
+fn every_reg5_entry_declares_a_doctor() {
+    for backend in [StorageBackend::Filesystem, StorageBackend::S3] {
+        for entry in reg5_component_entries(backend) {
+            assert!(
+                entry.diagnostics.doctor,
+                "{:?}'s `{}` entry must declare diagnostics.doctor == true",
+                backend,
+                entry.identity.stable_id.as_str()
+            );
+        }
+    }
+}
+
+/// T2.25: `Registry::doctor_components()` is non-vacuous over real REG-5
+/// data, for both storage backends — every present component names itself.
+#[test]
+fn doctor_components_is_non_vacuous_over_real_reg5_data() {
+    for backend in [StorageBackend::Filesystem, StorageBackend::S3] {
+        let registry = build(reg5_component_entries(backend))
+            .expect("REG-5 entries must satisfy every registry::build() validator");
+
+        let mut doctors: Vec<String> = registry
+            .doctor_components()
+            .iter()
+            .map(|id| id.as_str().to_string())
+            .collect();
+        doctors.sort_unstable();
+
+        let entries = reg5_component_entries(backend);
+        let mut expected: Vec<String> = entries
+            .iter()
+            .map(|entry| entry.identity.stable_id.as_str().to_string())
+            .collect();
+        expected.sort_unstable();
+
+        assert!(
+            !doctors.is_empty(),
+            "must be non-vacuous over real REG-5 data"
+        );
+        assert_eq!(doctors, expected);
+    }
+}
