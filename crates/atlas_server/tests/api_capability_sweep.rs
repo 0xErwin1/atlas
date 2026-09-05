@@ -92,6 +92,7 @@ async fn seed_fixtures(
     user_id: UserId,
 ) -> Fixtures {
     let project = owner
+        .acta()
         .create_project(
             ws_slug,
             CreateProjectRequest {
@@ -106,6 +107,7 @@ async fn seed_fixtures(
         .expect("create project");
 
     let board = owner
+        .acta()
         .create_board(
             ws_slug,
             &project.slug,
@@ -118,6 +120,7 @@ async fn seed_fixtures(
         .expect("create board");
 
     let column = owner
+        .acta()
         .create_column(
             ws_slug,
             board.id,
@@ -132,6 +135,7 @@ async fn seed_fixtures(
         .expect("create column");
 
     let task = owner
+        .acta()
         .create_task(
             ws_slug,
             board.id,
@@ -149,6 +153,7 @@ async fn seed_fixtures(
         .expect("create task");
 
     let document = owner
+        .acta()
         .create_document(
             ws_slug,
             &project.slug,
@@ -162,6 +167,7 @@ async fn seed_fixtures(
         .expect("create document");
 
     let attachment = owner
+        .acta()
         .upload_attachment(
             ws_slug,
             &document.id.to_string(),
@@ -173,6 +179,7 @@ async fn seed_fixtures(
         .expect("upload document attachment");
 
     let task_comment = owner
+        .acta()
         .add_comment(
             ws_slug,
             &task.readable_id,
@@ -182,6 +189,7 @@ async fn seed_fixtures(
         .expect("create task comment");
 
     let task_comment_attachment = owner
+        .acta()
         .upload_task_comment_attachment(
             ws_slug,
             &task.readable_id,
@@ -194,6 +202,7 @@ async fn seed_fixtures(
         .expect("upload task comment attachment");
 
     let document_comment = owner
+        .acta()
         .add_document_comment(
             ws_slug,
             &document.id.to_string(),
@@ -203,6 +212,7 @@ async fn seed_fixtures(
         .expect("create document comment");
 
     let document_comment_attachment = owner
+        .acta()
         .upload_document_comment_attachment(
             ws_slug,
             &document.id.to_string(),
@@ -215,6 +225,7 @@ async fn seed_fixtures(
         .expect("upload document comment attachment");
 
     let folder = owner
+        .acta()
         .create_folder(
             ws_slug,
             &project.slug,
@@ -762,6 +773,7 @@ async fn invoke(
 
     match case {
         Case::CreateTask => client
+            .acta()
             .create_task(
                 ws,
                 fx.board_id,
@@ -778,20 +790,28 @@ async fn invoke(
             .await
             .map(|_| ()),
         Case::ListTasks => client
+            .acta()
             .list_tasks(ws, fx.board_id, None, None)
             .await
             .map(|_| ()),
         Case::ListWorkspaceTasks => client
+            .acta()
             .list_workspace_tasks(ws, &WorkspaceTaskQueryParams::default())
             .await
             .map(|_| ()),
-        Case::GetTask => client.get_task(ws, &fx.task_readable_id).await.map(|_| ()),
+        Case::GetTask => client
+            .acta()
+            .get_task(ws, &fx.task_readable_id)
+            .await
+            .map(|_| ()),
         Case::UpdateTask => client
+            .acta()
             .update_task(ws, &fx.task_readable_id, UpdateTaskRequest::default())
             .await
             .map(|_| ()),
-        Case::DeleteTask => client.delete_task(ws, &fx.task_readable_id).await,
+        Case::DeleteTask => client.acta().delete_task(ws, &fx.task_readable_id).await,
         Case::MoveTask => client
+            .acta()
             .move_task(
                 ws,
                 &fx.task_readable_id,
@@ -804,10 +824,12 @@ async fn invoke(
             .await
             .map(|_| ()),
         Case::ListAssignees => client
+            .acta()
             .list_assignees(ws, &fx.task_readable_id)
             .await
             .map(|_| ()),
         Case::AddAssignee => client
+            .acta()
             .add_assignee(
                 ws,
                 &fx.task_readable_id,
@@ -820,14 +842,17 @@ async fn invoke(
             .map(|_| ()),
         Case::RemoveAssignee => {
             client
+                .acta()
                 .remove_assignee(ws, &fx.task_readable_id, &format!("user:{nil}"))
                 .await
         }
         Case::ListReferences => client
+            .acta()
             .list_references(ws, &fx.task_readable_id)
             .await
             .map(|_| ()),
         Case::CreateReference => client
+            .acta()
             .create_reference(
                 ws,
                 &fx.task_readable_id,
@@ -855,8 +880,14 @@ async fn invoke(
             )
             .await
         }
-        Case::DeleteReference => client.delete_reference(ws, &fx.task_readable_id, nil).await,
+        Case::DeleteReference => {
+            client
+                .acta()
+                .delete_reference(ws, &fx.task_readable_id, nil)
+                .await
+        }
         Case::UploadTaskAttachment => client
+            .acta()
             .upload_task_attachment(
                 ws,
                 &fx.task_readable_id,
@@ -867,14 +898,17 @@ async fn invoke(
             .await
             .map(|_| ()),
         Case::ListTaskAttachments => client
+            .acta()
             .list_task_attachments(ws, &fx.task_readable_id)
             .await
             .map(|_| ()),
         Case::DownloadTaskAttachment => client
+            .acta()
             .download_task_attachment(ws, &fx.task_readable_id, nil)
             .await
             .map(|_| ()),
         Case::RenameTaskAttachment => client
+            .acta()
             .rename_task_attachment(
                 ws,
                 &fx.task_readable_id,
@@ -887,22 +921,27 @@ async fn invoke(
             .map(|_| ()),
         Case::DeleteTaskAttachment => {
             client
+                .acta()
                 .delete_task_attachment(ws, &fx.task_readable_id, nil)
                 .await
         }
         Case::ListTaskBacklinks => client
+            .acta()
             .list_task_backlinks(ws, &fx.task_readable_id)
             .await
             .map(|_| ()),
         Case::GetTaskGraph => client
+            .acta()
             .get_task_graph(ws, &fx.task_readable_id, None)
             .await
             .map(|_| ()),
         Case::ListChecklist => client
+            .acta()
             .list_checklist(ws, &fx.task_readable_id)
             .await
             .map(|_| ()),
         Case::CreateChecklistItem => client
+            .acta()
             .create_checklist_item(
                 ws,
                 &fx.task_readable_id,
@@ -915,6 +954,7 @@ async fn invoke(
             .await
             .map(|_| ()),
         Case::UpdateChecklistItem => client
+            .acta()
             .update_checklist_item(
                 ws,
                 &fx.task_readable_id,
@@ -925,10 +965,12 @@ async fn invoke(
             .map(|_| ()),
         Case::DeleteChecklistItem => {
             client
+                .acta()
                 .delete_checklist_item(ws, &fx.task_readable_id, nil)
                 .await
         }
         Case::PromoteChecklistItem => client
+            .acta()
             .promote_checklist_item(
                 ws,
                 &fx.task_readable_id,
@@ -941,18 +983,22 @@ async fn invoke(
             .await
             .map(|_| ()),
         Case::ListSubtasks => client
+            .acta()
             .list_subtasks(ws, &fx.task_readable_id)
             .await
             .map(|_| ()),
         Case::CreateSubtask => client
+            .acta()
             .create_subtask(ws, &fx.task_readable_id, CreateSubtaskRequest::titled("x"))
             .await
             .map(|_| ()),
         Case::PromoteSubtask => client
+            .acta()
             .promote_subtask(ws, &fx.task_readable_id)
             .await
             .map(|_| ()),
         Case::SetTaskParent => client
+            .acta()
             .set_task_parent(
                 ws,
                 &fx.task_readable_id,
@@ -963,14 +1009,17 @@ async fn invoke(
             .await
             .map(|_| ()),
         Case::ListActivity => client
+            .acta()
             .list_activity(ws, &fx.task_readable_id)
             .await
             .map(|_| ()),
         Case::ListTaskComments => client
+            .acta()
             .list_comments(ws, &fx.task_readable_id, None, None)
             .await
             .map(|_| ()),
         Case::AddTaskComment => client
+            .acta()
             .add_comment(
                 ws,
                 &fx.task_readable_id,
@@ -979,6 +1028,7 @@ async fn invoke(
             .await
             .map(|_| ()),
         Case::UpdateTaskComment => client
+            .acta()
             .update_comment(
                 ws,
                 &fx.task_readable_id,
@@ -987,7 +1037,12 @@ async fn invoke(
             )
             .await
             .map(|_| ()),
-        Case::DeleteTaskComment => client.delete_comment(ws, &fx.task_readable_id, nil).await,
+        Case::DeleteTaskComment => {
+            client
+                .acta()
+                .delete_comment(ws, &fx.task_readable_id, nil)
+                .await
+        }
         Case::CreateTaskCommentDraft => {
             raw_call(
                 http,
@@ -1037,6 +1092,7 @@ async fn invoke(
             .await
         }
         Case::UploadTaskCommentAttachment => client
+            .acta()
             .upload_task_comment_attachment(
                 ws,
                 &fx.task_readable_id,
@@ -1048,10 +1104,12 @@ async fn invoke(
             .await
             .map(|_| ()),
         Case::ListTaskCommentAttachments => client
+            .acta()
             .list_task_comment_attachments(ws, &fx.task_readable_id, fx.task_comment_id)
             .await
             .map(|_| ()),
         Case::DownloadTaskCommentAttachment => client
+            .acta()
             .download_task_comment_attachment(
                 ws,
                 &fx.task_readable_id,
@@ -1062,6 +1120,7 @@ async fn invoke(
             .map(|_| ()),
         Case::DeleteTaskCommentAttachment => {
             client
+                .acta()
                 .delete_task_comment_attachment(
                     ws,
                     &fx.task_readable_id,
@@ -1072,6 +1131,7 @@ async fn invoke(
         }
 
         Case::CreateDocument => client
+            .acta()
             .create_document(
                 ws,
                 &fx.project_slug,
@@ -1084,10 +1144,15 @@ async fn invoke(
             .await
             .map(|_| ()),
         Case::ListDocuments => client
+            .acta()
             .list_documents(ws, &fx.project_slug, None, None)
             .await
             .map(|_| ()),
-        Case::GetDocument => client.get_document(ws, &fx.document_ref).await.map(|_| ()),
+        Case::GetDocument => client
+            .acta()
+            .get_document(ws, &fx.document_ref)
+            .await
+            .map(|_| ()),
         Case::GetDocumentCompact => {
             raw_call(
                 http,
@@ -1134,6 +1199,7 @@ async fn invoke(
             .await
         }
         Case::UpdateDocument => client
+            .acta()
             .update_document(ws, &fx.document_ref, UpdateDocumentRequest::default())
             .await
             .map(|_| ()),
@@ -1153,8 +1219,9 @@ async fn invoke(
             )
             .await
         }
-        Case::DeleteDocument => client.delete_document(ws, &fx.document_ref).await,
+        Case::DeleteDocument => client.acta().delete_document(ws, &fx.document_ref).await,
         Case::UpdateContent => client
+            .acta()
             .update_content(
                 ws,
                 &fx.document_ref,
@@ -1166,51 +1233,68 @@ async fn invoke(
             .await
             .map(|_| ()),
         Case::ListDocumentHistory => client
+            .acta()
             .list_document_history(ws, &fx.document_ref, None, None)
             .await
             .map(|_| ()),
         Case::GetRevisionContent => client
+            .acta()
             .get_revision_content(ws, &fx.document_ref, 1)
             .await
             .map(|_| ()),
         Case::ListDocBacklinks => client
+            .acta()
             .list_backlinks(ws, &fx.document_ref, None, None)
             .await
             .map(|_| ()),
         Case::GetFrontmatter => client
+            .acta()
             .get_frontmatter(ws, &fx.document_ref)
             .await
             .map(|_| ()),
         Case::UploadDocAttachment => client
+            .acta()
             .upload_attachment(ws, &fx.document_ref, "f.txt", "text/plain", vec![1, 2, 3])
             .await
             .map(|_| ()),
         Case::ListDocAttachments => client
+            .acta()
             .list_attachments(ws, &fx.document_ref, None, None)
             .await
             .map(|_| ()),
         Case::DownloadDocAttachment => client
+            .acta()
             .download_attachment(ws, fx.doc_attachment_id)
             .await
             .map(|_| ()),
-        Case::DeleteDocAttachment => client.delete_attachment(ws, fx.doc_attachment_id).await,
+        Case::DeleteDocAttachment => {
+            client
+                .acta()
+                .delete_attachment(ws, fx.doc_attachment_id)
+                .await
+        }
         Case::MoveDocument => client
+            .acta()
             .move_document(ws, &fx.document_ref, MoveDocumentRequest::default())
             .await
             .map(|_| ()),
         Case::CopyDocument => client
+            .acta()
             .copy_document(ws, &fx.document_ref, None)
             .await
             .map(|_| ()),
         Case::ListDocComments => client
+            .acta()
             .list_document_comments(ws, &fx.document_ref, None, None)
             .await
             .map(|_| ()),
         Case::AddDocComment => client
+            .acta()
             .add_document_comment(ws, &fx.document_ref, CreateCommentRequest::published("x"))
             .await
             .map(|_| ()),
         Case::UpdateDocComment => client
+            .acta()
             .update_document_comment(
                 ws,
                 &fx.document_ref,
@@ -1221,6 +1305,7 @@ async fn invoke(
             .map(|_| ()),
         Case::DeleteDocComment => {
             client
+                .acta()
                 .delete_document_comment(ws, &fx.document_ref, nil)
                 .await
         }
@@ -1257,6 +1342,7 @@ async fn invoke(
             .await
         }
         Case::UploadDocumentCommentAttachment => client
+            .acta()
             .upload_document_comment_attachment(
                 ws,
                 &fx.document_ref,
@@ -1284,10 +1370,12 @@ async fn invoke(
             .await
         }
         Case::ListDocumentCommentAttachments => client
+            .acta()
             .list_document_comment_attachments(ws, &fx.document_ref, fx.document_comment_id)
             .await
             .map(|_| ()),
         Case::DownloadDocumentCommentAttachment => client
+            .acta()
             .download_document_comment_attachment(
                 ws,
                 &fx.document_ref,
@@ -1298,6 +1386,7 @@ async fn invoke(
             .map(|_| ()),
         Case::DeleteDocumentCommentAttachment => {
             client
+                .acta()
                 .delete_document_comment_attachment(
                     ws,
                     &fx.document_ref,
@@ -1347,6 +1436,7 @@ async fn invoke(
         }
 
         Case::CreateBoard => client
+            .acta()
             .create_board(
                 ws,
                 &fx.project_slug,
@@ -1358,28 +1448,40 @@ async fn invoke(
             .await
             .map(|_| ()),
         Case::ListBoards => client
+            .acta()
             .list_boards(ws, &fx.project_slug, None, None)
             .await
             .map(|_| ()),
-        Case::GetBoard => client.get_board(ws, fx.board_id).await.map(|_| ()),
+        Case::GetBoard => client.acta().get_board(ws, fx.board_id).await.map(|_| ()),
         Case::UpdateBoard => client
+            .acta()
             .update_board(ws, fx.board_id, UpdateBoardRequest::default())
             .await
             .map(|_| ()),
         Case::MoveBoard => client
+            .acta()
             .move_board(ws, fx.board_id, MoveBoardRequest::default())
             .await
             .map(|_| ()),
         // Unarchive runs first so the board is left writable for every later
         // case in the sweep, whatever order they run in.
-        Case::UnarchiveBoard => client.unarchive_board(ws, fx.board_id).await.map(|_| ()),
+        Case::UnarchiveBoard => client
+            .acta()
+            .unarchive_board(ws, fx.board_id)
+            .await
+            .map(|_| ()),
         Case::ArchiveBoard => {
-            let archived = client.archive_board(ws, fx.board_id).await.map(|_| ());
-            let _ = client.unarchive_board(ws, fx.board_id).await;
+            let archived = client
+                .acta()
+                .archive_board(ws, fx.board_id)
+                .await
+                .map(|_| ());
+            let _ = client.acta().unarchive_board(ws, fx.board_id).await;
             archived
         }
-        Case::DeleteBoard => client.delete_board(ws, fx.board_id).await,
+        Case::DeleteBoard => client.acta().delete_board(ws, fx.board_id).await,
         Case::CreateColumn => client
+            .acta()
             .create_column(
                 ws,
                 fx.board_id,
@@ -1392,13 +1494,19 @@ async fn invoke(
             )
             .await
             .map(|_| ()),
-        Case::ListColumns => client.list_columns(ws, fx.board_id).await.map(|_| ()),
+        Case::ListColumns => client
+            .acta()
+            .list_columns(ws, fx.board_id)
+            .await
+            .map(|_| ()),
         Case::UpdateColumn => client
+            .acta()
             .update_column(ws, fx.board_id, nil, UpdateColumnRequest::default())
             .await
             .map(|_| ()),
-        Case::DeleteColumn => client.delete_column(ws, fx.board_id, nil).await,
+        Case::DeleteColumn => client.acta().delete_column(ws, fx.board_id, nil).await,
         Case::ApplyStatusTemplates => client
+            .acta()
             .apply_status_templates(ws, fx.board_id)
             .await
             .map(|_| ()),
@@ -1428,8 +1536,9 @@ async fn invoke(
             )
             .await
         }
-        Case::ListStatusTemplates => client.list_status_templates(ws).await.map(|_| ()),
+        Case::ListStatusTemplates => client.acta().list_status_templates(ws).await.map(|_| ()),
         Case::CreateStatusTemplate => client
+            .acta()
             .create_status_template(
                 ws,
                 CreateStatusTemplateRequest {
@@ -1442,12 +1551,14 @@ async fn invoke(
             .await
             .map(|_| ()),
         Case::UpdateStatusTemplate => client
+            .acta()
             .update_status_template(ws, nil, UpdateStatusTemplateRequest::default())
             .await
             .map(|_| ()),
-        Case::DeleteStatusTemplate => client.delete_status_template(ws, nil).await,
+        Case::DeleteStatusTemplate => client.acta().delete_status_template(ws, nil).await,
 
         Case::CreateFolder => client
+            .acta()
             .create_folder(
                 ws,
                 &fx.project_slug,
@@ -1459,15 +1570,18 @@ async fn invoke(
             .await
             .map(|_| ()),
         Case::ListFolders => client
+            .acta()
             .list_folders(ws, &fx.project_slug, None, None)
             .await
             .map(|_| ()),
-        Case::GetFolder => client.get_folder(ws, fx.folder_id).await.map(|_| ()),
+        Case::GetFolder => client.acta().get_folder(ws, fx.folder_id).await.map(|_| ()),
         Case::RenameFolder => client
+            .acta()
             .rename_folder(ws, fx.folder_id, RenameFolderRequest { name: "y".into() })
             .await
             .map(|_| ()),
         Case::MoveFolder => client
+            .acta()
             .move_folder(
                 ws,
                 fx.folder_id,
@@ -1477,10 +1591,15 @@ async fn invoke(
             )
             .await
             .map(|_| ()),
-        Case::CopyFolder => client.copy_folder(ws, fx.folder_id, None).await.map(|_| ()),
-        Case::DeleteFolder => client.delete_folder(ws, fx.folder_id).await,
+        Case::CopyFolder => client
+            .acta()
+            .copy_folder(ws, fx.folder_id, None)
+            .await
+            .map(|_| ()),
+        Case::DeleteFolder => client.acta().delete_folder(ws, fx.folder_id).await,
 
         Case::CreateProject => client
+            .acta()
             .create_project(
                 ws,
                 CreateProjectRequest {
@@ -1493,13 +1612,22 @@ async fn invoke(
             )
             .await
             .map(|_| ()),
-        Case::ListProjects => client.list_projects(ws, None, None).await.map(|_| ()),
-        Case::GetProject => client.get_project(ws, &fx.project_slug).await.map(|_| ()),
+        Case::ListProjects => client
+            .acta()
+            .list_projects(ws, None, None)
+            .await
+            .map(|_| ()),
+        Case::GetProject => client
+            .acta()
+            .get_project(ws, &fx.project_slug)
+            .await
+            .map(|_| ()),
         Case::UpdateProject => client
+            .acta()
             .update_project(ws, &fx.project_slug, UpdateProjectRequest::default())
             .await
             .map(|_| ()),
-        Case::DeleteProject => client.delete_project(ws, &fx.project_slug).await,
+        Case::DeleteProject => client.acta().delete_project(ws, &fx.project_slug).await,
 
         // Webhooks have no generated `atlas_client` methods (added in a later
         // batch), so they go through `raw_call`. The capability gate runs inside
@@ -1704,6 +1832,7 @@ async fn invoke(
         // the sweep uses the generated `atlas_client` method with a valid body;
         // the workspace slug is the primary resource, so no secondary id is needed.
         Case::RenameWorkspace => client
+            .acta()
             .update_workspace(
                 ws,
                 UpdateWorkspaceRequest {
@@ -1745,8 +1874,9 @@ async fn invoke(
         // JSON body is parsed. These go through the generated `atlas_client`
         // methods with dummy-valid bodies so the body deserializes and the gate
         // is what denies a wrong/zero-scope caller; ids are throwaway nils.
-        Case::ListSavedSearches => client.list_saved_searches(ws).await.map(|_| ()),
+        Case::ListSavedSearches => client.acta().list_saved_searches(ws).await.map(|_| ()),
         Case::CreateSavedSearch => client
+            .acta()
             .create_saved_search(
                 ws,
                 CreateSavedSearchRequest {
@@ -1757,6 +1887,7 @@ async fn invoke(
             .await
             .map(|_| ()),
         Case::RenameSavedSearch => client
+            .acta()
             .rename_saved_search(
                 ws,
                 nil,
@@ -1766,14 +1897,15 @@ async fn invoke(
             )
             .await
             .map(|_| ()),
-        Case::DeleteSavedSearch => client.delete_saved_search(ws, nil).await,
+        Case::DeleteSavedSearch => client.acta().delete_saved_search(ws, nil).await,
 
         // Task views mirror saved searches: WorkspaceMember is kept and the scope
         // is enforced manually inside each handler, so the sweep uses the
         // generated `atlas_client` methods with dummy-valid bodies (an empty
         // filter set is a valid "all tasks" view); ids are throwaway nils.
-        Case::ListTaskViews => client.list_task_views(ws).await.map(|_| ()),
+        Case::ListTaskViews => client.acta().list_task_views(ws).await.map(|_| ()),
         Case::CreateTaskView => client
+            .acta()
             .create_task_view(
                 ws,
                 CreateTaskViewRequest {
@@ -1783,8 +1915,9 @@ async fn invoke(
             )
             .await
             .map(|_| ()),
-        Case::GetTaskView => client.get_task_view(ws, nil).await.map(|_| ()),
+        Case::GetTaskView => client.acta().get_task_view(ws, nil).await.map(|_| ()),
         Case::UpdateTaskView => client
+            .acta()
             .update_task_view(
                 ws,
                 nil,
@@ -1795,7 +1928,7 @@ async fn invoke(
             )
             .await
             .map(|_| ()),
-        Case::DeleteTaskView => client.delete_task_view(ws, nil).await,
+        Case::DeleteTaskView => client.acta().delete_task_view(ws, nil).await,
     }
 }
 

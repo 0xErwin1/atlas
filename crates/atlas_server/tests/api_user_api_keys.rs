@@ -42,6 +42,7 @@ async fn create_user_api_key_returns_secret_and_type() {
     let (user, _) = login_user(&server, &db, "cuk-user1").await;
 
     let created = user
+        .custos()
         .create_user_api_key(user_key_req("my-agent-key"))
         .await
         .expect("create user api key");
@@ -73,6 +74,7 @@ async fn create_user_api_key_respects_explicit_type() {
     };
 
     let created = user
+        .custos()
         .create_user_api_key(req)
         .await
         .expect("create cli api key");
@@ -97,7 +99,7 @@ async fn create_user_api_key_rejects_invalid_type() {
         scopes: None,
     };
 
-    let err = user.create_user_api_key(req).await;
+    let err = user.custos().create_user_api_key(req).await;
 
     assert!(err.is_err(), "invalid type must be rejected");
 
@@ -112,13 +114,17 @@ async fn api_key_principal_cannot_create_user_api_key() {
     let (owner, _ws, _) = login_user_with_workspace(&server, &db, "cuk-user4").await;
 
     let ws_key = owner
+        .custos()
         .create_user_api_key(key_req("agent-key"))
         .await
         .expect("create agent key");
 
     let agent = atlas_client::AtlasClient::new(server.base_url()).with_token(ws_key.secret);
 
-    let err = agent.create_user_api_key(user_key_req("forbidden")).await;
+    let err = agent
+        .custos()
+        .create_user_api_key(user_key_req("forbidden"))
+        .await;
 
     assert!(err.is_err(), "api key principal must get 403");
 
@@ -144,6 +150,7 @@ async fn create_user_api_key_with_initial_grant() {
     };
 
     let created = owner
+        .custos()
         .create_user_api_key(req)
         .await
         .expect("create key with initial grant");
@@ -151,6 +158,7 @@ async fn create_user_api_key_with_initial_grant() {
     assert_eq!(created.name, "granted-key");
 
     let members = owner
+        .acta()
         .list_workspace_members(&ws.slug)
         .await
         .expect("list members");
@@ -185,7 +193,7 @@ async fn initial_grant_rejects_admin_role() {
         scopes: None,
     };
 
-    let err = owner.create_user_api_key(req).await;
+    let err = owner.custos().create_user_api_key(req).await;
 
     assert!(
         err.is_err(),
@@ -208,15 +216,18 @@ async fn list_user_api_keys_returns_own_keys_only() {
     let (bob, _) = login_user(&server, &db, "list-bob").await;
 
     alice
+        .custos()
         .create_user_api_key(user_key_req("alice-key"))
         .await
         .expect("alice creates key");
 
-    bob.create_user_api_key(user_key_req("bob-key"))
+    bob.custos()
+        .create_user_api_key(user_key_req("bob-key"))
         .await
         .expect("bob creates key");
 
     let alice_page = alice
+        .custos()
         .list_user_api_keys(None, None)
         .await
         .expect("alice lists her keys");
@@ -237,17 +248,19 @@ async fn list_user_api_keys_includes_type_field() {
 
     let (user, _) = login_user(&server, &db, "list-type").await;
 
-    user.create_user_api_key(CreateUserApiKeyRequest {
-        name: "typed-key".to_string(),
-        r#type: Some("bot".to_string()),
-        expires_at: None,
-        initial_grant: None,
-        scopes: None,
-    })
-    .await
-    .expect("create typed key");
+    user.custos()
+        .create_user_api_key(CreateUserApiKeyRequest {
+            name: "typed-key".to_string(),
+            r#type: Some("bot".to_string()),
+            expires_at: None,
+            initial_grant: None,
+            scopes: None,
+        })
+        .await
+        .expect("create typed key");
 
     let page = user
+        .custos()
         .list_user_api_keys(None, None)
         .await
         .expect("list keys");
@@ -266,13 +279,14 @@ async fn api_key_principal_cannot_list_user_api_keys() {
     let (owner, _ws, _) = login_user_with_workspace(&server, &db, "list-agent").await;
 
     let ws_key = owner
+        .custos()
         .create_user_api_key(key_req("list-agent-key"))
         .await
         .expect("create agent key");
 
     let agent = atlas_client::AtlasClient::new(server.base_url()).with_token(ws_key.secret);
 
-    let err = agent.list_user_api_keys(None, None).await;
+    let err = agent.custos().list_user_api_keys(None, None).await;
 
     assert!(err.is_err(), "api key principal must get 403");
 
@@ -291,11 +305,13 @@ async fn revoke_user_api_key_removes_from_list() {
     let (user, _) = login_user(&server, &db, "revoke-user1").await;
 
     let created = user
+        .custos()
         .create_user_api_key(user_key_req("to-revoke"))
         .await
         .expect("create key");
 
     let page_before = user
+        .custos()
         .list_user_api_keys(None, None)
         .await
         .expect("list before revoke");
@@ -305,11 +321,13 @@ async fn revoke_user_api_key_removes_from_list() {
         "key must appear before revoke"
     );
 
-    user.revoke_user_api_key(created.id)
+    user.custos()
+        .revoke_user_api_key(created.id)
         .await
         .expect("revoke key");
 
     let page_after = user
+        .custos()
         .list_user_api_keys(None, None)
         .await
         .expect("list after revoke");
@@ -331,15 +349,17 @@ async fn revoke_user_api_key_rejects_other_users_key() {
     let (bob, _) = login_user(&server, &db, "revoke-bob").await;
 
     let alice_key = alice
+        .custos()
         .create_user_api_key(user_key_req("alice-secret"))
         .await
         .expect("alice creates key");
 
-    let err = bob.revoke_user_api_key(alice_key.id).await;
+    let err = bob.custos().revoke_user_api_key(alice_key.id).await;
 
     assert!(err.is_err(), "bob must not be able to revoke alice's key");
 
     let page = alice
+        .custos()
         .list_user_api_keys(None, None)
         .await
         .expect("list alice's keys");
@@ -359,7 +379,10 @@ async fn revoke_user_api_key_nonexistent_returns_error() {
 
     let (user, _) = login_user(&server, &db, "revoke-notfound").await;
 
-    let err = user.revoke_user_api_key(uuid::Uuid::now_v7()).await;
+    let err = user
+        .custos()
+        .revoke_user_api_key(uuid::Uuid::now_v7())
+        .await;
 
     assert!(err.is_err(), "revoking a nonexistent key must return error");
 
@@ -378,11 +401,13 @@ async fn list_api_key_grants_returns_workspace_and_project_grants() {
     let (owner, ws, _) = login_user_with_workspace(&server, &db, "grants-list-owner").await;
 
     let created = owner
+        .custos()
         .create_user_api_key(user_key_req("grants-agent"))
         .await
         .expect("create key");
 
     owner
+        .custos()
         .create_workspace_grant(
             &ws.slug,
             atlas_api::dtos::CreateGrantRequest {
@@ -397,6 +422,7 @@ async fn list_api_key_grants_returns_workspace_and_project_grants() {
         .expect("grant key to workspace");
 
     owner
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -411,6 +437,7 @@ async fn list_api_key_grants_returns_workspace_and_project_grants() {
         .expect("create project");
 
     owner
+        .custos()
         .create_project_grant(
             &ws.slug,
             "key-grants-proj",
@@ -426,6 +453,7 @@ async fn list_api_key_grants_returns_workspace_and_project_grants() {
         .expect("grant key to project");
 
     let grants = owner
+        .custos()
         .list_api_key_grants(created.id)
         .await
         .expect("list api key grants");
@@ -460,11 +488,13 @@ async fn list_api_key_grants_includes_granted_by_user() {
         login_user_with_workspace(&server, &db, "grants-grantedby-owner").await;
 
     let created = owner
+        .custos()
         .create_user_api_key(user_key_req("grants-grantedby-agent"))
         .await
         .expect("create key");
 
     owner
+        .custos()
         .create_workspace_grant(
             &ws.slug,
             atlas_api::dtos::CreateGrantRequest {
@@ -479,6 +509,7 @@ async fn list_api_key_grants_includes_granted_by_user() {
         .expect("grant key to workspace");
 
     let grants = owner
+        .custos()
         .list_api_key_grants(created.id)
         .await
         .expect("list api key grants");
@@ -515,11 +546,13 @@ async fn list_api_key_grants_non_owner_returns_403() {
     let (other, _) = login_user(&server, &db, "grants-nonowner-other").await;
 
     let created = owner
+        .custos()
         .create_user_api_key(user_key_req("grants-agent-nonowner"))
         .await
         .expect("create key");
 
     owner
+        .custos()
         .create_workspace_grant(
             &ws.slug,
             atlas_api::dtos::CreateGrantRequest {
@@ -534,6 +567,7 @@ async fn list_api_key_grants_non_owner_returns_403() {
         .expect("grant key");
 
     let err = other
+        .custos()
         .list_api_key_grants(created.id)
         .await
         .expect_err("non-owner must be rejected");
@@ -562,11 +596,13 @@ async fn delete_api_key_grant_removes_grant() {
     let (owner, ws, _) = login_user_with_workspace(&server, &db, "grant-del-owner").await;
 
     let created = owner
+        .custos()
         .create_user_api_key(user_key_req("grant-del-agent"))
         .await
         .expect("create key");
 
     owner
+        .custos()
         .create_workspace_grant(
             &ws.slug,
             atlas_api::dtos::CreateGrantRequest {
@@ -581,6 +617,7 @@ async fn delete_api_key_grant_removes_grant() {
         .expect("grant key");
 
     let grants_before = owner
+        .custos()
         .list_api_key_grants(created.id)
         .await
         .expect("list before delete");
@@ -589,11 +626,13 @@ async fn delete_api_key_grant_removes_grant() {
     let grant_id = grants_before[0].id;
 
     owner
+        .custos()
         .delete_api_key_grant(created.id, grant_id)
         .await
         .expect("delete grant");
 
     let grants_after = owner
+        .custos()
         .list_api_key_grants(created.id)
         .await
         .expect("list after delete");
@@ -611,11 +650,13 @@ async fn delete_api_key_grant_non_owner_returns_403() {
     let (other, _) = login_user(&server, &db, "grant-del-nonown-other").await;
 
     let created = owner
+        .custos()
         .create_user_api_key(user_key_req("grant-del-nonown-agent"))
         .await
         .expect("create key");
 
     owner
+        .custos()
         .create_workspace_grant(
             &ws.slug,
             atlas_api::dtos::CreateGrantRequest {
@@ -630,12 +671,14 @@ async fn delete_api_key_grant_non_owner_returns_403() {
         .expect("grant key");
 
     let grants = owner
+        .custos()
         .list_api_key_grants(created.id)
         .await
         .expect("list grants");
     let grant_id = grants[0].id;
 
     let err = other
+        .custos()
         .delete_api_key_grant(created.id, grant_id)
         .await
         .expect_err("non-owner must be rejected");
@@ -675,11 +718,13 @@ async fn api_key_member_dto_includes_key_type() {
     };
 
     let key_created = owner
+        .custos()
         .create_user_api_key(req)
         .await
         .expect("create key with grant");
 
     let members = owner
+        .acta()
         .list_workspace_members(&ws.slug)
         .await
         .expect("list members");
@@ -729,6 +774,7 @@ async fn create_user_api_key_default_scopes_grant_read_but_not_write() {
     };
 
     let created = owner
+        .custos()
         .create_user_api_key(req)
         .await
         .expect("create default-scope key");
@@ -740,6 +786,7 @@ async fn create_user_api_key_default_scopes_grant_read_but_not_write() {
     );
 
     let page = owner
+        .custos()
         .list_user_api_keys(None, None)
         .await
         .expect("list keys");
@@ -757,11 +804,13 @@ async fn create_user_api_key_default_scopes_grant_read_but_not_write() {
     let agent = atlas_client::AtlasClient::new(server.base_url()).with_token(created.secret);
 
     agent
+        .acta()
         .list_projects(&ws.slug, None, None)
         .await
         .expect("read-only default must allow reading projects");
 
     let create_err = agent
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -812,6 +861,7 @@ async fn create_user_api_key_explicit_scopes_round_trip() {
     };
 
     let created = owner
+        .custos()
         .create_user_api_key(req)
         .await
         .expect("create explicit-scope key");
@@ -866,11 +916,13 @@ async fn update_user_api_key_replaces_full_scope_set() {
     let (owner, _) = login_user(&server, &db, "cuk-update-scopes").await;
 
     let created = owner
+        .custos()
         .create_user_api_key(user_key_req("update-scope-key"))
         .await
         .expect("create key");
 
     let updated = owner
+        .custos()
         .set_api_key_scopes(
             created.id,
             vec![ApiKeyScope::DocsCreate, ApiKeyScope::DocsRead],
@@ -895,11 +947,13 @@ async fn update_user_api_key_empty_scopes_returns_400() {
     let (owner, _) = login_user(&server, &db, "cuk-empty-scopes").await;
 
     let created = owner
+        .custos()
         .create_user_api_key(user_key_req("empty-scope-key"))
         .await
         .expect("create key");
 
     let err = owner
+        .custos()
         .set_api_key_scopes(created.id, vec![])
         .await
         .expect_err("empty scopes must be rejected");
@@ -923,6 +977,7 @@ async fn update_user_api_key_omitting_scopes_leaves_them_unchanged() {
     let (owner, _) = login_user(&server, &db, "cuk-omit-scopes").await;
 
     let created = owner
+        .custos()
         .create_user_api_key(user_key_req("omit-scope-key"))
         .await
         .expect("create key");
@@ -930,6 +985,7 @@ async fn update_user_api_key_omitting_scopes_leaves_them_unchanged() {
     let scopes_before = created.scopes.clone();
 
     let after_toggle = owner
+        .custos()
         .set_api_key_global(created.id, true)
         .await
         .expect("toggle is_global without touching scopes");
