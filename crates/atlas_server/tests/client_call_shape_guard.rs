@@ -533,9 +533,9 @@ const ATLAS_SERVER_TEST_PINS: &[(&str, usize)] = &[
     ("api_audit_writes.rs", 44),
     ("api_auth.rs", 8),
     ("api_boards_tasks.rs", 0),
-    ("api_capability_sweep.rs", 113),
+    ("api_capability_sweep.rs", 0),
     ("api_comment_attachments.rs", 0),
-    ("api_comments.rs", 125),
+    ("api_comments.rs", 0),
     ("api_copy.rs", 13),
     ("api_create_workspace.rs", 7),
     ("api_doctor.rs", 7),
@@ -546,7 +546,7 @@ const ATLAS_SERVER_TEST_PINS: &[(&str, usize)] = &[
     ("api_folders.rs", 0),
     ("api_global_admin_bypass.rs", 9),
     ("api_grants.rs", 40),
-    ("api_group_grants.rs", 63),
+    ("api_group_grants.rs", 0),
     ("api_groups.rs", 28),
     ("api_key_grant_access.rs", 36),
     ("api_members.rs", 44),
@@ -569,7 +569,7 @@ const ATLAS_SERVER_TEST_PINS: &[(&str, usize)] = &[
     ("api_tenancy.rs", 9),
     ("api_trash.rs", 2),
     ("api_ui_state.rs", 11),
-    ("api_user_api_keys.rs", 56),
+    ("api_user_api_keys.rs", 0),
     ("api_users.rs", 19),
     ("api_workspace_activity.rs", 46),
     ("api_workspace_attachments.rs", 43),
@@ -717,8 +717,15 @@ fn reverse_check_mismatches(
 /// [`api_documents_namespaced_sites_match_their_declared_home`],
 /// [`api_comment_attachments_namespaced_sites_match_their_declared_home`],
 /// and [`api_folders_namespaced_sites_match_their_declared_home`].
+/// `api_capability_sweep.rs`, `api_comments.rs`, `api_group_grants.rs`, and
+/// `api_user_api_keys.rs` are excluded here too: PR10 namespaces all of
+/// their sites directly, with no shim. Their own reverse checks live in
+/// [`api_capability_sweep_namespaced_sites_match_their_declared_home`],
+/// [`api_comments_namespaced_sites_match_their_declared_home`],
+/// [`api_group_grants_namespaced_sites_match_their_declared_home`], and
+/// [`api_user_api_keys_namespaced_sites_match_their_declared_home`].
 #[test]
-fn no_namespaced_call_site_exists_anywhere_yet_outside_atlas_client_helpers_and_atlas_cli_and_atlas_mcp_and_api_boards_tasks_and_pr9_files()
+fn no_namespaced_call_site_exists_anywhere_yet_outside_atlas_client_helpers_and_atlas_cli_and_atlas_mcp_and_pr8_pr9_and_pr10_files()
  {
     let derived = derive_method_namespace_map();
     let mut all_sites = Vec::new();
@@ -727,6 +734,10 @@ fn no_namespaced_call_site_exists_anywhere_yet_outside_atlas_client_helpers_and_
         "api_documents.rs",
         "api_comment_attachments.rs",
         "api_folders.rs",
+        "api_capability_sweep.rs",
+        "api_comments.rs",
+        "api_group_grants.rs",
+        "api_user_api_keys.rs",
     ];
 
     for path in atlas_server_test_files() {
@@ -740,7 +751,8 @@ fn no_namespaced_call_site_exists_anywhere_yet_outside_atlas_client_helpers_and_
         all_sites.len(),
         0,
         "found a namespaced call site outside atlas_client::helpers.rs / atlas_cli / atlas_mcp / \
-         api_boards_tasks.rs / api_documents.rs / api_comment_attachments.rs / api_folders.rs \
+         api_boards_tasks.rs / api_documents.rs / api_comment_attachments.rs / api_folders.rs / \
+         api_capability_sweep.rs / api_comments.rs / api_group_grants.rs / api_user_api_keys.rs \
          before its consumer PR migrated: {all_sites:?}"
     );
 
@@ -873,6 +885,78 @@ fn api_folders_namespaced_sites_match_their_declared_home() {
         sites.len(),
         107,
         "expected 107 namespaced sites in crates/atlas_server/tests/api_folders.rs (PR9), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_capability_sweep_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_capability_sweep.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        113,
+        "expected 113 namespaced sites in crates/atlas_server/tests/api_capability_sweep.rs \
+         (PR10), found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_comments_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_comments.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        125,
+        "expected 125 namespaced sites in crates/atlas_server/tests/api_comments.rs (PR10), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_group_grants_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_group_grants.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        63,
+        "expected 63 namespaced sites in crates/atlas_server/tests/api_group_grants.rs (PR10), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_user_api_keys_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_user_api_keys.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        56,
+        "expected 56 namespaced sites in crates/atlas_server/tests/api_user_api_keys.rs (PR10), \
          found: {sites:?}"
     );
 

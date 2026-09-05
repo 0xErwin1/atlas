@@ -97,11 +97,13 @@ async fn seed_task(
     prefix: &str,
 ) -> String {
     client
+        .acta()
         .create_project(ws_slug, project_req(slug, prefix))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             ws_slug,
             slug,
@@ -114,6 +116,7 @@ async fn seed_task(
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             ws_slug,
             board.id,
@@ -128,6 +131,7 @@ async fn seed_task(
         .expect("create column");
 
     let task = client
+        .acta()
         .create_task(
             ws_slug,
             board.id,
@@ -161,6 +165,7 @@ async fn create_list_delete_comment_roundtrip() {
     let readable_id = seed_task(&client, &ws.slug, "comment-proj", "CM").await;
 
     let created = client
+        .acta()
         .add_comment(
             &ws.slug,
             &readable_id,
@@ -180,6 +185,7 @@ async fn create_list_delete_comment_roundtrip() {
     );
 
     let page = client
+        .acta()
         .list_comments(&ws.slug, &readable_id, None, None)
         .await
         .expect("list comments");
@@ -189,11 +195,13 @@ async fn create_list_delete_comment_roundtrip() {
     assert!(!page.has_more);
 
     client
+        .acta()
         .delete_comment(&ws.slug, &readable_id, created.id)
         .await
         .expect("delete comment");
 
     let after_delete = client
+        .acta()
         .list_comments(&ws.slug, &readable_id, None, None)
         .await
         .expect("list comments after delete");
@@ -215,14 +223,17 @@ async fn task_backlinks_expose_only_authorized_comment_parent_navigation() {
     let source_readable_id = seed_task(&client, &ws.slug, "comment-backlink-source", "CBS").await;
     let target_readable_id = seed_task(&client, &ws.slug, "comment-backlink-target", "CBT").await;
     let source_task = client
+        .acta()
         .get_task(&ws.slug, &source_readable_id)
         .await
         .expect("get source task");
     let target_task = client
+        .acta()
         .get_task(&ws.slug, &target_readable_id)
         .await
         .expect("get target task");
     let comment = client
+        .acta()
         .add_comment(
             &ws.slug,
             &source_readable_id,
@@ -243,6 +254,7 @@ async fn task_backlinks_expose_only_authorized_comment_parent_navigation() {
         .expect("insert derived comment link");
 
     let backlinks = client
+        .acta()
         .list_task_backlinks(&ws.slug, &target_readable_id)
         .await
         .expect("list target backlinks");
@@ -274,10 +286,12 @@ async fn task_backlinks_omit_comment_sources_with_deleted_parents() {
     let target_readable_id =
         seed_task(&client, &ws.slug, "comment-backlink-deleted-target", "CBT").await;
     let target_task = client
+        .acta()
         .get_task(&ws.slug, &target_readable_id)
         .await
         .expect("get target task");
     let comment = client
+        .acta()
         .add_comment(
             &ws.slug,
             &source_readable_id,
@@ -298,6 +312,7 @@ async fn task_backlinks_omit_comment_sources_with_deleted_parents() {
         .expect("link comment then delete source parent");
 
     let backlinks = client
+        .acta()
         .list_task_backlinks(&ws.slug, &target_readable_id)
         .await
         .expect("list target backlinks after source parent deletion");
@@ -320,10 +335,12 @@ async fn document_backlinks_omit_comment_sources_with_deleted_parents() {
     let (client, ws, _) =
         support::login_user_with_workspace(&server, &db, "document-backlink-deleted-parent").await;
     let project = client
+        .acta()
         .create_project(&ws.slug, project_req("document-backlink-deleted", "DBD"))
         .await
         .expect("create project");
     let source = client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -336,6 +353,7 @@ async fn document_backlinks_omit_comment_sources_with_deleted_parents() {
         .await
         .expect("create source document");
     let target = client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -350,6 +368,7 @@ async fn document_backlinks_omit_comment_sources_with_deleted_parents() {
     let source_slug = source.slug.expect("source slug");
     let target_slug = target.slug.expect("target slug");
     let comment = client
+        .acta()
         .add_document_comment(
             &ws.slug,
             &source_slug,
@@ -370,6 +389,7 @@ async fn document_backlinks_omit_comment_sources_with_deleted_parents() {
         .expect("link comment then delete source parent");
 
     let backlinks = client
+        .acta()
         .list_backlinks(&ws.slug, &target_slug, None, None)
         .await
         .expect("list target backlinks after source parent deletion");
@@ -392,14 +412,17 @@ async fn document_backlinks_batch_authorize_many_comment_sources() {
     let (owner, ws, _) =
         support::login_user_with_workspace(&server, &db, "document-backlink-batch").await;
     let target_project = owner
+        .acta()
         .create_project(&ws.slug, project_req("document-backlink-target", "DBT"))
         .await
         .expect("create target project");
     let source_project = owner
+        .acta()
         .create_project(&ws.slug, project_req("document-backlink-private", "DBP"))
         .await
         .expect("create source project");
     let target = owner
+        .acta()
         .create_document(
             &ws.slug,
             &target_project.slug,
@@ -412,6 +435,7 @@ async fn document_backlinks_batch_authorize_many_comment_sources() {
         .await
         .expect("create target document");
     let source = owner
+        .acta()
         .create_document(
             &ws.slug,
             &source_project.slug,
@@ -428,6 +452,7 @@ async fn document_backlinks_batch_authorize_many_comment_sources() {
 
     for index in 0..16 {
         let comment = owner
+            .acta()
             .add_document_comment(
                 &ws.slug,
                 &source_slug,
@@ -463,6 +488,7 @@ async fn document_backlinks_batch_authorize_many_comment_sources() {
         .expect("set source and target visibility");
 
     let hidden = viewer
+        .acta()
         .list_backlinks(&ws.slug, &target_slug, None, None)
         .await
         .expect("list inaccessible sources");
@@ -482,6 +508,7 @@ async fn document_backlinks_batch_authorize_many_comment_sources() {
         .expect("make source project visible");
 
     let visible = viewer
+        .acta()
         .list_backlinks(&ws.slug, &target_slug, None, None)
         .await
         .expect("list authorized sources");
@@ -514,6 +541,7 @@ async fn task_backlinks_batch_authorize_many_comment_sources_without_source_leak
         support::login_user_with_workspace(&server, &db, "comment-backlink-batch").await;
     let target_readable_id = seed_task(&owner, &ws.slug, "comment-backlink-target", "CBT").await;
     let target_task = owner
+        .acta()
         .get_task(&ws.slug, &target_readable_id)
         .await
         .expect("get target task");
@@ -521,6 +549,7 @@ async fn task_backlinks_batch_authorize_many_comment_sources_without_source_leak
 
     for index in 0..16 {
         let comment = owner
+            .acta()
             .add_comment(
                 &ws.slug,
                 &source_readable_id,
@@ -556,6 +585,7 @@ async fn task_backlinks_batch_authorize_many_comment_sources_without_source_leak
         .expect("make target project visible");
 
     let hidden = viewer
+        .acta()
         .list_task_backlinks(&ws.slug, &target_readable_id)
         .await
         .expect("list backlinks with inaccessible sources");
@@ -575,6 +605,7 @@ async fn task_backlinks_batch_authorize_many_comment_sources_without_source_leak
         .expect("make source project visible");
 
     let visible = viewer
+        .acta()
         .list_task_backlinks(&ws.slug, &target_readable_id)
         .await
         .expect("list backlinks with authorized sources");
@@ -610,10 +641,12 @@ async fn task_backlinks_omit_deleted_and_cross_workspace_comment_sources() {
     let source_readable_id =
         seed_task(&owner, &ws.slug, "comment-backlink-source-local", "CBL").await;
     let target_task = owner
+        .acta()
         .get_task(&ws.slug, &target_readable_id)
         .await
         .expect("get target task");
     let deleted_comment = owner
+        .acta()
         .add_comment(
             &ws.slug,
             &source_readable_id,
@@ -635,6 +668,7 @@ async fn task_backlinks_omit_deleted_and_cross_workspace_comment_sources() {
     )
     .await;
     let other_comment = other
+        .acta()
         .add_comment(
             &other_ws.slug,
             &other_readable_id,
@@ -663,6 +697,7 @@ async fn task_backlinks_omit_deleted_and_cross_workspace_comment_sources() {
         .expect("insert omitted source links");
 
     let backlinks = owner
+        .acta()
         .list_task_backlinks(&ws.slug, &target_readable_id)
         .await
         .expect("list backlinks with deleted and cross-workspace sources");
@@ -685,14 +720,17 @@ async fn document_backlinks_expose_comment_source_without_attachment_links() {
         support::login_user_with_workspace(&server, &db, "comment-document-backlink").await;
     let source_readable_id = seed_task(&client, &ws.slug, "comment-document-source", "CDS").await;
     let source_task = client
+        .acta()
         .get_task(&ws.slug, &source_readable_id)
         .await
         .expect("get source task");
     let project = client
+        .acta()
         .create_project(&ws.slug, project_req("comment-document-target", "CDT"))
         .await
         .expect("create document project");
     let target = client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -705,6 +743,7 @@ async fn document_backlinks_expose_comment_source_without_attachment_links() {
         .await
         .expect("create target document");
     let comment = client
+        .acta()
         .add_comment(
             &ws.slug,
             &source_readable_id,
@@ -736,6 +775,7 @@ async fn document_backlinks_expose_comment_source_without_attachment_links() {
         .expect("insert document and attachment comment links");
 
     let backlinks = client
+        .acta()
         .list_backlinks(
             &ws.slug,
             target.slug.as_deref().expect("target slug"),
@@ -801,6 +841,7 @@ async fn create_comment_as_api_key_reports_api_key_author() {
     let readable_id = seed_task(&client, &ws.slug, "comment-api-key-proj", "CK").await;
 
     let api_key = client
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "comment-bot".to_string(),
             r#type: None,
@@ -818,6 +859,7 @@ async fn create_comment_as_api_key_reports_api_key_author() {
     api_key_client.set_token(api_key.secret.clone());
 
     let created = api_key_client
+        .acta()
         .add_comment(
             &ws.slug,
             &readable_id,
@@ -851,6 +893,7 @@ async fn list_comments_empty_state_returns_no_error() {
     let readable_id = seed_task(&client, &ws.slug, "comment-empty-proj", "CE").await;
 
     let page = client
+        .acta()
         .list_comments(&ws.slug, &readable_id, None, None)
         .await
         .expect("list comments on task with no comments");
@@ -874,6 +917,7 @@ async fn list_comments_oldest_first_with_cursor_walk_has_no_gaps_or_duplicates()
     let mut created_ids = Vec::new();
     for i in 0..5 {
         let comment = client
+            .acta()
             .add_comment(
                 &ws.slug,
                 &readable_id,
@@ -892,6 +936,7 @@ async fn list_comments_oldest_first_with_cursor_walk_has_no_gaps_or_duplicates()
 
     loop {
         let page = client
+            .acta()
             .list_comments(&ws.slug, &readable_id, cursor.as_deref(), Some(2))
             .await
             .expect("list comments page");
@@ -924,6 +969,7 @@ async fn full_feed_is_opt_in_and_default_comment_page_is_unchanged() {
     let readable_id = seed_task(&client, &ws.slug, "comment-full-feed-proj", "CF").await;
 
     client
+        .acta()
         .add_comment(
             &ws.slug,
             &readable_id,
@@ -936,6 +982,7 @@ async fn full_feed_is_opt_in_and_default_comment_page_is_unchanged() {
         .expect("create comment");
 
     let default_page = client
+        .acta()
         .list_comments(&ws.slug, &readable_id, None, None)
         .await
         .expect("default list comments");
@@ -974,6 +1021,7 @@ async fn full_feeds_redact_deleted_targets_for_human_and_api_key_viewers() {
     let task_id = seed_task(&owner, &ws.slug, "comment-feed-target-proj", "CFM").await;
 
     let document = owner
+        .acta()
         .create_document(
             &ws.slug,
             "comment-feed-target-proj",
@@ -988,6 +1036,7 @@ async fn full_feeds_redact_deleted_targets_for_human_and_api_key_viewers() {
     let document_slug = document.slug.clone().expect("document slug");
 
     let source_task_comment = owner
+        .acta()
         .add_comment(
             &ws.slug,
             &task_id,
@@ -999,6 +1048,7 @@ async fn full_feeds_redact_deleted_targets_for_human_and_api_key_viewers() {
         .await
         .expect("create task source comment");
     let source_document_comment = owner
+        .acta()
         .add_document_comment(
             &ws.slug,
             &document_slug,
@@ -1011,6 +1061,7 @@ async fn full_feeds_redact_deleted_targets_for_human_and_api_key_viewers() {
         .expect("create document source comment");
 
     let target_document = owner
+        .acta()
         .create_document(
             &ws.slug,
             "comment-feed-target-proj",
@@ -1023,9 +1074,11 @@ async fn full_feeds_redact_deleted_targets_for_human_and_api_key_viewers() {
         .await
         .expect("create linked document");
     let target_task = owner
+        .acta()
         .create_task(
             &ws.slug,
             owner
+                .acta()
                 .list_boards(&ws.slug, "comment-feed-target-proj", None, None)
                 .await
                 .expect("list boards")
@@ -1034,9 +1087,11 @@ async fn full_feeds_redact_deleted_targets_for_human_and_api_key_viewers() {
             CreateTaskRequest {
                 references: vec![],
                 column_id: owner
+                    .acta()
                     .list_columns(
                         &ws.slug,
                         owner
+                            .acta()
                             .list_boards(&ws.slug, "comment-feed-target-proj", None, None)
                             .await
                             .expect("list boards")
@@ -1056,6 +1111,7 @@ async fn full_feeds_redact_deleted_targets_for_human_and_api_key_viewers() {
         .await
         .expect("create linked task");
     let attachment_comment = owner
+        .acta()
         .add_comment(
             &ws.slug,
             &target_task.readable_id,
@@ -1116,6 +1172,7 @@ async fn full_feeds_redact_deleted_targets_for_human_and_api_key_viewers() {
     }
 
     let api_key = owner
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "feed-reader".into(),
             r#type: None,
@@ -1216,6 +1273,7 @@ async fn full_feeds_retain_deleted_comment_events_without_deleted_comment_data_o
         support::login_user_with_workspace(&server, &db, "comment-feed-retained-events").await;
     let task_id = seed_task(&owner, &ws.slug, "comment-feed-retained-proj", "CFR").await;
     let document = owner
+        .acta()
         .create_document(
             &ws.slug,
             "comment-feed-retained-proj",
@@ -1230,6 +1288,7 @@ async fn full_feeds_retain_deleted_comment_events_without_deleted_comment_data_o
     let document_slug = document.slug.expect("document slug");
 
     let task_comment = owner
+        .acta()
         .add_comment(
             &ws.slug,
             &task_id,
@@ -1241,6 +1300,7 @@ async fn full_feeds_retain_deleted_comment_events_without_deleted_comment_data_o
         .await
         .expect("create task comment");
     let document_comment = owner
+        .acta()
         .add_document_comment(
             &ws.slug,
             &document_slug,
@@ -1253,6 +1313,7 @@ async fn full_feeds_retain_deleted_comment_events_without_deleted_comment_data_o
         .expect("create document comment");
 
     let target_document = owner
+        .acta()
         .create_document(
             &ws.slug,
             "comment-feed-retained-proj",
@@ -1285,10 +1346,12 @@ async fn full_feeds_retain_deleted_comment_events_without_deleted_comment_data_o
     .await;
 
     owner
+        .acta()
         .delete_comment(&ws.slug, &task_id, task_comment.id)
         .await
         .expect("delete task comment");
     owner
+        .acta()
         .delete_document_comment(&ws.slug, &document_slug, document_comment.id)
         .await
         .expect("delete document comment");
@@ -1350,6 +1413,7 @@ async fn full_feeds_fail_closed_with_the_internal_problem_for_invalid_cursors() 
         support::login_user_with_workspace(&server, &db, "comment-feed-invalid-cursor").await;
     let task_id = seed_task(&owner, &ws.slug, "comment-feed-invalid-cursor-proj", "CFC").await;
     let document = owner
+        .acta()
         .create_document(
             &ws.slug,
             "comment-feed-invalid-cursor-proj",
@@ -1405,10 +1469,12 @@ async fn full_feeds_recheck_target_access_after_the_link_is_written() {
         support::login_user_with_workspace(&server, &db, "comment-feed-revoked-target").await;
     let task_id = seed_task(&owner, &ws.slug, "comment-feed-source", "CFS").await;
     owner
+        .acta()
         .create_project(&ws.slug, project_req("comment-feed-target", "CFT"))
         .await
         .expect("create target project");
     let source_document = owner
+        .acta()
         .create_document(
             &ws.slug,
             "comment-feed-source",
@@ -1422,6 +1488,7 @@ async fn full_feeds_recheck_target_access_after_the_link_is_written() {
         .expect("create source document");
     let source_slug = source_document.slug.expect("source slug");
     let target_document = owner
+        .acta()
         .create_document(
             &ws.slug,
             "comment-feed-target",
@@ -1434,6 +1501,7 @@ async fn full_feeds_recheck_target_access_after_the_link_is_written() {
         .await
         .expect("create target document");
     let task_comment = owner
+        .acta()
         .add_comment(
             &ws.slug,
             &task_id,
@@ -1445,6 +1513,7 @@ async fn full_feeds_recheck_target_access_after_the_link_is_written() {
         .await
         .expect("create task comment");
     let document_comment = owner
+        .acta()
         .add_document_comment(
             &ws.slug,
             &source_slug,
@@ -1537,6 +1606,7 @@ async fn full_feeds_paginate_merged_comment_and_event_boundaries_without_gaps_or
         support::login_user_with_workspace(&server, &db, "comment-feed-merged-pages").await;
     let task_id = seed_task(&owner, &ws.slug, "comment-feed-merged-pages", "CFP").await;
     let document = owner
+        .acta()
         .create_document(
             &ws.slug,
             "comment-feed-merged-pages",
@@ -1551,6 +1621,7 @@ async fn full_feeds_paginate_merged_comment_and_event_boundaries_without_gaps_or
     let document_slug = document.slug.expect("document slug");
     let task_comments = [
         owner
+            .acta()
             .add_comment(
                 &ws.slug,
                 &task_id,
@@ -1562,6 +1633,7 @@ async fn full_feeds_paginate_merged_comment_and_event_boundaries_without_gaps_or
             .await
             .expect("task comment one"),
         owner
+            .acta()
             .add_comment(
                 &ws.slug,
                 &task_id,
@@ -1575,6 +1647,7 @@ async fn full_feeds_paginate_merged_comment_and_event_boundaries_without_gaps_or
     ];
     let document_comments = [
         owner
+            .acta()
             .add_document_comment(
                 &ws.slug,
                 &document_slug,
@@ -1586,6 +1659,7 @@ async fn full_feeds_paginate_merged_comment_and_event_boundaries_without_gaps_or
             .await
             .expect("document comment one"),
         owner
+            .acta()
             .add_document_comment(
                 &ws.slug,
                 &document_slug,
@@ -1706,6 +1780,7 @@ async fn disabled_or_revoked_principals_are_rejected_before_full_feed_projection
         .await
         .expect("reenable owner");
     let api_key = owner
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "revoked-feed-reader".into(),
             r#type: None,
@@ -1734,6 +1809,7 @@ async fn disabled_or_revoked_principals_are_rejected_before_full_feed_projection
     assert_eq!(revoked.status(), reqwest::StatusCode::UNAUTHORIZED);
 
     let creator_disabled_key = owner
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "disabled-creator-feed-reader".into(),
             r#type: None,
@@ -1779,6 +1855,7 @@ async fn create_comment_rejects_blank_body() {
 
     for blank in ["", "   ", "\n\t "] {
         let result = client
+            .acta()
             .add_comment(
                 &ws.slug,
                 &readable_id,
@@ -1796,6 +1873,7 @@ async fn create_comment_rejects_blank_body() {
     }
 
     let page = client
+        .acta()
         .list_comments(&ws.slug, &readable_id, None, None)
         .await
         .expect("list comments");
@@ -1819,6 +1897,7 @@ async fn create_comment_rejects_body_over_max_length() {
     let oversize_body = "a".repeat(10_001);
 
     let result = client
+        .acta()
         .add_comment(
             &ws.slug,
             &readable_id,
@@ -1836,6 +1915,7 @@ async fn create_comment_rejects_body_over_max_length() {
 
     let at_max_body = "a".repeat(10_000);
     client
+        .acta()
         .add_comment(
             &ws.slug,
             &readable_id,
@@ -1862,6 +1942,7 @@ async fn create_comment_task_not_found_returns_404() {
         support::login_user_with_workspace(&server, &db, "comment-task-404").await;
 
     let result = client
+        .acta()
         .add_comment(
             &ws.slug,
             "NOPE-1",
@@ -1887,7 +1968,10 @@ async fn list_comments_task_not_found_returns_404() {
     let (client, ws, _user) =
         support::login_user_with_workspace(&server, &db, "comment-list-404").await;
 
-    let result = client.list_comments(&ws.slug, "NOPE-1", None, None).await;
+    let result = client
+        .acta()
+        .list_comments(&ws.slug, "NOPE-1", None, None)
+        .await;
 
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
@@ -1907,6 +1991,7 @@ async fn delete_comment_missing_returns_404() {
     let readable_id = seed_task(&client, &ws.slug, "comment-delete-404-proj", "CD").await;
 
     let result = client
+        .acta()
         .delete_comment(&ws.slug, &readable_id, uuid::Uuid::new_v4())
         .await;
 
@@ -1927,6 +2012,7 @@ async fn cross_workspace_comment_access_is_404() {
 
     let readable_id = seed_task(&owner, &ws_a.slug, "comment-xws-proj", "CX").await;
     let comment = owner
+        .acta()
         .add_comment(
             &ws_a.slug,
             &readable_id,
@@ -1939,6 +2025,7 @@ async fn cross_workspace_comment_access_is_404() {
         .expect("create comment in workspace A");
 
     let list_result = other
+        .acta()
         .list_comments(&ws_a.slug, &readable_id, None, None)
         .await;
     assert!(
@@ -1947,6 +2034,7 @@ async fn cross_workspace_comment_access_is_404() {
     );
 
     let create_result = other
+        .acta()
         .add_comment(
             &ws_a.slug,
             &readable_id,
@@ -1962,6 +2050,7 @@ async fn cross_workspace_comment_access_is_404() {
     );
 
     let delete_result = other
+        .acta()
         .delete_comment(&ws_a.slug, &readable_id, comment.id)
         .await;
     assert!(
@@ -1984,6 +2073,7 @@ async fn viewer_cannot_create_comment() {
         support::login_user_with_workspace(&server, &db, "comment-authz-owner").await;
 
     owner
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -1998,6 +2088,7 @@ async fn viewer_cannot_create_comment() {
         .expect("create project");
 
     let board = owner
+        .acta()
         .create_board(
             &ws.slug,
             "comment-authz-proj",
@@ -2010,6 +2101,7 @@ async fn viewer_cannot_create_comment() {
         .expect("create board");
 
     let col = owner
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -2024,6 +2116,7 @@ async fn viewer_cannot_create_comment() {
         .expect("create column");
 
     let task = owner
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -2050,6 +2143,7 @@ async fn viewer_cannot_create_comment() {
     .await;
 
     let result = viewer
+        .acta()
         .add_comment(
             &ws.slug,
             &task.readable_id,
@@ -2078,6 +2172,7 @@ async fn author_deletes_own_comment() {
     let readable_id = seed_task(&owner, &ws.slug, "comment-self-delete-proj", "SD").await;
 
     let comment = owner
+        .acta()
         .add_comment(
             &ws.slug,
             &readable_id,
@@ -2090,6 +2185,7 @@ async fn author_deletes_own_comment() {
         .expect("create comment");
 
     owner
+        .acta()
         .delete_comment(&ws.slug, &readable_id, comment.id)
         .await
         .expect("author must be able to delete their own comment");
@@ -2107,6 +2203,7 @@ async fn non_author_non_admin_delete_is_forbidden() {
     let readable_id = seed_task(&owner, &ws.slug, "comment-forbid-proj", "CF").await;
 
     let comment = owner
+        .acta()
         .add_comment(
             &ws.slug,
             &readable_id,
@@ -2128,6 +2225,7 @@ async fn non_author_non_admin_delete_is_forbidden() {
     .await;
 
     let result = member
+        .acta()
         .delete_comment(&ws.slug, &readable_id, comment.id)
         .await;
 
@@ -2137,6 +2235,7 @@ async fn non_author_non_admin_delete_is_forbidden() {
     );
 
     let page = owner
+        .acta()
         .list_comments(&ws.slug, &readable_id, None, None)
         .await
         .expect("list comments");
@@ -2168,6 +2267,7 @@ async fn admin_can_delete_another_members_comment() {
     .await;
 
     let comment = member
+        .acta()
         .add_comment(
             &ws.slug,
             &readable_id,
@@ -2182,11 +2282,13 @@ async fn admin_can_delete_another_members_comment() {
     let (admin, _) = add_member(&db, &server, ws.id, "comment-admin-mod", MemberRole::Admin).await;
 
     admin
+        .acta()
         .delete_comment(&ws.slug, &readable_id, comment.id)
         .await
         .expect("workspace admin must be able to delete another member's comment");
 
     let page = owner
+        .acta()
         .list_comments(&ws.slug, &readable_id, None, None)
         .await
         .expect("list comments");
@@ -2216,6 +2318,7 @@ async fn list_comments_preserves_global_api_key_author_name() {
     let readable_id = seed_task(&client, &ws.slug, "comment-global-key-proj", "GK").await;
 
     let api_key = client
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "global-bot".to_string(),
             r#type: None,
@@ -2233,6 +2336,7 @@ async fn list_comments_preserves_global_api_key_author_name() {
     api_key_client.set_token(api_key.secret.clone());
 
     api_key_client
+        .acta()
         .add_comment(
             &ws.slug,
             &readable_id,
@@ -2263,6 +2367,7 @@ async fn list_comments_preserves_global_api_key_author_name() {
         .expect("strip api key grant");
 
     let page = client
+        .acta()
         .list_comments(&ws.slug, &readable_id, None, None)
         .await
         .expect("list comments");
@@ -2294,6 +2399,7 @@ async fn author_edits_own_comment() {
     let readable_id = seed_task(&owner, &ws.slug, "comment-edit-proj", "CE1").await;
 
     let created = owner
+        .acta()
         .add_comment(
             &ws.slug,
             &readable_id,
@@ -2306,6 +2412,7 @@ async fn author_edits_own_comment() {
         .expect("create comment");
 
     let updated = owner
+        .acta()
         .update_comment(
             &ws.slug,
             &readable_id,
@@ -2326,6 +2433,7 @@ async fn author_edits_own_comment() {
     );
 
     let page = owner
+        .acta()
         .list_comments(&ws.slug, &readable_id, None, None)
         .await
         .expect("list comments");
@@ -2354,6 +2462,7 @@ async fn admin_cannot_edit_another_members_comment() {
     .await;
 
     let comment = member
+        .acta()
         .add_comment(
             &ws.slug,
             &readable_id,
@@ -2368,6 +2477,7 @@ async fn admin_cannot_edit_another_members_comment() {
     let (admin, _) = add_member(&db, &server, ws.id, "comment-edit-admin", MemberRole::Admin).await;
 
     let admin_result = admin
+        .acta()
         .update_comment(
             &ws.slug,
             &readable_id,
@@ -2383,6 +2493,7 @@ async fn admin_cannot_edit_another_members_comment() {
     );
 
     let owner_result = owner
+        .acta()
         .update_comment(
             &ws.slug,
             &readable_id,
@@ -2398,6 +2509,7 @@ async fn admin_cannot_edit_another_members_comment() {
     );
 
     let page = owner
+        .acta()
         .list_comments(&ws.slug, &readable_id, None, None)
         .await
         .expect("list comments");
@@ -2420,6 +2532,7 @@ async fn non_member_cannot_edit_comment_404() {
 
     let readable_id = seed_task(&owner, &ws_a.slug, "comment-edit-xws-proj", "CE3").await;
     let comment = owner
+        .acta()
         .add_comment(
             &ws_a.slug,
             &readable_id,
@@ -2432,6 +2545,7 @@ async fn non_member_cannot_edit_comment_404() {
         .expect("create comment");
 
     let result = other
+        .acta()
         .update_comment(
             &ws_a.slug,
             &readable_id,
@@ -2459,6 +2573,7 @@ async fn edit_comment_rejects_invalid_body() {
     let readable_id = seed_task(&owner, &ws.slug, "comment-edit-invalid-proj", "CE4").await;
 
     let comment = owner
+        .acta()
         .add_comment(
             &ws.slug,
             &readable_id,
@@ -2472,6 +2587,7 @@ async fn edit_comment_rejects_invalid_body() {
 
     for blank in ["", "   ", "\n\t "] {
         let result = owner
+            .acta()
             .update_comment(
                 &ws.slug,
                 &readable_id,
@@ -2488,6 +2604,7 @@ async fn edit_comment_rejects_invalid_body() {
     }
 
     let oversize = owner
+        .acta()
         .update_comment(
             &ws.slug,
             &readable_id,
@@ -2503,6 +2620,7 @@ async fn edit_comment_rejects_invalid_body() {
     );
 
     let page = owner
+        .acta()
         .list_comments(&ws.slug, &readable_id, None, None)
         .await
         .expect("list comments");
@@ -2524,6 +2642,7 @@ async fn edit_missing_comment_returns_404() {
     let readable_id = seed_task(&owner, &ws.slug, "comment-edit-missing-proj", "CE5").await;
 
     let result = owner
+        .acta()
         .update_comment(
             &ws.slug,
             &readable_id,
@@ -2566,6 +2685,7 @@ async fn viewer_author_can_edit_own_comment_but_not_a_different_viewer() {
     .await;
 
     let comment = author
+        .acta()
         .add_comment(
             &ws.slug,
             &readable_id,
@@ -2578,6 +2698,7 @@ async fn viewer_author_can_edit_own_comment_but_not_a_different_viewer() {
         .expect("member must be able to comment under the default editor visibility");
 
     owner
+        .acta()
         .update_project(
             &ws.slug,
             project_slug,
@@ -2590,6 +2711,7 @@ async fn viewer_author_can_edit_own_comment_but_not_a_different_viewer() {
         .expect("owner must be able to downgrade the project to viewer visibility");
 
     let updated = author
+        .acta()
         .update_comment(
             &ws.slug,
             &readable_id,
@@ -2612,6 +2734,7 @@ async fn viewer_author_can_edit_own_comment_but_not_a_different_viewer() {
     .await;
 
     let result = other_viewer
+        .acta()
         .update_comment(
             &ws.slug,
             &readable_id,
@@ -2643,6 +2766,7 @@ async fn typed_wikilinks_in_a_comment_become_backlinks_on_their_targets() {
     let target_readable_id = seed_task(&client, &ws.slug, "comment-wikilink-target", "CX").await;
 
     let note = client
+        .acta()
         .create_document(
             &ws.slug,
             "comment-wikilink-proj",
@@ -2656,8 +2780,7 @@ async fn typed_wikilinks_in_a_comment_become_backlinks_on_their_targets() {
         .expect("create note");
     let note_slug = note.slug.clone().expect("the create route assigns a slug");
 
-    let comment = client
-        .add_comment(
+    let comment = client.acta().add_comment(
             &ws.slug,
             &readable_id,
             CreateCommentRequest {
@@ -2671,6 +2794,7 @@ async fn typed_wikilinks_in_a_comment_become_backlinks_on_their_targets() {
         .expect("create comment");
 
     let task_backlinks = client
+        .acta()
         .list_task_backlinks(&ws.slug, &target_readable_id)
         .await
         .expect("list task backlinks");
@@ -2684,6 +2808,7 @@ async fn typed_wikilinks_in_a_comment_become_backlinks_on_their_targets() {
     );
 
     let note_backlinks = client
+        .acta()
         .list_backlinks(&ws.slug, &note_slug, None, None)
         .await
         .expect("list note backlinks");

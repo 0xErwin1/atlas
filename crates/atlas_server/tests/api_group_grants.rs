@@ -124,6 +124,7 @@ async fn gain_via_group_membership() {
     let (owner, ws, owner_user) = login_user_with_workspace(&server, &db, "gg-gain-owner").await;
 
     owner
+        .acta()
         .create_project(&ws.slug, private_proj("GG Gain Project", "gg-gain-proj"))
         .await
         .expect("create project");
@@ -132,7 +133,10 @@ async fn gain_via_group_membership() {
     let member_client = login_as(&server, "gg-gain-member").await;
 
     // Before group grant: member has no access to the private project.
-    let result = member_client.get_project(&ws.slug, "gg-gain-proj").await;
+    let result = member_client
+        .acta()
+        .get_project(&ws.slug, "gg-gain-proj")
+        .await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
         "member without grant must get 404, got: {result:?}"
@@ -140,6 +144,7 @@ async fn gain_via_group_membership() {
 
     // Create a group and grant it Editor on the project.
     let group = owner
+        .custos()
         .create_group(
             &ws.slug,
             CreateGroupRequest {
@@ -150,6 +155,7 @@ async fn gain_via_group_membership() {
         .expect("create group");
 
     owner
+        .custos()
         .create_project_grant(
             &ws.slug,
             "gg-gain-proj",
@@ -159,7 +165,10 @@ async fn gain_via_group_membership() {
         .expect("grant group editor");
 
     // Still no access: member is not in the group yet.
-    let result = member_client.get_project(&ws.slug, "gg-gain-proj").await;
+    let result = member_client
+        .acta()
+        .get_project(&ws.slug, "gg-gain-proj")
+        .await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
         "member not yet in group must still get 404, got: {result:?}"
@@ -167,6 +176,7 @@ async fn gain_via_group_membership() {
 
     // Add member to the group → now they should resolve Editor.
     owner
+        .custos()
         .add_group_member(
             &ws.slug,
             group.id,
@@ -178,6 +188,7 @@ async fn gain_via_group_membership() {
         .expect("add member to group");
 
     let project = member_client
+        .acta()
         .get_project(&ws.slug, "gg-gain-proj")
         .await
         .expect("member should see the project via group grant");
@@ -200,6 +211,7 @@ async fn revoke_via_membership_removal() {
         login_user_with_workspace(&server, &db, "gg-revoke-mem-owner").await;
 
     owner
+        .acta()
         .create_project(
             &ws.slug,
             private_proj("GG Revoke Mem Project", "gg-revoke-mem-proj"),
@@ -211,6 +223,7 @@ async fn revoke_via_membership_removal() {
     let member_client = login_as(&server, "gg-revoke-mem-member").await;
 
     let group = owner
+        .custos()
         .create_group(
             &ws.slug,
             CreateGroupRequest {
@@ -221,6 +234,7 @@ async fn revoke_via_membership_removal() {
         .expect("create group");
 
     owner
+        .custos()
         .create_project_grant(
             &ws.slug,
             "gg-revoke-mem-proj",
@@ -230,6 +244,7 @@ async fn revoke_via_membership_removal() {
         .expect("grant group editor");
 
     owner
+        .custos()
         .add_group_member(
             &ws.slug,
             group.id,
@@ -242,17 +257,20 @@ async fn revoke_via_membership_removal() {
 
     // Member now has access.
     member_client
+        .acta()
         .get_project(&ws.slug, "gg-revoke-mem-proj")
         .await
         .expect("member should see project via group");
 
     // Remove from group → should lose access.
     owner
+        .custos()
         .remove_group_member(&ws.slug, group.id, member.id.0)
         .await
         .expect("remove member from group");
 
     let result = member_client
+        .acta()
         .get_project(&ws.slug, "gg-revoke-mem-proj")
         .await;
     assert!(
@@ -276,6 +294,7 @@ async fn revoke_via_group_soft_delete() {
         login_user_with_workspace(&server, &db, "gg-revoke-del-owner").await;
 
     owner
+        .acta()
         .create_project(
             &ws.slug,
             private_proj("GG Revoke Del Project", "gg-revoke-del-proj"),
@@ -287,6 +306,7 @@ async fn revoke_via_group_soft_delete() {
     let member_client = login_as(&server, "gg-revoke-del-member").await;
 
     let group = owner
+        .custos()
         .create_group(
             &ws.slug,
             CreateGroupRequest {
@@ -297,6 +317,7 @@ async fn revoke_via_group_soft_delete() {
         .expect("create group");
 
     owner
+        .custos()
         .create_project_grant(
             &ws.slug,
             "gg-revoke-del-proj",
@@ -306,6 +327,7 @@ async fn revoke_via_group_soft_delete() {
         .expect("grant group admin");
 
     owner
+        .custos()
         .add_group_member(
             &ws.slug,
             group.id,
@@ -318,6 +340,7 @@ async fn revoke_via_group_soft_delete() {
 
     // Member has access via the group grant.
     member_client
+        .acta()
         .get_project(&ws.slug, "gg-revoke-del-proj")
         .await
         .expect("member should see project");
@@ -325,11 +348,13 @@ async fn revoke_via_group_soft_delete() {
     // Soft-delete the group → the grant row remains, but deleted-group exclusion
     // should make the member lose access.
     owner
+        .custos()
         .delete_group(&ws.slug, group.id)
         .await
         .expect("delete group");
 
     let result = member_client
+        .acta()
         .get_project(&ws.slug, "gg-revoke-del-proj")
         .await;
     assert!(
@@ -352,6 +377,7 @@ async fn max_role_group_admin_over_direct_viewer() {
     let (owner, ws, owner_user) = login_user_with_workspace(&server, &db, "gg-max-1-owner").await;
 
     owner
+        .acta()
         .create_project(&ws.slug, private_proj("GG Max1 Project", "gg-max-1-proj"))
         .await
         .expect("create project");
@@ -361,6 +387,7 @@ async fn max_role_group_admin_over_direct_viewer() {
 
     // Direct grant: Viewer.
     owner
+        .custos()
         .create_project_grant(
             &ws.slug,
             "gg-max-1-proj",
@@ -371,6 +398,7 @@ async fn max_role_group_admin_over_direct_viewer() {
 
     // Group grant: Admin.
     let group = owner
+        .custos()
         .create_group(
             &ws.slug,
             CreateGroupRequest {
@@ -381,6 +409,7 @@ async fn max_role_group_admin_over_direct_viewer() {
         .expect("create group");
 
     owner
+        .custos()
         .create_project_grant(
             &ws.slug,
             "gg-max-1-proj",
@@ -390,6 +419,7 @@ async fn max_role_group_admin_over_direct_viewer() {
         .expect("grant group admin");
 
     owner
+        .custos()
         .add_group_member(
             &ws.slug,
             group.id,
@@ -402,6 +432,7 @@ async fn max_role_group_admin_over_direct_viewer() {
 
     // The member must be able to rename the project (requires Admin).
     let updated = member_client
+        .acta()
         .update_project(
             &ws.slug,
             "gg-max-1-proj",
@@ -432,6 +463,7 @@ async fn max_role_direct_admin_over_group_viewer() {
     let (owner, ws, owner_user) = login_user_with_workspace(&server, &db, "gg-max-2-owner").await;
 
     owner
+        .acta()
         .create_project(&ws.slug, private_proj("GG Max2 Project", "gg-max-2-proj"))
         .await
         .expect("create project");
@@ -441,6 +473,7 @@ async fn max_role_direct_admin_over_group_viewer() {
 
     // Direct grant: Admin.
     owner
+        .custos()
         .create_project_grant(
             &ws.slug,
             "gg-max-2-proj",
@@ -451,6 +484,7 @@ async fn max_role_direct_admin_over_group_viewer() {
 
     // Group grant: Viewer.
     let group = owner
+        .custos()
         .create_group(
             &ws.slug,
             CreateGroupRequest {
@@ -461,6 +495,7 @@ async fn max_role_direct_admin_over_group_viewer() {
         .expect("create group");
 
     owner
+        .custos()
         .create_project_grant(
             &ws.slug,
             "gg-max-2-proj",
@@ -470,6 +505,7 @@ async fn max_role_direct_admin_over_group_viewer() {
         .expect("grant group viewer");
 
     owner
+        .custos()
         .add_group_member(
             &ws.slug,
             group.id,
@@ -482,6 +518,7 @@ async fn max_role_direct_admin_over_group_viewer() {
 
     // The member must be able to rename the project (requires Admin — direct grant wins).
     let updated = member_client
+        .acta()
         .update_project(
             &ws.slug,
             "gg-max-2-proj",
@@ -516,6 +553,7 @@ async fn group_workspace_grant_reaches_project() {
 
     // Private project — no default visibility.
     owner
+        .acta()
         .create_project(
             &ws.slug,
             private_proj("GG Inherit Project", "gg-inherit-proj"),
@@ -527,7 +565,10 @@ async fn group_workspace_grant_reaches_project() {
     let member_client = login_as(&server, "gg-inherit-member").await;
 
     // Member cannot see the private project yet.
-    let result = member_client.get_project(&ws.slug, "gg-inherit-proj").await;
+    let result = member_client
+        .acta()
+        .get_project(&ws.slug, "gg-inherit-proj")
+        .await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
         "member without grant must not see private project"
@@ -535,6 +576,7 @@ async fn group_workspace_grant_reaches_project() {
 
     // Create a group and grant it Editor at workspace scope.
     let group = owner
+        .custos()
         .create_group(
             &ws.slug,
             CreateGroupRequest {
@@ -545,11 +587,13 @@ async fn group_workspace_grant_reaches_project() {
         .expect("create group");
 
     owner
+        .custos()
         .create_workspace_grant(&ws.slug, group_grant_req(group.id, "editor"))
         .await
         .expect("grant group editor on workspace");
 
     owner
+        .custos()
         .add_group_member(
             &ws.slug,
             group.id,
@@ -562,6 +606,7 @@ async fn group_workspace_grant_reaches_project() {
 
     // Group workspace editor → should see the private project via inheritance.
     let fetched = member_client
+        .acta()
         .get_project(&ws.slug, "gg-inherit-proj")
         .await
         .expect("member with group workspace grant should see private project");
@@ -588,6 +633,7 @@ async fn api_key_resolution_unaffected_by_groups() {
     let (owner, ws, owner_user) = login_user_with_workspace(&server, &db, "gg-apikey-owner").await;
 
     owner
+        .acta()
         .create_project(
             &ws.slug,
             private_proj("GG ApiKey Project", "gg-apikey-proj"),
@@ -598,6 +644,7 @@ async fn api_key_resolution_unaffected_by_groups() {
     // Create an api key for the owner. Give it NO direct grant.
     use atlas_api::dtos::CreateUserApiKeyRequest;
     let key = owner
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "gg-apikey-key".to_string(),
             r#type: None,
@@ -613,6 +660,7 @@ async fn api_key_resolution_unaffected_by_groups() {
 
     // Create a group with Admin and add the owner to it, then grant the group Admin.
     let group = owner
+        .custos()
         .create_group(
             &ws.slug,
             CreateGroupRequest {
@@ -623,6 +671,7 @@ async fn api_key_resolution_unaffected_by_groups() {
         .expect("create group");
 
     owner
+        .custos()
         .create_project_grant(
             &ws.slug,
             "gg-apikey-proj",
@@ -632,6 +681,7 @@ async fn api_key_resolution_unaffected_by_groups() {
         .expect("grant group admin");
 
     owner
+        .custos()
         .add_group_member(
             &ws.slug,
             group.id,
@@ -645,7 +695,10 @@ async fn api_key_resolution_unaffected_by_groups() {
     // The api_key has NO direct grant. The group has Admin for the owner-user,
     // but group grants must NOT bleed into api_key resolution.
     // So the agent must NOT be able to read the private project.
-    let result = agent_client.get_project(&ws.slug, "gg-apikey-proj").await;
+    let result = agent_client
+        .acta()
+        .get_project(&ws.slug, "gg-apikey-proj")
+        .await;
 
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
@@ -657,6 +710,7 @@ async fn api_key_resolution_unaffected_by_groups() {
         conn: db.conn().clone(),
     };
     let project = owner
+        .acta()
         .get_project(&ws.slug, "gg-apikey-proj")
         .await
         .expect("get project");
@@ -680,6 +734,7 @@ async fn api_key_resolution_unaffected_by_groups() {
 
     // Now the agent CAN read the project (Editor sufficient).
     let got = agent_client
+        .acta()
         .get_project(&ws.slug, "gg-apikey-proj")
         .await
         .expect("agent with direct Editor grant should read the project");
@@ -691,6 +746,7 @@ async fn api_key_resolution_unaffected_by_groups() {
     // and group grants haven't inflated the api_key's effective role.
     let member = create_member(&db, ws.id, "gg-apikey-grantee").await;
     let result = agent_client
+        .custos()
         .create_project_grant(
             &ws.slug,
             "gg-apikey-proj",
@@ -717,11 +773,13 @@ async fn grant_to_group_appears_in_list_with_group_principal_type() {
     let (owner, ws, owner_user) = login_user_with_workspace(&server, &db, "gg-list-owner").await;
 
     owner
+        .acta()
         .create_project(&ws.slug, private_proj("GG List Project", "gg-list-proj"))
         .await
         .expect("create project");
 
     let group = owner
+        .custos()
         .create_group(
             &ws.slug,
             CreateGroupRequest {
@@ -732,6 +790,7 @@ async fn grant_to_group_appears_in_list_with_group_principal_type() {
         .expect("create group");
 
     let grant = owner
+        .custos()
         .create_project_grant(
             &ws.slug,
             "gg-list-proj",
@@ -750,6 +809,7 @@ async fn grant_to_group_appears_in_list_with_group_principal_type() {
 
     // list_for_resource must return the group grant with type "group".
     let page = owner
+        .custos()
         .list_project_grants(&ws.slug, "gg-list-proj", None, None)
         .await
         .expect("list project grants");
@@ -770,11 +830,13 @@ async fn grant_to_group_appears_in_list_with_group_principal_type() {
 
     // Revoking the group grant must work.
     owner
+        .custos()
         .delete_project_grant(&ws.slug, "gg-list-proj", grant.id)
         .await
         .expect("delete group grant");
 
     let page_after = owner
+        .custos()
         .list_project_grants(&ws.slug, "gg-list-proj", None, None)
         .await
         .expect("list after delete");
@@ -802,12 +864,14 @@ async fn grant_to_group_from_wrong_workspace_rejected() {
     let (owner_b, ws_b, _) = login_user_with_workspace(&server, &db, "gg-xws-owner-b").await;
 
     owner_a
+        .acta()
         .create_project(&ws_a.slug, private_proj("GG XWS Project", "gg-xws-proj"))
         .await
         .expect("create project in ws_a");
 
     // Create a group in workspace B.
     let group_b = owner_b
+        .custos()
         .create_group(
             &ws_b.slug,
             CreateGroupRequest {
@@ -819,6 +883,7 @@ async fn grant_to_group_from_wrong_workspace_rejected() {
 
     // Attempt to grant this ws_b group on a ws_a resource → must be rejected.
     let result = owner_a
+        .custos()
         .create_project_grant(
             &ws_a.slug,
             "gg-xws-proj",
@@ -845,6 +910,7 @@ async fn grant_to_deleted_group_rejected() {
     let (owner, ws, _) = login_user_with_workspace(&server, &db, "gg-delgrp-owner").await;
 
     owner
+        .acta()
         .create_project(
             &ws.slug,
             private_proj("GG Del Group Project", "gg-delgrp-proj"),
@@ -853,6 +919,7 @@ async fn grant_to_deleted_group_rejected() {
         .expect("create project");
 
     let group = owner
+        .custos()
         .create_group(
             &ws.slug,
             CreateGroupRequest {
@@ -863,12 +930,14 @@ async fn grant_to_deleted_group_rejected() {
         .expect("create group");
 
     owner
+        .custos()
         .delete_group(&ws.slug, group.id)
         .await
         .expect("soft-delete group");
 
     // Attempt to grant the deleted group → must be rejected.
     let result = owner
+        .custos()
         .create_project_grant(
             &ws.slug,
             "gg-delgrp-proj",
@@ -895,6 +964,7 @@ async fn upsert_group_grant_reads_back_correct_row() {
     let (owner, ws, owner_user) = login_user_with_workspace(&server, &db, "gg-upsert-owner").await;
 
     owner
+        .acta()
         .create_project(
             &ws.slug,
             private_proj("GG Upsert Project", "gg-upsert-proj"),
@@ -903,6 +973,7 @@ async fn upsert_group_grant_reads_back_correct_row() {
         .expect("create project");
 
     let project = owner
+        .acta()
         .get_project(&ws.slug, "gg-upsert-proj")
         .await
         .expect("get project");
