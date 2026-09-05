@@ -621,6 +621,7 @@ async fn list_documents_pagination_round_trips_and_is_opaque() {
     let (client, ws, _user) = support::login_user_with_workspace(&server, &db, "pgconf-docs").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -637,6 +638,7 @@ async fn list_documents_pagination_round_trips_and_is_opaque() {
     let mut created_ids = Vec::new();
     for i in 0..3 {
         let doc = client
+            .acta()
             .create_document(
                 &ws.slug,
                 &project.slug,
@@ -701,6 +703,7 @@ async fn list_workspace_grants_pagination_round_trips_and_is_opaque() {
             .expect("create agent api key");
 
         let grant = client
+            .custos()
             .create_workspace_grant(
                 &ws.slug,
                 CreateGrantRequest {
@@ -752,6 +755,7 @@ async fn list_workspace_tasks_cursor_is_opaque() {
         support::login_user_with_workspace(&server, &db, "pgconf-tasks").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -765,6 +769,7 @@ async fn list_workspace_tasks_cursor_is_opaque() {
         .await
         .expect("create project");
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             &project.slug,
@@ -776,6 +781,7 @@ async fn list_workspace_tasks_cursor_is_opaque() {
         .await
         .expect("create board");
     let column = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -792,6 +798,7 @@ async fn list_workspace_tasks_cursor_is_opaque() {
     let mut created_ids = Vec::new();
     for i in 0..3 {
         let task = client
+            .acta()
             .create_task(
                 &ws.slug,
                 board.id,
@@ -1079,6 +1086,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-boardtasks")
                         .await;
                 let project = client
+                    .acta()
                     .create_project(
                         &ws.slug,
                         CreateProjectRequest {
@@ -1092,6 +1100,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     .await
                     .expect("create project");
                 let board = client
+                    .acta()
                     .create_board(
                         &ws.slug,
                         &project.slug,
@@ -1115,6 +1124,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-docattach")
                         .await;
                 let project = client
+                    .acta()
                     .create_project(
                         &ws.slug,
                         CreateProjectRequest {
@@ -1128,6 +1138,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     .await
                     .expect("create project");
                 let doc = client
+                    .acta()
                     .create_document(
                         &ws.slug,
                         &project.slug,
@@ -1152,6 +1163,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-docbacklinks")
                         .await;
                 let project = client
+                    .acta()
                     .create_project(
                         &ws.slug,
                         CreateProjectRequest {
@@ -1165,6 +1177,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     .await
                     .expect("create project");
                 let doc = client
+                    .acta()
                     .create_document(
                         &ws.slug,
                         &project.slug,
@@ -1189,6 +1202,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-dochistory")
                         .await;
                 let project = client
+                    .acta()
                     .create_project(
                         &ws.slug,
                         CreateProjectRequest {
@@ -1202,6 +1216,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     .await
                     .expect("create project");
                 let doc = client
+                    .acta()
                     .create_document(
                         &ws.slug,
                         &project.slug,
@@ -1252,6 +1267,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-projboards")
                         .await;
                 let project = client
+                    .acta()
                     .create_project(
                         &ws.slug,
                         CreateProjectRequest {
@@ -1276,6 +1292,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 let (client, ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-projdocs").await;
                 let project = client
+                    .acta()
                     .create_project(
                         &ws.slug,
                         CreateProjectRequest {
@@ -1304,6 +1321,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-projfolders")
                         .await;
                 let project = client
+                    .acta()
                     .create_project(
                         &ws.slug,
                         CreateProjectRequest {
@@ -1329,6 +1347,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-projgrants")
                         .await;
                 let project = client
+                    .acta()
                     .create_project(
                         &ws.slug,
                         CreateProjectRequest {
@@ -1398,6 +1417,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-taskactivity")
                         .await;
                 let project = client
+                    .acta()
                     .create_project(
                         &ws.slug,
                         CreateProjectRequest {
@@ -1411,6 +1431,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     .await
                     .expect("create project");
                 let board = client
+                    .acta()
                     .create_board(
                         &ws.slug,
                         &project.slug,
@@ -1422,6 +1443,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     .await
                     .expect("create board");
                 let column = client
+                    .acta()
                     .create_column(
                         &ws.slug,
                         board.id,
@@ -1435,6 +1457,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     .await
                     .expect("create column");
                 let task = client
+                    .acta()
                     .create_task(
                         &ws.slug,
                         board.id,
@@ -1470,6 +1493,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-taskbacklinks")
                         .await;
                 let project = client
+                    .acta()
                     .create_project(
                         &ws.slug,
                         CreateProjectRequest {
@@ -1483,6 +1507,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     .await
                     .expect("create project");
                 let board = client
+                    .acta()
                     .create_board(
                         &ws.slug,
                         &project.slug,
@@ -1494,6 +1519,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     .await
                     .expect("create board");
                 let column = client
+                    .acta()
                     .create_column(
                         &ws.slug,
                         board.id,
@@ -1507,6 +1533,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     .await
                     .expect("create column");
                 let task = client
+                    .acta()
                     .create_task(
                         &ws.slug,
                         board.id,
@@ -1549,6 +1576,7 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-webhookdeliv")
                         .await;
                 let webhook = client
+                    .acta()
                     .create_webhook(
                         &ws.slug,
                         CreateWebhookRequest {

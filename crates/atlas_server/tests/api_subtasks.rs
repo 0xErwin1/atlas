@@ -35,6 +35,7 @@ async fn board_with_column(
     name: &str,
 ) -> (uuid::Uuid, uuid::Uuid) {
     let board = client
+        .acta()
         .create_board(
             ws_slug,
             proj,
@@ -47,6 +48,7 @@ async fn board_with_column(
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             ws_slug,
             board.id,
@@ -72,6 +74,7 @@ async fn setup_parent(
     prefix: &str,
 ) -> (uuid::Uuid, atlas_api::dtos::boards_tasks::TaskDto) {
     client
+        .acta()
         .create_project(ws_slug, project_req(proj, prefix))
         .await
         .expect("create project");
@@ -92,6 +95,7 @@ async fn create_task(
     title: &str,
 ) -> atlas_api::dtos::boards_tasks::TaskDto {
     client
+        .acta()
         .create_task(
             ws_slug,
             board_id,
@@ -118,6 +122,7 @@ async fn subtask_is_excluded_from_board_and_listed_under_parent() {
     let (board_id, parent) = setup_parent(&client, &ws.slug, "subtask-proj", "ST").await;
 
     let sub = client
+        .acta()
         .create_subtask(
             &ws.slug,
             &parent.readable_id,
@@ -133,6 +138,7 @@ async fn subtask_is_excluded_from_board_and_listed_under_parent() {
 
     // The board listing must NOT include the sub-task.
     let board_tasks = client
+        .acta()
         .list_tasks(&ws.slug, board_id, None, None)
         .await
         .expect("list board tasks");
@@ -142,6 +148,7 @@ async fn subtask_is_excluded_from_board_and_listed_under_parent() {
 
     // The sub-task list under the parent must include it.
     let subs = client
+        .acta()
         .list_subtasks(&ws.slug, &parent.readable_id)
         .await
         .expect("list subtasks");
@@ -161,6 +168,7 @@ async fn promote_subtask_moves_it_onto_the_board() {
     let (board_id, parent) = setup_parent(&client, &ws.slug, "promote-proj", "PR").await;
 
     let sub = client
+        .acta()
         .create_subtask(
             &ws.slug,
             &parent.readable_id,
@@ -171,12 +179,14 @@ async fn promote_subtask_moves_it_onto_the_board() {
         .task;
 
     let promoted = client
+        .acta()
         .promote_subtask(&ws.slug, &sub.readable_id)
         .await
         .expect("promote subtask");
     assert_eq!(promoted.parent_task_id, None, "parent cleared on promote");
 
     let board_tasks = client
+        .acta()
         .list_tasks(&ws.slug, board_id, None, None)
         .await
         .expect("list board tasks");
@@ -187,6 +197,7 @@ async fn promote_subtask_moves_it_onto_the_board() {
     );
 
     let subs = client
+        .acta()
         .list_subtasks(&ws.slug, &parent.readable_id)
         .await
         .expect("list subtasks");
@@ -204,6 +215,7 @@ async fn subtask_behaves_like_a_full_task() {
     let (_board_id, parent) = setup_parent(&client, &ws.slug, "full-proj", "FT").await;
 
     let sub = client
+        .acta()
         .create_subtask(
             &ws.slug,
             &parent.readable_id,
@@ -216,6 +228,7 @@ async fn subtask_behaves_like_a_full_task() {
     // A sub-task is a real task: it can be patched (description, estimate) exactly
     // like a board task, addressed by its own readable_id.
     let updated = client
+        .acta()
         .update_task(
             &ws.slug,
             &sub.readable_id,
@@ -234,6 +247,7 @@ async fn subtask_behaves_like_a_full_task() {
 
     // The inline sub-task summary surfaces the estimate.
     let subs = client
+        .acta()
         .list_subtasks(&ws.slug, &parent.readable_id)
         .await
         .expect("list subtasks");
@@ -251,6 +265,7 @@ async fn subtask_is_created_with_the_same_details_as_a_task() {
     let (board_id, parent) = setup_parent(&client, &ws.slug, "detail-proj", "DT").await;
 
     let doing = client
+        .acta()
         .create_column(
             &ws.slug,
             board_id,
@@ -267,6 +282,7 @@ async fn subtask_is_created_with_the_same_details_as_a_task() {
     let sibling = create_task(&client, &ws.slug, board_id, doing.id, "Sibling").await;
 
     let created = client
+        .acta()
         .create_subtask(
             &ws.slug,
             &parent.readable_id,
@@ -322,6 +338,7 @@ async fn existing_task_is_converted_into_a_subtask_and_back() {
     let (board_id, parent) = setup_parent(&client, &ws.slug, "convert-proj", "CV").await;
 
     let board_tasks = client
+        .acta()
         .list_tasks(&ws.slug, board_id, None, None)
         .await
         .expect("list board tasks");
@@ -330,6 +347,7 @@ async fn existing_task_is_converted_into_a_subtask_and_back() {
     let standalone = create_task(&client, &ws.slug, board_id, column_id, "Standalone").await;
 
     let converted = client
+        .acta()
         .set_task_parent(
             &ws.slug,
             &standalone.readable_id,
@@ -347,6 +365,7 @@ async fn existing_task_is_converted_into_a_subtask_and_back() {
     );
 
     let subs = client
+        .acta()
         .list_subtasks(&ws.slug, &parent.readable_id)
         .await
         .expect("list subtasks");
@@ -354,6 +373,7 @@ async fn existing_task_is_converted_into_a_subtask_and_back() {
     assert_eq!(subs[0].id, standalone.id);
 
     let ids: Vec<uuid::Uuid> = client
+        .acta()
         .list_tasks(&ws.slug, board_id, None, None)
         .await
         .expect("list board tasks")
@@ -368,6 +388,7 @@ async fn existing_task_is_converted_into_a_subtask_and_back() {
 
     // Re-applying the same parent is a no-op rather than an error.
     client
+        .acta()
         .set_task_parent(
             &ws.slug,
             &standalone.readable_id,
@@ -379,6 +400,7 @@ async fn existing_task_is_converted_into_a_subtask_and_back() {
         .expect("re-parenting to the same parent is idempotent");
 
     let promoted = client
+        .acta()
         .promote_subtask(&ws.slug, &standalone.readable_id)
         .await
         .expect("promote back");
@@ -400,6 +422,7 @@ async fn conversion_allows_a_parent_on_another_board() {
     let elsewhere = create_task(&client, &ws.slug, other_board, other_column, "Elsewhere").await;
 
     let converted = client
+        .acta()
         .set_task_parent(
             &ws.slug,
             &elsewhere.readable_id,
@@ -417,6 +440,7 @@ async fn conversion_allows_a_parent_on_another_board() {
     );
 
     let subs = client
+        .acta()
         .list_subtasks(&ws.slug, &parent.readable_id)
         .await
         .expect("list subtasks");
@@ -435,6 +459,7 @@ async fn conversion_rejects_self_parenting_and_cycles() {
     let (_board_id, parent) = setup_parent(&client, &ws.slug, "cycle-proj", "CY").await;
 
     let child = client
+        .acta()
         .create_subtask(
             &ws.slug,
             &parent.readable_id,
@@ -445,6 +470,7 @@ async fn conversion_rejects_self_parenting_and_cycles() {
         .task;
 
     let self_parent = client
+        .acta()
         .set_task_parent(
             &ws.slug,
             &parent.readable_id,
@@ -456,6 +482,7 @@ async fn conversion_rejects_self_parenting_and_cycles() {
     assert!(self_parent.is_err(), "a task cannot be its own parent");
 
     let cycle = client
+        .acta()
         .set_task_parent(
             &ws.slug,
             &parent.readable_id,
@@ -468,6 +495,7 @@ async fn conversion_rejects_self_parenting_and_cycles() {
 
     // The rejected attempts left the hierarchy untouched.
     let subs = client
+        .acta()
         .list_subtasks(&ws.slug, &parent.readable_id)
         .await
         .expect("list subtasks");

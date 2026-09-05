@@ -26,7 +26,7 @@ async fn list_users_returns_all_users_for_admin() {
     let (_member, _, member_user) =
         login_user_with_workspace(&server, &db, "settings-member").await;
 
-    let users: Vec<UserDto> = root.list_users().await.expect("list_users");
+    let users: Vec<UserDto> = root.custos().list_users().await.expect("list_users");
 
     assert!(
         users.iter().any(|u| u.id == member_user.id.0),
@@ -48,9 +48,12 @@ async fn list_users_includes_disabled_users() {
     let root = login_root_user(&server, &db).await;
     let (_victim, _, victim) = login_user_with_workspace(&server, &db, "settings-disabled").await;
 
-    root.disable_user(victim.id.0).await.expect("disable_user");
+    root.custos()
+        .disable_user(victim.id.0)
+        .await
+        .expect("disable_user");
 
-    let users: Vec<UserDto> = root.list_users().await.expect("list_users");
+    let users: Vec<UserDto> = root.custos().list_users().await.expect("list_users");
 
     let listed = users
         .iter()
@@ -71,7 +74,7 @@ async fn list_users_rejects_non_admin() {
 
     let (member, _, _) = login_user_with_workspace(&server, &db, "settings-nonadmin").await;
 
-    let err = member.list_users().await;
+    let err = member.custos().list_users().await;
     assert!(
         matches!(err, Err(atlas_client::ClientError::Api(ref p)) if p.status == 403),
         "expected 403 for non-admin, got {err:?}"
@@ -87,7 +90,7 @@ async fn list_users_rejects_unauthenticated() {
 
     let anon = AtlasClient::new(server.base_url().to_string());
 
-    let err = anon.list_users().await;
+    let err = anon.custos().list_users().await;
     assert!(
         matches!(err, Err(atlas_client::ClientError::Api(ref p)) if p.status == 401),
         "expected 401 for unauthenticated, got {err:?}"
@@ -104,6 +107,7 @@ async fn change_password_succeeds_and_rotates_credentials() {
     let (client, _, _) = login_user_with_workspace(&server, &db, "settings-rotate").await;
 
     client
+        .custos()
         .change_password(ChangePasswordRequest {
             current_password: "TestPassword1!".to_string(),
             new_password: "BrandNewPass2@".to_string(),
@@ -145,6 +149,7 @@ async fn change_password_rejects_wrong_current_password() {
     let (client, _, _) = login_user_with_workspace(&server, &db, "settings-wrongpw").await;
 
     let err = client
+        .custos()
         .change_password(ChangePasswordRequest {
             current_password: "NotMyPassword9!".to_string(),
             new_password: "BrandNewPass2@".to_string(),
@@ -199,6 +204,7 @@ async fn change_password_rejects_api_key_principal() {
     let agent = AtlasClient::new(server.base_url().to_string()).with_token(raw_secret);
 
     let err = agent
+        .custos()
         .change_password(ChangePasswordRequest {
             current_password: "irrelevant".to_string(),
             new_password: "irrelevant2".to_string(),
@@ -221,6 +227,7 @@ async fn create_user_with_email_persists_and_returns_it() {
     let (_, ws, _) = login_user_with_workspace(&server, &db, "email-ws-owner").await;
 
     let resp = root
+        .custos()
         .create_user(CreateUserRequest {
             username: "email-user".to_string(),
             display_name: "Email User".to_string(),
@@ -234,7 +241,7 @@ async fn create_user_with_email_persists_and_returns_it() {
     let created = resp.user;
     assert_eq!(created.email.as_deref(), Some("email-user@example.com"));
 
-    let listed: Vec<UserDto> = root.list_users().await.expect("list_users");
+    let listed: Vec<UserDto> = root.custos().list_users().await.expect("list_users");
     let found = listed
         .iter()
         .find(|u| u.id == created.id)
@@ -253,6 +260,7 @@ async fn create_user_without_email_defaults_to_none() {
     let (_, ws, _) = login_user_with_workspace(&server, &db, "no-email-ws-owner").await;
 
     let resp = root
+        .custos()
         .create_user(CreateUserRequest {
             username: "no-email-user".to_string(),
             display_name: "No Email".to_string(),
@@ -276,6 +284,7 @@ async fn update_me_updates_email_and_display_name() {
     let (client, _, _) = login_user_with_workspace(&server, &db, "profile-update").await;
 
     let updated: UserDto = client
+        .custos()
         .update_me(UpdateMeRequest {
             email: Some("new@example.com".to_string()),
             display_name: Some("Renamed Person".to_string()),
@@ -297,6 +306,7 @@ async fn update_me_only_overwrites_provided_fields() {
     let (client, _, _) = login_user_with_workspace(&server, &db, "profile-partial").await;
 
     client
+        .custos()
         .update_me(UpdateMeRequest {
             email: Some("first@example.com".to_string()),
             display_name: None,
@@ -305,6 +315,7 @@ async fn update_me_only_overwrites_provided_fields() {
         .expect("update_me email only");
 
     let after: UserDto = client
+        .custos()
         .update_me(UpdateMeRequest {
             email: None,
             display_name: Some("Only Name".to_string()),
@@ -330,6 +341,7 @@ async fn me_returns_the_users_email() {
     let (client, _, _) = login_user_with_workspace(&server, &db, "me-email").await;
 
     client
+        .custos()
         .update_me(UpdateMeRequest {
             email: Some("me-email@example.com".to_string()),
             display_name: None,
@@ -337,7 +349,7 @@ async fn me_returns_the_users_email() {
         .await
         .expect("update_me");
 
-    let me: MeResponse = client.me().await.expect("me");
+    let me: MeResponse = client.custos().me().await.expect("me");
     assert_eq!(me.email.as_deref(), Some("me-email@example.com"));
 
     db.teardown().await;
@@ -374,6 +386,7 @@ async fn update_me_rejects_api_key_principal() {
     let agent = AtlasClient::new(server.base_url().to_string()).with_token(raw_secret);
 
     let err = agent
+        .custos()
         .update_me(UpdateMeRequest {
             email: Some("agent@example.com".to_string()),
             display_name: None,
@@ -397,16 +410,18 @@ async fn reset_password_rotates_credentials_and_revokes_sessions() {
 
     // The victim has an active session right now.
     victim
+        .custos()
         .me()
         .await
         .expect("victim session active before reset");
 
-    root.reset_user_password(victim_user.id.0, "FreshSecret9!")
+    root.custos()
+        .reset_user_password(victim_user.id.0, "FreshSecret9!")
         .await
         .expect("reset_user_password");
 
     // Existing session is revoked.
-    let after = victim.me().await;
+    let after = victim.custos().me().await;
     assert!(
         matches!(after, Err(atlas_client::ClientError::Api(ref p)) if p.status == 401),
         "victim's existing session must be revoked, got {after:?}"
@@ -447,6 +462,7 @@ async fn reset_password_rejects_non_admin() {
     let (_other, _, target) = login_user_with_workspace(&server, &db, "reset-target").await;
 
     let err = member
+        .custos()
         .reset_user_password(target.id.0, "WhateverPass1!")
         .await;
     assert!(
@@ -476,16 +492,19 @@ async fn change_password_revokes_other_sessions() {
 
     // Both sessions are active before the password change.
     session_a
+        .custos()
         .me()
         .await
         .expect("session_a active before change");
     session_b
+        .custos()
         .me()
         .await
         .expect("session_b active before change");
 
     // Session A changes the password.
     session_a
+        .custos()
         .change_password(ChangePasswordRequest {
             current_password: "TestPassword1!".to_string(),
             new_password: "NewSecurePass2@".to_string(),
@@ -494,7 +513,7 @@ async fn change_password_revokes_other_sessions() {
         .expect("change_password");
 
     // Session B (the other session) must now be revoked.
-    let after_b = session_b.me().await;
+    let after_b = session_b.custos().me().await;
     assert!(
         matches!(after_b, Err(atlas_client::ClientError::Api(ref p)) if p.status == 401),
         "session_b must be revoked after password change, got {after_b:?}"
@@ -502,6 +521,7 @@ async fn change_password_revokes_other_sessions() {
 
     // Session A (the calling session) must still be alive.
     session_a
+        .custos()
         .me()
         .await
         .expect("session_a must survive its own password change");
@@ -516,7 +536,7 @@ async fn meta_returns_the_crate_version() {
 
     let (client, _, _) = login_user_with_workspace(&server, &db, "meta-reader").await;
 
-    let meta: ServerMetaDto = client.server_meta().await.expect("server_meta");
+    let meta: ServerMetaDto = client.platform().server_meta().await.expect("server_meta");
     assert_eq!(meta.version, env!("CARGO_PKG_VERSION"));
 
     db.teardown().await;
@@ -529,7 +549,7 @@ async fn meta_requires_authentication() {
 
     let anon = AtlasClient::new(server.base_url().to_string());
 
-    let err = anon.server_meta().await;
+    let err = anon.platform().server_meta().await;
     assert!(
         matches!(err, Err(atlas_client::ClientError::Api(ref p)) if p.status == 401),
         "expected 401 for unauthenticated, got {err:?}"
@@ -546,6 +566,7 @@ async fn change_password_rejects_short_new_password() {
     let (client, _, _) = login_user_with_workspace(&server, &db, "settings-shortpw").await;
 
     let err = client
+        .custos()
         .change_password(ChangePasswordRequest {
             current_password: "TestPassword1!".to_string(),
             new_password: "short".to_string(),
@@ -577,7 +598,10 @@ async fn reset_password_rejects_short_new_password() {
     let root = login_root_user(&server, &db).await;
     let (victim, _, victim_user) = login_user_with_workspace(&server, &db, "reset-shortpw").await;
 
-    let err = root.reset_user_password(victim_user.id.0, "short").await;
+    let err = root
+        .custos()
+        .reset_user_password(victim_user.id.0, "short")
+        .await;
     assert!(
         matches!(err, Err(atlas_client::ClientError::Api(ref p)) if p.status == 422),
         "expected 422 for a too-short reset password, got {err:?}"
@@ -585,6 +609,7 @@ async fn reset_password_rejects_short_new_password() {
 
     // The rejected reset must not revoke the victim's sessions.
     victim
+        .custos()
         .me()
         .await
         .expect("victim session must survive a rejected reset");
@@ -610,6 +635,7 @@ async fn update_me_rejects_blank_and_overlong_display_name() {
     let (client, _, _) = login_user_with_workspace(&server, &db, "profile-badname").await;
 
     let blank = client
+        .custos()
         .update_me(UpdateMeRequest {
             email: None,
             display_name: Some("   ".to_string()),
@@ -621,6 +647,7 @@ async fn update_me_rejects_blank_and_overlong_display_name() {
     );
 
     let overlong = client
+        .custos()
         .update_me(UpdateMeRequest {
             email: None,
             display_name: Some("x".repeat(201)),
@@ -632,7 +659,7 @@ async fn update_me_rejects_blank_and_overlong_display_name() {
     );
 
     // Profile unchanged after the rejected updates.
-    let me: MeResponse = client.me().await.expect("me");
+    let me: MeResponse = client.custos().me().await.expect("me");
     assert_eq!(me.display_name.as_deref(), Some("profile-badname"));
 
     db.teardown().await;
@@ -647,6 +674,7 @@ async fn update_me_rejects_malformed_email() {
 
     for bad in ["", "   ", "no-at-sign", "@no-local", "no-domain@", "a@b@c"] {
         let err = client
+            .custos()
             .update_me(UpdateMeRequest {
                 email: Some(bad.to_string()),
                 display_name: None,
@@ -659,7 +687,7 @@ async fn update_me_rejects_malformed_email() {
     }
 
     // Email unchanged (None) after the rejected updates.
-    let me: MeResponse = client.me().await.expect("me");
+    let me: MeResponse = client.custos().me().await.expect("me");
     assert_eq!(me.email, None);
 
     db.teardown().await;

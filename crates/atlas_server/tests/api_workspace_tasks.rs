@@ -55,6 +55,7 @@ async fn seed_workspace(
     let (user_client, ws, user) = support::login_user_with_workspace(server, db, username).await;
 
     let key_created = user_client
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "test-agent".to_string(),
             r#type: None,
@@ -79,11 +80,13 @@ async fn seed_workspace(
 
     // Create a project + two boards + two columns each
     let project = user_client
+        .acta()
         .create_project(&ws.slug, project_req(&format!("{username}-p1"), "TSK"))
         .await
         .expect("create project");
 
     let board1 = user_client
+        .acta()
         .create_board(
             &ws.slug,
             &project.slug,
@@ -96,6 +99,7 @@ async fn seed_workspace(
         .expect("create board 1");
 
     let board2 = user_client
+        .acta()
         .create_board(
             &ws.slug,
             &project.slug,
@@ -109,6 +113,7 @@ async fn seed_workspace(
 
     // Create two columns on board1 and one column on board2
     let col1 = user_client
+        .acta()
         .create_column(
             &ws.slug,
             board1.id,
@@ -124,6 +129,7 @@ async fn seed_workspace(
     let col1_id = col1.id;
 
     let col2 = user_client
+        .acta()
         .create_column(
             &ws.slug,
             board1.id,
@@ -139,6 +145,7 @@ async fn seed_workspace(
     let col2_id = col2.id;
 
     let col3 = user_client
+        .acta()
         .create_column(
             &ws.slug,
             board2.id,
@@ -155,6 +162,7 @@ async fn seed_workspace(
 
     // Create tasks as the user on board1
     let t1 = user_client
+        .acta()
         .create_task(
             &ws.slug,
             board1.id,
@@ -176,6 +184,7 @@ async fn seed_workspace(
         .expect("create user task 1");
 
     let t2 = user_client
+        .acta()
         .create_task(
             &ws.slug,
             board1.id,
@@ -198,6 +207,7 @@ async fn seed_workspace(
 
     // Create tasks as the api key on board2
     let t3 = api_key_client
+        .acta()
         .create_task(
             &ws.slug,
             board2.id,
@@ -219,6 +229,7 @@ async fn seed_workspace(
         .expect("create agent task 1");
 
     let t4 = api_key_client
+        .acta()
         .create_task(
             &ws.slug,
             board2.id,
@@ -237,6 +248,7 @@ async fn seed_workspace(
 
     // Assign t1 to the user (user is assignee)
     user_client
+        .acta()
         .add_assignee(
             &ws.slug,
             &t1.readable_id,
@@ -250,6 +262,7 @@ async fn seed_workspace(
 
     // Assign t3 to the api key
     user_client
+        .acta()
         .add_assignee(
             &ws.slug,
             &t3.readable_id,
@@ -287,6 +300,7 @@ async fn list_workspace_tasks_no_params_returns_all_toplevel_tasks_across_boards
 
     let page = seed
         .user_client
+        .acta()
         .list_workspace_tasks(&seed.ws_slug, &Default::default())
         .await
         .expect("list workspace tasks");
@@ -313,6 +327,7 @@ async fn list_workspace_tasks_assignee_me_returns_only_assigned_tasks() {
 
     let page = seed
         .user_client
+        .acta()
         .list_workspace_tasks(
             &seed.ws_slug,
             &WorkspaceTaskQueryParams {
@@ -345,6 +360,7 @@ async fn list_workspace_tasks_actor_api_key_returns_only_agent_created_tasks() {
 
     let page = seed
         .user_client
+        .acta()
         .list_workspace_tasks(
             &seed.ws_slug,
             &WorkspaceTaskQueryParams {
@@ -376,6 +392,7 @@ async fn list_workspace_tasks_sort_updated_desc_orders_correctly_across_boards()
 
     let page = seed
         .user_client
+        .acta()
         .list_workspace_tasks(
             &seed.ws_slug,
             &WorkspaceTaskQueryParams {
@@ -407,6 +424,7 @@ async fn list_workspace_tasks_board_id_scopes_to_single_board() {
 
     let page = seed
         .user_client
+        .acta()
         .list_workspace_tasks(
             &seed.ws_slug,
             &WorkspaceTaskQueryParams {
@@ -438,6 +456,7 @@ async fn list_workspace_tasks_column_id_filter() {
 
     let page = seed
         .user_client
+        .acta()
         .list_workspace_tasks(
             &seed.ws_slug,
             &WorkspaceTaskQueryParams {
@@ -467,6 +486,7 @@ async fn list_workspace_tasks_priority_filter_repeated_param() {
 
     let page = seed
         .user_client
+        .acta()
         .list_workspace_tasks(
             &seed.ws_slug,
             &WorkspaceTaskQueryParams {
@@ -502,6 +522,7 @@ async fn list_workspace_tasks_label_filter_array_contains_all() {
     // Only user_task_ids[0] has BOTH "alpha" AND "beta"
     let page = seed
         .user_client
+        .acta()
         .list_workspace_tasks(
             &seed.ws_slug,
             &WorkspaceTaskQueryParams {
@@ -531,6 +552,7 @@ async fn list_workspace_tasks_combined_filters_and_together() {
     // board1 AND priority=high → only user_task_ids[0]
     let page = seed
         .user_client
+        .acta()
         .list_workspace_tasks(
             &seed.ws_slug,
             &WorkspaceTaskQueryParams {
@@ -560,6 +582,7 @@ async fn list_workspace_tasks_invalid_sort_returns_400() {
 
     let result = seed
         .user_client
+        .acta()
         .list_workspace_tasks(
             &seed.ws_slug,
             &WorkspaceTaskQueryParams {
@@ -593,6 +616,7 @@ async fn list_workspace_tasks_pagination_no_overlap_and_has_more_correct() {
     // First page: limit=2
     let page1 = seed
         .user_client
+        .acta()
         .list_workspace_tasks(
             &seed.ws_slug,
             &WorkspaceTaskQueryParams {
@@ -616,6 +640,7 @@ async fn list_workspace_tasks_pagination_no_overlap_and_has_more_correct() {
     // Second page
     let page2 = seed
         .user_client
+        .acta()
         .list_workspace_tasks(
             &seed.ws_slug,
             &WorkspaceTaskQueryParams {
@@ -670,6 +695,7 @@ async fn list_workspace_tasks_excludes_subtasks() {
     let parent_rid = {
         let page = seed
             .user_client
+            .acta()
             .list_workspace_tasks(&seed.ws_slug, &Default::default())
             .await
             .expect("list");
@@ -681,6 +707,7 @@ async fn list_workspace_tasks_excludes_subtasks() {
     };
 
     seed.user_client
+        .acta()
         .create_subtask(
             &seed.ws_slug,
             &parent_rid,
@@ -691,6 +718,7 @@ async fn list_workspace_tasks_excludes_subtasks() {
 
     let page = seed
         .user_client
+        .acta()
         .list_workspace_tasks(&seed.ws_slug, &Default::default())
         .await
         .expect("list after subtask");
@@ -716,6 +744,7 @@ async fn list_workspace_tasks_excludes_soft_deleted() {
 
     let page_before = seed
         .user_client
+        .acta()
         .list_workspace_tasks(&seed.ws_slug, &Default::default())
         .await
         .expect("list before delete");
@@ -730,12 +759,14 @@ async fn list_workspace_tasks_excludes_soft_deleted() {
         .expect("task readable_id");
 
     seed.user_client
+        .acta()
         .delete_task(&seed.ws_slug, &rid)
         .await
         .expect("delete task");
 
     let page_after = seed
         .user_client
+        .acta()
         .list_workspace_tasks(&seed.ws_slug, &Default::default())
         .await
         .expect("list after delete");
@@ -765,12 +796,14 @@ async fn list_workspace_tasks_cross_workspace_isolation() {
 
     let page_a = seed_a
         .user_client
+        .acta()
         .list_workspace_tasks(&seed_a.ws_slug, &Default::default())
         .await
         .expect("list ws_a tasks as user_a");
 
     let page_b = seed_b
         .user_client
+        .acta()
         .list_workspace_tasks(&seed_b.ws_slug, &Default::default())
         .await
         .expect("list ws_b tasks as user_b");
@@ -807,6 +840,7 @@ async fn list_workspace_tasks_rejects_unauthenticated() {
 
     let anon = atlas_client::AtlasClient::new(server.base_url().to_string());
     let result = anon
+        .acta()
         .list_workspace_tasks(&seed.ws_slug, &Default::default())
         .await;
 
@@ -833,6 +867,7 @@ async fn list_workspace_tasks_returns_404_for_non_member() {
     let (outsider, _) = support::login_user(&server, &db, "tw16-outsider").await;
 
     let result = outsider
+        .acta()
         .list_workspace_tasks(&seed.ws_slug, &Default::default())
         .await;
 
@@ -857,6 +892,7 @@ async fn list_workspace_tasks_assignee_me_as_api_key_resolves_against_assignee_a
     // t3 (key_task_ids[0]) is assigned to the api key
     let page = seed
         .api_key_client
+        .acta()
         .list_workspace_tasks(
             &seed.ws_slug,
             &WorkspaceTaskQueryParams {
@@ -889,6 +925,7 @@ async fn list_workspace_tasks_summaries_carry_board_name_and_column_name() {
 
     let page = seed
         .user_client
+        .acta()
         .list_workspace_tasks(&seed.ws_slug, &Default::default())
         .await
         .expect("list workspace tasks");
@@ -943,6 +980,7 @@ async fn list_workspace_tasks_summaries_carry_board_id_and_cross_board_ids_are_d
 
     let page = seed
         .user_client
+        .acta()
         .list_workspace_tasks(&seed.ws_slug, &Default::default())
         .await
         .expect("list workspace tasks");

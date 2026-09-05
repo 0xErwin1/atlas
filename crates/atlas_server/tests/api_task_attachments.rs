@@ -36,11 +36,13 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "task-attach-1").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("attach-proj", "AT"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "attach-proj",
@@ -53,6 +55,7 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -67,6 +70,7 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
         .expect("create column");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -86,6 +90,7 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
     let payload = b"hello attachment".to_vec();
 
     let uploaded = client
+        .acta()
         .upload_task_attachment(
             &ws.slug,
             &task.readable_id,
@@ -111,6 +116,7 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
     );
 
     let renamed = client
+        .acta()
         .rename_task_attachment(
             &ws.slug,
             &task.readable_id,
@@ -143,6 +149,7 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
     );
 
     let listed = client
+        .acta()
         .list_task_attachments(&ws.slug, &task.readable_id)
         .await
         .expect("list attachments");
@@ -167,6 +174,7 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
     );
 
     let (bytes, content_type) = client
+        .acta()
         .download_task_attachment(&ws.slug, &task.readable_id, uploaded.id)
         .await
         .expect("download attachment");
@@ -241,6 +249,7 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
     }
 
     let second_task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -295,10 +304,12 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
     let (other_client, other_ws, _) =
         support::login_user_with_workspace(&server, &db, "task-attach-other-ws").await;
     other_client
+        .acta()
         .create_project(&other_ws.slug, project_req("other-attach-proj", "OA"))
         .await
         .expect("create other workspace project");
     let other_board = other_client
+        .acta()
         .create_board(
             &other_ws.slug,
             "other-attach-proj",
@@ -310,6 +321,7 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
         .await
         .expect("create other workspace board");
     let other_column = other_client
+        .acta()
         .create_column(
             &other_ws.slug,
             other_board.id,
@@ -323,6 +335,7 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
         .await
         .expect("create other workspace column");
     let other_task = other_client
+        .acta()
         .create_task(
             &other_ws.slug,
             other_board.id,
@@ -339,6 +352,7 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
         .await
         .expect("create other workspace task");
     let other_attachment = other_client
+        .acta()
         .upload_task_attachment(
             &other_ws.slug,
             &other_task.readable_id,
@@ -369,12 +383,14 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
         reqwest::StatusCode::NOT_FOUND
     );
     let other_listed = other_client
+        .acta()
         .list_task_attachments(&other_ws.slug, &other_task.readable_id)
         .await
         .expect("list other workspace attachments");
     assert_eq!(other_listed[0].file_name, "foreign.txt");
 
     let read_only_key = client
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "task-attachment-read-only".to_string(),
             r#type: None,
@@ -390,6 +406,7 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
     let read_only_client = atlas_client::AtlasClient::new(server.base_url().to_string())
         .with_token(read_only_key.secret);
     let capability_result = read_only_client
+        .acta()
         .rename_task_attachment(
             &ws.slug,
             &task.readable_id,
@@ -417,12 +434,14 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
     );
 
     let after_rejections = client
+        .acta()
         .list_task_attachments(&ws.slug, &task.readable_id)
         .await
         .expect("list attachments after rejected renames");
     assert_eq!(after_rejections[0].file_name, "meeting-notes.txt");
 
     client
+        .acta()
         .delete_task_attachment(&ws.slug, &task.readable_id, uploaded.id)
         .await
         .expect("delete attachment");
@@ -461,6 +480,7 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
     );
 
     let after_delete = client
+        .acta()
         .list_task_attachments(&ws.slug, &task.readable_id)
         .await
         .expect("list attachments after delete");
@@ -485,10 +505,12 @@ async fn task_attachment_rename_respects_configured_extension_allowlist() {
         support::login_user_with_workspace(&server, &db, "task-attach-allowlist").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("allowlist-proj", "AL"))
         .await
         .expect("create project");
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "allowlist-proj",
@@ -500,6 +522,7 @@ async fn task_attachment_rename_respects_configured_extension_allowlist() {
         .await
         .expect("create board");
     let column = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -513,6 +536,7 @@ async fn task_attachment_rename_respects_configured_extension_allowlist() {
         .await
         .expect("create column");
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -529,6 +553,7 @@ async fn task_attachment_rename_respects_configured_extension_allowlist() {
         .await
         .expect("create task");
     let attachment = client
+        .acta()
         .upload_task_attachment(
             &ws.slug,
             &task.readable_id,
@@ -563,6 +588,7 @@ async fn task_attachment_rename_respects_configured_extension_allowlist() {
     );
 
     let listed = client
+        .acta()
         .list_task_attachments(&ws.slug, &task.readable_id)
         .await
         .expect("list attachment after rejected rename");

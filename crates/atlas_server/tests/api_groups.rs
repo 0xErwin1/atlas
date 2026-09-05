@@ -88,6 +88,7 @@ async fn create_group_returns_201() {
     let (client, ws, _) = login_user_with_workspace(&server, &db, "grp-create-1").await;
 
     let group = client
+        .custos()
         .create_group(
             &ws.slug,
             CreateGroupRequest {
@@ -108,6 +109,7 @@ async fn create_group_emits_audit_row() {
     let (client, ws, caller) = login_user_with_workspace(&server, &db, "grp-audit-1").await;
 
     let group = client
+        .custos()
         .create_group(
             &ws.slug,
             CreateGroupRequest {
@@ -138,6 +140,7 @@ async fn create_group_duplicate_name_returns_409() {
     let (client, ws, _) = login_user_with_workspace(&server, &db, "grp-dup-1").await;
 
     client
+        .custos()
         .create_group(
             &ws.slug,
             CreateGroupRequest {
@@ -148,6 +151,7 @@ async fn create_group_duplicate_name_returns_409() {
         .expect("first create");
 
     let err = client
+        .custos()
         .create_group(
             &ws.slug,
             CreateGroupRequest {
@@ -174,6 +178,7 @@ async fn list_groups_returns_all_active_groups() {
     let (client, ws, _) = login_user_with_workspace(&server, &db, "grp-list-1").await;
 
     client
+        .custos()
         .create_group(
             &ws.slug,
             CreateGroupRequest {
@@ -183,6 +188,7 @@ async fn list_groups_returns_all_active_groups() {
         .await
         .expect("create alpha");
     client
+        .custos()
         .create_group(
             &ws.slug,
             CreateGroupRequest {
@@ -192,7 +198,11 @@ async fn list_groups_returns_all_active_groups() {
         .await
         .expect("create beta");
 
-    let groups = client.list_groups(&ws.slug).await.expect("list groups");
+    let groups = client
+        .custos()
+        .list_groups(&ws.slug)
+        .await
+        .expect("list groups");
     assert_eq!(groups.len(), 2);
 }
 
@@ -207,6 +217,7 @@ async fn delete_group_removes_it_from_list() {
     let (client, ws, _) = login_user_with_workspace(&server, &db, "grp-del-1").await;
 
     let group = client
+        .custos()
         .create_group(
             &ws.slug,
             CreateGroupRequest {
@@ -217,11 +228,16 @@ async fn delete_group_removes_it_from_list() {
         .expect("create");
 
     client
+        .custos()
         .delete_group(&ws.slug, group.id)
         .await
         .expect("delete");
 
-    let groups = client.list_groups(&ws.slug).await.expect("list groups");
+    let groups = client
+        .custos()
+        .list_groups(&ws.slug)
+        .await
+        .expect("list groups");
     assert!(
         groups.iter().all(|g| g.id != group.id),
         "deleted group still in list"
@@ -235,6 +251,7 @@ async fn delete_group_emits_audit_row() {
     let (client, ws, caller) = login_user_with_workspace(&server, &db, "grp-del-audit-1").await;
 
     let group = client
+        .custos()
         .create_group(
             &ws.slug,
             CreateGroupRequest {
@@ -245,6 +262,7 @@ async fn delete_group_emits_audit_row() {
         .expect("create");
 
     client
+        .custos()
         .delete_group(&ws.slug, group.id)
         .await
         .expect("delete");
@@ -266,6 +284,7 @@ async fn delete_group_not_found_returns_404() {
     let (client, ws, _) = login_user_with_workspace(&server, &db, "grp-del-404").await;
 
     let err = client
+        .custos()
         .delete_group(&ws.slug, uuid::Uuid::now_v7())
         .await
         .expect_err("should 404");
@@ -289,6 +308,7 @@ async fn add_member_to_group_and_list() {
     let target = add_workspace_member(&db, ws.id, "grp-member-target-1").await;
 
     let group = client
+        .custos()
         .create_group(
             &ws.slug,
             CreateGroupRequest {
@@ -299,6 +319,7 @@ async fn add_member_to_group_and_list() {
         .expect("create group");
 
     let member = client
+        .custos()
         .add_group_member(
             &ws.slug,
             group.id,
@@ -313,6 +334,7 @@ async fn add_member_to_group_and_list() {
     assert_eq!(member.group_id, group.id);
 
     let members = client
+        .custos()
         .list_group_members(&ws.slug, group.id)
         .await
         .expect("list members");
@@ -329,6 +351,7 @@ async fn add_member_emits_audit_row() {
     let target = add_workspace_member(&db, ws.id, "grp-madd-target").await;
 
     let group = client
+        .custos()
         .create_group(
             &ws.slug,
             CreateGroupRequest {
@@ -339,6 +362,7 @@ async fn add_member_emits_audit_row() {
         .expect("create group");
 
     client
+        .custos()
         .add_group_member(
             &ws.slug,
             group.id,
@@ -380,6 +404,7 @@ async fn add_member_not_workspace_member_returns_422() {
         .expect("create user");
 
     let group = client
+        .custos()
         .create_group(
             &ws.slug,
             CreateGroupRequest {
@@ -390,6 +415,7 @@ async fn add_member_not_workspace_member_returns_422() {
         .expect("create group");
 
     let err = client
+        .custos()
         .add_group_member(
             &ws.slug,
             group.id,
@@ -419,6 +445,7 @@ async fn remove_member_from_group() {
     let target = add_workspace_member(&db, ws.id, "grp-mrem-target-1").await;
 
     let group = client
+        .custos()
         .create_group(
             &ws.slug,
             CreateGroupRequest {
@@ -429,6 +456,7 @@ async fn remove_member_from_group() {
         .expect("create group");
 
     client
+        .custos()
         .add_group_member(
             &ws.slug,
             group.id,
@@ -440,11 +468,13 @@ async fn remove_member_from_group() {
         .expect("add member");
 
     client
+        .custos()
         .remove_group_member(&ws.slug, group.id, target.id.0)
         .await
         .expect("remove member");
 
     let members = client
+        .custos()
         .list_group_members(&ws.slug, group.id)
         .await
         .expect("list members");
@@ -461,6 +491,7 @@ async fn remove_member_emits_audit_row() {
     let target = add_workspace_member(&db, ws.id, "grp-mrem-audit-target").await;
 
     let group = client
+        .custos()
         .create_group(
             &ws.slug,
             CreateGroupRequest {
@@ -471,6 +502,7 @@ async fn remove_member_emits_audit_row() {
         .expect("create group");
 
     client
+        .custos()
         .add_group_member(
             &ws.slug,
             group.id,
@@ -482,6 +514,7 @@ async fn remove_member_emits_audit_row() {
         .expect("add member");
 
     client
+        .custos()
         .remove_group_member(&ws.slug, group.id, target.id.0)
         .await
         .expect("remove member");
@@ -520,6 +553,7 @@ async fn plain_member_cannot_create_group() {
         .expect("login member");
 
     let err = member_client
+        .custos()
         .create_group(
             &ws.slug,
             CreateGroupRequest {
