@@ -168,6 +168,11 @@ impl BoundWorkers {
     pub fn contains(&self, id: &WorkerId) -> bool {
         self.workers.contains_key(id)
     }
+
+    /// The bound implementation for `id`, or `None` when it is unbound.
+    pub fn worker(&self, id: &WorkerId) -> Option<Arc<dyn Worker>> {
+        self.workers.get(id).cloned()
+    }
 }
 
 impl fmt::Debug for BoundWorkers {
@@ -413,6 +418,17 @@ mod tests {
         assert!(errors.contains(&WorkerBindError::DuplicateBinding {
             worker: worker_id("b.dup")
         }));
+    }
+
+    #[test]
+    fn worker_accessor_returns_the_bound_implementation_and_none_for_an_unbound_id() {
+        let registry = registry_with(vec![entry_with_worker("acta", "acta.reindex", false)]);
+        let reindex = recording_worker("acta.reindex");
+
+        let bound = BoundWorkers::bind(&registry, vec![reindex]).expect("valid binding");
+
+        assert!(bound.worker(&worker_id("acta.reindex")).is_some());
+        assert!(bound.worker(&worker_id("acta.unbound")).is_none());
     }
 
     #[test]

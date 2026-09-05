@@ -77,6 +77,11 @@ pub struct AppState {
     /// [`Self::with_readiness_timeout`] to prove the budget path without a
     /// multi-second real wait.
     pub readiness_timeout: std::time::Duration,
+    /// The single source of worker state handles, keyed by `WorkerId`
+    /// (E11-S3b design D3, D8): built from the registry alone before the
+    /// rest of this state, and shared by the workers that write it and by
+    /// diagnostics implementers that will read it (PR2).
+    pub workers: Arc<crate::ops::workers::WorkerStates>,
 }
 
 impl AppState {
@@ -97,6 +102,7 @@ impl AppState {
             parse_upload_allowed_extensions(cfg.acta.upload_allowed_extensions.clone());
 
         let registry = Arc::new(crate::ops::component_registry(&cfg.modules.storage)?);
+        let workers = Arc::new(crate::ops::workers::WorkerStates::from_registry(&registry));
         let diagnostics = Arc::new(crate::ops::default_registry(
             &registry,
             Arc::new(db.clone()),
@@ -128,6 +134,7 @@ impl AppState {
             registry,
             diagnostics,
             readiness_timeout: DEFAULT_READINESS_TIMEOUT,
+            workers,
         })
     }
 
@@ -164,6 +171,18 @@ impl AppState {
             root: attachment_root,
         };
         let registry = Arc::new(crate::ops::component_registry(&storage)?);
+        // `for_test` seeds every declared worker `Running` (design R11,
+        // orchestrator's 2026-09-04 correction), modelling a supervised
+        // process: a container test forces exactly the worker it cares
+        // about to a different state via `with_workers`, and every other
+        // worker's baseline stays the healthy one. Production seeds
+        // `Stopped` and the supervisor flips them within the boot window.
+        let workers = Arc::new(crate::ops::workers::WorkerStates::from_registry(&registry));
+        for status in workers.all() {
+            if let Some(handle) = workers.handle(&status.id) {
+                handle.running();
+            }
+        }
         let diagnostics = Arc::new(crate::ops::default_registry(
             &registry,
             db.clone(),
@@ -195,7 +214,17 @@ impl AppState {
             registry,
             diagnostics,
             readiness_timeout: DEFAULT_READINESS_TIMEOUT,
+            workers,
         })
+    }
+
+    /// Consumes this state and returns it with the worker state table
+    /// replaced — the test seam a container test uses to force one
+    /// worker's state (e.g. `Failed`) without a real process kill (design
+    /// R11, T1.34).
+    pub fn with_workers(mut self, workers: Arc<crate::ops::workers::WorkerStates>) -> Self {
+        self.workers = workers;
+        self
     }
 
     /// Consumes this state and returns it with the diagnostics table replaced —

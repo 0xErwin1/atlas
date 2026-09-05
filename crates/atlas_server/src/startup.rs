@@ -14,8 +14,9 @@
 
 use crate::config::AtlasConfig;
 use atlas_core::config::EnvSource;
-use atlas_core::registry::{ComponentEntry, build};
+use atlas_core::registry::{BoundWorkers, ComponentEntry, Registry, Worker, build};
 use std::io::Write;
+use std::sync::Arc;
 
 /// Runs the REG-5 registry validation gate.
 ///
@@ -55,6 +56,36 @@ pub fn run_config_gate(
         Ok(cfg) => Ok(cfg),
         Err(error) => {
             let _ = writeln!(sink, "configuration error: {error}");
+
+            Err(1)
+        }
+    }
+}
+
+/// Runs the E11-S3b worker-bind gate (spec "Startup refuses when a declared
+/// worker has no bound implementation").
+///
+/// Reconciles `registry`'s declared workers against `workers` via
+/// `BoundWorkers::bind`, called after `AppState::new` and before
+/// `start_workers`. Returns the bound table on success, so the caller can
+/// proceed to start workers and serve traffic. On any drift — a declared
+/// worker with no implementation, or an implementation matching no
+/// declaration — writes one line per violation naming the offending
+/// `WorkerId` to `sink` and returns `Some(exit_code)`; the caller exits with
+/// that code before any worker starts or the listener serves.
+pub fn run_worker_bind_gate(
+    registry: &Registry,
+    workers: Vec<Arc<dyn Worker>>,
+    sink: &mut dyn Write,
+) -> Result<BoundWorkers, i32> {
+    match BoundWorkers::bind(registry, workers) {
+        Ok(bound) => Ok(bound),
+        Err(errors) => {
+            let _ = writeln!(sink, "worker binding failed:");
+
+            for error in &errors {
+                let _ = writeln!(sink, "  - {error}");
+            }
 
             Err(1)
         }
@@ -121,6 +152,46 @@ mod tests {
         assert!(
             !message.contains("set-value"),
             "message must not leak any configured value: {message}"
+        );
+    }
+
+    #[test]
+    fn worker_bind_gate_refuses_startup_naming_the_unbound_worker() {
+        use atlas_core::ops::test_support::FakeWorker;
+        use atlas_core::registry::WorkerId;
+
+        let entries = crate::reg5::reg5_component_entries(crate::reg5::StorageBackend::Filesystem);
+        let registry = build(entries).expect("valid REG-5 registry");
+
+        // Five of the six REG-5-declared workers are bound; the sixth
+        // (`acta.webhook_dispatcher`) is deliberately missing, exercising
+        // the real gate `main.rs` calls (T1.38), not only
+        // `reg5_registry_build.rs`'s synthetic call.
+        let bound_ids = [
+            "acta.attachment_reconciler",
+            "acta.live_listener",
+            "acta.presence_sweeper",
+            "acta.presence_agent",
+            "search.pgvector_embeddings.index_worker",
+        ];
+        let workers: Vec<Arc<dyn Worker>> = bound_ids
+            .into_iter()
+            .map(|id| {
+                Arc::new(FakeWorker::new(WorkerId::new(id).expect("valid worker id")))
+                    as Arc<dyn Worker>
+            })
+            .collect();
+
+        let mut output = Vec::new();
+        let exit_code = run_worker_bind_gate(&registry, workers, &mut output)
+            .expect_err("a missing implementation must refuse startup");
+
+        assert_eq!(exit_code, 1);
+
+        let message = String::from_utf8(output).expect("gate output must be valid utf-8");
+        assert!(
+            message.contains("acta.webhook_dispatcher"),
+            "message must name the unbound worker: {message}"
         );
     }
 }

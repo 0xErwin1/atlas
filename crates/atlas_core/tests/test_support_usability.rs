@@ -21,8 +21,9 @@ use atlas_core::ops::test_support::FakeWorker;
 use atlas_core::registry::{Worker, WorkerId};
 
 /// Polls `future` to completion using a no-op waker, without a runtime.
-/// Only valid for futures that never actually suspend — every future
-/// `FakeWorker` produces resolves on its first poll.
+/// Only valid for futures that never actually suspend — a default
+/// `FakeWorker` resolves on its first poll; a stalling one must not be
+/// driven through this helper.
 fn block_on<F: Future>(future: F) -> F::Output {
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);

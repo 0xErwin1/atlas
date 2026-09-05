@@ -67,78 +67,27 @@ async fn main() -> Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     info!("atlas_server listening on {addr}");
 
-    let state = atlas_server::state::AppState::new(db.clone(), &cfg)
+    let state = atlas_server::state::AppState::new(db, &cfg)
         .await
         .map_err(|e| anyhow::anyhow!("AppState::new: {e}"))?;
 
-    // Spawn the webhook dispatcher as a background task.
-    //
-    // A watch channel carries the shutdown signal: the main task sends `true`
-    // after axum::serve returns, then awaits the dispatcher handle so any
-    // in-flight deliveries drain before the process exits.
-    let (shutdown_tx, shutdown_rx) = watch::channel(false);
-
-    let dispatcher = atlas_server::dispatcher::WebhookDispatcher::new(
-        db,
-        state.webhook_crypto.clone(),
-        state.dispatcher_config.clone(),
-        state.allow_private_webhook_targets,
-    );
-    let dispatcher_handle = tokio::spawn(dispatcher.run(shutdown_rx.clone()));
-
-    let attachment_reconciler_handle = tokio::spawn(
-        atlas_server::persistence::repos::PgAttachmentLifecycle::run_reconciler(
-            (*state.db).clone(),
-            state.attachments.clone(),
-            shutdown_rx.clone(),
-        ),
-    );
-
-    // Spawn the Postgres LISTEN consumer that feeds the in-process live-event
-    // hub. It shares the same watch-based shutdown signal as the dispatcher and
-    // is drained on graceful shutdown alongside it.
-    let live_pool = state.db.get_postgres_connection_pool().clone();
-    let listener_handle = tokio::spawn(atlas_server::live::run_listener(
-        live_pool,
-        state.live.clone(),
-        shutdown_rx.clone(),
-    ));
-
-    // Spawn the presence background tasks: the TTL sweeper that expires stale
-    // presence entries, and the agent-activity consumer that marks an api-key
-    // principal present while it is mutating a board. Both share the same
-    // watch-based shutdown signal and are drained on graceful shutdown.
-    let sweeper_handle = tokio::spawn(atlas_server::presence::run_presence_sweeper(
-        state.clone(),
-        shutdown_rx.clone(),
-    ));
-    let presence_agent_handle = tokio::spawn(atlas_server::presence::run_presence_agent_consumer(
-        state.clone(),
-        shutdown_rx.clone(),
-    ));
-
-    // Spawn the semantic index worker, which drains `search_index_queue` and
-    // re-embeds dirty resources. Without an embedding provider there is nothing
-    // to embed, so the worker is not started and queue rows simply accumulate
-    // until embeddings are configured.
-    let search_index_handle = state.embedding_provider.clone().map(|provider| {
-        let writer = std::sync::Arc::new(
-            atlas_acta_postgres::repos::semantic_search::PgSemanticIndexWriter::new(
-                (*state.db).clone(),
-                provider,
-            ),
-        );
-        let indexer = std::sync::Arc::new(
-            atlas_server::persistence::repos::PgSemanticIndexer::new((*state.db).clone(), writer),
-        );
-        let worker = atlas_server::search_indexer::SearchIndexWorker::new(
-            (*state.db).clone(),
-            indexer,
-            Duration::from_millis(state.dispatcher_config.poll_interval_ms),
-            state.dispatcher_config.batch_size,
-        );
-        tokio::spawn(worker.run(shutdown_rx))
-    });
+    // Wraps today's six loops as `Worker` implementations, binds them
+    // against the registry's `WorkerDeclaration`s (refusing to start on any
+    // drift), and starts them in `startup_order()`-then-declaration order.
+    // The barrier is structural: `state` above is already a fully
+    // constructed `AppState`, so no worker starts before the shared pool,
+    // attachment store, and every other handle it captures exist.
+    let workers = atlas_server::ops::workers::build_workers(&state, &cfg, state.workers.clone());
+    let bound = match atlas_server::startup::run_worker_bind_gate(
+        &state.registry,
+        workers,
+        &mut std::io::stderr(),
+    ) {
+        Ok(bound) => bound,
+        Err(exit_code) => std::process::exit(exit_code),
+    };
+    let running_workers =
+        atlas_server::ops::supervisor::start_workers(&state.registry, bound, state.workers.clone());
 
     let make_service = atlas_server::app(state).into_make_service_with_connect_info::<SocketAddr>();
 
@@ -177,27 +126,23 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Signal the background tasks and await their clean exit.
-    let _ = shutdown_tx.send(true);
-    if let Err(e) = dispatcher_handle.await {
-        tracing::error!(error = %e, "dispatcher task panicked during shutdown");
+    // Cancel and join every worker in the exact reverse of its start order,
+    // bounded by one global budget (E11-S3b design D4). A worker that does
+    // not observe cancellation within its remaining slice is cut off and
+    // reported `Failed`, rather than hanging process exit indefinitely.
+    let drain_budget = Duration::from_secs(cfg.platform.shutdown_timeout_secs);
+    let outcome = running_workers.drain(drain_budget).await;
+    if !outcome.failed.is_empty() {
+        tracing::error!(
+            failed = ?outcome.failed,
+            "one or more workers panicked during shutdown"
+        );
     }
-    if let Err(e) = attachment_reconciler_handle.await {
-        tracing::error!(error = %e, "attachment reconciler task panicked during shutdown");
-    }
-    if let Err(e) = listener_handle.await {
-        tracing::error!(error = %e, "live event listener task panicked during shutdown");
-    }
-    if let Err(e) = sweeper_handle.await {
-        tracing::error!(error = %e, "presence sweeper task panicked during shutdown");
-    }
-    if let Err(e) = presence_agent_handle.await {
-        tracing::error!(error = %e, "presence agent consumer task panicked during shutdown");
-    }
-    if let Some(handle) = search_index_handle
-        && let Err(e) = handle.await
-    {
-        tracing::error!(error = %e, "search index worker task panicked during shutdown");
+    if !outcome.timed_out.is_empty() {
+        tracing::warn!(
+            timed_out = ?outcome.timed_out,
+            "one or more workers did not drain within the shutdown budget"
+        );
     }
 
     Ok(())

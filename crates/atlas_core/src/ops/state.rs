@@ -6,8 +6,9 @@ use serde::{Deserialize, Serialize};
 use crate::registry::{ComponentId, WorkerId};
 
 /// A worker's own lifecycle state, reported through `WorkerStateHandle`. The
-/// supervisor's own transitions (`Starting`, `Inactive`) are deferred to
-/// E11-S3b, which owns the runtime that drives them.
+/// supervisor's own `Starting` transition is not added (E11-S3b design D3):
+/// with no readiness barrier, a worker marks `Running` as its first act, so
+/// `Starting` would never be observable long enough to read.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum WorkerState {
@@ -20,6 +21,14 @@ pub enum WorkerState {
         /// Why the worker failed.
         cause: String,
     },
+    /// The worker never ran because a required capability is not configured
+    /// (E11-S3b design D3), e.g. the semantic index worker with no
+    /// embedding provider. Distinct from `Failed`: an absent optional
+    /// capability is not a degradation (SHELL-OPS-5).
+    Inactive {
+        /// Why the worker is inactive.
+        reason: String,
+    },
 }
 
 impl WorkerState {
@@ -28,6 +37,7 @@ impl WorkerState {
             WorkerState::Running => "running".to_string(),
             WorkerState::Stopped => "stopped".to_string(),
             WorkerState::Failed { cause } => format!("failed ({cause})"),
+            WorkerState::Inactive { reason } => format!("inactive ({reason})"),
         }
     }
 }
@@ -73,6 +83,12 @@ impl WorkerStateHandle {
     pub fn failed(&self, cause: impl Into<String>) {
         self.set_state(WorkerState::Failed {
             cause: cause.into(),
+        });
+    }
+
+    pub fn inactive(&self, reason: impl Into<String>) {
+        self.set_state(WorkerState::Inactive {
+            reason: reason.into(),
         });
     }
 
@@ -155,12 +171,28 @@ mod tests {
     }
 
     #[test]
-    fn worker_state_has_exactly_running_stopped_and_failed() {
+    fn worker_state_has_exactly_running_stopped_failed_and_inactive() {
         let running = serde_json::to_string(&WorkerState::Running).expect("serialize");
         let stopped = serde_json::to_string(&WorkerState::Stopped).expect("serialize");
 
         assert_eq!(running, r#"{"state":"running"}"#);
         assert_eq!(stopped, r#"{"state":"stopped"}"#);
+    }
+
+    #[test]
+    fn worker_state_inactive_round_trips_with_exact_json_in_the_same_style_as_failed() {
+        let state = WorkerState::Inactive {
+            reason: "no embedding provider configured".to_string(),
+        };
+        let json = serde_json::to_string(&state).expect("serialize");
+
+        assert_eq!(
+            json,
+            r#"{"state":"inactive","reason":"no embedding provider configured"}"#
+        );
+
+        let parsed: WorkerState = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(parsed, state);
     }
 
     #[test]
@@ -181,6 +213,24 @@ mod tests {
         let now = Utc::now();
         handle.heartbeat(now);
         assert_eq!(handle.status().last_heartbeat, Some(now));
+    }
+
+    #[test]
+    fn worker_state_handle_inactive_transitions_the_handle() {
+        let handle = WorkerStateHandle::new(
+            worker_id("search.pgvector_embeddings.index_worker"),
+            component("search.pgvector_embeddings"),
+            false,
+        );
+
+        handle.inactive("no embedding provider configured");
+
+        assert_eq!(
+            handle.status().state,
+            WorkerState::Inactive {
+                reason: "no embedding provider configured".to_string()
+            }
+        );
     }
 
     struct ComposedReadiness {
