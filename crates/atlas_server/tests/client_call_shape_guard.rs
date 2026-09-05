@@ -672,6 +672,7 @@ const CONSUMER_ROOTS: &[ConsumerRoot] = &[
 /// crate in one PR); per file since PR12 so the table itself proves which
 /// files the walk sees.
 const ATLAS_CLI_PINS: &[(&str, usize)] = &[
+    ("alias.rs", 0),
     ("cli.rs", 0),
     ("commands/activity.rs", 0),
     ("commands/api_keys.rs", 0),

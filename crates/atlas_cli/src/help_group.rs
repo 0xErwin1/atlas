@@ -56,6 +56,27 @@ pub(crate) fn build_command() -> Command {
     Cli::command().help_template(template)
 }
 
+/// Renders one component's own section, unheaded surroundings stripped —
+/// `atlas acta` alone (design D4, T3.6) prints only its section of the
+/// grouped help, reusing the same per-section rendering `build_command`
+/// composes into the full `--help` output.
+pub(crate) fn render_component_section(component: Component) -> String {
+    let cmd = built_probe();
+    let name_width = cmd
+        .get_subcommands()
+        .map(|sub| sub.get_name().len())
+        .max()
+        .unwrap_or(0)
+        + 2;
+    let heading = HEADINGS
+        .iter()
+        .find(|(_, c)| *c == component)
+        .map(|(heading, _)| *heading)
+        .unwrap_or_else(|| unreachable!("every Component has a HEADINGS entry"));
+
+    render_section(&cmd, heading, component, name_width)
+}
+
 /// The name clap gives its auto-generated help pseudo-subcommand.
 const CLAP_HELP_SUBCOMMAND: &str = "help";
 

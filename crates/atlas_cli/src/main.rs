@@ -1,5 +1,6 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+mod alias;
 mod cli;
 mod commands;
 mod component;
@@ -19,10 +20,29 @@ use clap::FromArgMatches;
 use cli::Cli;
 use ctx::Ctx;
 
+/// The CLI's own usage exit code (`CliError::exit_code`'s `Validation`
+/// arm) — reused here so a wrong component prefix (design D4.3) exits the
+/// same way a clap usage error does.
+const USAGE_EXIT_CODE: u8 = 2;
+
 #[tokio::main]
 async fn main() -> ExitCode {
+    let argv: Vec<std::ffi::OsString> = std::env::args_os().collect();
+
+    let argv = match alias::strip_component_prefix(argv) {
+        Ok(alias::AliasOutcome::Argv(argv)) => argv,
+        Ok(alias::AliasOutcome::ComponentHelp(component)) => {
+            println!("{}", help_group::render_component_section(component));
+            return ExitCode::SUCCESS;
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::from(USAGE_EXIT_CODE);
+        }
+    };
+
     let cli = match help_group::build_command()
-        .try_get_matches_from(std::env::args_os())
+        .try_get_matches_from(argv)
         .and_then(|matches| Cli::from_arg_matches(&matches))
     {
         Ok(c) => c,
