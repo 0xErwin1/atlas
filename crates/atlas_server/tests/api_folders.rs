@@ -48,11 +48,13 @@ async fn create_folder_editor_returns_201() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "folder-create-1").await;
 
     let project = client
+        .acta()
         .create_project(&ws.slug, project_req("FolderProj", "folder-proj-1"))
         .await
         .expect("create project");
 
     let folder = client
+        .acta()
         .create_folder(
             &ws.slug,
             &project.slug,
@@ -81,11 +83,13 @@ async fn create_duplicate_folder_name_returns_409() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "folder-dup-1").await;
 
     let project = client
+        .acta()
         .create_project(&ws.slug, project_req("DupProj", "dup-proj-1"))
         .await
         .expect("create project");
 
     client
+        .acta()
         .create_folder(
             &ws.slug,
             &project.slug,
@@ -98,6 +102,7 @@ async fn create_duplicate_folder_name_returns_409() {
         .expect("first create folder");
 
     let err = client
+        .acta()
         .create_folder(
             &ws.slug,
             &project.slug,
@@ -126,11 +131,13 @@ async fn create_folder_blank_name_returns_422() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "folder-blank-1").await;
 
     let project = client
+        .acta()
         .create_project(&ws.slug, project_req("BlankNameProj", "blank-name-proj"))
         .await
         .expect("create project");
 
     let err = client
+        .acta()
         .create_folder(
             &ws.slug,
             &project.slug,
@@ -160,6 +167,7 @@ async fn create_folder_foreign_parent_returns_422() {
         support::login_user_with_workspace(&server, &db, "folder-foreign-1").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             project_req("ForeignParent", "foreign-parent-proj"),
@@ -169,6 +177,7 @@ async fn create_folder_foreign_parent_returns_422() {
 
     let foreign_id = uuid::Uuid::new_v4();
     let err = client
+        .acta()
         .create_folder(
             &ws.slug,
             &project.slug,
@@ -197,16 +206,19 @@ async fn list_folders_scoped_to_project() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "folder-list-1").await;
 
     let proj_a = client
+        .acta()
         .create_project(&ws.slug, project_req("ProjA", "proj-a"))
         .await
         .expect("proj a");
 
     let proj_b = client
+        .acta()
         .create_project(&ws.slug, project_req("ProjB", "proj-b"))
         .await
         .expect("proj b");
 
     client
+        .acta()
         .create_folder(
             &ws.slug,
             &proj_a.slug,
@@ -219,6 +231,7 @@ async fn list_folders_scoped_to_project() {
         .expect("folder a");
 
     client
+        .acta()
         .create_folder(
             &ws.slug,
             &proj_b.slug,
@@ -231,6 +244,7 @@ async fn list_folders_scoped_to_project() {
         .expect("folder b");
 
     let page = client
+        .acta()
         .list_folders(&ws.slug, &proj_a.slug, None, None)
         .await
         .expect("list");
@@ -250,12 +264,14 @@ async fn list_folders_paginates_with_cursor() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "folder-page-1").await;
 
     let project = client
+        .acta()
         .create_project(&ws.slug, project_req("PageProj", "page-proj"))
         .await
         .expect("project");
 
     for n in 0..3 {
         client
+            .acta()
             .create_folder(
                 &ws.slug,
                 &project.slug,
@@ -269,6 +285,7 @@ async fn list_folders_paginates_with_cursor() {
     }
 
     let page1 = client
+        .acta()
         .list_folders(&ws.slug, &project.slug, None, Some(2))
         .await
         .expect("page 1");
@@ -278,6 +295,7 @@ async fn list_folders_paginates_with_cursor() {
     let cursor = page1.next_cursor.expect("page 1 must carry a cursor");
 
     let page2 = client
+        .acta()
         .list_folders(&ws.slug, &project.slug, Some(&cursor), Some(2))
         .await
         .expect("page 2");
@@ -311,11 +329,13 @@ async fn list_folders_includes_nested() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "folder-nested-1").await;
 
     let project = client
+        .acta()
         .create_project(&ws.slug, project_req("NestProj", "nest-proj-1"))
         .await
         .expect("create project");
 
     let parent = client
+        .acta()
         .create_folder(
             &ws.slug,
             &project.slug,
@@ -328,6 +348,7 @@ async fn list_folders_includes_nested() {
         .expect("create parent");
 
     client
+        .acta()
         .create_folder(
             &ws.slug,
             &project.slug,
@@ -340,6 +361,7 @@ async fn list_folders_includes_nested() {
         .expect("create child");
 
     let page = client
+        .acta()
         .list_folders(&ws.slug, &project.slug, None, None)
         .await
         .expect("list");
@@ -370,11 +392,13 @@ async fn get_folder_cross_tenant_returns_404() {
     let (client_b, ws_b, _) = support::login_user_with_workspace(&server, &db, "folder-ct-b").await;
 
     let proj_a = client_a
+        .acta()
         .create_project(&ws_a.slug, project_req("CTProj", "ct-proj"))
         .await
         .expect("proj a");
 
     let folder_a = client_a
+        .acta()
         .create_folder(
             &ws_a.slug,
             &proj_a.slug,
@@ -387,6 +411,7 @@ async fn get_folder_cross_tenant_returns_404() {
         .expect("folder a");
 
     let err = client_b
+        .acta()
         .get_folder(&ws_b.slug, folder_a.id)
         .await
         .expect_err("cross-tenant should be 404");
@@ -408,11 +433,13 @@ async fn rename_folder_returns_updated_dto() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "folder-rename-1").await;
 
     let project = client
+        .acta()
         .create_project(&ws.slug, project_req("RenameProj", "rename-proj"))
         .await
         .expect("create project");
 
     let folder = client
+        .acta()
         .create_folder(
             &ws.slug,
             &project.slug,
@@ -425,6 +452,7 @@ async fn rename_folder_returns_updated_dto() {
         .expect("create folder");
 
     let updated = client
+        .acta()
         .rename_folder(
             &ws.slug,
             folder.id,
@@ -451,11 +479,13 @@ async fn rename_folder_blank_name_returns_422() {
         support::login_user_with_workspace(&server, &db, "folder-rename-blank").await;
 
     let project = client
+        .acta()
         .create_project(&ws.slug, project_req("RenameBlank", "rename-blank-proj"))
         .await
         .expect("create project");
 
     let folder = client
+        .acta()
         .create_folder(
             &ws.slug,
             &project.slug,
@@ -468,6 +498,7 @@ async fn rename_folder_blank_name_returns_422() {
         .expect("create folder");
 
     let err = client
+        .acta()
         .rename_folder(
             &ws.slug,
             folder.id,
@@ -495,11 +526,13 @@ async fn move_folder_self_cycle_returns_422() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "folder-cycle-1").await;
 
     let project = client
+        .acta()
         .create_project(&ws.slug, project_req("CycleProj", "cycle-proj"))
         .await
         .expect("create project");
 
     let folder = client
+        .acta()
         .create_folder(
             &ws.slug,
             &project.slug,
@@ -512,6 +545,7 @@ async fn move_folder_self_cycle_returns_422() {
         .expect("create folder");
 
     let err = client
+        .acta()
         .move_folder(
             &ws.slug,
             folder.id,
@@ -540,11 +574,13 @@ async fn move_folder_descendant_cycle_returns_422() {
         support::login_user_with_workspace(&server, &db, "folder-desc-cycle").await;
 
     let project = client
+        .acta()
         .create_project(&ws.slug, project_req("DescCycle", "desc-cycle-proj"))
         .await
         .expect("create project");
 
     let parent = client
+        .acta()
         .create_folder(
             &ws.slug,
             &project.slug,
@@ -557,6 +593,7 @@ async fn move_folder_descendant_cycle_returns_422() {
         .expect("parent");
 
     let child = client
+        .acta()
         .create_folder(
             &ws.slug,
             &project.slug,
@@ -569,6 +606,7 @@ async fn move_folder_descendant_cycle_returns_422() {
         .expect("child");
 
     let err = client
+        .acta()
         .move_folder(
             &ws.slug,
             parent.id,
@@ -596,11 +634,13 @@ async fn move_folder_null_parent_moves_to_root() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "folder-to-root").await;
 
     let project = client
+        .acta()
         .create_project(&ws.slug, project_req("ToRoot", "to-root-proj"))
         .await
         .expect("create project");
 
     let parent = client
+        .acta()
         .create_folder(
             &ws.slug,
             &project.slug,
@@ -613,6 +653,7 @@ async fn move_folder_null_parent_moves_to_root() {
         .expect("parent");
 
     let child = client
+        .acta()
         .create_folder(
             &ws.slug,
             &project.slug,
@@ -625,6 +666,7 @@ async fn move_folder_null_parent_moves_to_root() {
         .expect("child");
 
     let moved = client
+        .acta()
         .move_folder(
             &ws.slug,
             child.id,
@@ -652,11 +694,13 @@ async fn delete_folder_then_get_returns_404() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "folder-delete-1").await;
 
     let project = client
+        .acta()
         .create_project(&ws.slug, project_req("DeleteProj", "delete-proj"))
         .await
         .expect("create project");
 
     let folder = client
+        .acta()
         .create_folder(
             &ws.slug,
             &project.slug,
@@ -669,11 +713,13 @@ async fn delete_folder_then_get_returns_404() {
         .expect("create folder");
 
     client
+        .acta()
         .delete_folder(&ws.slug, folder.id)
         .await
         .expect("delete folder");
 
     let err = client
+        .acta()
         .get_folder(&ws.slug, folder.id)
         .await
         .expect_err("get after delete should be 404");
@@ -730,6 +776,7 @@ async fn move_folder_cross_workspace_destination_returns_404() {
     let (_, ws_b, user_b) = support::login_user_with_workspace(&server, &db, "mv-authz-b").await;
 
     let proj_a = client_a
+        .acta()
         .create_project(&ws_a.slug, project_req("MvProjA", "mv-proj-a"))
         .await
         .expect("proj a");
@@ -754,6 +801,7 @@ async fn move_folder_cross_workspace_destination_returns_404() {
     let _ = user_a;
 
     let source = client_a
+        .acta()
         .create_folder(
             &ws_a.slug,
             &proj_a.slug,
@@ -766,6 +814,7 @@ async fn move_folder_cross_workspace_destination_returns_404() {
         .expect("source folder");
 
     let err = client_a
+        .acta()
         .move_folder(
             &ws_a.slug,
             source.id,
@@ -782,6 +831,7 @@ async fn move_folder_cross_workspace_destination_returns_404() {
     }
 
     let still_same = client_a
+        .acta()
         .get_folder(&ws_a.slug, source.id)
         .await
         .expect("get source after attempted move");
@@ -817,12 +867,14 @@ async fn move_folder_underprivileged_destination_returns_404() {
 
     // Source lives in a workspace-visible project so the caller gets editor through visibility.
     let src_proj = owner
+        .acta()
         .create_project(&ws.slug, project_req("MvUnprivSrcProj", "mv-unpriv-src"))
         .await
         .expect("source project");
 
     // Destination lives in a PRIVATE project — the caller has no access to it.
     let dst_proj = owner
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -837,6 +889,7 @@ async fn move_folder_underprivileged_destination_returns_404() {
         .expect("private destination project");
 
     let source = owner
+        .acta()
         .create_folder(
             &ws.slug,
             &src_proj.slug,
@@ -849,6 +902,7 @@ async fn move_folder_underprivileged_destination_returns_404() {
         .expect("source folder");
 
     let dest = owner
+        .acta()
         .create_folder(
             &ws.slug,
             &dst_proj.slug,
@@ -920,6 +974,7 @@ async fn move_folder_underprivileged_destination_returns_404() {
         .expect("login caller");
 
     let err = caller_client
+        .acta()
         .move_folder(
             &ws.slug,
             source.id,
@@ -948,11 +1003,13 @@ async fn move_folder_owner_to_any_dest_returns_200() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "mv-happy-owner").await;
 
     let proj = client
+        .acta()
         .create_project(&ws.slug, project_req("MvHappyProj", "mv-happy-proj"))
         .await
         .expect("project");
 
     let dest = client
+        .acta()
         .create_folder(
             &ws.slug,
             &proj.slug,
@@ -965,6 +1022,7 @@ async fn move_folder_owner_to_any_dest_returns_200() {
         .expect("dest");
 
     let source = client
+        .acta()
         .create_folder(
             &ws.slug,
             &proj.slug,
@@ -977,6 +1035,7 @@ async fn move_folder_owner_to_any_dest_returns_200() {
         .expect("source");
 
     let moved = client
+        .acta()
         .move_folder(
             &ws.slug,
             source.id,
@@ -1017,6 +1076,7 @@ async fn create_board_in_folder_sets_folder_id() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "board-folder-1").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             project_req("BoardFolderProj", "board-folder-proj-1"),
@@ -1025,6 +1085,7 @@ async fn create_board_in_folder_sets_folder_id() {
         .expect("create project");
 
     let folder = client
+        .acta()
         .create_folder(
             &ws.slug,
             &project.slug,
@@ -1037,6 +1098,7 @@ async fn create_board_in_folder_sets_folder_id() {
         .expect("create folder");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             &project.slug,
@@ -1051,6 +1113,7 @@ async fn create_board_in_folder_sets_folder_id() {
     assert_eq!(board.folder_id, Some(folder.id));
 
     let listed = client
+        .acta()
         .list_boards(&ws.slug, &project.slug, None, None)
         .await
         .expect("list boards");
@@ -1072,15 +1135,18 @@ async fn create_board_in_foreign_project_folder_returns_422() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "board-folder-2").await;
 
     let project_a = client
+        .acta()
         .create_project(&ws.slug, project_req("BoardFolderA", "bf-alpha-2"))
         .await
         .expect("create project a");
     let project_b = client
+        .acta()
         .create_project(&ws.slug, project_req("BoardFolderB", "bf-beta-2"))
         .await
         .expect("create project b");
 
     let folder_b = client
+        .acta()
         .create_folder(
             &ws.slug,
             &project_b.slug,
@@ -1093,6 +1159,7 @@ async fn create_board_in_foreign_project_folder_returns_422() {
         .expect("create folder");
 
     let err = client
+        .acta()
         .create_board(
             &ws.slug,
             &project_a.slug,
@@ -1119,11 +1186,13 @@ async fn move_board_into_folder_and_back_to_root() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "board-move-1").await;
 
     let project = client
+        .acta()
         .create_project(&ws.slug, project_req("BoardMoveProj", "board-move-proj-1"))
         .await
         .expect("create project");
 
     let folder = client
+        .acta()
         .create_folder(
             &ws.slug,
             &project.slug,
@@ -1136,6 +1205,7 @@ async fn move_board_into_folder_and_back_to_root() {
         .expect("create folder");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             &project.slug,
@@ -1149,6 +1219,7 @@ async fn move_board_into_folder_and_back_to_root() {
     assert_eq!(board.folder_id, None);
 
     let moved = client
+        .acta()
         .move_board(
             &ws.slug,
             board.id,
@@ -1161,6 +1232,7 @@ async fn move_board_into_folder_and_back_to_root() {
     assert_eq!(moved.folder_id, Some(folder.id));
 
     let back = client
+        .acta()
         .move_board(&ws.slug, board.id, MoveBoardRequest { folder_id: None })
         .await
         .expect("move board back to root");
@@ -1176,15 +1248,18 @@ async fn move_board_to_folder_in_other_project_returns_422() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "board-move-2").await;
 
     let project_a = client
+        .acta()
         .create_project(&ws.slug, project_req("BoardMoveA", "bm-alpha-2"))
         .await
         .expect("create project a");
     let project_b = client
+        .acta()
         .create_project(&ws.slug, project_req("BoardMoveB", "bm-beta-2"))
         .await
         .expect("create project b");
 
     let folder_b = client
+        .acta()
         .create_folder(
             &ws.slug,
             &project_b.slug,
@@ -1197,6 +1272,7 @@ async fn move_board_to_folder_in_other_project_returns_422() {
         .expect("create folder");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             &project_a.slug,
@@ -1209,6 +1285,7 @@ async fn move_board_to_folder_in_other_project_returns_422() {
         .expect("create board");
 
     let err = client
+        .acta()
         .move_board(
             &ws.slug,
             board.id,
@@ -1235,11 +1312,13 @@ async fn deleted_project_hides_folder_document_board_and_task_direct_lookups() {
         support::login_user_with_workspace(&server, &db, "project-ancestor-http").await;
 
     let project = client
+        .acta()
         .create_project(&ws.slug, project_req("ProjectAncestor", "project-ancestor"))
         .await
         .expect("create project");
 
     let folder = client
+        .acta()
         .create_folder(
             &ws.slug,
             &project.slug,
@@ -1252,6 +1331,7 @@ async fn deleted_project_hides_folder_document_board_and_task_direct_lookups() {
         .expect("create folder");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             &project.slug,
@@ -1264,6 +1344,7 @@ async fn deleted_project_hides_folder_document_board_and_task_direct_lookups() {
         .expect("create board");
 
     let document = client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -1277,6 +1358,7 @@ async fn deleted_project_hides_folder_document_board_and_task_direct_lookups() {
         .expect("create document");
 
     let column = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -1291,6 +1373,7 @@ async fn deleted_project_hides_folder_document_board_and_task_direct_lookups() {
         .expect("create column");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -1308,6 +1391,7 @@ async fn deleted_project_hides_folder_document_board_and_task_direct_lookups() {
         .expect("create task");
 
     client
+        .acta()
         .delete_project(&ws.slug, &project.slug)
         .await
         .expect("delete project");
@@ -1315,13 +1399,23 @@ async fn deleted_project_hides_folder_document_board_and_task_direct_lookups() {
     let document_slug = document.slug.expect("document slug");
 
     for result in [
-        client.get_folder(&ws.slug, folder.id).await.map(|_| ()),
         client
+            .acta()
+            .get_folder(&ws.slug, folder.id)
+            .await
+            .map(|_| ()),
+        client
+            .acta()
             .get_document(&ws.slug, &document_slug)
             .await
             .map(|_| ()),
-        client.get_board(&ws.slug, board.id).await.map(|_| ()),
         client
+            .acta()
+            .get_board(&ws.slug, board.id)
+            .await
+            .map(|_| ()),
+        client
+            .acta()
             .get_task(&ws.slug, &task.readable_id)
             .await
             .map(|_| ()),
@@ -1343,11 +1437,13 @@ async fn deleted_folder_hides_folder_document_board_and_task_direct_lookups() {
         support::login_user_with_workspace(&server, &db, "folder-ancestor-http").await;
 
     let project = client
+        .acta()
         .create_project(&ws.slug, project_req("FolderAncestor", "folder-ancestor"))
         .await
         .expect("create project");
 
     let parent = client
+        .acta()
         .create_folder(
             &ws.slug,
             &project.slug,
@@ -1360,6 +1456,7 @@ async fn deleted_folder_hides_folder_document_board_and_task_direct_lookups() {
         .expect("create parent folder");
 
     let folder = client
+        .acta()
         .create_folder(
             &ws.slug,
             &project.slug,
@@ -1372,6 +1469,7 @@ async fn deleted_folder_hides_folder_document_board_and_task_direct_lookups() {
         .expect("create child folder");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             &project.slug,
@@ -1384,6 +1482,7 @@ async fn deleted_folder_hides_folder_document_board_and_task_direct_lookups() {
         .expect("create board");
 
     let document = client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -1397,6 +1496,7 @@ async fn deleted_folder_hides_folder_document_board_and_task_direct_lookups() {
         .expect("create document");
 
     let column = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -1411,6 +1511,7 @@ async fn deleted_folder_hides_folder_document_board_and_task_direct_lookups() {
         .expect("create column");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -1428,6 +1529,7 @@ async fn deleted_folder_hides_folder_document_board_and_task_direct_lookups() {
         .expect("create task");
 
     client
+        .acta()
         .delete_folder(&ws.slug, parent.id)
         .await
         .expect("delete parent folder");
@@ -1435,13 +1537,23 @@ async fn deleted_folder_hides_folder_document_board_and_task_direct_lookups() {
     let document_slug = document.slug.expect("document slug");
 
     for result in [
-        client.get_folder(&ws.slug, folder.id).await.map(|_| ()),
         client
+            .acta()
+            .get_folder(&ws.slug, folder.id)
+            .await
+            .map(|_| ()),
+        client
+            .acta()
             .get_document(&ws.slug, &document_slug)
             .await
             .map(|_| ()),
-        client.get_board(&ws.slug, board.id).await.map(|_| ()),
         client
+            .acta()
+            .get_board(&ws.slug, board.id)
+            .await
+            .map(|_| ()),
+        client
+            .acta()
             .get_task(&ws.slug, &task.readable_id)
             .await
             .map(|_| ()),
@@ -1462,11 +1574,13 @@ async fn copy_folder_copies_boards_with_columns() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "board-copy-1").await;
 
     let project = client
+        .acta()
         .create_project(&ws.slug, project_req("BoardCopyProj", "board-copy-proj-1"))
         .await
         .expect("create project");
 
     let folder = client
+        .acta()
         .create_folder(
             &ws.slug,
             &project.slug,
@@ -1479,6 +1593,7 @@ async fn copy_folder_copies_boards_with_columns() {
         .expect("create folder");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             &project.slug,
@@ -1491,17 +1606,20 @@ async fn copy_folder_copies_boards_with_columns() {
         .expect("create board");
 
     let source_columns = client
+        .acta()
         .list_columns(&ws.slug, board.id)
         .await
         .expect("list source columns");
 
     let copy = client
+        .acta()
         .copy_folder(&ws.slug, folder.id, None)
         .await
         .expect("copy folder");
     assert_eq!(copy.name, "Original (copy)");
 
     let listed = client
+        .acta()
         .list_boards(&ws.slug, &project.slug, None, None)
         .await
         .expect("list boards");
@@ -1515,6 +1633,7 @@ async fn copy_folder_copies_boards_with_columns() {
     assert_eq!(cloned.name, "Copied Board");
 
     let cloned_columns = client
+        .acta()
         .list_columns(&ws.slug, cloned.id)
         .await
         .expect("list cloned columns");

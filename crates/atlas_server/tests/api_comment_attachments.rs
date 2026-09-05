@@ -554,10 +554,12 @@ async fn task_comment_attachment_routes_round_trip_raw_bytes() {
         support::login_user_with_workspace(&server, &db, "task-comment-attachment").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("comment-attachment", "CA"))
         .await
         .expect("create project");
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "comment-attachment",
@@ -569,6 +571,7 @@ async fn task_comment_attachment_routes_round_trip_raw_bytes() {
         .await
         .expect("create board");
     let column = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -582,6 +585,7 @@ async fn task_comment_attachment_routes_round_trip_raw_bytes() {
         .await
         .expect("create column");
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -598,6 +602,7 @@ async fn task_comment_attachment_routes_round_trip_raw_bytes() {
         .await
         .expect("create task");
     let comment = client
+        .acta()
         .add_comment(
             &ws.slug,
             &task.readable_id,
@@ -696,10 +701,12 @@ async fn document_comment_attachment_routes_round_trip_raw_bytes() {
         support::login_user_with_workspace(&server, &db, "document-comment-attachment").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("document-comment-attachment", "DA"))
         .await
         .expect("create project");
     let document = client
+        .acta()
         .create_document(
             &ws.slug,
             "document-comment-attachment",
@@ -713,6 +720,7 @@ async fn document_comment_attachment_routes_round_trip_raw_bytes() {
         .expect("create document");
     let slug = document.slug.expect("document slug");
     let comment = client
+        .acta()
         .add_document_comment(
             &ws.slug,
             &slug,
@@ -876,10 +884,12 @@ async fn task_comment_draft_create_returns_reserved_comment_identity() {
         support::login_user_with_workspace(&server, &db, "task-comment-draft").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("comment-draft", "CD"))
         .await
         .expect("create project");
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "comment-draft",
@@ -891,6 +901,7 @@ async fn task_comment_draft_create_returns_reserved_comment_identity() {
         .await
         .expect("create board");
     let column = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -904,6 +915,7 @@ async fn task_comment_draft_create_returns_reserved_comment_identity() {
         .await
         .expect("create column");
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -1092,10 +1104,12 @@ async fn task_draft_upload_conceals_missing_or_mismatched_drafts_without_residue
         support::login_user_with_workspace(&server, &db, "task-draft-upload-concealment").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("task-draft-upload-concealment", "TC"))
         .await
         .expect("create project");
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "task-draft-upload-concealment",
@@ -1107,6 +1121,7 @@ async fn task_draft_upload_conceals_missing_or_mismatched_drafts_without_residue
         .await
         .expect("create board");
     let column = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -1120,6 +1135,7 @@ async fn task_draft_upload_conceals_missing_or_mismatched_drafts_without_residue
         .await
         .expect("create column");
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -1136,6 +1152,7 @@ async fn task_draft_upload_conceals_missing_or_mismatched_drafts_without_residue
         .await
         .expect("create draft owner task");
     let wrong_task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -1188,6 +1205,7 @@ async fn task_draft_upload_conceals_missing_or_mismatched_drafts_without_residue
     )
     .await;
     other_workspace_client
+        .acta()
         .create_project(
             &other_workspace.slug,
             project_req("task-draft-upload-concealment-other-workspace", "TO"),
@@ -1195,6 +1213,7 @@ async fn task_draft_upload_conceals_missing_or_mismatched_drafts_without_residue
         .await
         .expect("create other workspace project");
     let other_board = other_workspace_client
+        .acta()
         .create_board(
             &other_workspace.slug,
             "task-draft-upload-concealment-other-workspace",
@@ -1206,6 +1225,7 @@ async fn task_draft_upload_conceals_missing_or_mismatched_drafts_without_residue
         .await
         .expect("create other workspace board");
     let other_column = other_workspace_client
+        .acta()
         .create_column(
             &other_workspace.slug,
             other_board.id,
@@ -1219,6 +1239,7 @@ async fn task_draft_upload_conceals_missing_or_mismatched_drafts_without_residue
         .await
         .expect("create other workspace column");
     let other_workspace_task = other_workspace_client
+        .acta()
         .create_task(
             &other_workspace.slug,
             other_board.id,
@@ -1319,10 +1340,12 @@ async fn document_comment_draft_create_returns_reserved_comment_identity() {
         support::login_user_with_workspace(&server, &db, "document-comment-draft").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("document-comment-draft", "DD"))
         .await
         .expect("create project");
     let document = client
+        .acta()
         .create_document(
             &ws.slug,
             "document-comment-draft",
@@ -1365,10 +1388,12 @@ async fn document_comment_draft_cancel_is_directly_available_and_terminal_on_rep
         support::login_user_with_workspace(&server, &db, "document-comment-draft-cancel").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("document-comment-draft-cancel", "DC"))
         .await
         .expect("create project");
     let document = client
+        .acta()
         .create_document(
             &ws.slug,
             "document-comment-draft-cancel",
@@ -1422,6 +1447,7 @@ async fn document_delete_conflicts_while_a_retained_comment_draft_exists() {
         support::login_user_with_workspace(&server, &db, "document-retained-draft-delete").await;
 
     client
+        .acta()
         .create_project(
             &ws.slug,
             project_req("document-retained-draft-delete", "DR"),
@@ -1429,6 +1455,7 @@ async fn document_delete_conflicts_while_a_retained_comment_draft_exists() {
         .await
         .expect("create project");
     let document = client
+        .acta()
         .create_document(
             &ws.slug,
             "document-retained-draft-delete",
@@ -1477,10 +1504,12 @@ async fn task_comment_finalization_transfers_draft_attachments_and_replays() {
         support::login_user_with_workspace(&server, &db, "task-comment-finalization").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("comment-finalization", "CF"))
         .await
         .expect("create project");
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "comment-finalization",
@@ -1492,6 +1521,7 @@ async fn task_comment_finalization_transfers_draft_attachments_and_replays() {
         .await
         .expect("create board");
     let column = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -1505,6 +1535,7 @@ async fn task_comment_finalization_transfers_draft_attachments_and_replays() {
         .await
         .expect("create column");
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -1522,6 +1553,7 @@ async fn task_comment_finalization_transfers_draft_attachments_and_replays() {
         .expect("create task");
 
     let link_target = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -1766,10 +1798,12 @@ async fn document_comment_draft_upload_replays_raw_bytes_and_rejects_changed_reu
         support::login_user_with_workspace(&server, &db, "document-comment-draft-upload").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("document-comment-draft-upload", "DU"))
         .await
         .expect("create project");
     let document = client
+        .acta()
         .create_document(
             &ws.slug,
             "document-comment-draft-upload",
@@ -1976,10 +2010,12 @@ async fn document_comment_finalization_transfers_draft_attachments_and_replays()
         support::login_user_with_workspace(&server, &db, "document-comment-finalization").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("document-finalization", "DF"))
         .await
         .expect("create project");
     let document = client
+        .acta()
         .create_document(
             &ws.slug,
             "document-finalization",
@@ -2185,6 +2221,7 @@ async fn document_comment_finalization_rejects_terminal_drafts() {
         support::login_user_with_workspace(&server, &db, "document-finalization-terminal").await;
 
     client
+        .acta()
         .create_project(
             &ws.slug,
             project_req("document-finalization-terminal", "DT"),
@@ -2192,6 +2229,7 @@ async fn document_comment_finalization_rejects_terminal_drafts() {
         .await
         .expect("create project");
     let document = client
+        .acta()
         .create_document(
             &ws.slug,
             "document-finalization-terminal",
@@ -2263,6 +2301,7 @@ async fn task_draft_upload_losing_to_finalization_is_conflict_without_residue() 
         support::login_user_with_workspace(&server, &db, "task-draft-upload-finalize-race").await;
 
     client
+        .acta()
         .create_project(
             &ws.slug,
             project_req("task-draft-upload-finalize-race", "TR"),
@@ -2270,6 +2309,7 @@ async fn task_draft_upload_losing_to_finalization_is_conflict_without_residue() 
         .await
         .expect("create project");
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "task-draft-upload-finalize-race",
@@ -2281,6 +2321,7 @@ async fn task_draft_upload_losing_to_finalization_is_conflict_without_residue() 
         .await
         .expect("create board");
     let column = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -2294,6 +2335,7 @@ async fn task_draft_upload_losing_to_finalization_is_conflict_without_residue() 
         .await
         .expect("create column");
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -2413,6 +2455,7 @@ async fn document_draft_upload_losing_to_finalization_is_conflict_without_residu
             .await;
 
     client
+        .acta()
         .create_project(
             &ws.slug,
             project_req("document-draft-upload-finalize-race", "DR"),
@@ -2420,6 +2463,7 @@ async fn document_draft_upload_losing_to_finalization_is_conflict_without_residu
         .await
         .expect("create project");
     let document = client
+        .acta()
         .create_document(
             &ws.slug,
             "document-draft-upload-finalize-race",
@@ -2519,6 +2563,7 @@ async fn task_canonical_draft_operations_losing_to_finalization_are_conflicts() 
         support::login_user_with_workspace(&server, &db, "task-canonical-finalization-races").await;
 
     client
+        .acta()
         .create_project(
             &ws.slug,
             project_req("task-canonical-finalization-races", "TC"),
@@ -2526,6 +2571,7 @@ async fn task_canonical_draft_operations_losing_to_finalization_are_conflicts() 
         .await
         .expect("create project");
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "task-canonical-finalization-races",
@@ -2537,6 +2583,7 @@ async fn task_canonical_draft_operations_losing_to_finalization_are_conflicts() 
         .await
         .expect("create board");
     let column = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -2550,6 +2597,7 @@ async fn task_canonical_draft_operations_losing_to_finalization_are_conflicts() 
         .await
         .expect("create column");
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -2606,6 +2654,7 @@ async fn document_canonical_draft_operations_losing_to_finalization_are_conflict
             .await;
 
     client
+        .acta()
         .create_project(
             &ws.slug,
             project_req("document-canonical-finalization-races", "DC"),
@@ -2613,6 +2662,7 @@ async fn document_canonical_draft_operations_losing_to_finalization_are_conflict
         .await
         .expect("create project");
     let document = client
+        .acta()
         .create_document(
             &ws.slug,
             "document-canonical-finalization-races",
