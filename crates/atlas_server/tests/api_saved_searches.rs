@@ -24,6 +24,7 @@ async fn create_saved_search_returns_201_and_appears_in_list() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "ss-create-1").await;
 
     let ss = client
+        .acta()
         .create_saved_search(
             &ws.slug,
             CreateSavedSearchRequest {
@@ -39,6 +40,7 @@ async fn create_saved_search_returns_201_and_appears_in_list() {
     assert_eq!(ss.workspace_id, ws.id.0);
 
     let listed = client
+        .acta()
         .list_saved_searches(&ws.slug)
         .await
         .expect("list saved searches");
@@ -61,6 +63,7 @@ async fn create_saved_search_rejects_blank_name() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "ss-blank-name-1").await;
 
     let result = client
+        .acta()
         .create_saved_search(
             &ws.slug,
             CreateSavedSearchRequest {
@@ -89,6 +92,7 @@ async fn create_saved_search_rejects_name_over_200_chars() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "ss-long-name-1").await;
 
     let result = client
+        .acta()
         .create_saved_search(
             &ws.slug,
             CreateSavedSearchRequest {
@@ -117,6 +121,7 @@ async fn create_saved_search_rejects_query_over_2000_chars() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "ss-long-query-1").await;
 
     let result = client
+        .acta()
         .create_saved_search(
             &ws.slug,
             CreateSavedSearchRequest {
@@ -146,6 +151,7 @@ async fn create_saved_search_allows_empty_query() {
         support::login_user_with_workspace(&server, &db, "ss-empty-query-1").await;
 
     let ss = client
+        .acta()
         .create_saved_search(
             &ws.slug,
             CreateSavedSearchRequest {
@@ -172,6 +178,7 @@ async fn create_saved_search_rejects_duplicate_name_for_same_owner() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "ss-dup-name-1").await;
 
     client
+        .acta()
         .create_saved_search(
             &ws.slug,
             CreateSavedSearchRequest {
@@ -183,6 +190,7 @@ async fn create_saved_search_rejects_duplicate_name_for_same_owner() {
         .expect("first create");
 
     let result = client
+        .acta()
         .create_saved_search(
             &ws.slug,
             CreateSavedSearchRequest {
@@ -212,6 +220,7 @@ async fn create_saved_search_allows_same_name_for_different_owners() {
         support::login_user_with_workspace(&server, &db, "ss-cross-owner-1").await;
 
     user_client
+        .acta()
         .create_saved_search(
             &ws.slug,
             CreateSavedSearchRequest {
@@ -223,6 +232,7 @@ async fn create_saved_search_allows_same_name_for_different_owners() {
         .expect("user creates saved search");
 
     let key_created = user_client
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "test-key".to_string(),
             r#type: None,
@@ -240,6 +250,7 @@ async fn create_saved_search_allows_same_name_for_different_owners() {
         .with_token(key_created.secret);
 
     let result = key_client
+        .acta()
         .create_saved_search(
             &ws.slug,
             CreateSavedSearchRequest {
@@ -270,6 +281,7 @@ async fn list_saved_searches_is_owner_scoped_sorted_and_excludes_deleted() {
 
     for name in ["Gamma", "alpha", "Beta"] {
         client
+            .acta()
             .create_saved_search(
                 &ws.slug,
                 CreateSavedSearchRequest {
@@ -282,6 +294,7 @@ async fn list_saved_searches_is_owner_scoped_sorted_and_excludes_deleted() {
     }
 
     let key_created = client
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "other-owner-key".to_string(),
             r#type: None,
@@ -299,6 +312,7 @@ async fn list_saved_searches_is_owner_scoped_sorted_and_excludes_deleted() {
         .with_token(key_created.secret);
 
     key_client
+        .acta()
         .create_saved_search(
             &ws.slug,
             CreateSavedSearchRequest {
@@ -310,6 +324,7 @@ async fn list_saved_searches_is_owner_scoped_sorted_and_excludes_deleted() {
         .expect("key owner creates");
 
     let to_delete = client
+        .acta()
         .create_saved_search(
             &ws.slug,
             CreateSavedSearchRequest {
@@ -321,11 +336,16 @@ async fn list_saved_searches_is_owner_scoped_sorted_and_excludes_deleted() {
         .expect("create to-delete");
 
     client
+        .acta()
         .delete_saved_search(&ws.slug, to_delete.id)
         .await
         .expect("delete");
 
-    let listed = client.list_saved_searches(&ws.slug).await.expect("list");
+    let listed = client
+        .acta()
+        .list_saved_searches(&ws.slug)
+        .await
+        .expect("list");
 
     let names: Vec<String> = listed.iter().map(|s| s.name.clone()).collect();
     assert_eq!(names, vec!["alpha", "Beta", "Gamma"]);
@@ -344,6 +364,7 @@ async fn rename_saved_search_returns_200_with_new_name() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "ss-rename-1").await;
 
     let ss = client
+        .acta()
         .create_saved_search(
             &ws.slug,
             CreateSavedSearchRequest {
@@ -355,6 +376,7 @@ async fn rename_saved_search_returns_200_with_new_name() {
         .expect("create");
 
     let renamed = client
+        .acta()
         .rename_saved_search(
             &ws.slug,
             ss.id,
@@ -382,6 +404,7 @@ async fn rename_saved_search_rejects_duplicate_name() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "ss-rename-dup-1").await;
 
     client
+        .acta()
         .create_saved_search(
             &ws.slug,
             CreateSavedSearchRequest {
@@ -393,6 +416,7 @@ async fn rename_saved_search_rejects_duplicate_name() {
         .expect("create alpha");
 
     let beta = client
+        .acta()
         .create_saved_search(
             &ws.slug,
             CreateSavedSearchRequest {
@@ -404,6 +428,7 @@ async fn rename_saved_search_rejects_duplicate_name() {
         .expect("create beta");
 
     let result = client
+        .acta()
         .rename_saved_search(
             &ws.slug,
             beta.id,
@@ -433,6 +458,7 @@ async fn rename_saved_search_returns_404_for_non_owned_id() {
         support::login_user_with_workspace(&server, &db, "ss-rename-nonowned-1").await;
 
     let ss = client_a
+        .acta()
         .create_saved_search(
             &ws.slug,
             CreateSavedSearchRequest {
@@ -444,6 +470,7 @@ async fn rename_saved_search_returns_404_for_non_owned_id() {
         .expect("create");
 
     let key_created = client_a
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "intruder-key".to_string(),
             r#type: None,
@@ -461,6 +488,7 @@ async fn rename_saved_search_returns_404_for_non_owned_id() {
         .with_token(key_created.secret);
 
     let result = client_b
+        .acta()
         .rename_saved_search(
             &ws.slug,
             ss.id,
@@ -491,6 +519,7 @@ async fn rename_saved_search_returns_404_for_missing_id() {
 
     let missing_id = uuid::Uuid::now_v7();
     let result = client
+        .acta()
         .rename_saved_search(
             &ws.slug,
             missing_id,
@@ -519,6 +548,7 @@ async fn delete_saved_search_returns_204_and_frees_name() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "ss-delete-1").await;
 
     let ss = client
+        .acta()
         .create_saved_search(
             &ws.slug,
             CreateSavedSearchRequest {
@@ -530,11 +560,13 @@ async fn delete_saved_search_returns_204_and_frees_name() {
         .expect("create");
 
     client
+        .acta()
         .delete_saved_search(&ws.slug, ss.id)
         .await
         .expect("delete must return 204");
 
     let listed = client
+        .acta()
         .list_saved_searches(&ws.slug)
         .await
         .expect("list after delete");
@@ -542,6 +574,7 @@ async fn delete_saved_search_returns_204_and_frees_name() {
     assert!(listed.is_empty(), "deleted row must not appear in list");
 
     client
+        .acta()
         .create_saved_search(
             &ws.slug,
             CreateSavedSearchRequest {
@@ -567,6 +600,7 @@ async fn delete_saved_search_returns_404_for_non_owned_id() {
         support::login_user_with_workspace(&server, &db, "ss-delete-nonowned-1").await;
 
     let ss = client_a
+        .acta()
         .create_saved_search(
             &ws.slug,
             CreateSavedSearchRequest {
@@ -578,6 +612,7 @@ async fn delete_saved_search_returns_404_for_non_owned_id() {
         .expect("create");
 
     let key_created = client_a
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "intruder-key".to_string(),
             r#type: None,
@@ -594,7 +629,7 @@ async fn delete_saved_search_returns_404_for_non_owned_id() {
     let client_b = atlas_client::AtlasClient::new(server.base_url().to_string())
         .with_token(key_created.secret);
 
-    let result = client_b.delete_saved_search(&ws.slug, ss.id).await;
+    let result = client_b.acta().delete_saved_search(&ws.slug, ss.id).await;
 
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
@@ -616,7 +651,10 @@ async fn delete_saved_search_returns_404_for_missing_id() {
         support::login_user_with_workspace(&server, &db, "ss-delete-missing-1").await;
 
     let missing_id = uuid::Uuid::now_v7();
-    let result = client.delete_saved_search(&ws.slug, missing_id).await;
+    let result = client
+        .acta()
+        .delete_saved_search(&ws.slug, missing_id)
+        .await;
 
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
@@ -638,6 +676,7 @@ async fn saved_searches_are_isolated_per_workspace() {
     let (client_b, ws_b, _) = support::login_user_with_workspace(&server, &db, "ss-ws-iso-b").await;
 
     client_a
+        .acta()
         .create_saved_search(
             &ws_a.slug,
             CreateSavedSearchRequest {
@@ -649,6 +688,7 @@ async fn saved_searches_are_isolated_per_workspace() {
         .expect("create in A");
 
     let listed_b = client_b
+        .acta()
         .list_saved_searches(&ws_b.slug)
         .await
         .expect("list in B");
@@ -674,13 +714,14 @@ async fn saved_searches_endpoints_reject_unauthenticated_requests() {
 
     let anon = server.client();
 
-    let result = anon.list_saved_searches(&ws.slug).await;
+    let result = anon.acta().list_saved_searches(&ws.slug).await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 401),
         "unauthenticated list must return 401, got {result:?}"
     );
 
     let result = anon
+        .acta()
         .create_saved_search(
             &ws.slug,
             CreateSavedSearchRequest {
@@ -695,6 +736,7 @@ async fn saved_searches_endpoints_reject_unauthenticated_requests() {
     );
 
     let ss = owner_client
+        .acta()
         .create_saved_search(
             &ws.slug,
             CreateSavedSearchRequest {
@@ -706,6 +748,7 @@ async fn saved_searches_endpoints_reject_unauthenticated_requests() {
         .expect("create for auth test");
 
     let result = anon
+        .acta()
         .rename_saved_search(
             &ws.slug,
             ss.id,
@@ -719,7 +762,7 @@ async fn saved_searches_endpoints_reject_unauthenticated_requests() {
         "unauthenticated rename must return 401, got {result:?}"
     );
 
-    let result = anon.delete_saved_search(&ws.slug, ss.id).await;
+    let result = anon.acta().delete_saved_search(&ws.slug, ss.id).await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 401),
         "unauthenticated delete must return 401, got {result:?}"
@@ -740,7 +783,7 @@ async fn saved_searches_return_404_for_non_member() {
     let (outsider, _, _) =
         support::login_user_with_workspace(&server, &db, "ss-nonmember-user-1").await;
 
-    let result = outsider.list_saved_searches(&ws.slug).await;
+    let result = outsider.acta().list_saved_searches(&ws.slug).await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
         "non-member list must return 404, got {result:?}"
@@ -761,6 +804,7 @@ async fn rename_saved_search_rejects_blank_name() {
         support::login_user_with_workspace(&server, &db, "ss-rename-blank-1").await;
 
     let ss = client
+        .acta()
         .create_saved_search(
             &ws.slug,
             CreateSavedSearchRequest {
@@ -772,6 +816,7 @@ async fn rename_saved_search_rejects_blank_name() {
         .expect("create");
 
     let result = client
+        .acta()
         .rename_saved_search(
             &ws.slug,
             ss.id,
@@ -786,7 +831,11 @@ async fn rename_saved_search_rejects_blank_name() {
         "blank rename name must be rejected as 422, got {result:?}"
     );
 
-    let listed = client.list_saved_searches(&ws.slug).await.expect("list");
+    let listed = client
+        .acta()
+        .list_saved_searches(&ws.slug)
+        .await
+        .expect("list");
     assert_eq!(listed.len(), 1);
     assert_eq!(
         listed[0].name, "Before",
@@ -804,6 +853,7 @@ async fn rename_saved_search_rejects_name_over_200_chars() {
         support::login_user_with_workspace(&server, &db, "ss-rename-long-1").await;
 
     let ss = client
+        .acta()
         .create_saved_search(
             &ws.slug,
             CreateSavedSearchRequest {
@@ -815,6 +865,7 @@ async fn rename_saved_search_rejects_name_over_200_chars() {
         .expect("create");
 
     let result = client
+        .acta()
         .rename_saved_search(
             &ws.slug,
             ss.id,
@@ -829,7 +880,11 @@ async fn rename_saved_search_rejects_name_over_200_chars() {
         "name > 200 chars must be rejected as 422, got {result:?}"
     );
 
-    let listed = client.list_saved_searches(&ws.slug).await.expect("list");
+    let listed = client
+        .acta()
+        .list_saved_searches(&ws.slug)
+        .await
+        .expect("list");
     assert_eq!(listed.len(), 1);
     assert_eq!(
         listed[0].name, "Before",
@@ -851,6 +906,7 @@ async fn delete_saved_search_returns_404_on_second_delete() {
         support::login_user_with_workspace(&server, &db, "ss-double-delete-1").await;
 
     let ss = client
+        .acta()
         .create_saved_search(
             &ws.slug,
             CreateSavedSearchRequest {
@@ -862,11 +918,12 @@ async fn delete_saved_search_returns_404_on_second_delete() {
         .expect("create");
 
     client
+        .acta()
         .delete_saved_search(&ws.slug, ss.id)
         .await
         .expect("first delete must return 204");
 
-    let result = client.delete_saved_search(&ws.slug, ss.id).await;
+    let result = client.acta().delete_saved_search(&ws.slug, ss.id).await;
 
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
@@ -888,6 +945,7 @@ async fn create_saved_search_rejects_over_cap() {
 
     for i in 0..100 {
         client
+            .acta()
             .create_saved_search(
                 &ws.slug,
                 CreateSavedSearchRequest {
@@ -900,6 +958,7 @@ async fn create_saved_search_rejects_over_cap() {
     }
 
     let result = client
+        .acta()
         .create_saved_search(
             &ws.slug,
             CreateSavedSearchRequest {

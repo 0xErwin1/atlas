@@ -177,6 +177,7 @@ async fn create_project_grant_allows_sharing() {
     let (owner, ws, owner_user) = login_user_with_workspace(&server, &db, "grant-owner").await;
 
     owner
+        .acta()
         .create_project(&ws.slug, proj_req("Grant Project", "grant-proj"))
         .await
         .expect("create project");
@@ -186,6 +187,7 @@ async fn create_project_grant_allows_sharing() {
         add_user_to_workspace(&db, &server, ws.id, "grantee-user", MemberRole::Member).await;
 
     let grant = owner
+        .custos()
         .create_project_grant(&ws.slug, "grant-proj", grant_req(grantee.id.0, "viewer"))
         .await
         .expect("create project grant");
@@ -203,6 +205,7 @@ async fn list_project_grants_returns_created_grant() {
     let (owner, ws, _) = login_user_with_workspace(&server, &db, "grant-owner2").await;
 
     owner
+        .acta()
         .create_project(&ws.slug, proj_req("List Grant Project", "list-grant-proj"))
         .await
         .expect("create project");
@@ -211,6 +214,7 @@ async fn list_project_grants_returns_created_grant() {
         add_user_to_workspace(&db, &server, ws.id, "grantee-user2", MemberRole::Member).await;
 
     owner
+        .custos()
         .create_project_grant(
             &ws.slug,
             "list-grant-proj",
@@ -220,6 +224,7 @@ async fn list_project_grants_returns_created_grant() {
         .expect("create grant");
 
     let page = owner
+        .custos()
         .list_project_grants(&ws.slug, "list-grant-proj", None, None)
         .await
         .expect("list grants");
@@ -238,6 +243,7 @@ async fn delete_project_grant_removes_it() {
     let (owner, ws, _) = login_user_with_workspace(&server, &db, "grant-owner3").await;
 
     owner
+        .acta()
         .create_project(&ws.slug, proj_req("Del Grant Project", "del-grant-proj"))
         .await
         .expect("create project");
@@ -246,6 +252,7 @@ async fn delete_project_grant_removes_it() {
         add_user_to_workspace(&db, &server, ws.id, "grantee-user3", MemberRole::Member).await;
 
     let grant = owner
+        .custos()
         .create_project_grant(
             &ws.slug,
             "del-grant-proj",
@@ -255,11 +262,13 @@ async fn delete_project_grant_removes_it() {
         .expect("create grant");
 
     owner
+        .custos()
         .delete_project_grant(&ws.slug, "del-grant-proj", grant.id)
         .await
         .expect("delete grant");
 
     let page = owner
+        .custos()
         .list_project_grants(&ws.slug, "del-grant-proj", None, None)
         .await
         .expect("list after delete");
@@ -290,6 +299,7 @@ async fn create_workspace_grant_allows_sharing() {
         .expect("add membership");
 
     let grant = owner
+        .custos()
         .create_workspace_grant(&ws.slug, grant_req(non_member.id.0, "editor"))
         .await
         .expect("create workspace grant");
@@ -309,11 +319,13 @@ async fn list_and_delete_workspace_grant() {
         add_user_to_workspace(&db, &server, ws.id, "ws-grantee", MemberRole::Member).await;
 
     let grant = owner
+        .custos()
         .create_workspace_grant(&ws.slug, grant_req(member.id.0, "viewer"))
         .await
         .expect("create workspace grant");
 
     let page = owner
+        .custos()
         .list_workspace_grants(&ws.slug, None, None)
         .await
         .expect("list workspace grants");
@@ -324,11 +336,13 @@ async fn list_and_delete_workspace_grant() {
     );
 
     owner
+        .custos()
         .delete_workspace_grant(&ws.slug, grant.id)
         .await
         .expect("delete workspace grant");
 
     let page_after = owner
+        .custos()
         .list_workspace_grants(&ws.slug, None, None)
         .await
         .expect("list after delete");
@@ -348,6 +362,7 @@ async fn create_project_grant_admin_to_agent_is_rejected() {
         login_user_with_workspace(&server, &db, "grant-agent-admin-proj").await;
 
     owner
+        .acta()
         .create_project(&ws.slug, proj_req("Agent Admin Proj", "agent-admin-proj"))
         .await
         .expect("create project");
@@ -355,6 +370,7 @@ async fn create_project_grant_admin_to_agent_is_rejected() {
     let agent = add_agent(&db, ws.id, owner_user.id, "admin-bot-proj").await;
 
     let err = owner
+        .custos()
         .create_project_grant(
             &ws.slug,
             "agent-admin-proj",
@@ -369,6 +385,7 @@ async fn create_project_grant_admin_to_agent_is_rejected() {
     }
 
     let page = owner
+        .custos()
         .list_project_grants(&ws.slug, "agent-admin-proj", None, None)
         .await
         .expect("list grants");
@@ -390,6 +407,7 @@ async fn create_workspace_grant_admin_to_agent_is_rejected() {
     let agent = add_agent(&db, ws.id, owner_user.id, "admin-bot-ws").await;
 
     let err = owner
+        .custos()
         .create_workspace_grant(&ws.slug, agent_grant_req(agent.id.0, "admin"))
         .await
         .expect_err("admin grant to an agent must be rejected");
@@ -400,6 +418,7 @@ async fn create_workspace_grant_admin_to_agent_is_rejected() {
     }
 
     let page = owner
+        .custos()
         .list_workspace_grants(&ws.slug, None, None)
         .await
         .expect("list grants");
@@ -421,6 +440,7 @@ async fn create_workspace_grant_editor_to_agent_succeeds() {
     let agent = add_agent(&db, ws.id, owner_user.id, "editor-bot-ws").await;
 
     let grant = owner
+        .custos()
         .create_workspace_grant(&ws.slug, agent_grant_req(agent.id.0, "editor"))
         .await
         .expect("editor grant to an agent must succeed");
@@ -429,6 +449,7 @@ async fn create_workspace_grant_editor_to_agent_succeeds() {
     assert_eq!(grant.role, "editor");
 
     let page = owner
+        .custos()
         .list_workspace_grants(&ws.slug, None, None)
         .await
         .expect("list grants");
@@ -463,11 +484,13 @@ async fn grant_toplevel_api_key_to_workspace_succeeds() {
     let (owner, ws, _) = login_user_with_workspace(&server, &db, "tl-key-ws-owner").await;
 
     let created = owner
+        .custos()
         .create_user_api_key(toplevel_key_req("tl-agent-ws"))
         .await
         .expect("create top-level api key");
 
     let grant = owner
+        .custos()
         .create_workspace_grant(&ws.slug, agent_grant_req(created.id, "editor"))
         .await
         .expect("granting a top-level key to its owner's workspace must succeed");
@@ -476,6 +499,7 @@ async fn grant_toplevel_api_key_to_workspace_succeeds() {
     assert_eq!(grant.role, "editor");
 
     let page = owner
+        .custos()
         .list_workspace_grants(&ws.slug, None, None)
         .await
         .expect("list workspace grants");
@@ -496,16 +520,19 @@ async fn grant_toplevel_api_key_to_project_succeeds() {
     let (owner, ws, _) = login_user_with_workspace(&server, &db, "tl-key-proj-owner").await;
 
     owner
+        .acta()
         .create_project(&ws.slug, proj_req("TL Key Project", "tl-key-proj"))
         .await
         .expect("create project");
 
     let created = owner
+        .custos()
         .create_user_api_key(toplevel_key_req("tl-agent-proj"))
         .await
         .expect("create top-level api key");
 
     let grant = owner
+        .custos()
         .create_project_grant(
             &ws.slug,
             "tl-key-proj",
@@ -529,11 +556,13 @@ async fn grant_api_key_not_owned_by_caller_is_rejected() {
     let _ = other_user;
 
     let other_key = other
+        .custos()
         .create_user_api_key(toplevel_key_req("other-tl-agent"))
         .await
         .expect("create other user's top-level api key");
 
     let err = owner
+        .custos()
         .create_workspace_grant(&ws.slug, agent_grant_req(other_key.id, "editor"))
         .await
         .expect_err("granting another user's key must be rejected");
@@ -556,11 +585,13 @@ async fn grant_toplevel_api_key_admin_is_still_rejected() {
     let (owner, ws, _) = login_user_with_workspace(&server, &db, "tl-key-admin-cap").await;
 
     let created = owner
+        .custos()
         .create_user_api_key(toplevel_key_req("tl-admin-cap-key"))
         .await
         .expect("create top-level api key");
 
     let err = owner
+        .custos()
         .create_workspace_grant(&ws.slug, agent_grant_req(created.id, "admin"))
         .await
         .expect_err("admin grant to an api key must be rejected");
@@ -589,6 +620,7 @@ async fn agent_with_all_capabilities_and_editor_grant_cannot_create_project_gran
         login_user_with_workspace(&server, &db, "grant-agent-allcap-owner").await;
 
     let project = owner
+        .acta()
         .create_project(
             &ws.slug,
             proj_req("Agent AllCap Project", "agent-allcap-proj"),
@@ -654,6 +686,7 @@ async fn agent_with_all_capabilities_and_editor_grant_cannot_create_project_gran
 
     let agent = atlas_client::AtlasClient::new(server.base_url()).with_token(plain);
     let result = agent
+        .custos()
         .create_project_grant(
             &ws.slug,
             "agent-allcap-proj",
@@ -677,6 +710,7 @@ async fn delete_project_grant_unknown_id_returns_404() {
     let (owner, ws, _) = login_user_with_workspace(&server, &db, "grant-owner-404").await;
 
     owner
+        .acta()
         .create_project(
             &ws.slug,
             proj_req("Missing Grant Project", "missing-grant-proj"),
@@ -685,6 +719,7 @@ async fn delete_project_grant_unknown_id_returns_404() {
         .expect("create project");
 
     let result = owner
+        .custos()
         .delete_project_grant(&ws.slug, "missing-grant-proj", uuid::Uuid::now_v7())
         .await;
 
@@ -704,6 +739,7 @@ async fn delete_workspace_grant_unknown_id_returns_404() {
     let (owner, ws, _) = login_user_with_workspace(&server, &db, "ws-grant-owner-404").await;
 
     let result = owner
+        .custos()
         .delete_workspace_grant(&ws.slug, uuid::Uuid::now_v7())
         .await;
 
@@ -726,6 +762,7 @@ async fn delete_workspace_grant_rejects_project_grant_id() {
     let (owner, ws, _) = login_user_with_workspace(&server, &db, "grant-owner-scope").await;
 
     owner
+        .acta()
         .create_project(
             &ws.slug,
             proj_req("Scope Grant Project", "scope-grant-proj"),
@@ -737,6 +774,7 @@ async fn delete_workspace_grant_rejects_project_grant_id() {
         add_user_to_workspace(&db, &server, ws.id, "grantee-scope", MemberRole::Member).await;
 
     let grant = owner
+        .custos()
         .create_project_grant(
             &ws.slug,
             "scope-grant-proj",
@@ -745,13 +783,17 @@ async fn delete_workspace_grant_rejects_project_grant_id() {
         .await
         .expect("create project grant");
 
-    let result = owner.delete_workspace_grant(&ws.slug, grant.id).await;
+    let result = owner
+        .custos()
+        .delete_workspace_grant(&ws.slug, grant.id)
+        .await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
         "a project grant id must 404 on the workspace delete path, got {result:?}"
     );
 
     let page = owner
+        .custos()
         .list_project_grants(&ws.slug, "scope-grant-proj", None, None)
         .await
         .expect("list project grants");

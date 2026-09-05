@@ -165,6 +165,7 @@ async fn audit_membership_role_changed_happy_path_writes_one_row() {
     let target = add_member_to_ws(&db, ws.id, "audit-rc-happy-target", MemberRole::Member).await;
 
     owner_client
+        .acta()
         .update_member_role(&ws.slug, target.id.0, "admin")
         .await
         .expect("update_member_role");
@@ -208,6 +209,7 @@ async fn audit_membership_role_changed_rejected_writes_zero_rows() {
 
     let nonexistent_user_id = uuid::Uuid::now_v7();
     let result = owner_client
+        .acta()
         .update_member_role(&ws.slug, nonexistent_user_id, "admin")
         .await;
 
@@ -231,6 +233,7 @@ async fn audit_membership_role_changed_last_owner_lockout_writes_zero_rows() {
     let (owner_client, ws, owner_user) = login_owner(&server, &db, "audit-rc-last-owner").await;
 
     let result = owner_client
+        .acta()
         .update_member_role(&ws.slug, owner_user.id.0, "member")
         .await;
 
@@ -293,6 +296,7 @@ async fn audit_membership_role_changed_admin_on_owner_writes_zero_rows() {
     };
 
     let result = admin_client
+        .acta()
         .update_member_role(&ws.slug, owner_user.id.0, "member")
         .await;
 
@@ -320,6 +324,7 @@ async fn audit_membership_removed_happy_path_writes_one_row() {
     let target = add_member_to_ws(&db, ws.id, "audit-mr-happy-target", MemberRole::Member).await;
 
     owner_client
+        .acta()
         .remove_member(&ws.slug, target.id.0)
         .await
         .expect("remove_member");
@@ -356,7 +361,10 @@ async fn audit_membership_removed_last_owner_lockout_writes_zero_rows() {
 
     let (owner_client, ws, owner_user) = login_owner(&server, &db, "audit-mr-last-owner").await;
 
-    let result = owner_client.remove_member(&ws.slug, owner_user.id.0).await;
+    let result = owner_client
+        .acta()
+        .remove_member(&ws.slug, owner_user.id.0)
+        .await;
 
     // Last-owner lockout → 409.
     assert!(result.is_err(), "last-owner lockout must fail");
@@ -390,7 +398,10 @@ async fn audit_membership_removed_not_member_writes_zero_rows() {
         .await
         .expect("create stranger");
 
-    let result = owner_client.remove_member(&ws.slug, stranger.id.0).await;
+    let result = owner_client
+        .acta()
+        .remove_member(&ws.slug, stranger.id.0)
+        .await;
     assert!(result.is_err(), "non-member target must fail");
 
     assert_eq!(
@@ -412,6 +423,7 @@ async fn audit_project_grant_created_happy_path_writes_one_row() {
     let (owner_client, ws, owner_user) = login_owner(&server, &db, "audit-pgc-happy").await;
 
     let project = owner_client
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -428,6 +440,7 @@ async fn audit_project_grant_created_happy_path_writes_one_row() {
     let grantee = add_member_to_ws(&db, ws.id, "audit-pgc-happy-grantee", MemberRole::Member).await;
 
     owner_client
+        .custos()
         .create_project_grant(
             &ws.slug,
             &project.slug,
@@ -487,6 +500,7 @@ async fn audit_project_grant_created_non_member_grantee_writes_zero_rows() {
     let (owner_client, ws, _owner_user) = login_owner(&server, &db, "audit-pgc-reject").await;
 
     let project = owner_client
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -503,6 +517,7 @@ async fn audit_project_grant_created_non_member_grantee_writes_zero_rows() {
     let stranger_id = uuid::Uuid::now_v7();
 
     let result = owner_client
+        .custos()
         .create_project_grant(
             &ws.slug,
             &project.slug,
@@ -532,6 +547,7 @@ async fn audit_project_grant_revoked_happy_path_writes_one_row() {
     let (owner_client, ws, owner_user) = login_owner(&server, &db, "audit-pgr-happy").await;
 
     let project = owner_client
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -548,11 +564,13 @@ async fn audit_project_grant_revoked_happy_path_writes_one_row() {
     let grantee = add_member_to_ws(&db, ws.id, "audit-pgr-happy-grantee", MemberRole::Member).await;
 
     let grants_before = owner_client
+        .custos()
         .list_project_grants(&ws.slug, &project.slug, None, None)
         .await
         .expect("list_project_grants");
 
     owner_client
+        .custos()
         .create_project_grant(
             &ws.slug,
             &project.slug,
@@ -562,6 +580,7 @@ async fn audit_project_grant_revoked_happy_path_writes_one_row() {
         .expect("create grant");
 
     let grants_after = owner_client
+        .custos()
         .list_project_grants(&ws.slug, &project.slug, None, None)
         .await
         .expect("list_project_grants after create");
@@ -577,6 +596,7 @@ async fn audit_project_grant_revoked_happy_path_writes_one_row() {
     let create_row_count = rows_before_revoke.len();
 
     owner_client
+        .custos()
         .delete_project_grant(&ws.slug, &project.slug, new_grant.id)
         .await
         .expect("delete_project_grant");
@@ -625,6 +645,7 @@ async fn audit_project_grant_revoked_not_found_writes_zero_rows() {
     let (owner_client, ws, _owner_user) = login_owner(&server, &db, "audit-pgr-reject").await;
 
     let project = owner_client
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -641,6 +662,7 @@ async fn audit_project_grant_revoked_not_found_writes_zero_rows() {
     let nonexistent_grant_id = uuid::Uuid::now_v7();
 
     let result = owner_client
+        .custos()
         .delete_project_grant(&ws.slug, &project.slug, nonexistent_grant_id)
         .await;
 
@@ -672,6 +694,7 @@ async fn audit_workspace_grant_created_happy_path_writes_one_row() {
     let agent_key = create_agent_key(&db, ws.id, owner_user.id, "audit-wgc-key").await;
 
     owner_client
+        .custos()
         .create_workspace_grant(&ws.slug, agent_grant_req(agent_key.id.0, "editor"))
         .await
         .expect("create_workspace_grant");
@@ -728,6 +751,7 @@ async fn audit_workspace_grant_created_non_member_user_writes_zero_rows() {
     let stranger_id = uuid::Uuid::now_v7();
 
     let result = owner_client
+        .custos()
         .create_workspace_grant(&ws.slug, user_grant_req(stranger_id, "editor"))
         .await;
 
@@ -755,16 +779,19 @@ async fn audit_workspace_grant_revoked_happy_path_writes_one_row() {
     let agent_key = create_agent_key(&db, ws.id, owner_user.id, "audit-wgr-key").await;
 
     let grants_before = owner_client
+        .custos()
         .list_workspace_grants(&ws.slug, None, None)
         .await
         .expect("list_workspace_grants before");
 
     owner_client
+        .custos()
         .create_workspace_grant(&ws.slug, agent_grant_req(agent_key.id.0, "editor"))
         .await
         .expect("create_workspace_grant");
 
     let grants_after = owner_client
+        .custos()
         .list_workspace_grants(&ws.slug, None, None)
         .await
         .expect("list_workspace_grants after create");
@@ -782,6 +809,7 @@ async fn audit_workspace_grant_revoked_happy_path_writes_one_row() {
         .count();
 
     owner_client
+        .custos()
         .delete_workspace_grant(&ws.slug, new_grant.id)
         .await
         .expect("delete_workspace_grant");
@@ -831,6 +859,7 @@ async fn audit_workspace_grant_revoked_not_found_writes_zero_rows() {
     let nonexistent_grant_id = uuid::Uuid::now_v7();
 
     let result = owner_client
+        .custos()
         .delete_workspace_grant(&ws.slug, nonexistent_grant_id)
         .await;
 
@@ -1036,6 +1065,7 @@ async fn audit_user_created_happy_path_writes_one_row() {
         .expect("membership");
 
     let created = admin_client
+        .custos()
         .create_user(CreateUserRequest {
             username: "audit-uc-newbie".to_string(),
             display_name: "Newbie".to_string(),
@@ -1110,6 +1140,7 @@ async fn audit_user_created_duplicate_username_writes_zero_rows() {
         .expect("membership");
 
     admin_client
+        .custos()
         .create_user(CreateUserRequest {
             username: "audit-uc-dup-target".to_string(),
             display_name: "Target".to_string(),
@@ -1121,6 +1152,7 @@ async fn audit_user_created_duplicate_username_writes_zero_rows() {
         .expect("first create_user");
 
     let result = admin_client
+        .custos()
         .create_user(CreateUserRequest {
             username: "audit-uc-dup-target".to_string(),
             display_name: "Target Dup".to_string(),
@@ -1165,6 +1197,7 @@ async fn audit_user_disabled_happy_path_writes_one_row() {
         .expect("create target");
 
     admin_client
+        .custos()
         .disable_user(target.id.0)
         .await
         .expect("disable_user");
@@ -1194,7 +1227,7 @@ async fn audit_user_disabled_not_found_writes_zero_rows() {
     let (admin_client, _admin_user) = login_admin_user(&server, &db, "audit-ud-reject-admin").await;
 
     let nonexistent = uuid::Uuid::now_v7();
-    let result = admin_client.disable_user(nonexistent).await;
+    let result = admin_client.custos().disable_user(nonexistent).await;
 
     assert!(result.is_err(), "disable non-existent user must fail");
 
@@ -1228,10 +1261,12 @@ async fn audit_user_enabled_happy_path_writes_one_row_with_real_actor() {
 
     // Disable then enable.
     admin_client
+        .custos()
         .disable_user(target.id.0)
         .await
         .expect("disable first");
     admin_client
+        .custos()
         .enable_user(target.id.0)
         .await
         .expect("enable_user");
@@ -1262,7 +1297,7 @@ async fn audit_user_enabled_not_found_writes_zero_rows() {
     let (admin_client, _admin_user) = login_admin_user(&server, &db, "audit-ue-reject-admin").await;
 
     let nonexistent = uuid::Uuid::now_v7();
-    let result = admin_client.enable_user(nonexistent).await;
+    let result = admin_client.custos().enable_user(nonexistent).await;
 
     assert!(result.is_err(), "enable non-existent user must fail");
 
@@ -1374,6 +1409,7 @@ async fn audit_user_password_reset_happy_path_writes_one_row() {
         .expect("create target");
 
     admin_client
+        .custos()
         .reset_user_password(target.id.0, "NewPassword1!")
         .await
         .expect("reset_user_password");
@@ -1403,6 +1439,7 @@ async fn audit_user_password_reset_not_found_writes_zero_rows() {
 
     let nonexistent = uuid::Uuid::now_v7();
     let result = admin_client
+        .custos()
         .reset_user_password(nonexistent, "NewPassword1!")
         .await;
 
@@ -1449,6 +1486,7 @@ async fn audit_user_activation_regenerated_happy_path_writes_one_row_with_real_a
         .expect("seed activation token");
 
     admin_client
+        .custos()
         .regenerate_activation_link(target.id.0)
         .await
         .expect("regenerate_activation_link");
@@ -1498,7 +1536,10 @@ async fn audit_user_activation_regenerated_already_activated_writes_zero_rows() 
     // Mark the user as already activated.
     support::activate_user_in_db(&db, target.id.0).await;
 
-    let result = admin_client.regenerate_activation_link(target.id.0).await;
+    let result = admin_client
+        .custos()
+        .regenerate_activation_link(target.id.0)
+        .await;
 
     assert!(result.is_err(), "already-activated user must fail with 409");
 
@@ -1522,6 +1563,7 @@ async fn audit_api_key_created_happy_path_writes_one_row() {
     let (user_client, user) = login_admin_user(&server, &db, "audit-akc-user").await;
 
     let created = user_client
+        .custos()
         .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
             name: "audit-akc-key".to_string(),
             r#type: Some("agent".to_string()),
@@ -1568,6 +1610,7 @@ async fn audit_api_key_created_by_api_key_principal_writes_zero_rows() {
 
     // Create a key first, then use it to try creating another key (not allowed).
     let key = user_client
+        .custos()
         .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
             name: "audit-akc-reject-key".to_string(),
             r#type: Some("agent".to_string()),
@@ -1584,6 +1627,7 @@ async fn audit_api_key_created_by_api_key_principal_writes_zero_rows() {
         .with_token(key.secret.clone());
 
     let result = key_client
+        .custos()
         .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
             name: "should-fail".to_string(),
             r#type: Some("agent".to_string()),
@@ -1620,6 +1664,7 @@ async fn audit_api_key_revoked_happy_path_writes_one_row() {
     let (user_client, user) = login_admin_user(&server, &db, "audit-akr-user").await;
 
     let key = user_client
+        .custos()
         .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
             name: "audit-akr-key".to_string(),
             r#type: Some("agent".to_string()),
@@ -1631,6 +1676,7 @@ async fn audit_api_key_revoked_happy_path_writes_one_row() {
         .expect("create_user_api_key");
 
     user_client
+        .custos()
         .revoke_user_api_key(key.id)
         .await
         .expect("revoke_user_api_key");
@@ -1659,7 +1705,7 @@ async fn audit_api_key_revoked_not_found_writes_zero_rows() {
     let (user_client, _user) = login_admin_user(&server, &db, "audit-akr-reject-user").await;
 
     let nonexistent = uuid::Uuid::now_v7();
-    let result = user_client.revoke_user_api_key(nonexistent).await;
+    let result = user_client.custos().revoke_user_api_key(nonexistent).await;
 
     assert!(result.is_err(), "revoke non-existent key must fail");
 
@@ -1699,6 +1745,7 @@ async fn audit_account_activated_happy_path_writes_one_row_actor_is_self() {
         .expect("membership");
 
     let created = admin_client
+        .custos()
         .create_user(CreateUserRequest {
             username: "audit-aa-newbie".to_string(),
             display_name: "Newbie".to_string(),

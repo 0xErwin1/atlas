@@ -65,6 +65,7 @@ async fn seed_task(
     title: &str,
 ) -> atlas_api::dtos::boards_tasks::TaskDto {
     client
+        .acta()
         .create_task(
             ws,
             board_id,
@@ -89,6 +90,7 @@ async fn seed_board(
     name: &str,
 ) -> atlas_api::dtos::boards_tasks::BoardDto {
     client
+        .acta()
         .create_board(
             ws,
             project_slug,
@@ -108,6 +110,7 @@ async fn seed_column(
     name: &str,
 ) -> atlas_api::dtos::boards_tasks::ColumnDto {
     client
+        .acta()
         .create_column(
             ws,
             board_id,
@@ -241,6 +244,7 @@ async fn workspace_activity_private_project_hidden_without_grant() {
         support::login_user_with_workspace(&server, &db, "owner-priv1").await;
 
     let project = owner_client
+        .acta()
         .create_project(&ws.slug, mk_project_req_private("priv-proj1", "PP1"))
         .await
         .expect("create project");
@@ -252,6 +256,7 @@ async fn workspace_activity_private_project_hidden_without_grant() {
     let member_client = add_plain_member(&db, &server, ws.id, "member-priv1").await;
 
     let page = member_client
+        .acta()
         .list_workspace_activity(&ws.slug, None, None, None, None)
         .await
         .expect("list activity");
@@ -274,6 +279,7 @@ async fn workspace_activity_board_only_grant_surfaces_board_tasks() {
         support::login_user_with_workspace(&server, &db, "owner-board1").await;
 
     let project = owner_client
+        .acta()
         .create_project(&ws.slug, mk_project_req_private("priv-board-proj1", "PBP"))
         .await
         .expect("create project");
@@ -336,6 +342,7 @@ async fn workspace_activity_board_only_grant_surfaces_board_tasks() {
         .expect("login");
 
     let page = member_client
+        .acta()
         .list_workspace_activity(&ws.slug, None, None, None, None)
         .await
         .expect("list activity");
@@ -358,6 +365,7 @@ async fn workspace_activity_project_grant_surfaces_project_tasks() {
         support::login_user_with_workspace(&server, &db, "owner-proj1").await;
 
     let project = owner_client
+        .acta()
         .create_project(&ws.slug, mk_project_req_private("proj-grant-1", "PG1"))
         .await
         .expect("create project");
@@ -413,6 +421,7 @@ async fn workspace_activity_project_grant_surfaces_project_tasks() {
         .expect("login");
 
     let page = member_client
+        .acta()
         .list_workspace_activity(&ws.slug, None, None, None, None)
         .await
         .expect("list activity");
@@ -435,6 +444,7 @@ async fn workspace_activity_workspace_visible_project_visible_to_all_members() {
         support::login_user_with_workspace(&server, &db, "owner-vis1").await;
 
     let pub_project = owner_client
+        .acta()
         .create_project(&ws.slug, mk_project_req_workspace("vis-pub-proj1", "VPP"))
         .await
         .expect("create project");
@@ -444,6 +454,7 @@ async fn workspace_activity_workspace_visible_project_visible_to_all_members() {
     seed_task(&owner_client, &ws.slug, board.id, col.id, "visible task").await;
 
     let priv_project = owner_client
+        .acta()
         .create_project(&ws.slug, mk_project_req_private("vis-priv-proj1", "VPR"))
         .await
         .expect("create private project");
@@ -462,6 +473,7 @@ async fn workspace_activity_workspace_visible_project_visible_to_all_members() {
     let member_client = add_plain_member(&db, &server, ws.id, "member-vis1").await;
 
     let page = member_client
+        .acta()
         .list_workspace_activity(&ws.slug, None, None, None, None)
         .await
         .expect("list activity");
@@ -487,6 +499,7 @@ async fn workspace_activity_owner_sees_all() {
         support::login_user_with_workspace(&server, &db, "owner-all1").await;
 
     let priv_project = owner_client
+        .acta()
         .create_project(&ws.slug, mk_project_req_private("priv-all-1", "PA1"))
         .await
         .expect("create project");
@@ -496,6 +509,7 @@ async fn workspace_activity_owner_sees_all() {
     seed_task(&owner_client, &ws.slug, board.id, col.id, "private task").await;
 
     let page = owner_client
+        .acta()
         .list_workspace_activity(&ws.slug, None, None, None, None)
         .await
         .expect("list activity");
@@ -518,6 +532,7 @@ async fn workspace_activity_api_key_sees_granted_scope() {
         support::login_user_with_workspace(&server, &db, "owner-apikey1").await;
 
     let vis_project = owner_client
+        .acta()
         .create_project(&ws.slug, mk_project_req_workspace("vis-ak-proj1", "VAK"))
         .await
         .expect("create project");
@@ -534,6 +549,7 @@ async fn workspace_activity_api_key_sees_granted_scope() {
     .await;
 
     let key_created = owner_client
+        .custos()
         .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
             name: "agent-ak1".to_string(),
             r#type: Some("agent".to_string()),
@@ -551,6 +567,7 @@ async fn workspace_activity_api_key_sees_granted_scope() {
         .with_token(key_created.secret.clone());
 
     let page = api_key_client
+        .acta()
         .list_workspace_activity(&ws.slug, None, None, None, None)
         .await
         .expect("list activity");
@@ -573,6 +590,7 @@ async fn workspace_activity_actor_type_filter_works() {
         support::login_user_with_workspace(&server, &db, "owner-af1").await;
 
     let project = owner_client
+        .acta()
         .create_project(&ws.slug, mk_project_req("pub-af1", "AF1"))
         .await
         .expect("project");
@@ -583,6 +601,7 @@ async fn workspace_activity_actor_type_filter_works() {
     seed_task(&owner_client, &ws.slug, board.id, col.id, "user task").await;
 
     let key_created = owner_client
+        .custos()
         .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
             name: "agent-af1".to_string(),
             r#type: Some("agent".to_string()),
@@ -605,6 +624,7 @@ async fn workspace_activity_actor_type_filter_works() {
     seed_task(&key_client, &ws.slug, board.id, col.id, "agent task").await;
 
     let user_page = owner_client
+        .acta()
         .list_workspace_activity(&ws.slug, Some("user"), None, None, None)
         .await
         .expect("user filter");
@@ -619,6 +639,7 @@ async fn workspace_activity_actor_type_filter_works() {
     );
 
     let key_page = owner_client
+        .acta()
         .list_workspace_activity(&ws.slug, Some("api_key"), None, None, None)
         .await
         .expect("api_key filter");
@@ -643,6 +664,7 @@ async fn workspace_activity_date_range_filter() {
         support::login_user_with_workspace(&server, &db, "owner-date1").await;
 
     let project = owner_client
+        .acta()
         .create_project(&ws.slug, mk_project_req("date-proj1", "DT1"))
         .await
         .expect("project");
@@ -653,6 +675,7 @@ async fn workspace_activity_date_range_filter() {
 
     let far_future = "2099-01-01T00:00:00Z";
     let page = owner_client
+        .acta()
         .list_workspace_activity(&ws.slug, None, Some(far_future), None, None)
         .await
         .expect("list with from");
@@ -661,6 +684,7 @@ async fn workspace_activity_date_range_filter() {
 
     let far_past = "2000-01-01T00:00:00Z";
     let page2 = owner_client
+        .acta()
         .list_workspace_activity(&ws.slug, None, None, Some(far_past), None)
         .await
         .expect("list with to");
@@ -668,6 +692,7 @@ async fn workspace_activity_date_range_filter() {
     assert_eq!(page2.items.len(), 0, "to=far_past must return 0 items");
 
     let page3 = owner_client
+        .acta()
         .list_workspace_activity(&ws.slug, None, None, None, None)
         .await
         .expect("all entries");
@@ -688,6 +713,7 @@ async fn workspace_activity_keyset_pagination_under_filtering() {
         support::login_user_with_workspace(&server, &db, "owner-page1").await;
 
     let vis_project = owner_client
+        .acta()
         .create_project(&ws.slug, mk_project_req_workspace("page-vis-1", "PGV"))
         .await
         .expect("vis project");
@@ -712,6 +738,7 @@ async fn workspace_activity_keyset_pagination_under_filtering() {
     .await;
 
     let priv_project = owner_client
+        .acta()
         .create_project(&ws.slug, mk_project_req_private("page-priv-1", "PGP"))
         .await
         .expect("priv project");
@@ -730,6 +757,7 @@ async fn workspace_activity_keyset_pagination_under_filtering() {
     let member_client = add_plain_member(&db, &server, ws.id, "member-page1").await;
 
     let page1 = member_client
+        .acta()
         .list_workspace_activity(&ws.slug, None, None, None, Some(1))
         .await
         .expect("page 1");
@@ -746,6 +774,7 @@ async fn workspace_activity_keyset_pagination_under_filtering() {
     );
 
     let page2 = member_client
+        .acta()
         .list_workspace_activity_with_cursor(
             &ws.slug,
             None,
@@ -792,6 +821,7 @@ async fn workspace_activity_actors_are_enriched() {
         support::login_user_with_workspace(&server, &db, "owner-enrich1").await;
 
     let project = owner_client
+        .acta()
         .create_project(&ws.slug, mk_project_req("enrich-proj1", "EN1"))
         .await
         .expect("project");
@@ -801,6 +831,7 @@ async fn workspace_activity_actors_are_enriched() {
     seed_task(&owner_client, &ws.slug, board.id, col.id, "enriched task").await;
 
     let page = owner_client
+        .acta()
         .list_workspace_activity(&ws.slug, None, None, None, None)
         .await
         .expect("list activity");
@@ -831,6 +862,7 @@ async fn per_task_activity_actors_are_enriched_and_dto_has_new_fields() {
         support::login_user_with_workspace(&server, &db, "owner-reg1").await;
 
     let project = owner_client
+        .acta()
         .create_project(&ws.slug, mk_project_req("reg-proj1", "RG1"))
         .await
         .expect("project");
@@ -840,6 +872,7 @@ async fn per_task_activity_actors_are_enriched_and_dto_has_new_fields() {
     let task = seed_task(&owner_client, &ws.slug, board.id, col.id, "reg task").await;
 
     let page = owner_client
+        .acta()
         .list_activity(&ws.slug, &task.readable_id)
         .await
         .expect("list per-task activity");
@@ -881,6 +914,7 @@ async fn workspace_activity_dto_includes_task_readable_id() {
         support::login_user_with_workspace(&server, &db, "owner-dto1").await;
 
     let project = owner_client
+        .acta()
         .create_project(&ws.slug, mk_project_req("dto-proj1", "DTO"))
         .await
         .expect("project");
@@ -890,6 +924,7 @@ async fn workspace_activity_dto_includes_task_readable_id() {
     let task = seed_task(&owner_client, &ws.slug, board.id, col.id, "dto task").await;
 
     let page = owner_client
+        .acta()
         .list_workspace_activity(&ws.slug, None, None, None, None)
         .await
         .expect("list activity");
@@ -923,6 +958,7 @@ async fn workspace_activity_ungranted_api_key_cannot_see_workspace_visible_proje
         support::login_user_with_workspace(&server, &db, "owner-ak13").await;
 
     let vis_project = owner_client
+        .acta()
         .create_project(&ws.slug, mk_project_req_workspace("vis-ak13", "VA3"))
         .await
         .expect("create workspace-visible project");
@@ -939,6 +975,7 @@ async fn workspace_activity_ungranted_api_key_cannot_see_workspace_visible_proje
     .await;
 
     let priv_project = owner_client
+        .acta()
         .create_project(&ws.slug, mk_project_req_private("priv-ak13", "PA3"))
         .await
         .expect("create private project");
@@ -955,6 +992,7 @@ async fn workspace_activity_ungranted_api_key_cannot_see_workspace_visible_proje
     .await;
 
     let key_created = owner_client
+        .custos()
         .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
             name: "agent-ak13".to_string(),
             r#type: Some("agent".to_string()),
@@ -989,6 +1027,7 @@ async fn workspace_activity_ungranted_api_key_cannot_see_workspace_visible_proje
         .with_token(key_created.secret.clone());
 
     let page = api_key_client
+        .acta()
         .list_workspace_activity(&ws.slug, None, None, None, None)
         .await
         .expect("list activity");
@@ -1016,6 +1055,7 @@ async fn workspace_activity_root_member_sees_all_via_admin_bypass() {
         support::login_user_with_workspace(&server, &db, "owner-root14").await;
 
     let priv_project = owner_client
+        .acta()
         .create_project(&ws.slug, mk_project_req_private("priv-root14", "PR4"))
         .await
         .expect("create private project");
@@ -1062,6 +1102,7 @@ async fn workspace_activity_root_member_sees_all_via_admin_bypass() {
         .expect("root login");
 
     let page = root_client
+        .acta()
         .list_workspace_activity(&ws.slug, None, None, None, None)
         .await
         .expect("list activity");
@@ -1095,6 +1136,7 @@ async fn seed_activity_workspace(
     prefix: &str,
 ) {
     let project = owner_client
+        .acta()
         .create_project(ws_slug, mk_project_req_workspace(proj_slug, prefix))
         .await
         .expect("create project");
@@ -1116,6 +1158,7 @@ async fn workspace_activity_api_key_without_tasks_read_is_forbidden() {
     seed_activity_workspace(&owner_client, &ws.slug, "s2act403-proj", "S2A4").await;
 
     let key_created = owner_client
+        .custos()
         .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
             name: "agent-nodocs".to_string(),
             r#type: Some("agent".to_string()),
@@ -1160,6 +1203,7 @@ async fn workspace_activity_api_key_with_tasks_read_sees_feed() {
     seed_activity_workspace(&owner_client, &ws.slug, "s2actok-proj", "S2AO").await;
 
     let key_created = owner_client
+        .custos()
         .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
             name: "agent-tasksread".to_string(),
             r#type: Some("agent".to_string()),
@@ -1177,6 +1221,7 @@ async fn workspace_activity_api_key_with_tasks_read_sees_feed() {
         .with_token(key_created.secret.clone());
 
     let page = api_key_client
+        .acta()
         .list_workspace_activity(&ws.slug, None, None, None, None)
         .await
         .expect("list activity");
@@ -1200,6 +1245,7 @@ async fn workspace_activity_human_member_sees_feed() {
     seed_activity_workspace(&owner_client, &ws.slug, "s2acthuman-proj", "S2AH").await;
 
     let page = owner_client
+        .acta()
         .list_workspace_activity(&ws.slug, None, None, None, None)
         .await
         .expect("list activity");

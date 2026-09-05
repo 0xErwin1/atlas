@@ -37,6 +37,7 @@ async fn create_template(
     color: Option<&str>,
 ) -> StatusTemplateDto {
     client
+        .acta()
         .create_status_template(
             ws,
             CreateStatusTemplateRequest {
@@ -67,6 +68,7 @@ async fn create_template_returns_201_and_appears_in_list() {
     assert_eq!(tpl.workspace_id, ws.id.0);
 
     let list = client
+        .acta()
         .list_status_templates(&ws.slug)
         .await
         .expect("list templates");
@@ -114,6 +116,7 @@ async fn list_templates_ordered_by_position_key() {
     create_template(&client, &ws.slug, "Gamma", None).await;
 
     let list = client
+        .acta()
         .list_status_templates(&ws.slug)
         .await
         .expect("list templates");
@@ -135,6 +138,7 @@ async fn patch_template_rename() {
     let tpl = create_template(&client, &ws.slug, "Old Name", None).await;
 
     let updated = client
+        .acta()
         .update_status_template(
             &ws.slug,
             tpl.id,
@@ -163,6 +167,7 @@ async fn patch_template_recolor() {
     let tpl = create_template(&client, &ws.slug, "Status", None).await;
 
     let updated = client
+        .acta()
         .update_status_template(
             &ws.slug,
             tpl.id,
@@ -193,6 +198,7 @@ async fn patch_template_reorder() {
 
     // Move C before A (i.e., after = A.position_key)
     client
+        .acta()
         .update_status_template(
             &ws.slug,
             c.id,
@@ -207,6 +213,7 @@ async fn patch_template_reorder() {
         .expect("reorder template");
 
     let list = client
+        .acta()
         .list_status_templates(&ws.slug)
         .await
         .expect("list templates");
@@ -226,11 +233,13 @@ async fn soft_delete_template_removes_from_list() {
     let tpl = create_template(&client, &ws.slug, "Disposable", None).await;
 
     client
+        .acta()
         .delete_status_template(&ws.slug, tpl.id)
         .await
         .expect("delete template");
 
     let list = client
+        .acta()
         .list_status_templates(&ws.slug)
         .await
         .expect("list templates");
@@ -251,6 +260,7 @@ async fn create_template_invalid_color_returns_422() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "stpl-badcolor-1").await;
 
     let err = client
+        .acta()
         .create_status_template(
             &ws.slug,
             CreateStatusTemplateRequest {
@@ -280,6 +290,7 @@ async fn patch_template_invalid_color_returns_422() {
     let tpl = create_template(&client, &ws.slug, "X", None).await;
 
     let err = client
+        .acta()
         .update_status_template(
             &ws.slug,
             tpl.id,
@@ -316,11 +327,13 @@ async fn board_create_with_templates_seeds_matching_columns() {
     create_template(&client, &ws.slug, "Done", Some("green")).await;
 
     let project = client
+        .acta()
         .create_project(&ws.slug, project_req("seed-proj-1", "SEED"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             &project.slug,
@@ -333,6 +346,7 @@ async fn board_create_with_templates_seeds_matching_columns() {
         .expect("create board");
 
     let cols = client
+        .acta()
         .list_columns(&ws.slug, board.id)
         .await
         .expect("list columns");
@@ -360,11 +374,13 @@ async fn board_create_without_templates_stays_empty() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "stpl-empty-1").await;
 
     let project = client
+        .acta()
         .create_project(&ws.slug, project_req("empty-proj-1", "EMPT"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             &project.slug,
@@ -377,6 +393,7 @@ async fn board_create_without_templates_stays_empty() {
         .expect("create board");
 
     let cols = client
+        .acta()
         .list_columns(&ws.slug, board.id)
         .await
         .expect("list columns");
@@ -404,6 +421,7 @@ async fn apply_status_templates_adds_missing_columns() {
     create_template(&client, &ws.slug, "Done", Some("green")).await;
 
     let _project = client
+        .acta()
         .create_project(&ws.slug, project_req("apply-proj-1", "APL"))
         .await
         .expect("create project");
@@ -419,12 +437,14 @@ async fn apply_status_templates_adds_missing_columns() {
     let _tmpl_c = create_template(&client2, &ws2.slug, "Done", Some("green")).await;
 
     let proj2 = client2
+        .acta()
         .create_project(&ws2.slug, project_req("apply-proj-1b", "AP2"))
         .await
         .expect("create project");
 
     // Board is seeded with all 3 columns
     let board2 = client2
+        .acta()
         .create_board(
             &ws2.slug,
             &proj2.slug,
@@ -438,6 +458,7 @@ async fn apply_status_templates_adds_missing_columns() {
 
     // Verify 3 seeded columns
     let cols_before = client2
+        .acta()
         .list_columns(&ws2.slug, board2.id)
         .await
         .expect("list");
@@ -445,6 +466,7 @@ async fn apply_status_templates_adds_missing_columns() {
 
     // Apply again — should be idempotent (no new columns added)
     let cols_after = client2
+        .acta()
         .apply_status_templates(&ws2.slug, board2.id)
         .await
         .expect("apply");
@@ -461,12 +483,14 @@ async fn apply_status_templates_adds_missing_columns() {
     let _tmpl3_b = create_template(&client3, &ws3.slug, "Doing", Some("blue")).await;
 
     let proj3 = client3
+        .acta()
         .create_project(&ws3.slug, project_req("apply-proj-1c", "AP3"))
         .await
         .expect("create project");
 
     // Board seeded with Todo + Doing
     let board3 = client3
+        .acta()
         .create_board(
             &ws3.slug,
             &proj3.slug,
@@ -479,6 +503,7 @@ async fn apply_status_templates_adds_missing_columns() {
         .expect("create board");
 
     let cols3 = client3
+        .acta()
         .list_columns(&ws3.slug, board3.id)
         .await
         .expect("list");
@@ -489,6 +514,7 @@ async fn apply_status_templates_adds_missing_columns() {
 
     // Apply adds only "Review"
     let result3 = client3
+        .acta()
         .apply_status_templates(&ws3.slug, board3.id)
         .await
         .expect("apply");
@@ -518,11 +544,13 @@ async fn apply_status_templates_is_idempotent() {
     create_template(&client, &ws.slug, "Closed", None).await;
 
     let project = client
+        .acta()
         .create_project(&ws.slug, project_req("idem-proj-1", "IDM"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             &project.slug,
@@ -535,11 +563,13 @@ async fn apply_status_templates_is_idempotent() {
         .expect("create board");
 
     let first = client
+        .acta()
         .apply_status_templates(&ws.slug, board.id)
         .await
         .expect("first apply");
 
     let second = client
+        .acta()
         .apply_status_templates(&ws.slug, board.id)
         .await
         .expect("second apply");
@@ -562,11 +592,13 @@ async fn apply_status_templates_case_insensitive_matching() {
     create_template(&client, &ws.slug, "todo", None).await;
 
     let project = client
+        .acta()
         .create_project(&ws.slug, project_req("case-proj-1", "CSE"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             &project.slug,
@@ -581,10 +613,15 @@ async fn apply_status_templates_case_insensitive_matching() {
     // Board seeded with "todo". Manually add "TODO" via column API.
     // The board is already seeded with "todo" from the template.
     // Apply again — "todo" template should not add a second column named "Todo".
-    let cols_before = client.list_columns(&ws.slug, board.id).await.expect("list");
+    let cols_before = client
+        .acta()
+        .list_columns(&ws.slug, board.id)
+        .await
+        .expect("list");
     assert_eq!(cols_before.len(), 1);
 
     let result = client
+        .acta()
         .apply_status_templates(&ws.slug, board.id)
         .await
         .expect("apply");
@@ -604,12 +641,14 @@ async fn apply_keeps_existing_columns_with_tasks_intact() {
     create_template(&client, &ws.slug, "New One", None).await;
 
     let project = client
+        .acta()
         .create_project(&ws.slug, project_req("tasks-proj-1", "TSK"))
         .await
         .expect("create project");
 
     // Board seeded with "Existing" and "New One"
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             &project.slug,
@@ -621,12 +660,17 @@ async fn apply_keeps_existing_columns_with_tasks_intact() {
         .await
         .expect("create board");
 
-    let cols = client.list_columns(&ws.slug, board.id).await.expect("list");
+    let cols = client
+        .acta()
+        .list_columns(&ws.slug, board.id)
+        .await
+        .expect("list");
     assert_eq!(cols.len(), 2);
 
     // Add a task to the first column
     let existing_col = &cols[0];
     client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -645,6 +689,7 @@ async fn apply_keeps_existing_columns_with_tasks_intact() {
 
     // Apply templates — should not disturb the column that has a task
     let result = client
+        .acta()
         .apply_status_templates(&ws.slug, board.id)
         .await
         .expect("apply");
@@ -677,11 +722,13 @@ async fn template_edit_does_not_change_board_columns() {
     let tpl = create_template(&client, &ws.slug, "Original", Some("neutral")).await;
 
     let project = client
+        .acta()
         .create_project(&ws.slug, project_req("copy-proj-1", "CPY"))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             &project.slug,
@@ -693,12 +740,17 @@ async fn template_edit_does_not_change_board_columns() {
         .await
         .expect("create board");
 
-    let cols_before = client.list_columns(&ws.slug, board.id).await.expect("list");
+    let cols_before = client
+        .acta()
+        .list_columns(&ws.slug, board.id)
+        .await
+        .expect("list");
     assert_eq!(cols_before.len(), 1);
     assert_eq!(cols_before[0].name, "Original");
 
     // Rename and recolor the template
     client
+        .acta()
         .update_status_template(
             &ws.slug,
             tpl.id,
@@ -713,7 +765,11 @@ async fn template_edit_does_not_change_board_columns() {
         .expect("update template");
 
     // The board column must be unchanged (copy semantics)
-    let cols_after = client.list_columns(&ws.slug, board.id).await.expect("list");
+    let cols_after = client
+        .acta()
+        .list_columns(&ws.slug, board.id)
+        .await
+        .expect("list");
     assert_eq!(cols_after.len(), 1);
     assert_eq!(
         cols_after[0].name, "Original",
@@ -742,10 +798,12 @@ async fn templates_are_isolated_per_workspace() {
     create_template(&client1, &ws1.slug, "WS1 Template", None).await;
 
     let list1 = client1
+        .acta()
         .list_status_templates(&ws1.slug)
         .await
         .expect("list ws1");
     let list2 = client2
+        .acta()
         .list_status_templates(&ws2.slug)
         .await
         .expect("list ws2");
@@ -766,6 +824,7 @@ async fn non_member_cannot_access_status_templates() {
         support::login_user_with_workspace(&server, &db, "stpl-nonmember-2").await;
 
     let err = client2
+        .acta()
         .list_status_templates(&ws1.slug)
         .await
         .expect_err("should be forbidden");
