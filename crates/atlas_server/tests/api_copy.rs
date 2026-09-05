@@ -31,6 +31,7 @@ async fn copy_document_creates_independent_copy() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "copy-doc-1").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -45,6 +46,7 @@ async fn copy_document_creates_independent_copy() {
         .expect("create project");
 
     let source = client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -56,6 +58,7 @@ async fn copy_document_creates_independent_copy() {
     let source_slug = source.slug.as_deref().expect("source slug");
 
     let copy = client
+        .acta()
         .copy_document(&ws.slug, source_slug, None)
         .await
         .expect("copy document");
@@ -76,6 +79,7 @@ async fn copy_document_creates_independent_copy() {
 
     // Source remains untouched.
     let refetched = client
+        .acta()
         .get_document(&ws.slug, source_slug)
         .await
         .expect("refetch source");
@@ -83,6 +87,7 @@ async fn copy_document_creates_independent_copy() {
 
     // Copy appears in the project's document list.
     let page = client
+        .acta()
         .list_documents(&ws.slug, &project.slug, None, None)
         .await
         .expect("list documents");
@@ -103,6 +108,7 @@ async fn copy_document_into_specific_folder() {
     let (client, ws, user) = support::login_user_with_workspace(&server, &db, "copy-doc-2").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -133,6 +139,7 @@ async fn copy_document_into_specific_folder() {
         .expect("create target folder");
 
     let source = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("To Copy", None))
         .await
         .expect("create source");
@@ -140,6 +147,7 @@ async fn copy_document_into_specific_folder() {
     let source_slug = source.slug.as_deref().expect("source slug");
 
     let copy = client
+        .acta()
         .copy_document(&ws.slug, source_slug, Some(target_folder.id.0))
         .await
         .expect("copy document into folder");
@@ -163,6 +171,7 @@ async fn copy_folder_recursively_duplicates_subtree() {
         support::login_user_with_workspace(&server, &db, "copy-folder-1").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -241,6 +250,7 @@ async fn copy_folder_recursively_duplicates_subtree() {
         .expect("create child doc");
 
     let copy = client
+        .acta()
         .copy_folder(&ws.slug, top.id.0, None)
         .await
         .expect("copy folder");
@@ -252,6 +262,7 @@ async fn copy_folder_recursively_duplicates_subtree() {
 
     // The copied subtree: list folders in the project and find the new Child.
     let folders = client
+        .acta()
         .list_folders(&ws.slug, &project.slug, None, None)
         .await
         .expect("list folders");
@@ -311,7 +322,7 @@ async fn copy_document_unauthenticated_returns_401() {
 
     let anon = atlas_client::AtlasClient::new(server.base_url().to_string());
 
-    let result = anon.copy_document("any-ws", "any-slug", None).await;
+    let result = anon.acta().copy_document("any-ws", "any-slug", None).await;
 
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 401),
@@ -328,7 +339,10 @@ async fn copy_folder_unauthenticated_returns_401() {
 
     let anon = atlas_client::AtlasClient::new(server.base_url().to_string());
 
-    let result = anon.copy_folder("any-ws", uuid::Uuid::now_v7(), None).await;
+    let result = anon
+        .acta()
+        .copy_folder("any-ws", uuid::Uuid::now_v7(), None)
+        .await;
 
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 401),

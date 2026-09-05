@@ -68,11 +68,13 @@ async fn seed_project_and_document(
     visibility: Option<&str>,
 ) -> (String, uuid::Uuid) {
     client
+        .acta()
         .create_project(ws_slug, project_req(proj_slug, prefix, visibility))
         .await
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(
             ws_slug,
             proj_slug,

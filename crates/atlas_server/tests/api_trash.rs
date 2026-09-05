@@ -850,6 +850,7 @@ async fn trash_allows_only_root_and_system_admin_humans() {
         .await
         .expect("add workspace admin");
     let api_key = root
+        .custos()
         .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
             name: "trash-agent".into(),
             r#type: None,

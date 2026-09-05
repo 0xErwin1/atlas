@@ -25,6 +25,7 @@ async fn create_default(
     color: Option<&str>,
 ) -> PlatformStatusTemplateDto {
     client
+        .acta()
         .create_platform_status_template(CreateStatusTemplateRequest {
             name: name.to_string(),
             color: color.map(str::to_string),
@@ -38,6 +39,7 @@ async fn create_default(
 /// Names of the status templates a workspace owns, in board order.
 async fn workspace_status_names(client: &AtlasClient, ws: &str) -> Vec<String> {
     client
+        .acta()
         .list_status_templates(ws)
         .await
         .expect("list workspace status templates")
@@ -63,6 +65,7 @@ async fn platform_defaults_crud_round_trip() {
     assert_eq!(second.color.as_deref(), Some("green"));
 
     let listed = root
+        .acta()
         .list_platform_status_templates()
         .await
         .expect("list platform defaults");
@@ -73,6 +76,7 @@ async fn platform_defaults_crud_round_trip() {
     );
 
     let renamed = root
+        .acta()
         .update_platform_status_template(
             first.id,
             UpdateStatusTemplateRequest {
@@ -86,17 +90,19 @@ async fn platform_defaults_crud_round_trip() {
     assert_eq!(renamed.name, "Backlog");
     assert_eq!(renamed.color.as_deref(), Some("blue"));
 
-    root.update_platform_status_template(
-        second.id,
-        UpdateStatusTemplateRequest {
-            after: Some(renamed.position_key.clone()),
-            ..Default::default()
-        },
-    )
-    .await
-    .expect("reorder platform default");
+    root.acta()
+        .update_platform_status_template(
+            second.id,
+            UpdateStatusTemplateRequest {
+                after: Some(renamed.position_key.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("reorder platform default");
 
     let reordered = root
+        .acta()
         .list_platform_status_templates()
         .await
         .expect("list platform defaults");
@@ -109,11 +115,13 @@ async fn platform_defaults_crud_round_trip() {
         "moving Shipped before Backlog must reorder the list"
     );
 
-    root.delete_platform_status_template(second.id)
+    root.acta()
+        .delete_platform_status_template(second.id)
         .await
         .expect("delete platform default");
 
     let remaining = root
+        .acta()
         .list_platform_status_templates()
         .await
         .expect("list platform defaults");
@@ -135,6 +143,7 @@ async fn invalid_color_on_create_returns_422() {
     let root = support::login_root_user(&server, &db).await;
 
     let err = root
+        .acta()
         .create_platform_status_template(CreateStatusTemplateRequest {
             name: "Broken".to_string(),
             color: Some("not-a-swatch".to_string()),
@@ -159,6 +168,7 @@ async fn deleting_an_unknown_default_returns_404() {
     let root = support::login_root_user(&server, &db).await;
 
     let err = root
+        .acta()
         .delete_platform_status_template(uuid::Uuid::now_v7())
         .await
         .expect_err("unknown id must not delete");
@@ -183,6 +193,7 @@ async fn a_plain_user_cannot_read_or_write_platform_defaults() {
         support::login_user_with_workspace(&server, &db, "pstpl-outsider").await;
 
     let read_err = client
+        .acta()
         .list_platform_status_templates()
         .await
         .expect_err("a workspace owner is not an Atlas admin");
@@ -192,6 +203,7 @@ async fn a_plain_user_cannot_read_or_write_platform_defaults() {
     );
 
     let write_err = client
+        .acta()
         .create_platform_status_template(CreateStatusTemplateRequest {
             name: "Sneaky".to_string(),
             color: None,
@@ -215,6 +227,7 @@ async fn an_api_key_cannot_list_platform_defaults() {
     let (owner, _ws, _user) =
         support::login_user_with_workspace(&server, &db, "pstpl-agent-forbidden").await;
     let api_key = owner
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "platform-defaults-agent".to_string(),
             r#type: None,
@@ -227,6 +240,7 @@ async fn an_api_key_cannot_list_platform_defaults() {
     let agent = AtlasClient::new(server.base_url()).with_token(api_key.secret);
 
     let err = agent
+        .acta()
         .list_platform_status_templates()
         .await
         .expect_err("API keys must not list platform defaults");
@@ -255,6 +269,7 @@ async fn a_new_workspace_is_seeded_from_the_platform_defaults() {
     create_default(&root, "Shipped", Some("green")).await;
 
     let created = creator
+        .acta()
         .create_workspace("Seeded From Platform")
         .await
         .expect("create_workspace");
@@ -266,14 +281,17 @@ async fn a_new_workspace_is_seeded_from_the_platform_defaults() {
     );
 
     let projects = creator
+        .acta()
         .list_projects(&created.slug, None, None)
         .await
         .expect("list_projects");
     let boards = creator
+        .acta()
         .list_boards(&created.slug, &projects.items[0].slug, None, None)
         .await
         .expect("list_boards");
     let columns = creator
+        .acta()
         .list_columns(&created.slug, boards.items[0].id)
         .await
         .expect("list_columns");
@@ -296,7 +314,8 @@ async fn an_empty_platform_list_falls_back_to_the_compiled_defaults() {
         support::login_user_with_workspace(&server, &db, "pstpl-fallback-owner").await;
 
     assert!(
-        root.list_platform_status_templates()
+        root.acta()
+            .list_platform_status_templates()
             .await
             .expect("list platform defaults")
             .is_empty(),
@@ -304,6 +323,7 @@ async fn an_empty_platform_list_falls_back_to_the_compiled_defaults() {
     );
 
     let created = creator
+        .acta()
         .create_workspace("Fallback Target")
         .await
         .expect("create_workspace");
@@ -328,6 +348,7 @@ async fn editing_platform_defaults_never_retro_updates_an_existing_workspace() {
     let inbox = create_default(&root, "Inbox", None).await;
 
     let created = creator
+        .acta()
         .create_workspace("Already Seeded")
         .await
         .expect("create_workspace");
@@ -337,15 +358,16 @@ async fn editing_platform_defaults_never_retro_updates_an_existing_workspace() {
     );
 
     create_default(&root, "Shipped", None).await;
-    root.update_platform_status_template(
-        inbox.id,
-        UpdateStatusTemplateRequest {
-            name: Some("Triage".to_string()),
-            ..Default::default()
-        },
-    )
-    .await
-    .expect("rename platform default");
+    root.acta()
+        .update_platform_status_template(
+            inbox.id,
+            UpdateStatusTemplateRequest {
+                name: Some("Triage".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("rename platform default");
 
     assert_eq!(
         workspace_status_names(&creator, &created.slug).await,

@@ -143,10 +143,10 @@ async fn self_disable_returns_403() {
     let server = TestServer::spawn(&db).await;
 
     let root = support::login_root_user(&server, &db).await;
-    let me = root.me().await.expect("me");
+    let me = root.custos().me().await.expect("me");
     let my_id = me.id.expect("me.id must be present for a user session");
 
-    let result = root.disable_user(my_id).await;
+    let result = root.custos().disable_user(my_id).await;
 
     assert_403(result, "self-disable");
 
@@ -162,7 +162,8 @@ async fn root_disables_other_user_succeeds() {
     let root = support::login_root_user(&server, &db).await;
     let (_, _, target) = login_user_with_workspace(&server, &db, "sp-dis-target").await;
 
-    root.disable_user(target.id.0)
+    root.custos()
+        .disable_user(target.id.0)
         .await
         .expect("root disabling another user must succeed");
 
@@ -177,10 +178,10 @@ async fn self_disable_writes_zero_audit_rows() {
     let server = TestServer::spawn(&db).await;
 
     let root = support::login_root_user(&server, &db).await;
-    let me = root.me().await.expect("me");
+    let me = root.custos().me().await.expect("me");
     let my_id = me.id.expect("me.id must be present");
 
-    let _ = root.disable_user(my_id).await;
+    let _ = root.custos().disable_user(my_id).await;
 
     assert_eq!(
         count_platform_audit_rows(&db).await,
@@ -207,10 +208,10 @@ async fn self_enable_returns_403() {
     let server = TestServer::spawn(&db).await;
 
     let root = support::login_root_user(&server, &db).await;
-    let me = root.me().await.expect("me");
+    let me = root.custos().me().await.expect("me");
     let my_id = me.id.expect("me.id must be present");
 
-    let result = root.enable_user(my_id).await;
+    let result = root.custos().enable_user(my_id).await;
 
     assert_403(result, "self-enable");
 
@@ -226,8 +227,12 @@ async fn root_enables_other_user_succeeds() {
     let root = support::login_root_user(&server, &db).await;
     let (_, _, target) = login_user_with_workspace(&server, &db, "sp-en-target").await;
 
-    root.disable_user(target.id.0).await.expect("disable first");
-    root.enable_user(target.id.0)
+    root.custos()
+        .disable_user(target.id.0)
+        .await
+        .expect("disable first");
+    root.custos()
+        .enable_user(target.id.0)
         .await
         .expect("root enabling another user must succeed");
 
@@ -241,10 +246,10 @@ async fn self_enable_writes_zero_audit_rows() {
     let server = TestServer::spawn(&db).await;
 
     let root = support::login_root_user(&server, &db).await;
-    let me = root.me().await.expect("me");
+    let me = root.custos().me().await.expect("me");
     let my_id = me.id.expect("me.id must be present");
 
-    let _ = root.enable_user(my_id).await;
+    let _ = root.custos().enable_user(my_id).await;
 
     assert_eq!(
         count_platform_audit_rows(&db).await,
@@ -272,6 +277,7 @@ async fn self_role_change_owner_returns_403() {
     add_member(&db, ws.id, "sp-rc-self-owner2", MemberRole::Owner).await;
 
     let result = owner_client
+        .acta()
         .update_member_role(&ws.slug, owner_user.id.0, "admin")
         .await;
 
@@ -329,6 +335,7 @@ async fn self_role_change_admin_returns_403() {
         .expect("login");
 
     let result = admin_client
+        .acta()
         .update_member_role(&ws.slug, admin_user.id.0, "member")
         .await;
 
@@ -349,6 +356,7 @@ async fn owner_changes_other_member_role_succeeds() {
     let target = add_member(&db, ws.id, "sp-rc-other-target", MemberRole::Member).await;
 
     owner_client
+        .acta()
         .update_member_role(&ws.slug, target.id.0, "admin")
         .await
         .expect("owner changing another member's role must succeed");
@@ -370,6 +378,7 @@ async fn self_role_change_writes_zero_audit_rows() {
     add_member(&db, ws.id, "sp-rc-audit-owner2", MemberRole::Owner).await;
 
     let result = owner_client
+        .acta()
         .update_member_role(&ws.slug, owner_user.id.0, "admin")
         .await;
 
@@ -422,6 +431,7 @@ async fn system_admin_self_role_change_returns_403() {
         .expect("add sysadmin membership");
 
     let result = sysadmin_client
+        .acta()
         .update_member_role(&ws.slug, sysadmin_user.id.0, "member")
         .await;
 
@@ -451,6 +461,7 @@ async fn system_admin_changes_other_member_role_succeeds() {
         create_and_login_system_admin(&server, &db, "sp-comp-bypass-sysadmin").await;
 
     sysadmin_client
+        .acta()
         .update_member_role(&ws.slug, target.id.0, "admin")
         .await
         .expect("system_admin changing another member's role must succeed via B1 bypass");
@@ -469,7 +480,7 @@ async fn set_system_admin_self_is_blocked() {
     let server = TestServer::spawn(&db).await;
 
     let root = support::login_root_user(&server, &db).await;
-    let me = root.me().await.expect("me");
+    let me = root.custos().me().await.expect("me");
     let my_id = me.id.expect("me.id must be present");
 
     let response = root

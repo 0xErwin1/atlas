@@ -50,7 +50,11 @@ async fn bearer_token_authenticates_me_endpoint() {
     let server = support::TestServer::spawn(&db).await;
     let (client, user) = support::login_user(&server, &db, "auth-me-user").await;
 
-    let me: MeResponse = client.me().await.expect("GET /api/auth/me must succeed");
+    let me: MeResponse = client
+        .custos()
+        .me()
+        .await
+        .expect("GET /api/auth/me must succeed");
 
     assert_eq!(me.username, user.username);
 
@@ -62,7 +66,7 @@ async fn unauthenticated_me_returns_401() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
 
-    let result = AtlasClient::new(server.base_url()).me().await;
+    let result = AtlasClient::new(server.base_url()).custos().me().await;
 
     assert!(result.is_err(), "unauthenticated /me must fail with 401");
 
@@ -75,9 +79,9 @@ async fn logout_revokes_session() {
     let server = support::TestServer::spawn(&db).await;
     let (client, _user) = support::login_user(&server, &db, "auth-logout-user").await;
 
-    client.logout().await.expect("logout must succeed");
+    client.custos().logout().await.expect("logout must succeed");
 
-    let result = client.me().await;
+    let result = client.custos().me().await;
     assert!(result.is_err(), "after logout the token must be invalid");
 
     db.teardown().await;
@@ -91,7 +95,7 @@ async fn expired_session_returns_401() {
 
     support::expire_all_sessions(&db).await;
 
-    let result = client.me().await;
+    let result = client.custos().me().await;
     assert!(result.is_err(), "expired session must be rejected with 401");
 
     db.teardown().await;
@@ -171,7 +175,11 @@ async fn me_for_human_user_has_no_agent_identity() {
     let server = support::TestServer::spawn(&db).await;
     let (client, _user) = support::login_user(&server, &db, "auth-me-human").await;
 
-    let me: MeResponse = client.me().await.expect("GET /api/auth/me must succeed");
+    let me: MeResponse = client
+        .custos()
+        .me()
+        .await
+        .expect("GET /api/auth/me must succeed");
 
     assert_eq!(me.principal_type, "user");
     assert!(
@@ -192,6 +200,7 @@ async fn me_for_api_key_returns_agent_identity_with_canonical_scopes() {
     // Deliberately unsorted, duplicated scope set: the read path must return it
     // deduplicated and in canonical family:action order.
     let created = owner
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "self-identity-agent".to_string(),
             r#type: None,
@@ -213,6 +222,7 @@ async fn me_for_api_key_returns_agent_identity_with_canonical_scopes() {
     let agent_client = AtlasClient::new(server.base_url()).with_token(created.secret);
 
     let me: MeResponse = agent_client
+        .custos()
         .me()
         .await
         .expect("GET /api/auth/me as an agent must succeed");

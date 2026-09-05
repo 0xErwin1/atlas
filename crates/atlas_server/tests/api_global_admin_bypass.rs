@@ -207,7 +207,7 @@ async fn system_admin_non_member_gets_workspace() {
     create_system_admin(&db, "byp-sa-get-ws-admin").await;
     let sysadmin = login_as(&server, "byp-sa-get-ws-admin").await;
 
-    let result = sysadmin.get_workspace(&target_ws.slug).await;
+    let result = sysadmin.acta().get_workspace(&target_ws.slug).await;
     assert!(
         result.is_ok(),
         "system_admin non-member must be able to get any workspace (A1), got: {result:?}"
@@ -227,7 +227,7 @@ async fn root_non_member_gets_workspace() {
     create_root_user(&db, "byp-root-get-ws-root").await;
     let root = login_as(&server, "byp-root-get-ws-root").await;
 
-    let result = root.get_workspace(&target_ws.slug).await;
+    let result = root.acta().get_workspace(&target_ws.slug).await;
     assert!(
         result.is_ok(),
         "root non-member must be able to get any workspace (A1), got: {result:?}"
@@ -247,7 +247,10 @@ async fn system_admin_non_member_lists_workspace_members() {
     create_system_admin(&db, "byp-sa-list-mbr-admin").await;
     let sysadmin = login_as(&server, "byp-sa-list-mbr-admin").await;
 
-    let result = sysadmin.list_workspace_members(&target_ws.slug).await;
+    let result = sysadmin
+        .acta()
+        .list_workspace_members(&target_ws.slug)
+        .await;
     assert!(
         result.is_ok(),
         "system_admin non-member must be able to list workspace members (A1), got: {result:?}"
@@ -267,6 +270,7 @@ async fn system_admin_non_member_renames_workspace() {
     let sysadmin = login_as(&server, "byp-sa-rename-ws-admin").await;
 
     let result = sysadmin
+        .acta()
         .update_workspace(
             &target_ws.slug,
             UpdateWorkspaceRequest {
@@ -300,7 +304,10 @@ async fn system_admin_non_member_reads_document() {
     create_system_admin(&db, "byp-sa-read-doc-admin").await;
     let sysadmin = login_as(&server, "byp-sa-read-doc-admin").await;
 
-    let doc = sysadmin.get_document(&target_ws.slug, &doc_slug).await;
+    let doc = sysadmin
+        .acta()
+        .get_document(&target_ws.slug, &doc_slug)
+        .await;
     assert!(
         doc.is_ok(),
         "system_admin non-member must be able to read a document in any workspace (A3/Authorized), got: {doc:?}"
@@ -322,7 +329,7 @@ async fn root_non_member_reads_document() {
     create_root_user(&db, "byp-root-read-doc-root").await;
     let root = login_as(&server, "byp-root-read-doc-root").await;
 
-    let doc = root.get_document(&target_ws.slug, &doc_slug).await;
+    let doc = root.acta().get_document(&target_ws.slug, &doc_slug).await;
     assert!(
         doc.is_ok(),
         "root non-member must be able to read a document in any workspace (A3/Authorized), got: {doc:?}"
@@ -347,7 +354,11 @@ async fn system_admin_list_workspaces_returns_all() {
     create_system_admin(&db, "byp-sa-listall-admin").await;
     let sysadmin = login_as(&server, "byp-sa-listall-admin").await;
 
-    let workspaces = sysadmin.list_workspaces().await.expect("list_workspaces");
+    let workspaces = sysadmin
+        .acta()
+        .list_workspaces()
+        .await
+        .expect("list_workspaces");
 
     let slugs: Vec<&str> = workspaces.iter().map(|w| w.slug.as_str()).collect();
     assert!(
@@ -373,7 +384,11 @@ async fn root_list_workspaces_returns_all() {
     create_root_user(&db, "byp-root-listall-root").await;
     let root = login_as(&server, "byp-root-listall-root").await;
 
-    let workspaces = root.list_workspaces().await.expect("list_workspaces");
+    let workspaces = root
+        .acta()
+        .list_workspaces()
+        .await
+        .expect("list_workspaces");
 
     let slugs: Vec<&str> = workspaces.iter().map(|w| w.slug.as_str()).collect();
     assert!(
@@ -482,7 +497,7 @@ async fn plain_non_member_gets_404_on_workspace() {
     let (plain_client, _, _) =
         support::login_user_with_workspace(&server, &db, "byp-reg-nm-plain").await;
 
-    let result = plain_client.get_workspace(&target_ws.slug).await;
+    let result = plain_client.acta().get_workspace(&target_ws.slug).await;
     assert!(
         matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 404),
         "plain non-member must still get 404, got: {result:?}"

@@ -20,6 +20,7 @@ async fn create_user_requires_admin() {
     let (non_admin, ws, _) = login_user_with_workspace(&server, &db, "non-admin-cu").await;
 
     let status = non_admin
+        .custos()
         .create_user(CreateUserRequest {
             username: "newuser-noadmin".to_string(),
             display_name: "New User".to_string(),
@@ -47,6 +48,7 @@ async fn create_user_succeeds_for_root_and_returns_activation_link() {
     let (_, ws, _) = login_user_with_workspace(&server, &db, "owner-for-cu").await;
 
     let result = root
+        .custos()
         .create_user(CreateUserRequest {
             username: "brandnew-pending".to_string(),
             display_name: "Brand New".to_string(),
@@ -84,6 +86,7 @@ async fn create_user_with_owner_role_returns_422() {
     let (_, ws, _) = login_user_with_workspace(&server, &db, "owner-for-422").await;
 
     let result = root
+        .custos()
         .create_user(CreateUserRequest {
             username: "owner-attempt".to_string(),
             display_name: "Owner Attempt".to_string(),
@@ -110,6 +113,7 @@ async fn create_user_with_unknown_workspace_returns_422() {
     let root = support::login_root_user(&server, &db).await;
 
     let result = root
+        .custos()
         .create_user(CreateUserRequest {
             username: "ws-unknown-user".to_string(),
             display_name: "WS Unknown".to_string(),
@@ -136,17 +140,19 @@ async fn create_user_duplicate_username_returns_409() {
     let root = support::login_root_user(&server, &db).await;
     let (_, ws, _) = login_user_with_workspace(&server, &db, "owner-for-dup").await;
 
-    root.create_user(CreateUserRequest {
-        username: "dup-user".to_string(),
-        display_name: "Dup User".to_string(),
-        email: None,
-        workspace: ws.slug.clone(),
-        role: "member".to_string(),
-    })
-    .await
-    .expect("first create_user");
+    root.custos()
+        .create_user(CreateUserRequest {
+            username: "dup-user".to_string(),
+            display_name: "Dup User".to_string(),
+            email: None,
+            workspace: ws.slug.clone(),
+            role: "member".to_string(),
+        })
+        .await
+        .expect("first create_user");
 
     let second = root
+        .custos()
         .create_user(CreateUserRequest {
             username: "dup-user".to_string(),
             display_name: "Dup User Again".to_string(),
@@ -163,6 +169,7 @@ async fn create_user_duplicate_username_returns_409() {
 
     // The unique index is on lower(username): a case-variant duplicate also 409s.
     let case_variant = root
+        .custos()
         .create_user(CreateUserRequest {
             username: "DUP-USER".to_string(),
             display_name: "Dup Upper".to_string(),
@@ -189,15 +196,16 @@ async fn pending_user_created_via_api_cannot_login() {
     let root = support::login_root_user(&server, &db).await;
     let (_, ws, _) = login_user_with_workspace(&server, &db, "owner-for-pending-login").await;
 
-    root.create_user(CreateUserRequest {
-        username: "pending-api-user".to_string(),
-        display_name: "Pending API".to_string(),
-        email: None,
-        workspace: ws.slug.clone(),
-        role: "member".to_string(),
-    })
-    .await
-    .expect("create_user");
+    root.custos()
+        .create_user(CreateUserRequest {
+            username: "pending-api-user".to_string(),
+            display_name: "Pending API".to_string(),
+            email: None,
+            workspace: ws.slug.clone(),
+            role: "member".to_string(),
+        })
+        .await
+        .expect("create_user");
 
     let result = AtlasClient::new(server.base_url())
         .login(LoginRequest {
@@ -226,6 +234,7 @@ async fn regenerate_activation_link_invalidates_prior_and_returns_new() {
     let (_, ws, _) = login_user_with_workspace(&server, &db, "owner-for-regen").await;
 
     let create_resp = root
+        .custos()
         .create_user(CreateUserRequest {
             username: "regen-target".to_string(),
             display_name: "Regen Target".to_string(),
@@ -256,6 +265,7 @@ async fn regenerate_activation_link_invalidates_prior_and_returns_new() {
 
     // Regenerate
     let regen_resp = root
+        .custos()
         .regenerate_activation_link(user.id.0)
         .await
         .expect("regenerate_activation_link");
@@ -311,7 +321,10 @@ async fn regenerate_activation_link_on_activated_user_returns_409() {
     let (_, _, activated_user) =
         login_user_with_workspace(&server, &db, "activated-regen-target").await;
 
-    let result = root.regenerate_activation_link(activated_user.id.0).await;
+    let result = root
+        .custos()
+        .regenerate_activation_link(activated_user.id.0)
+        .await;
 
     assert!(
         matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 409),
@@ -336,11 +349,18 @@ async fn disable_user_revokes_sessions() {
     let (victim_client, _, victim) =
         login_user_with_workspace(&server, &db, "victim-disable").await;
 
-    victim_client.me().await.expect("me before disable");
+    victim_client
+        .custos()
+        .me()
+        .await
+        .expect("me before disable");
 
-    root.disable_user(victim.id.0).await.expect("disable_user");
+    root.custos()
+        .disable_user(victim.id.0)
+        .await
+        .expect("disable_user");
 
-    let err = victim_client.me().await;
+    let err = victim_client.custos().me().await;
     assert!(
         matches!(err, Err(atlas_client::ClientError::Api(ref p)) if p.status == 401),
         "expected 401 after disable, got {err:?}"
@@ -368,8 +388,14 @@ async fn enable_user_restores_access() {
     let root = support::login_root_user(&server, &db).await;
     let (_, _, victim) = login_user_with_workspace(&server, &db, "victim2-enable").await;
 
-    root.disable_user(victim.id.0).await.expect("disable");
-    root.enable_user(victim.id.0).await.expect("enable");
+    root.custos()
+        .disable_user(victim.id.0)
+        .await
+        .expect("disable");
+    root.custos()
+        .enable_user(victim.id.0)
+        .await
+        .expect("enable");
 
     let mut restored = AtlasClient::new(server.base_url().to_string());
     restored
@@ -390,7 +416,7 @@ async fn disable_requires_admin() {
     let (actor, _, _) = login_user_with_workspace(&server, &db, "actor-disable-req").await;
     let (_, _, target) = login_user_with_workspace(&server, &db, "target-disable-req").await;
 
-    let err = actor.disable_user(target.id.0).await;
+    let err = actor.custos().disable_user(target.id.0).await;
     assert!(
         matches!(err, Err(atlas_client::ClientError::Api(ref p)) if p.status == 403),
         "expected 403 but got {err:?}"
@@ -473,6 +499,7 @@ async fn list_user_memberships_returns_workspaces_with_roles() {
         .expect("add admin to ws beta");
 
     let memberships = root
+        .custos()
         .list_user_memberships(target.id.0)
         .await
         .expect("list memberships");
@@ -509,7 +536,7 @@ async fn list_user_memberships_requires_admin() {
         login_user_with_workspace(&server, &db, "non-admin-memberships").await;
     let (_, _, target) = login_user_with_workspace(&server, &db, "memberships-target-403").await;
 
-    let result = non_admin.list_user_memberships(target.id.0).await;
+    let result = non_admin.custos().list_user_memberships(target.id.0).await;
 
     assert!(
         matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 403),

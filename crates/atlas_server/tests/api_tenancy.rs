@@ -57,7 +57,7 @@ async fn setup() -> (
 async fn cross_tenant_get_workspace_returns_404() {
     let (client_a, db, _server, ws_b_slug) = setup().await;
 
-    let result = client_a.get_workspace(&ws_b_slug).await;
+    let result = client_a.acta().get_workspace(&ws_b_slug).await;
 
     assert!(
         matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 404),
@@ -70,7 +70,7 @@ async fn cross_tenant_get_workspace_returns_404() {
 async fn cross_tenant_list_projects_returns_404() {
     let (client_a, db, _server, ws_b_slug) = setup().await;
 
-    let result = client_a.list_projects(&ws_b_slug, None, None).await;
+    let result = client_a.acta().list_projects(&ws_b_slug, None, None).await;
 
     assert!(
         matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 404),
@@ -84,6 +84,7 @@ async fn cross_tenant_create_project_returns_404() {
     let (client_a, db, _server, ws_b_slug) = setup().await;
 
     let result = client_a
+        .acta()
         .create_project(&ws_b_slug, project_req("Intruder", "intruder-ten"))
         .await;
 
@@ -98,7 +99,7 @@ async fn cross_tenant_create_project_returns_404() {
 async fn cross_tenant_get_project_returns_404() {
     let (client_a, db, _server, ws_b_slug) = setup().await;
 
-    let result = client_a.get_project(&ws_b_slug, "any-project").await;
+    let result = client_a.acta().get_project(&ws_b_slug, "any-project").await;
 
     assert!(
         matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 404),
@@ -111,7 +112,10 @@ async fn cross_tenant_get_project_returns_404() {
 async fn cross_tenant_list_workspace_grants_returns_404() {
     let (client_a, db, _server, ws_b_slug) = setup().await;
 
-    let result = client_a.list_workspace_grants(&ws_b_slug, None, None).await;
+    let result = client_a
+        .custos()
+        .list_workspace_grants(&ws_b_slug, None, None)
+        .await;
 
     assert!(
         matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 404),
@@ -126,6 +130,7 @@ async fn cross_tenant_create_workspace_grant_returns_404() {
 
     let dummy_id = uuid::Uuid::now_v7();
     let result = client_a
+        .custos()
         .create_workspace_grant(&ws_b_slug, grant_req(dummy_id))
         .await;
 
@@ -141,6 +146,7 @@ async fn cross_tenant_list_project_grants_returns_404() {
     let (client_a, db, _server, ws_b_slug) = setup().await;
 
     let result = client_a
+        .custos()
         .list_project_grants(&ws_b_slug, "any-project", None, None)
         .await;
 
@@ -166,6 +172,7 @@ async fn member_of_both_workspaces_cannot_cross_scope_projects() {
 
     let project_b_slug = "dual-b-only";
     _owner_b
+        .acta()
         .create_project(&ws_b.slug, project_req("B-Only Project", project_b_slug))
         .await
         .expect("create project in ws_b");
@@ -216,7 +223,10 @@ async fn member_of_both_workspaces_cannot_cross_scope_projects() {
         .await
         .expect("dual login");
 
-    let result = dual_client.get_project(&ws_a.slug, project_b_slug).await;
+    let result = dual_client
+        .acta()
+        .get_project(&ws_a.slug, project_b_slug)
+        .await;
 
     assert!(
         result.is_err(),

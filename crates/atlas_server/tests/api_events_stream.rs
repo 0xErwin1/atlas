@@ -525,6 +525,7 @@ async fn seed_workspace_visible_document(
     prefix: &str,
 ) -> Uuid {
     client
+        .acta()
         .create_project(
             ws_slug,
             CreateProjectRequest {
@@ -539,6 +540,7 @@ async fn seed_workspace_visible_document(
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(
             ws_slug,
             proj_slug,
@@ -963,6 +965,7 @@ async fn task_move_reaches_authenticated_sse_through_outbox_listener() {
     .await;
 
     let from_column = client
+        .acta()
         .create_column(
             &ws.slug,
             board_id.0,
@@ -976,6 +979,7 @@ async fn task_move_reaches_authenticated_sse_through_outbox_listener() {
         .await
         .expect("create source column");
     let to_column = client
+        .acta()
         .create_column(
             &ws.slug,
             board_id.0,
@@ -989,6 +993,7 @@ async fn task_move_reaches_authenticated_sse_through_outbox_listener() {
         .await
         .expect("create target column");
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board_id.0,
@@ -1013,6 +1018,7 @@ async fn task_move_reaches_authenticated_sse_through_outbox_listener() {
     let mut buf = String::new();
 
     client
+        .acta()
         .move_task(
             &ws.slug,
             &task.readable_id,
