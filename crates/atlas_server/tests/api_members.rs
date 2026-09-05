@@ -109,6 +109,7 @@ async fn list_members_returns_users_and_agents() {
         .expect("grant agent workspace access");
 
     let members = owner
+        .acta()
         .list_workspace_members(&ws.slug)
         .await
         .expect("list members");
@@ -185,6 +186,7 @@ async fn list_members_visible_to_plain_member() {
     };
 
     let members = member_client
+        .acta()
         .list_workspace_members(&ws.slug)
         .await
         .expect("member can list");
@@ -229,6 +231,7 @@ async fn list_members_returns_role_for_user_members_and_no_role_for_api_key_prin
         .expect("grant agent workspace access");
 
     let members = owner_client
+        .acta()
         .list_workspace_members(&ws.slug)
         .await
         .expect("list members");
@@ -274,6 +277,7 @@ async fn list_members_cross_tenant_returns_not_found() {
 
     // outsider is a member of ws_b only; asking for ws_a's members must 404 (conceal).
     let err = outsider
+        .acta()
         .list_workspace_members("ws-members-tenant-a")
         .await
         .expect_err("outsider must not read another workspace");
@@ -438,6 +442,7 @@ async fn workspace_owner_or_admin_plain_member_returns_403() {
     .await;
 
     let result = member_client
+        .acta()
         .update_member_role(&ws.slug, owner_user.id.0, "admin")
         .await;
 
@@ -485,6 +490,7 @@ async fn workspace_owner_or_admin_api_key_returns_403() {
     let api_client = AtlasClient::new(server.base_url().to_string()).with_token(plain_token);
 
     let result = api_client
+        .acta()
         .update_member_role(&ws.slug, target_user.id.0, "admin")
         .await;
 
@@ -506,6 +512,7 @@ async fn workspace_owner_or_admin_unauthenticated_returns_401() {
     let anon = AtlasClient::new(server.base_url().to_string());
 
     let result = anon
+        .acta()
         .update_member_role(&ws.slug, owner_user.id.0, "admin")
         .await;
 
@@ -538,6 +545,7 @@ async fn workspace_owner_or_admin_non_member_root_passes() {
     let root_client = login_break_glass_user(&server, &db, "bg-root-pass-root", true, false).await;
 
     let result = root_client
+        .acta()
         .update_member_role(&ws.slug, target_user.id.0, "admin")
         .await;
 
@@ -568,6 +576,7 @@ async fn workspace_owner_or_admin_non_member_sysadmin_passes() {
         login_break_glass_user(&server, &db, "bg-sysadmin-pass-sysadmin", false, true).await;
 
     let result = sysadmin_client
+        .acta()
         .update_member_role(&ws.slug, target_user.id.0, "admin")
         .await;
 
@@ -596,6 +605,7 @@ async fn workspace_owner_or_admin_owner_passes() {
         add_member(&db, ws.id, "bg-owner-pass-second-owner", MemberRole::Owner).await;
 
     let result = owner_client
+        .acta()
         .update_member_role(&ws.slug, target_user.id.0, "admin")
         .await;
 
@@ -630,6 +640,7 @@ async fn workspace_owner_or_admin_admin_passes() {
     let target_user = add_member(&db, ws.id, "bg-admin-pass-target", MemberRole::Member).await;
 
     let result = admin_client
+        .acta()
         .update_member_role(&ws.slug, target_user.id.0, "admin")
         .await;
 
@@ -661,6 +672,7 @@ async fn patch_admin_on_owner_target_returns_403() {
     .await;
 
     let result = admin_client
+        .acta()
         .update_member_role(&ws.slug, owner_user.id.0, "member")
         .await;
 
@@ -710,6 +722,7 @@ async fn patch_admin_promote_to_owner_returns_403() {
     .await;
 
     let result = admin_client
+        .acta()
         .update_member_role(&ws.slug, target_user.id.0, "owner")
         .await;
 
@@ -753,6 +766,7 @@ async fn patch_admin_demotes_admin_to_member_returns_200() {
     let target_user = add_member(&db, ws.id, "pat-admin-demote-target", MemberRole::Admin).await;
 
     let result = admin_client
+        .acta()
         .update_member_role(&ws.slug, target_user.id.0, "member")
         .await;
 
@@ -791,6 +805,7 @@ async fn patch_admin_promotes_member_to_admin_returns_200() {
     let target_user = add_member(&db, ws.id, "pat-admin-promote-target", MemberRole::Member).await;
 
     let result = admin_client
+        .acta()
         .update_member_role(&ws.slug, target_user.id.0, "admin")
         .await;
 
@@ -820,6 +835,7 @@ async fn patch_owner_demotes_non_last_owner_returns_200() {
     let target_owner = add_member(&db, ws.id, "pat-owner-demote-target", MemberRole::Owner).await;
 
     let result = owner_client
+        .acta()
         .update_member_role(&ws.slug, target_owner.id.0, "member")
         .await;
 
@@ -846,6 +862,7 @@ async fn patch_owner_demotes_last_owner_returns_403() {
         login_user_with_workspace(&server, &db, "pat-last-owner-409-ws").await;
 
     let result = owner_client
+        .acta()
         .update_member_role(&ws.slug, owner_user.id.0, "admin")
         .await;
 
@@ -868,6 +885,7 @@ async fn patch_break_glass_demotes_last_owner_returns_409() {
         login_break_glass_user(&server, &db, "pat-bg-last-owner-409-root", true, false).await;
 
     let result = root_client
+        .acta()
         .update_member_role(&ws.slug, owner_user.id.0, "admin")
         .await;
 
@@ -892,6 +910,7 @@ async fn patch_break_glass_sets_role_on_non_last_owner_returns_200() {
         login_break_glass_user(&server, &db, "pat-bg-non-last-root", true, false).await;
 
     let result = root_client
+        .acta()
         .update_member_role(&ws.slug, target_owner.id.0, "member")
         .await;
 
@@ -916,6 +935,7 @@ async fn patch_same_role_is_idempotent_200() {
     let target_user = add_member(&db, ws.id, "pat-idempotent-target", MemberRole::Admin).await;
 
     let result = owner_client
+        .acta()
         .update_member_role(&ws.slug, target_user.id.0, "admin")
         .await;
 
@@ -947,6 +967,7 @@ async fn patch_admin_same_role_on_owner_still_403() {
     .await;
 
     let result = admin_client
+        .acta()
         .update_member_role(&ws.slug, owner_user.id.0, "owner")
         .await;
 
@@ -982,6 +1003,7 @@ async fn patch_target_not_member_returns_404() {
         .expect("create stranger");
 
     let result = owner_client
+        .acta()
         .update_member_role(&ws.slug, stranger.id.0, "admin")
         .await;
 
@@ -1003,6 +1025,7 @@ async fn patch_unknown_role_returns_422() {
     let target_user = add_member(&db, ws.id, "pat-unknown-role-target", MemberRole::Member).await;
 
     let result = owner_client
+        .acta()
         .update_member_role(&ws.slug, target_user.id.0, "superuser")
         .await;
 
@@ -1080,7 +1103,10 @@ async fn delete_admin_removes_owner_returns_403() {
     )
     .await;
 
-    let result = admin_client.remove_member(&ws.slug, owner_user.id.0).await;
+    let result = admin_client
+        .acta()
+        .remove_member(&ws.slug, owner_user.id.0)
+        .await;
 
     assert_forbidden(result, "admin removing owner");
 
@@ -1114,7 +1140,10 @@ async fn delete_admin_removes_member_returns_204() {
     )
     .await;
 
-    let result = admin_client.remove_member(&ws.slug, target_user.id.0).await;
+    let result = admin_client
+        .acta()
+        .remove_member(&ws.slug, target_user.id.0)
+        .await;
 
     assert!(
         result.is_ok(),
@@ -1145,7 +1174,10 @@ async fn delete_admin_removes_admin_returns_204() {
 
     let target_user = add_member(&db, ws.id, "del-admin-admin-204-target", MemberRole::Admin).await;
 
-    let result = admin_client.remove_member(&ws.slug, target_user.id.0).await;
+    let result = admin_client
+        .acta()
+        .remove_member(&ws.slug, target_user.id.0)
+        .await;
 
     assert!(
         result.is_ok(),
@@ -1168,6 +1200,7 @@ async fn delete_owner_removes_non_last_owner_returns_204() {
     let target_owner = add_member(&db, ws.id, "del-owner-non-last-target", MemberRole::Owner).await;
 
     let result = owner_client
+        .acta()
         .remove_member(&ws.slug, target_owner.id.0)
         .await;
 
@@ -1189,7 +1222,10 @@ async fn delete_owner_removes_last_owner_returns_409() {
     let (owner_client, ws, owner_user) =
         login_user_with_workspace(&server, &db, "del-last-owner-409-ws").await;
 
-    let result = owner_client.remove_member(&ws.slug, owner_user.id.0).await;
+    let result = owner_client
+        .acta()
+        .remove_member(&ws.slug, owner_user.id.0)
+        .await;
 
     assert_last_owner(result, "owner removing self (last owner)");
 
@@ -1211,7 +1247,10 @@ async fn delete_break_glass_removes_non_last_owner_returns_204() {
     let root_client =
         login_break_glass_user(&server, &db, "del-bg-non-last-root", true, false).await;
 
-    let result = root_client.remove_member(&ws.slug, target_owner.id.0).await;
+    let result = root_client
+        .acta()
+        .remove_member(&ws.slug, target_owner.id.0)
+        .await;
 
     assert!(
         result.is_ok(),
@@ -1234,7 +1273,10 @@ async fn delete_break_glass_removes_last_owner_returns_409() {
     let root_client =
         login_break_glass_user(&server, &db, "del-bg-last-owner-409-root", true, false).await;
 
-    let result = root_client.remove_member(&ws.slug, owner_user.id.0).await;
+    let result = root_client
+        .acta()
+        .remove_member(&ws.slug, owner_user.id.0)
+        .await;
 
     assert_last_owner(result, "break-glass removing last owner");
 
@@ -1264,7 +1306,10 @@ async fn delete_target_not_member_returns_404() {
         .await
         .expect("create stranger");
 
-    let result = owner_client.remove_member(&ws.slug, stranger.id.0).await;
+    let result = owner_client
+        .acta()
+        .remove_member(&ws.slug, stranger.id.0)
+        .await;
 
     assert_not_found(result, "target not a member DELETE");
 
@@ -1308,6 +1353,7 @@ async fn add_member_owner_adds_existing_user_returns_201() {
     let stranger = create_non_member_user(&db, "add-owner-201-stranger").await;
 
     let result = owner_client
+        .acta()
         .add_member(&ws.slug, stranger.id.0, "member")
         .await;
 
@@ -1320,6 +1366,7 @@ async fn add_member_owner_adds_existing_user_returns_201() {
     );
 
     let members = owner_client
+        .acta()
         .list_workspace_members(&ws.slug)
         .await
         .expect("list members");
@@ -1346,6 +1393,7 @@ async fn add_member_already_member_returns_409() {
     let existing = add_member(&db, ws.id, "add-conflict-409-existing", MemberRole::Member).await;
 
     let result = owner_client
+        .acta()
         .add_member(&ws.slug, existing.id.0, "member")
         .await;
 
@@ -1373,7 +1421,10 @@ async fn add_member_nonexistent_user_returns_404() {
 
     let ghost = uuid::Uuid::new_v4();
 
-    let result = owner_client.add_member(&ws.slug, ghost, "member").await;
+    let result = owner_client
+        .acta()
+        .add_member(&ws.slug, ghost, "member")
+        .await;
 
     assert_not_found(result, "adding a non-existent user");
 
@@ -1402,6 +1453,7 @@ async fn add_member_admin_grants_owner_returns_403_owner_succeeds() {
     let target_for_admin = create_non_member_user(&db, "add-owner-matrix-target-a").await;
 
     let admin_result = admin_client
+        .acta()
         .add_member(&ws.slug, target_for_admin.id.0, "owner")
         .await;
 
@@ -1410,6 +1462,7 @@ async fn add_member_admin_grants_owner_returns_403_owner_succeeds() {
     let target_for_owner = create_non_member_user(&db, "add-owner-matrix-target-b").await;
 
     let owner_result = owner_client
+        .acta()
         .add_member(&ws.slug, target_for_owner.id.0, "owner")
         .await;
 
@@ -1445,6 +1498,7 @@ async fn add_member_plain_member_caller_returns_403() {
     let stranger = create_non_member_user(&db, "add-member-caller-403-target").await;
 
     let result = member_client
+        .acta()
         .add_member(&ws.slug, stranger.id.0, "member")
         .await;
 
@@ -1470,6 +1524,7 @@ async fn add_member_disabled_user_returns_422() {
         .expect("disable user");
 
     let result = owner_client
+        .acta()
         .add_member(&ws.slug, disabled.id.0, "member")
         .await;
 
@@ -1512,6 +1567,7 @@ async fn assignable_users_excludes_members_and_disabled() {
     let candidate = create_non_member_user(&db, "assignable-candidate").await;
 
     let users = owner_client
+        .acta()
         .list_assignable_users(&ws.slug)
         .await
         .expect("list assignable users");
@@ -1601,6 +1657,7 @@ async fn patch_sysadmin_on_root_target_returns_403() {
         login_break_glass_user(&server, &db, "root-prot-patch-sysadmin", false, true).await;
 
     let result = sysadmin_client
+        .acta()
         .update_member_role(&ws.slug, root_target.id.0, "admin")
         .await;
 
@@ -1625,6 +1682,7 @@ async fn delete_sysadmin_on_root_target_returns_403() {
         login_break_glass_user(&server, &db, "root-prot-del-sysadmin", false, true).await;
 
     let result = sysadmin_client
+        .acta()
         .remove_member(&ws.slug, root_target.id.0)
         .await;
 
@@ -1649,6 +1707,7 @@ async fn add_member_sysadmin_on_root_target_returns_403() {
         login_break_glass_user(&server, &db, "root-prot-add-sysadmin", false, true).await;
 
     let result = sysadmin_client
+        .acta()
         .add_member(&ws.slug, root_target.id.0, "member")
         .await;
 
@@ -1678,6 +1737,7 @@ async fn patch_root_caller_on_non_root_target_passes() {
     let root_client = login_break_glass_user(&server, &db, "root-prot-ok-root", true, false).await;
 
     let result = root_client
+        .acta()
         .update_member_role(&ws.slug, target.id.0, "admin")
         .await;
 

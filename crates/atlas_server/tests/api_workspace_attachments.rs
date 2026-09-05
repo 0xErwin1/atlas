@@ -33,11 +33,13 @@ fn project_req(slug: &str, prefix: &str) -> CreateProjectRequest {
 /// Creates a project, a board with one column, and returns a task on it.
 async fn seed_task(client: &AtlasClient, ws: &str, project_slug: &str, prefix: &str) -> TaskDto {
     client
+        .acta()
         .create_project(ws, project_req(project_slug, prefix))
         .await
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             ws,
             project_slug,
@@ -50,6 +52,7 @@ async fn seed_task(client: &AtlasClient, ws: &str, project_slug: &str, prefix: &
         .expect("create board");
 
     let column = client
+        .acta()
         .create_column(
             ws,
             board.id,
@@ -64,6 +67,7 @@ async fn seed_task(client: &AtlasClient, ws: &str, project_slug: &str, prefix: &
         .expect("create column");
 
     client
+        .acta()
         .create_task(
             ws,
             board.id,
@@ -88,6 +92,7 @@ async fn seed_note(
     content: &str,
 ) -> DocumentDto {
     client
+        .acta()
         .create_document(
             ws,
             project_slug,
@@ -121,6 +126,7 @@ async fn workspace_listing_spans_notes_tasks_and_comments() {
     let note = seed_note(&client, &ws.slug, "files-proj", "# Runbook\n").await;
 
     let note_file = client
+        .acta()
         .upload_attachment(
             &ws.slug,
             note.slug.as_deref().expect("note slug"),
@@ -132,6 +138,7 @@ async fn workspace_listing_spans_notes_tasks_and_comments() {
         .expect("upload note attachment");
 
     let task_file = client
+        .acta()
         .upload_task_attachment(
             &ws.slug,
             &task.readable_id,
@@ -143,6 +150,7 @@ async fn workspace_listing_spans_notes_tasks_and_comments() {
         .expect("upload task attachment");
 
     let comment = client
+        .acta()
         .add_comment(
             &ws.slug,
             &task.readable_id,
@@ -152,6 +160,7 @@ async fn workspace_listing_spans_notes_tasks_and_comments() {
         .expect("create comment");
 
     let comment_file = client
+        .acta()
         .upload_task_comment_attachment(
             &ws.slug,
             &task.readable_id,
@@ -164,6 +173,7 @@ async fn workspace_listing_spans_notes_tasks_and_comments() {
         .expect("upload comment attachment");
 
     let page = client
+        .acta()
         .list_workspace_attachments(&ws.slug, None, None)
         .await
         .expect("list workspace attachments");
@@ -213,6 +223,7 @@ async fn renaming_a_note_attachment_rewrites_its_file_links() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "ws-attach-2").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("notes-proj", "NP"))
         .await
         .expect("create project");
@@ -227,6 +238,7 @@ async fn renaming_a_note_attachment_rewrites_its_file_links() {
     let slug = note.slug.clone().expect("note slug");
 
     let uploaded = client
+        .acta()
         .upload_attachment(
             &ws.slug,
             &slug,
@@ -238,6 +250,7 @@ async fn renaming_a_note_attachment_rewrites_its_file_links() {
         .expect("upload attachment");
 
     let renamed = client
+        .acta()
         .rename_workspace_attachment(
             &ws.slug,
             uploaded.id,
@@ -251,6 +264,7 @@ async fn renaming_a_note_attachment_rewrites_its_file_links() {
     assert_eq!(renamed.file_name, "new.pdf");
 
     let after = client
+        .acta()
         .get_document(&ws.slug, &slug)
         .await
         .expect("read note after rename");
@@ -278,6 +292,7 @@ async fn renaming_a_task_attachment_rewrites_its_description_links() {
     let task = seed_task(&client, &ws.slug, "tasks-proj", "TP").await;
 
     let uploaded = client
+        .acta()
         .upload_task_attachment(
             &ws.slug,
             &task.readable_id,
@@ -289,6 +304,7 @@ async fn renaming_a_task_attachment_rewrites_its_description_links() {
         .expect("upload attachment");
 
     client
+        .acta()
         .rename_workspace_attachment(
             &ws.slug,
             uploaded.id,
@@ -300,6 +316,7 @@ async fn renaming_a_task_attachment_rewrites_its_description_links() {
         .expect("rename attachment");
 
     let after = client
+        .acta()
         .get_task(&ws.slug, &task.readable_id)
         .await
         .expect("read task after rename");
@@ -321,6 +338,7 @@ async fn renaming_leaves_an_unreferenced_body_untouched() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "ws-attach-4").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("quiet-proj", "QP"))
         .await
         .expect("create project");
@@ -329,6 +347,7 @@ async fn renaming_leaves_an_unreferenced_body_untouched() {
     let slug = note.slug.clone().expect("note slug");
 
     let uploaded = client
+        .acta()
         .upload_attachment(
             &ws.slug,
             &slug,
@@ -340,6 +359,7 @@ async fn renaming_leaves_an_unreferenced_body_untouched() {
         .expect("upload attachment");
 
     client
+        .acta()
         .rename_workspace_attachment(
             &ws.slug,
             uploaded.id,
@@ -351,6 +371,7 @@ async fn renaming_leaves_an_unreferenced_body_untouched() {
         .expect("rename attachment");
 
     let after = client
+        .acta()
         .get_document(&ws.slug, &slug)
         .await
         .expect("read note after rename");
@@ -373,6 +394,7 @@ async fn renaming_onto_a_sibling_name_is_refused_and_changes_nothing() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "ws-attach-5").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("dup-proj", "DP"))
         .await
         .expect("create project");
@@ -381,6 +403,7 @@ async fn renaming_onto_a_sibling_name_is_refused_and_changes_nothing() {
     let slug = note.slug.clone().expect("note slug");
 
     let first = client
+        .acta()
         .upload_attachment(
             &ws.slug,
             &slug,
@@ -392,6 +415,7 @@ async fn renaming_onto_a_sibling_name_is_refused_and_changes_nothing() {
         .expect("upload first");
 
     client
+        .acta()
         .upload_attachment(
             &ws.slug,
             &slug,
@@ -403,6 +427,7 @@ async fn renaming_onto_a_sibling_name_is_refused_and_changes_nothing() {
         .expect("upload second");
 
     let error = client
+        .acta()
         .rename_workspace_attachment(
             &ws.slug,
             first.id,
@@ -419,12 +444,14 @@ async fn renaming_onto_a_sibling_name_is_refused_and_changes_nothing() {
     }
 
     let after = client
+        .acta()
         .get_document(&ws.slug, &slug)
         .await
         .expect("read note after refused rename");
     assert_eq!(after.content, "[[file:old.pdf]]");
 
     let page = client
+        .acta()
         .list_workspace_attachments(&ws.slug, None, None)
         .await
         .expect("list workspace attachments");
@@ -444,6 +471,7 @@ async fn deleting_an_attachment_drops_it_from_the_listing() {
     let task = seed_task(&client, &ws.slug, "del-proj", "DL").await;
 
     let uploaded = client
+        .acta()
         .upload_task_attachment(
             &ws.slug,
             &task.readable_id,
@@ -455,17 +483,20 @@ async fn deleting_an_attachment_drops_it_from_the_listing() {
         .expect("upload attachment");
 
     let downloaded = client
+        .acta()
         .download_attachment(&ws.slug, uploaded.id)
         .await
         .expect("a task attachment downloads through the workspace route");
     assert_eq!(downloaded, b"bytes".to_vec());
 
     client
+        .acta()
         .delete_attachment(&ws.slug, uploaded.id)
         .await
         .expect("delete attachment");
 
     let page = client
+        .acta()
         .list_workspace_attachments(&ws.slug, None, None)
         .await
         .expect("list workspace attachments");
@@ -475,6 +506,7 @@ async fn deleting_an_attachment_drops_it_from_the_listing() {
     );
 
     let after = client
+        .acta()
         .get_task(&ws.slug, &task.readable_id)
         .await
         .expect("read task after delete");
@@ -496,6 +528,7 @@ async fn the_listing_hides_files_in_projects_the_principal_cannot_see() {
     let (owner, ws, _) = support::login_user_with_workspace(&server, &db, "ws-attach-7").await;
 
     owner
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -511,6 +544,7 @@ async fn the_listing_hides_files_in_projects_the_principal_cannot_see() {
 
     let note = seed_note(&owner, &ws.slug, "private-proj", "secret").await;
     let hidden = owner
+        .acta()
         .upload_attachment(
             &ws.slug,
             note.slug.as_deref().expect("note slug"),
@@ -532,6 +566,7 @@ async fn the_listing_hides_files_in_projects_the_principal_cannot_see() {
         .expect("add member");
 
     let page = member
+        .acta()
         .list_workspace_attachments(&ws.slug, None, None)
         .await
         .expect("member lists workspace attachments");
@@ -555,6 +590,7 @@ async fn renaming_to_the_same_name_is_accepted_without_a_rewrite() {
     let task = seed_task(&client, &ws.slug, "noop-proj", "NO").await;
 
     let uploaded = client
+        .acta()
         .upload_task_attachment(
             &ws.slug,
             &task.readable_id,
@@ -566,6 +602,7 @@ async fn renaming_to_the_same_name_is_accepted_without_a_rewrite() {
         .expect("upload attachment");
 
     let renamed = client
+        .acta()
         .rename_workspace_attachment(
             &ws.slug,
             uploaded.id,
@@ -579,6 +616,7 @@ async fn renaming_to_the_same_name_is_accepted_without_a_rewrite() {
     assert_eq!(renamed.file_name, "old.pdf");
 
     client
+        .acta()
         .update_task(
             &ws.slug,
             &task.readable_id,
@@ -602,6 +640,7 @@ async fn a_note_stays_writable_after_its_attachment_is_renamed() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "ws-attach-9").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("cas-proj", "CA"))
         .await
         .expect("create project");
@@ -610,6 +649,7 @@ async fn a_note_stays_writable_after_its_attachment_is_renamed() {
     let slug = note.slug.clone().expect("note slug");
 
     let uploaded = client
+        .acta()
         .upload_attachment(
             &ws.slug,
             &slug,
@@ -621,6 +661,7 @@ async fn a_note_stays_writable_after_its_attachment_is_renamed() {
         .expect("upload attachment");
 
     client
+        .acta()
         .rename_workspace_attachment(
             &ws.slug,
             uploaded.id,
@@ -632,11 +673,13 @@ async fn a_note_stays_writable_after_its_attachment_is_renamed() {
         .expect("rename attachment");
 
     let head = client
+        .acta()
         .get_document(&ws.slug, &slug)
         .await
         .expect("read note after rename");
 
     client
+        .acta()
         .update_content(
             &ws.slug,
             &slug,

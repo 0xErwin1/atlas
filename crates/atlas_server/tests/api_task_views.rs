@@ -30,6 +30,7 @@ async fn create_task_view_returns_201_and_appears_in_list_with_filters_roundtrip
     };
 
     let view = client
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
@@ -46,6 +47,7 @@ async fn create_task_view_returns_201_and_appears_in_list_with_filters_roundtrip
     assert_eq!(view.filters.priorities, vec!["high", "urgent"]);
 
     let listed = client
+        .acta()
         .list_task_views(&ws.slug)
         .await
         .expect("list task views");
@@ -68,6 +70,7 @@ async fn create_task_view_rejects_blank_name() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "tv-blank-name-1").await;
 
     let result = client
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
@@ -96,6 +99,7 @@ async fn create_task_view_rejects_name_over_200_chars() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "tv-long-name-1").await;
 
     let result = client
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
@@ -126,6 +130,7 @@ async fn create_task_view_rejects_invalid_filters() {
 
     // Unknown sort key
     let result = client
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
@@ -144,6 +149,7 @@ async fn create_task_view_rejects_invalid_filters() {
 
     // Oversized column_ids collection (> 50)
     let result = client
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
@@ -162,6 +168,7 @@ async fn create_task_view_rejects_invalid_filters() {
 
     // Invalid priority string
     let result = client
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
@@ -193,6 +200,7 @@ async fn create_task_view_allows_empty_filters() {
         support::login_user_with_workspace(&server, &db, "tv-empty-filters-1").await;
 
     let view = client
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
@@ -219,6 +227,7 @@ async fn create_task_view_rejects_duplicate_name_for_same_owner() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "tv-dup-name-1").await;
 
     client
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
@@ -230,6 +239,7 @@ async fn create_task_view_rejects_duplicate_name_for_same_owner() {
         .expect("first create");
 
     let result = client
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
@@ -259,6 +269,7 @@ async fn create_task_view_allows_same_name_for_different_owners() {
         support::login_user_with_workspace(&server, &db, "tv-cross-owner-1").await;
 
     user_client
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
@@ -270,6 +281,7 @@ async fn create_task_view_allows_same_name_for_different_owners() {
         .expect("user creates task view");
 
     let key_created = user_client
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "test-key".to_string(),
             r#type: None,
@@ -287,6 +299,7 @@ async fn create_task_view_allows_same_name_for_different_owners() {
         .with_token(key_created.secret);
 
     let result = key_client
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
@@ -317,6 +330,7 @@ async fn list_task_views_is_owner_scoped_sorted_and_excludes_deleted() {
 
     for name in ["Gamma", "alpha", "Beta"] {
         client
+            .acta()
             .create_task_view(
                 &ws.slug,
                 CreateTaskViewRequest {
@@ -330,6 +344,7 @@ async fn list_task_views_is_owner_scoped_sorted_and_excludes_deleted() {
 
     // Create an api_key owner's view (should not appear in user's list)
     let key_created = client
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "other-owner-key".to_string(),
             r#type: None,
@@ -347,6 +362,7 @@ async fn list_task_views_is_owner_scoped_sorted_and_excludes_deleted() {
         .with_token(key_created.secret);
 
     key_client
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
@@ -359,6 +375,7 @@ async fn list_task_views_is_owner_scoped_sorted_and_excludes_deleted() {
 
     // Create a view to be deleted
     let to_delete = client
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
@@ -370,11 +387,12 @@ async fn list_task_views_is_owner_scoped_sorted_and_excludes_deleted() {
         .expect("create to-delete");
 
     client
+        .acta()
         .delete_task_view(&ws.slug, to_delete.id)
         .await
         .expect("delete");
 
-    let listed = client.list_task_views(&ws.slug).await.expect("list");
+    let listed = client.acta().list_task_views(&ws.slug).await.expect("list");
 
     let names: Vec<String> = listed.iter().map(|v| v.name.clone()).collect();
     assert_eq!(names, vec!["alpha", "Beta", "Gamma"]);
@@ -393,6 +411,7 @@ async fn get_task_view_returns_200_with_filters() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "tv-get-by-id-1").await;
 
     let created = client
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
@@ -408,6 +427,7 @@ async fn get_task_view_returns_200_with_filters() {
         .expect("create");
 
     let fetched = client
+        .acta()
         .get_task_view(&ws.slug, created.id)
         .await
         .expect("get by id");
@@ -431,6 +451,7 @@ async fn get_task_view_returns_404_for_non_owned_id() {
         support::login_user_with_workspace(&server, &db, "tv-get-nonowned-1").await;
 
     let view = client_a
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
@@ -442,6 +463,7 @@ async fn get_task_view_returns_404_for_non_owned_id() {
         .expect("create");
 
     let key_created = client_a
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "intruder-key".to_string(),
             r#type: None,
@@ -458,7 +480,7 @@ async fn get_task_view_returns_404_for_non_owned_id() {
     let client_b = atlas_client::AtlasClient::new(server.base_url().to_string())
         .with_token(key_created.secret);
 
-    let result = client_b.get_task_view(&ws.slug, view.id).await;
+    let result = client_b.acta().get_task_view(&ws.slug, view.id).await;
 
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
@@ -479,6 +501,7 @@ async fn update_task_view_returns_200_with_new_name_and_filters() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "tv-update-1").await;
 
     let created = client
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
@@ -490,6 +513,7 @@ async fn update_task_view_returns_200_with_new_name_and_filters() {
         .expect("create");
 
     let updated = client
+        .acta()
         .update_task_view(
             &ws.slug,
             created.id,
@@ -523,6 +547,7 @@ async fn update_task_view_rejects_duplicate_name() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "tv-update-dup-1").await;
 
     client
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
@@ -534,6 +559,7 @@ async fn update_task_view_rejects_duplicate_name() {
         .expect("create alpha");
 
     let beta = client
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
@@ -545,6 +571,7 @@ async fn update_task_view_rejects_duplicate_name() {
         .expect("create beta");
 
     let result = client
+        .acta()
         .update_task_view(
             &ws.slug,
             beta.id,
@@ -576,6 +603,7 @@ async fn update_task_view_returns_404_for_missing_id() {
 
     let missing_id = uuid::Uuid::now_v7();
     let result = client
+        .acta()
         .update_task_view(
             &ws.slug,
             missing_id,
@@ -606,6 +634,7 @@ async fn update_task_view_returns_404_for_non_owned_id() {
         support::login_user_with_workspace(&server, &db, "tv-update-nonowned-1").await;
 
     let view = client_a
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
@@ -617,6 +646,7 @@ async fn update_task_view_returns_404_for_non_owned_id() {
         .expect("create");
 
     let key_created = client_a
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "intruder-key".to_string(),
             r#type: None,
@@ -634,6 +664,7 @@ async fn update_task_view_returns_404_for_non_owned_id() {
         .with_token(key_created.secret);
 
     let result = client_b
+        .acta()
         .update_task_view(
             &ws.slug,
             view.id,
@@ -663,6 +694,7 @@ async fn delete_task_view_returns_204_and_frees_name() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "tv-delete-1").await;
 
     let view = client
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
@@ -674,11 +706,13 @@ async fn delete_task_view_returns_204_and_frees_name() {
         .expect("create");
 
     client
+        .acta()
         .delete_task_view(&ws.slug, view.id)
         .await
         .expect("delete must return 204");
 
     let listed = client
+        .acta()
         .list_task_views(&ws.slug)
         .await
         .expect("list after delete");
@@ -686,6 +720,7 @@ async fn delete_task_view_returns_204_and_frees_name() {
     assert!(listed.is_empty(), "deleted row must not appear in list");
 
     client
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
@@ -711,6 +746,7 @@ async fn delete_task_view_returns_404_for_non_owned_id() {
         support::login_user_with_workspace(&server, &db, "tv-delete-nonowned-1").await;
 
     let view = client_a
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
@@ -722,6 +758,7 @@ async fn delete_task_view_returns_404_for_non_owned_id() {
         .expect("create");
 
     let key_created = client_a
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "intruder-key".to_string(),
             r#type: None,
@@ -738,7 +775,7 @@ async fn delete_task_view_returns_404_for_non_owned_id() {
     let client_b = atlas_client::AtlasClient::new(server.base_url().to_string())
         .with_token(key_created.secret);
 
-    let result = client_b.delete_task_view(&ws.slug, view.id).await;
+    let result = client_b.acta().delete_task_view(&ws.slug, view.id).await;
 
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
@@ -760,7 +797,7 @@ async fn delete_task_view_returns_404_for_missing_id() {
         support::login_user_with_workspace(&server, &db, "tv-delete-missing-1").await;
 
     let missing_id = uuid::Uuid::now_v7();
-    let result = client.delete_task_view(&ws.slug, missing_id).await;
+    let result = client.acta().delete_task_view(&ws.slug, missing_id).await;
 
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
@@ -782,6 +819,7 @@ async fn delete_task_view_returns_404_on_second_delete() {
         support::login_user_with_workspace(&server, &db, "tv-double-delete-1").await;
 
     let view = client
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
@@ -793,11 +831,12 @@ async fn delete_task_view_returns_404_on_second_delete() {
         .expect("create");
 
     client
+        .acta()
         .delete_task_view(&ws.slug, view.id)
         .await
         .expect("first delete must return 204");
 
-    let result = client.delete_task_view(&ws.slug, view.id).await;
+    let result = client.acta().delete_task_view(&ws.slug, view.id).await;
 
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
@@ -820,13 +859,14 @@ async fn task_views_endpoints_reject_unauthenticated_requests() {
 
     let anon = server.client();
 
-    let result = anon.list_task_views(&ws.slug).await;
+    let result = anon.acta().list_task_views(&ws.slug).await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 401),
         "unauthenticated list must return 401, got {result:?}"
     );
 
     let result = anon
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
@@ -841,6 +881,7 @@ async fn task_views_endpoints_reject_unauthenticated_requests() {
     );
 
     let view = owner_client
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
@@ -851,13 +892,14 @@ async fn task_views_endpoints_reject_unauthenticated_requests() {
         .await
         .expect("create for auth test");
 
-    let result = anon.get_task_view(&ws.slug, view.id).await;
+    let result = anon.acta().get_task_view(&ws.slug, view.id).await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 401),
         "unauthenticated get must return 401, got {result:?}"
     );
 
     let result = anon
+        .acta()
         .update_task_view(
             &ws.slug,
             view.id,
@@ -872,7 +914,7 @@ async fn task_views_endpoints_reject_unauthenticated_requests() {
         "unauthenticated update must return 401, got {result:?}"
     );
 
-    let result = anon.delete_task_view(&ws.slug, view.id).await;
+    let result = anon.acta().delete_task_view(&ws.slug, view.id).await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 401),
         "unauthenticated delete must return 401, got {result:?}"
@@ -893,7 +935,7 @@ async fn task_views_return_404_for_non_member() {
     let (outsider, _, _) =
         support::login_user_with_workspace(&server, &db, "tv-nonmember-user-1").await;
 
-    let result = outsider.list_task_views(&ws.slug).await;
+    let result = outsider.acta().list_task_views(&ws.slug).await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
         "non-member list must return 404, got {result:?}"
@@ -914,6 +956,7 @@ async fn create_task_view_rejects_over_cap() {
 
     for i in 0..50 {
         client
+            .acta()
             .create_task_view(
                 &ws.slug,
                 CreateTaskViewRequest {
@@ -926,6 +969,7 @@ async fn create_task_view_rejects_over_cap() {
     }
 
     let result = client
+        .acta()
         .create_task_view(
             &ws.slug,
             CreateTaskViewRequest {
