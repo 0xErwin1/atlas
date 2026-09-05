@@ -91,6 +91,7 @@ async fn create_document_returns_201_with_generated_slug() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-crud-1").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -105,6 +106,7 @@ async fn create_document_returns_201_with_generated_slug() {
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Hello World"))
         .await
         .expect("create document");
@@ -128,6 +130,7 @@ async fn create_ignores_client_slug_field() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-crud-2").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -148,6 +151,7 @@ async fn create_ignores_client_slug_field() {
     };
 
     let doc = client
+        .acta()
         .create_document(&ws.slug, &project.slug, req)
         .await
         .expect("create document");
@@ -168,6 +172,7 @@ async fn get_document_returns_document() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-get-1").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -182,12 +187,14 @@ async fn get_document_returns_document() {
         .expect("create project");
 
     let created = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Fetch Me"))
         .await
         .expect("create document");
 
     let slug = created.slug.as_deref().expect("slug");
     let fetched = client
+        .acta()
         .get_document(&ws.slug, slug)
         .await
         .expect("get document");
@@ -204,7 +211,7 @@ async fn get_unknown_document_returns_404() {
     let server = support::TestServer::spawn(&db).await;
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-404-1").await;
 
-    let result = client.get_document(&ws.slug, "does-not-exist").await;
+    let result = client.acta().get_document(&ws.slug, "does-not-exist").await;
 
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
@@ -222,6 +229,7 @@ async fn compact_document_read_omits_content_and_does_not_leak_across_workspaces
         support::login_user_with_workspace(&server, &db, "doc-compact-read").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -235,6 +243,7 @@ async fn compact_document_read_omits_content_and_does_not_leak_across_workspaces
         .await
         .expect("create project");
     let doc = client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -293,6 +302,7 @@ async fn compact_document_read_previews_the_body_without_frontmatter() {
         support::login_user_with_workspace(&server, &db, "doc-compact-preview").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -307,6 +317,7 @@ async fn compact_document_read_previews_the_body_without_frontmatter() {
         .expect("create project");
 
     let long = client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -322,6 +333,7 @@ async fn compact_document_read_previews_the_body_without_frontmatter() {
         .await
         .expect("create long document");
     let multi_byte = client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -334,11 +346,13 @@ async fn compact_document_read_previews_the_body_without_frontmatter() {
         .await
         .expect("create multi-byte document");
     let empty = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Empty"))
         .await
         .expect("create empty document");
 
     let long_compact = client
+        .acta()
         .get_document_compact(&ws.slug, long.slug.as_deref().expect("slug"))
         .await
         .expect("compact long document");
@@ -346,6 +360,7 @@ async fn compact_document_read_previews_the_body_without_frontmatter() {
     assert_eq!(long_preview, "a".repeat(200));
 
     let multi_byte_compact = client
+        .acta()
         .get_document_compact(&ws.slug, multi_byte.slug.as_deref().expect("slug"))
         .await
         .expect("compact multi-byte document");
@@ -386,6 +401,7 @@ async fn list_documents_returns_previews_only_when_requested() {
         support::login_user_with_workspace(&server, &db, "doc-list-preview").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -400,6 +416,7 @@ async fn list_documents_returns_previews_only_when_requested() {
         .expect("create project");
 
     client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -413,6 +430,7 @@ async fn list_documents_returns_previews_only_when_requested() {
         .expect("create document");
 
     let without_preview = client
+        .acta()
         .list_documents(&ws.slug, &project.slug, None, None)
         .await
         .expect("list documents");
@@ -425,6 +443,7 @@ async fn list_documents_returns_previews_only_when_requested() {
     );
 
     let with_preview = client
+        .acta()
         .list_documents_with_options(&ws.slug, &project.slug, None, None, None, true)
         .await
         .expect("list documents with preview");
@@ -444,6 +463,7 @@ async fn range_read_pages_losslessly_and_rejects_too_small_or_stale_continuation
     let server = support::TestServer::spawn(&db).await;
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-range-read").await;
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -457,6 +477,7 @@ async fn range_read_pages_losslessly_and_rejects_too_small_or_stale_continuation
         .await
         .expect("create project");
     let doc = client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -527,6 +548,7 @@ async fn range_read_pages_losslessly_and_rejects_too_small_or_stale_continuation
     assert_eq!(long_line, "é".repeat(40));
 
     client
+        .acta()
         .update_content(
             &ws.slug,
             slug,
@@ -554,6 +576,7 @@ async fn content_search_enforces_scan_and_utf8_page_boundaries() {
     let server = support::TestServer::spawn(&db).await;
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-search").await;
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -567,6 +590,7 @@ async fn content_search_enforces_scan_and_utf8_page_boundaries() {
         .await
         .expect("create project");
     let doc = client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -615,6 +639,7 @@ async fn content_search_enforces_scan_and_utf8_page_boundaries() {
     assert_eq!(resumed.matches[0].preview, "match");
     assert!(resumed.continuation.is_none());
     client
+        .acta()
         .update_content(
             &ws.slug,
             slug,
@@ -662,6 +687,7 @@ async fn tampered_document_continuations_are_rejected_without_leaking_or_mutatin
     let server = support::TestServer::spawn(&db).await;
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-tamper").await;
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -676,6 +702,7 @@ async fn tampered_document_continuations_are_rejected_without_leaking_or_mutatin
         .expect("create project");
     let content = "range first\nrange second\nneedle first\nneedle second";
     let doc = client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -796,6 +823,7 @@ async fn tampered_document_continuations_are_rejected_without_leaking_or_mutatin
     assert_eq!(resumed_search.matches[0].preview, "needle second");
 
     let current = client
+        .acta()
         .get_document(&ws.slug, slug)
         .await
         .expect("read document after rejected continuations");
@@ -811,6 +839,7 @@ async fn invalid_pattern_search_returns_problem_details_without_partial_results(
     let (client, ws, _) =
         support::login_user_with_workspace(&server, &db, "doc-invalid-pattern").await;
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -825,6 +854,7 @@ async fn invalid_pattern_search_returns_problem_details_without_partial_results(
         .expect("create project");
     let content = "needle one\nneedle two";
     let doc = client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -863,6 +893,7 @@ async fn invalid_pattern_search_returns_problem_details_without_partial_results(
     assert!(problem.get("continuation").is_none());
 
     let current = client
+        .acta()
         .get_document(&ws.slug, slug)
         .await
         .expect("read document after invalid pattern");
@@ -878,6 +909,7 @@ async fn list_documents_returns_created_document() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-list-1").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -892,11 +924,13 @@ async fn list_documents_returns_created_document() {
         .expect("create project");
 
     client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Listed Doc"))
         .await
         .expect("create document");
 
     let page = client
+        .acta()
         .list_documents(&ws.slug, &project.slug, None, None)
         .await
         .expect("list documents");
@@ -917,6 +951,7 @@ async fn list_documents_distinguishes_unfiled_from_filed_documents() {
         support::login_user_with_workspace(&server, &db, "doc-list-folder-filter").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -931,11 +966,13 @@ async fn list_documents_distinguishes_unfiled_from_filed_documents() {
         .expect("create project");
 
     client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Unfiled"))
         .await
         .expect("create unfiled document");
 
     let folder = client
+        .acta()
         .create_folder(
             &ws.slug,
             &project.slug,
@@ -948,6 +985,7 @@ async fn list_documents_distinguishes_unfiled_from_filed_documents() {
         .expect("create folder");
 
     client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -1033,6 +1071,7 @@ async fn root_user_lists_documents_in_workspace_without_membership() {
     let root_client = support::login_root_user(&server, &db).await;
 
     let project = owner_client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -1047,11 +1086,13 @@ async fn root_user_lists_documents_in_workspace_without_membership() {
         .expect("create project");
 
     owner_client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Visible to Root"))
         .await
         .expect("create document");
 
     let page = root_client
+        .acta()
         .list_documents(&ws.slug, &project.slug, None, None)
         .await
         .expect("root list documents");
@@ -1071,6 +1112,7 @@ async fn update_document_changes_title() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-upd-1").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -1085,12 +1127,14 @@ async fn update_document_changes_title() {
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Old Title"))
         .await
         .expect("create document");
 
     let slug = doc.slug.as_deref().expect("slug");
     let updated = client
+        .acta()
         .update_document(
             &ws.slug,
             slug,
@@ -1115,6 +1159,7 @@ async fn delete_document_soft_deletes() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-del-1").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -1129,17 +1174,19 @@ async fn delete_document_soft_deletes() {
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("To Delete"))
         .await
         .expect("create document");
 
     let slug = doc.slug.as_deref().expect("slug");
     client
+        .acta()
         .delete_document(&ws.slug, slug)
         .await
         .expect("delete document");
 
-    let result = client.get_document(&ws.slug, slug).await;
+    let result = client.acta().get_document(&ws.slug, slug).await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
         "deleted document must return 404 on get, got: {result:?}"
@@ -1157,6 +1204,7 @@ async fn slug_collision_appends_numeric_suffix() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-slug-col").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -1171,11 +1219,13 @@ async fn slug_collision_appends_numeric_suffix() {
         .expect("create project");
 
     let doc1 = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Collision"))
         .await
         .expect("create first document");
 
     let doc2 = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Collision"))
         .await
         .expect("create second document");
@@ -1195,6 +1245,7 @@ async fn rename_does_not_change_slug() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-rename-stab").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -1209,6 +1260,7 @@ async fn rename_does_not_change_slug() {
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Original Title"))
         .await
         .expect("create document");
@@ -1216,6 +1268,7 @@ async fn rename_does_not_change_slug() {
     let original_slug = doc.slug.clone();
 
     let updated = client
+        .acta()
         .update_document(
             &ws.slug,
             original_slug.as_deref().expect("slug"),
@@ -1244,6 +1297,7 @@ async fn update_content_succeeds_with_matching_base_revision() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-cas-ok").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -1258,12 +1312,14 @@ async fn update_content_succeeds_with_matching_base_revision() {
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("CAS Doc"))
         .await
         .expect("create document");
 
     let slug = doc.slug.as_deref().expect("slug");
     let updated = client
+        .acta()
         .update_content(
             &ws.slug,
             slug,
@@ -1288,6 +1344,7 @@ async fn update_content_stale_base_returns_409() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-cas-409").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -1302,6 +1359,7 @@ async fn update_content_stale_base_returns_409() {
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Stale CAS Doc"))
         .await
         .expect("create document");
@@ -1310,6 +1368,7 @@ async fn update_content_stale_base_returns_409() {
     let stale_revision_id = doc.head_revision_id;
 
     client
+        .acta()
         .update_content(
             &ws.slug,
             slug,
@@ -1322,6 +1381,7 @@ async fn update_content_stale_base_returns_409() {
         .expect("first update succeeds");
 
     let result = client
+        .acta()
         .update_content(
             &ws.slug,
             slug,
@@ -1357,6 +1417,7 @@ async fn update_content_unknown_base_revision_is_rejected_not_conflict() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-cas-bogus").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -1371,12 +1432,14 @@ async fn update_content_unknown_base_revision_is_rejected_not_conflict() {
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Bogus Base Doc"))
         .await
         .expect("create document");
 
     let slug = doc.slug.as_deref().expect("slug");
     let result = client
+        .acta()
         .update_content(
             &ws.slug,
             slug,
@@ -1408,6 +1471,7 @@ async fn update_content_empty_string_is_valid() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-cas-empty").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -1422,12 +1486,14 @@ async fn update_content_empty_string_is_valid() {
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Empty Content Doc"))
         .await
         .expect("create document");
 
     let slug = doc.slug.as_deref().expect("slug");
     let updated = client
+        .acta()
         .update_content(
             &ws.slug,
             slug,
@@ -1450,6 +1516,7 @@ async fn edit_content_range_updates_content_and_returns_a_new_revision() {
     let server = support::TestServer::spawn(&db).await;
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-edit-range").await;
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -1463,10 +1530,12 @@ async fn edit_content_range_updates_content_and_returns_a_new_revision() {
         .await
         .expect("create project");
     let target = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Edit target"))
         .await
         .expect("create target");
     let doc = client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -1494,6 +1563,7 @@ async fn edit_content_range_updates_content_and_returns_a_new_revision() {
     assert!(updated.get("content").is_none());
     assert_eq!(updated["frontmatter"], serde_json::json!({"kind": "guide"}));
     let updated = client
+        .acta()
         .get_document(&ws.slug, slug)
         .await
         .expect("read edited document");
@@ -1504,6 +1574,7 @@ async fn edit_content_range_updates_content_and_returns_a_new_revision() {
     assert_eq!(updated.frontmatter, serde_json::json!({"kind": "guide"}));
     assert_ne!(updated.head_revision_id, doc.head_revision_id);
     let backlinks = client
+        .acta()
         .list_backlinks(
             &ws.slug,
             target.slug.as_deref().expect("target slug"),
@@ -1519,6 +1590,7 @@ async fn edit_content_range_updates_content_and_returns_a_new_revision() {
             .any(|backlink| backlink.source_document_id == doc.id)
     );
     let guard_doc = client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -1543,6 +1615,7 @@ async fn edit_content_range_updates_content_and_returns_a_new_revision() {
     let no_op: serde_json::Value = no_op.json().await.expect("no-op response");
     assert!(no_op.get("content").is_none());
     let no_op = client
+        .acta()
         .get_document(&ws.slug, slug)
         .await
         .expect("read no-op document");
@@ -1569,6 +1642,7 @@ async fn edit_content_range_updates_content_and_returns_a_new_revision() {
     let changed: serde_json::Value = changed.json().await.expect("replace response");
     assert!(changed.get("content").is_none());
     let changed = client
+        .acta()
         .get_document(&ws.slug, slug)
         .await
         .expect("read replaced document");
@@ -1602,6 +1676,7 @@ async fn edit_content_range_updates_content_and_returns_a_new_revision() {
     let deleted: serde_json::Value = deleted.json().await.expect("delete response");
     assert!(deleted.get("content").is_none());
     let deleted = client
+        .acta()
         .get_document(&ws.slug, slug)
         .await
         .expect("read deleted document");
@@ -1618,6 +1693,7 @@ async fn edit_content_range_requires_editor_access_without_leaking_other_workspa
     let server = support::TestServer::spawn(&db).await;
     let (owner, ws, _) = support::login_user_with_workspace(&server, &db, "doc-edit-auth").await;
     let project = owner
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -1631,6 +1707,7 @@ async fn edit_content_range_requires_editor_access_without_leaking_other_workspa
         .await
         .expect("create private project");
     let document = owner
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -1697,6 +1774,7 @@ async fn edit_content_range_requires_editor_access_without_leaking_other_workspa
     assert_eq!(editor_response.status(), reqwest::StatusCode::OK);
     let edited: DocumentCompactDto = editor_response.json().await.expect("editor response");
     let editor_document = editor
+        .acta()
         .get_document(&ws.slug, slug)
         .await
         .expect("editor reads changed document");
@@ -1740,6 +1818,7 @@ async fn history_shows_actor_and_is_newest_first() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-hist-1").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -1754,12 +1833,14 @@ async fn history_shows_actor_and_is_newest_first() {
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("History Doc"))
         .await
         .expect("create document");
 
     let slug = doc.slug.as_deref().expect("slug");
     client
+        .acta()
         .update_content(
             &ws.slug,
             slug,
@@ -1772,6 +1853,7 @@ async fn history_shows_actor_and_is_newest_first() {
         .expect("update to v2");
 
     let history = client
+        .acta()
         .list_document_history(&ws.slug, slug, None, None)
         .await
         .expect("list history");
@@ -1802,6 +1884,7 @@ async fn get_revision_content_returns_historical_content() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-rev-1").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -1816,6 +1899,7 @@ async fn get_revision_content_returns_historical_content() {
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -1830,6 +1914,7 @@ async fn get_revision_content_returns_historical_content() {
 
     let slug = doc.slug.as_deref().expect("slug");
     client
+        .acta()
         .update_content(
             &ws.slug,
             slug,
@@ -1842,6 +1927,7 @@ async fn get_revision_content_returns_historical_content() {
         .expect("update content");
 
     let rev1 = client
+        .acta()
         .get_revision_content(&ws.slug, slug, 1)
         .await
         .expect("get revision 1");
@@ -1861,6 +1947,7 @@ async fn backlinks_appear_after_wikilink_write() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-back-1").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -1875,11 +1962,13 @@ async fn backlinks_appear_after_wikilink_write() {
         .expect("create project");
 
     let target = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Target Doc"))
         .await
         .expect("create target");
 
     let source = client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -1894,6 +1983,7 @@ async fn backlinks_appear_after_wikilink_write() {
 
     let target_slug = target.slug.as_deref().expect("target slug");
     let backlinks = client
+        .acta()
         .list_backlinks(&ws.slug, target_slug, None, None)
         .await
         .expect("list backlinks");
@@ -1916,6 +2006,7 @@ async fn broken_wikilink_is_stored_without_target() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-brok-1").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -1930,6 +2021,7 @@ async fn broken_wikilink_is_stored_without_target() {
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -2018,6 +2110,7 @@ async fn id_bound_wikilink_resolves_by_id_independent_of_title() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-idlink-1").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -2032,11 +2125,13 @@ async fn id_bound_wikilink_resolves_by_id_independent_of_title() {
         .expect("create project");
 
     let target = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Target Doc"))
         .await
         .expect("create target");
 
     let source = client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -2071,6 +2166,7 @@ async fn id_bound_wikilink_to_missing_doc_is_pending() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-idlink-2").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -2087,6 +2183,7 @@ async fn id_bound_wikilink_to_missing_doc_is_pending() {
     let missing_id = uuid::Uuid::now_v7();
 
     let source = client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -2117,6 +2214,7 @@ async fn legacy_wikilink_still_resolves_by_slug() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-idlink-3").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -2131,11 +2229,13 @@ async fn legacy_wikilink_still_resolves_by_slug() {
         .expect("create project");
 
     let target = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Target Doc"))
         .await
         .expect("create target");
 
     let source = client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -2167,6 +2267,7 @@ async fn frontmatter_extracted_from_yaml_block() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-fm-1").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -2181,6 +2282,7 @@ async fn frontmatter_extracted_from_yaml_block() {
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -2205,6 +2307,7 @@ async fn frontmatter_extracted_from_yaml_block() {
 
     let slug = doc.slug.as_deref().expect("slug");
     let fm = client
+        .acta()
         .get_frontmatter(&ws.slug, slug)
         .await
         .expect("get frontmatter");
@@ -2227,6 +2330,7 @@ async fn attach_image_and_download_roundtrip() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-att-1").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -2241,6 +2345,7 @@ async fn attach_image_and_download_roundtrip() {
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Attach Doc"))
         .await
         .expect("create document");
@@ -2249,6 +2354,7 @@ async fn attach_image_and_download_roundtrip() {
     let payload = b"fake-png-bytes-1234".to_vec();
 
     let att = client
+        .acta()
         .upload_attachment(&ws.slug, slug, "image.png", "image/png", payload.clone())
         .await
         .expect("upload attachment");
@@ -2274,6 +2380,7 @@ async fn attach_image_and_download_roundtrip() {
     );
 
     let downloaded = client
+        .acta()
         .download_attachment(&ws.slug, att.id)
         .await
         .expect("download attachment");
@@ -2290,6 +2397,7 @@ async fn list_attachments_returns_uploaded_attachment() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-att-list").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -2304,17 +2412,20 @@ async fn list_attachments_returns_uploaded_attachment() {
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Attach List Doc"))
         .await
         .expect("create document");
 
     let slug = doc.slug.as_deref().expect("slug");
     client
+        .acta()
         .upload_attachment(&ws.slug, slug, "file.txt", "text/plain", b"hello".to_vec())
         .await
         .expect("upload");
 
     let page = client
+        .acta()
         .list_attachments(&ws.slug, slug, None, None)
         .await
         .expect("list attachments");
@@ -2334,6 +2445,7 @@ async fn delete_attachment_removes_it_from_list() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-att-del").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -2348,17 +2460,20 @@ async fn delete_attachment_removes_it_from_list() {
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Del Attach Doc"))
         .await
         .expect("create document");
 
     let slug = doc.slug.as_deref().expect("slug");
     let att = client
+        .acta()
         .upload_attachment(&ws.slug, slug, "del.txt", "text/plain", b"bye".to_vec())
         .await
         .expect("upload");
 
     client
+        .acta()
         .delete_attachment(&ws.slug, att.id)
         .await
         .expect("delete attachment");
@@ -2396,7 +2511,7 @@ async fn delete_attachment_removes_it_from_list() {
         "ordinary delete must not schedule blob cleanup"
     );
 
-    let result = client.download_attachment(&ws.slug, att.id).await;
+    let result = client.acta().download_attachment(&ws.slug, att.id).await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
         "deleted attachment must return 404 on download, got: {result:?}"
@@ -2414,6 +2529,7 @@ async fn move_document_changes_folder() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-move-1").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -2428,12 +2544,14 @@ async fn move_document_changes_folder() {
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Move Me"))
         .await
         .expect("create document");
 
     let slug = doc.slug.as_deref().expect("slug");
     let moved = client
+        .acta()
         .move_document(&ws.slug, slug, MoveDocumentRequest { folder_id: None })
         .await
         .expect("move document");
@@ -2451,6 +2569,7 @@ async fn move_to_nonexistent_folder_is_rejected() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-move-bad").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -2465,12 +2584,14 @@ async fn move_to_nonexistent_folder_is_rejected() {
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Move Bad"))
         .await
         .expect("create document");
 
     let slug = doc.slug.as_deref().expect("slug");
     let result = client
+        .acta()
         .move_document(
             &ws.slug,
             slug,
@@ -2499,6 +2620,7 @@ async fn move_to_foreign_workspace_folder_is_rejected() {
         support::login_user_with_workspace(&server, &db, "doc-move-fb").await;
 
     let project = alice
+        .acta()
         .create_project(
             &ws_a.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -2513,6 +2635,7 @@ async fn move_to_foreign_workspace_folder_is_rejected() {
         .expect("create project");
 
     let doc = alice
+        .acta()
         .create_document(&ws_a.slug, &project.slug, doc_req("Move Foreign"))
         .await
         .expect("create document");
@@ -2538,6 +2661,7 @@ async fn move_to_foreign_workspace_folder_is_rejected() {
 
     let slug = doc.slug.as_deref().expect("slug");
     let result = alice
+        .acta()
         .move_document(
             &ws_a.slug,
             slug,
@@ -2563,6 +2687,7 @@ async fn move_into_folder_adopts_folder_project() {
         support::login_user_with_workspace(&server, &db, "doc-move-adopt").await;
 
     let project_a = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -2577,6 +2702,7 @@ async fn move_into_folder_adopts_folder_project() {
         .expect("create project a");
 
     let project_b = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -2591,6 +2717,7 @@ async fn move_into_folder_adopts_folder_project() {
         .expect("create project b");
 
     let doc = client
+        .acta()
         .create_document(&ws.slug, &project_a.slug, doc_req("Adopt Project"))
         .await
         .expect("create document");
@@ -2615,6 +2742,7 @@ async fn move_into_folder_adopts_folder_project() {
 
     let slug = doc.slug.as_deref().expect("slug");
     let moved = client
+        .acta()
         .move_document(
             &ws.slug,
             slug,
@@ -2646,6 +2774,7 @@ async fn move_into_other_project_folder_without_access_is_rejected() {
         support::login_user_with_workspace(&server, &db, "doc-mv-idor-owner").await;
 
     let project_a = owner
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -2660,6 +2789,7 @@ async fn move_into_other_project_folder_without_access_is_rejected() {
         .expect("create project a");
 
     let project_b = owner
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -2674,6 +2804,7 @@ async fn move_into_other_project_folder_without_access_is_rejected() {
         .expect("create project b");
 
     let doc = owner
+        .acta()
         .create_document(&ws.slug, &project_a.slug, doc_req("Doc In A"))
         .await
         .expect("create document in a");
@@ -2706,6 +2837,7 @@ async fn move_into_other_project_folder_without_access_is_rejected() {
 
     let slug = doc.slug.as_deref().expect("slug");
     let result = bob
+        .acta()
         .move_document(
             &ws.slug,
             slug,
@@ -2734,6 +2866,7 @@ async fn move_within_authorized_project_folder_succeeds() {
         support::login_user_with_workspace(&server, &db, "doc-mv-ok-owner").await;
 
     let project_a = owner
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -2748,6 +2881,7 @@ async fn move_within_authorized_project_folder_succeeds() {
         .expect("create project a");
 
     let doc = owner
+        .acta()
         .create_document(&ws.slug, &project_a.slug, doc_req("Doc In A OK"))
         .await
         .expect("create document in a");
@@ -2780,6 +2914,7 @@ async fn move_within_authorized_project_folder_succeeds() {
 
     let slug = doc.slug.as_deref().expect("slug");
     let moved = bob
+        .acta()
         .move_document(
             &ws.slug,
             slug,
@@ -2804,6 +2939,7 @@ async fn document_moves_batch_preserves_order_and_prior_successes() {
         support::login_user_with_workspace(&server, &db, "doc-moves-batch").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -2836,6 +2972,7 @@ async fn document_moves_batch_preserves_order_and_prior_successes() {
     let (foreign_client, foreign_workspace, _) =
         support::login_user_with_workspace(&server, &db, "doc-moves-batch-foreign").await;
     let foreign_project = foreign_client
+        .acta()
         .create_project(
             &foreign_workspace.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -2849,6 +2986,7 @@ async fn document_moves_batch_preserves_order_and_prior_successes() {
         .await
         .expect("create foreign project");
     let foreign_document = foreign_client
+        .acta()
         .create_document(
             &foreign_workspace.slug,
             &foreign_project.slug,
@@ -2858,10 +2996,12 @@ async fn document_moves_batch_preserves_order_and_prior_successes() {
         .expect("create foreign document");
 
     let first = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("First"))
         .await
         .expect("create first document");
     let second = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Second"))
         .await
         .expect("create second document");
@@ -2904,10 +3044,12 @@ async fn document_moves_batch_preserves_order_and_prior_successes() {
     assert_eq!(outcomes[2]["index"], 2);
 
     let first_after = client
+        .acta()
         .get_document(&ws.slug, first_slug)
         .await
         .expect("read first after batch");
     let second_after = client
+        .acta()
         .get_document(&ws.slug, second_slug)
         .await
         .expect("read second after batch");
@@ -2929,6 +3071,7 @@ async fn document_moves_batch_hides_inaccessible_sources_and_destinations() {
         support::login_user_with_workspace(&server, &db, "doc-moves-batch-auth").await;
 
     let source_project = owner
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -2942,6 +3085,7 @@ async fn document_moves_batch_hides_inaccessible_sources_and_destinations() {
         .await
         .expect("create source project");
     let destination_project = owner
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -2985,6 +3129,7 @@ async fn document_moves_batch_hides_inaccessible_sources_and_destinations() {
         .await
         .expect("create hidden destination");
     let allowed_source = owner
+        .acta()
         .create_document(
             &ws.slug,
             &source_project.slug,
@@ -2997,6 +3142,7 @@ async fn document_moves_batch_hides_inaccessible_sources_and_destinations() {
         .await
         .expect("create allowed source");
     let hidden_source = owner
+        .acta()
         .create_document(&ws.slug, &source_project.slug, doc_req("Hidden source"))
         .await
         .expect("create hidden source");
@@ -3039,6 +3185,7 @@ async fn document_moves_batch_hides_inaccessible_sources_and_destinations() {
     let (foreign_owner, foreign_ws, foreign_user) =
         support::login_user_with_workspace(&server, &db, "doc-moves-batch-auth-foreign").await;
     let foreign_project = foreign_owner
+        .acta()
         .create_project(
             &foreign_ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -3100,6 +3247,7 @@ async fn document_moves_batch_hides_inaccessible_sources_and_destinations() {
     }
 
     let source_after = owner
+        .acta()
         .get_document(&ws.slug, allowed_slug)
         .await
         .expect("read source after denied moves");
@@ -3116,6 +3264,7 @@ async fn document_moves_batch_rejects_an_oversized_envelope_before_processing() 
         support::login_user_with_workspace(&server, &db, "doc-moves-batch-limit").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -3144,6 +3293,7 @@ async fn document_moves_batch_rejects_an_oversized_envelope_before_processing() 
         .await
         .expect("create source folder");
     let document = client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -3183,6 +3333,7 @@ async fn document_moves_batch_rejects_an_oversized_envelope_before_processing() 
         "oversized envelope must be rejected"
     );
     let document_after = client
+        .acta()
         .get_document(&ws.slug, document.slug.as_deref().expect("document slug"))
         .await
         .expect("read source after oversized request");
@@ -3199,6 +3350,7 @@ async fn document_moves_batch_rejects_more_than_one_hundred_items_before_process
         support::login_user_with_workspace(&server, &db, "doc-moves-batch-count").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -3227,6 +3379,7 @@ async fn document_moves_batch_rejects_more_than_one_hundred_items_before_process
         .await
         .expect("create source folder");
     let document = client
+        .acta()
         .create_document(
             &ws.slug,
             &project.slug,
@@ -3268,6 +3421,7 @@ async fn document_moves_batch_rejects_more_than_one_hundred_items_before_process
         "more than 100 moves must be rejected"
     );
     let document_after = client
+        .acta()
         .get_document(&ws.slug, document.slug.as_deref().expect("document slug"))
         .await
         .expect("read source after oversized item count");
@@ -3370,6 +3524,7 @@ async fn create_into_foreign_project_folder_is_rejected() {
         support::login_user_with_workspace(&server, &db, "doc-cr-idor-owner").await;
 
     let project_a = owner
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -3384,6 +3539,7 @@ async fn create_into_foreign_project_folder_is_rejected() {
         .expect("create project a");
 
     let project_b = owner
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -3419,7 +3575,10 @@ async fn create_into_foreign_project_folder_is_rejected() {
         content: None,
     };
 
-    let result = owner.create_document(&ws.slug, &project_a.slug, req).await;
+    let result = owner
+        .acta()
+        .create_document(&ws.slug, &project_a.slug, req)
+        .await;
 
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 422 || p.status == 404),
@@ -3439,6 +3598,7 @@ async fn create_into_same_project_folder_succeeds() {
         support::login_user_with_workspace(&server, &db, "doc-cr-ok-owner").await;
 
     let project_a = owner
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -3475,6 +3635,7 @@ async fn create_into_same_project_folder_succeeds() {
     };
 
     let created = owner
+        .acta()
         .create_document(&ws.slug, &project_a.slug, req)
         .await
         .expect("create into same-project folder must succeed");
@@ -3495,6 +3656,7 @@ async fn viewer_cannot_create_document() {
     let (owner, ws, _) = support::login_user_with_workspace(&server, &db, "doc-perm-owner").await;
 
     let project = owner
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -3569,6 +3731,7 @@ async fn viewer_cannot_create_document() {
         .expect("viewer login");
 
     let result = viewer_client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Forbidden"))
         .await;
 
@@ -3591,6 +3754,7 @@ async fn api_key_actor_write_sets_actor_type_api_key() {
         support::login_user_with_workspace(&server, &db, "doc-ak-write").await;
 
     let project = owner
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -3605,11 +3769,13 @@ async fn api_key_actor_write_sets_actor_type_api_key() {
         .expect("create project");
 
     let doc = owner
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("API Key Doc"))
         .await
         .expect("create document");
 
     let key_created = owner
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "test-key".to_string(),
             r#type: None,
@@ -3649,6 +3815,7 @@ async fn api_key_actor_write_sets_actor_type_api_key() {
 
     let slug = doc.slug.as_deref().expect("slug");
     let updated = agent_client
+        .acta()
         .update_content(
             &ws.slug,
             slug,
@@ -3663,6 +3830,7 @@ async fn api_key_actor_write_sets_actor_type_api_key() {
     assert_eq!(updated.content, "api key wrote this");
 
     let history = agent_client
+        .acta()
         .list_document_history(&ws.slug, slug, None, None)
         .await
         .expect("list history");
@@ -3759,6 +3927,7 @@ async fn private_project_with_attachment(
 ) -> (atlas_api::dtos::ProjectDto, uuid::Uuid) {
     let _ = (server, db);
     let project = owner
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -3773,12 +3942,14 @@ async fn private_project_with_attachment(
         .expect("create private project");
 
     let doc = owner
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Restricted Doc"))
         .await
         .expect("create document");
 
     let slug = doc.slug.as_deref().expect("slug");
     let att = owner
+        .acta()
         .upload_attachment(
             &ws.slug,
             slug,
@@ -3805,13 +3976,19 @@ async fn member_without_grant_cannot_download_or_delete_restricted_attachment() 
         member_client_with_optional_project_grant(&server, &db, &ws, "att-az-outsider", None, None)
             .await;
 
-    let download = outsider.download_attachment(&ws.slug, attachment_id).await;
+    let download = outsider
+        .acta()
+        .download_attachment(&ws.slug, attachment_id)
+        .await;
     assert!(
         matches!(download, Err(ClientError::Api(ref p)) if p.status == 403 || p.status == 404),
         "member without a grant must not download a restricted attachment, got: {download:?}"
     );
 
-    let delete = outsider.delete_attachment(&ws.slug, attachment_id).await;
+    let delete = outsider
+        .acta()
+        .delete_attachment(&ws.slug, attachment_id)
+        .await;
     assert!(
         matches!(delete, Err(ClientError::Api(ref p)) if p.status == 403 || p.status == 404),
         "member without a grant must not delete a restricted attachment, got: {delete:?}"
@@ -3842,12 +4019,16 @@ async fn viewer_can_download_but_not_delete_attachment() {
     .await;
 
     let bytes = viewer
+        .acta()
         .download_attachment(&ws.slug, attachment_id)
         .await
         .expect("viewer must be able to download");
     assert_eq!(bytes, b"top secret");
 
-    let delete = viewer.delete_attachment(&ws.slug, attachment_id).await;
+    let delete = viewer
+        .acta()
+        .delete_attachment(&ws.slug, attachment_id)
+        .await;
     assert!(
         matches!(delete, Err(ClientError::Api(ref p)) if p.status == 403 || p.status == 404),
         "viewer must not delete an attachment, got: {delete:?}"
@@ -3878,6 +4059,7 @@ async fn editor_can_delete_attachment() {
     .await;
 
     editor
+        .acta()
         .delete_attachment(&ws.slug, attachment_id)
         .await
         .expect("editor must be able to delete");
@@ -3896,6 +4078,7 @@ async fn cross_tenant_get_document_returns_404() {
     let (bob, ws_b, _) = support::login_user_with_workspace(&server, &db, "doc-ct-bob").await;
 
     let proj_b = bob
+        .acta()
         .create_project(
             &ws_b.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -3910,13 +4093,14 @@ async fn cross_tenant_get_document_returns_404() {
         .expect("bob creates project");
 
     let doc_b = bob
+        .acta()
         .create_document(&ws_b.slug, &proj_b.slug, doc_req("Bob's Secret"))
         .await
         .expect("bob creates document");
 
     let slug = doc_b.slug.as_deref().expect("slug");
 
-    let result = alice.get_document(&ws_b.slug, slug).await;
+    let result = alice.acta().get_document(&ws_b.slug, slug).await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
         "cross-tenant document read must return 404, got: {result:?}"
@@ -3935,6 +4119,7 @@ async fn cross_tenant_download_attachment_returns_404() {
     let (bob, ws_b, _) = support::login_user_with_workspace(&server, &db, "doc-ct-att-bob").await;
 
     let proj_b = bob
+        .acta()
         .create_project(
             &ws_b.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -3949,12 +4134,14 @@ async fn cross_tenant_download_attachment_returns_404() {
         .expect("bob creates project");
 
     let doc_b = bob
+        .acta()
         .create_document(&ws_b.slug, &proj_b.slug, doc_req("Bob's Attach Doc"))
         .await
         .expect("bob creates document");
 
     let slug = doc_b.slug.as_deref().expect("slug");
     let att = bob
+        .acta()
         .upload_attachment(
             &ws_b.slug,
             slug,
@@ -3965,7 +4152,7 @@ async fn cross_tenant_download_attachment_returns_404() {
         .await
         .expect("bob uploads attachment");
 
-    let result = alice.download_attachment(&ws_b.slug, att.id).await;
+    let result = alice.acta().download_attachment(&ws_b.slug, att.id).await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
         "cross-tenant attachment download must return 404, got: {result:?}"
@@ -3989,6 +4176,7 @@ async fn oversized_attachment_returns_413() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-att-413").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -4003,6 +4191,7 @@ async fn oversized_attachment_returns_413() {
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Oversized Doc"))
         .await
         .expect("create document");
@@ -4010,6 +4199,7 @@ async fn oversized_attachment_returns_413() {
     let slug = doc.slug.as_deref().expect("slug");
 
     let result = client
+        .acta()
         .upload_attachment(
             &ws.slug,
             slug,
@@ -4036,6 +4226,7 @@ async fn conflict_409_body_carries_conflict_fields() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-cas-body").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -4050,6 +4241,7 @@ async fn conflict_409_body_carries_conflict_fields() {
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("CAS Body Doc"))
         .await
         .expect("create document");
@@ -4058,6 +4250,7 @@ async fn conflict_409_body_carries_conflict_fields() {
     let stale_revision_id = doc.head_revision_id;
 
     client
+        .acta()
         .update_content(
             &ws.slug,
             slug,
@@ -4126,6 +4319,7 @@ async fn download_attachment_sets_nosniff_header() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-att-nosniff").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -4140,12 +4334,14 @@ async fn download_attachment_sets_nosniff_header() {
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Nosniff Doc"))
         .await
         .expect("create document");
 
     let slug = doc.slug.as_deref().expect("slug");
     let att = client
+        .acta()
         .upload_attachment(&ws.slug, slug, "test.txt", "text/plain", b"data".to_vec())
         .await
         .expect("upload attachment");
@@ -4186,6 +4382,7 @@ async fn get_revision_content_nonexistent_seq_returns_404() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "doc-rev-404").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -4200,20 +4397,24 @@ async fn get_revision_content_nonexistent_seq_returns_404() {
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(&ws.slug, &project.slug, doc_req("Rev 404 Doc"))
         .await
         .expect("create document");
 
     let slug = doc.slug.as_deref().expect("slug");
 
-    let result = client.get_revision_content(&ws.slug, slug, 9999).await;
+    let result = client
+        .acta()
+        .get_revision_content(&ws.slug, slug, 9999)
+        .await;
 
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),
         "non-existent revision seq must return 404, got: {result:?}"
     );
 
-    let result_zero = client.get_revision_content(&ws.slug, slug, 0).await;
+    let result_zero = client.acta().get_revision_content(&ws.slug, slug, 0).await;
 
     assert!(
         matches!(result_zero, Err(ClientError::Api(ref p)) if p.status == 404),
