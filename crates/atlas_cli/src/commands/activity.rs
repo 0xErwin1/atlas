@@ -70,6 +70,7 @@ async fn run_list(ctx: &Ctx, args: ActivityListArgs) -> Result<(), CliError> {
 
     let page = ctx
         .client
+        .acta()
         .list_workspace_activity_with_cursor(ws, None, None, args.cursor.as_deref(), Some(limit))
         .await?;
 

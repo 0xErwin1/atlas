@@ -70,7 +70,7 @@ pub(crate) struct GroupsListArgs {
 async fn run_list(ctx: &Ctx, args: GroupsListArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
 
-    let groups = ctx.client.list_groups(ws).await?;
+    let groups = ctx.client.custos().list_groups(ws).await?;
 
     let items: Vec<GroupProjection> = groups.into_iter().map(GroupProjection::from).collect();
 
@@ -100,7 +100,7 @@ async fn run_create(ctx: &Ctx, args: GroupsCreateArgs) -> Result<(), CliError> {
 
     let body = CreateGroupRequest { name: args.name };
 
-    let group = ctx.client.create_group(ws, body).await?;
+    let group = ctx.client.custos().create_group(ws, body).await?;
     let proj = GroupProjection::from(group);
     output::emit(ctx.output, &proj)
 }
@@ -134,7 +134,7 @@ async fn run_delete(ctx: &Ctx, args: GroupsDeleteArgs) -> Result<(), CliError> {
 
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
 
-    ctx.client.delete_group(ws, args.group_id).await?;
+    ctx.client.custos().delete_group(ws, args.group_id).await?;
 
     let proj = DeleteByIdProjection {
         deleted: true,
@@ -172,7 +172,11 @@ async fn run_add_member(ctx: &Ctx, args: GroupsAddMemberArgs) -> Result<(), CliE
         user_id: args.user_id,
     };
 
-    let member = ctx.client.add_group_member(ws, args.group_id, body).await?;
+    let member = ctx
+        .client
+        .custos()
+        .add_group_member(ws, args.group_id, body)
+        .await?;
     let proj = GroupMemberProjection::from(member);
     output::emit(ctx.output, &proj)
 }
@@ -211,6 +215,7 @@ async fn run_remove_member(ctx: &Ctx, args: GroupsRemoveMemberArgs) -> Result<()
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
 
     ctx.client
+        .custos()
         .remove_group_member(ws, args.group_id, args.user_id)
         .await?;
 
@@ -240,7 +245,11 @@ pub(crate) struct GroupsMembersArgs {
 async fn run_members(ctx: &Ctx, args: GroupsMembersArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
 
-    let members = ctx.client.list_group_members(ws, args.group_id).await?;
+    let members = ctx
+        .client
+        .custos()
+        .list_group_members(ws, args.group_id)
+        .await?;
 
     let items: Vec<GroupMemberProjection> = members
         .into_iter()

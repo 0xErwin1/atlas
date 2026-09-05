@@ -47,7 +47,7 @@ pub(crate) async fn run(ctx: &Ctx, cmd: WorkspacesCmd) -> Result<(), CliError> {
 // ---------------------------------------------------------------------------
 
 async fn run_list(ctx: &Ctx) -> Result<(), CliError> {
-    let workspaces = ctx.client.list_workspaces().await?;
+    let workspaces = ctx.client.acta().list_workspaces().await?;
 
     let items: Vec<WorkspaceProjection> = workspaces
         .into_iter()
@@ -70,7 +70,7 @@ pub(crate) struct WorkspacesGetArgs {
 }
 
 async fn run_get(ctx: &Ctx, args: WorkspacesGetArgs) -> Result<(), CliError> {
-    let ws = ctx.client.get_workspace(&args.slug).await?;
+    let ws = ctx.client.acta().get_workspace(&args.slug).await?;
     let proj = WorkspaceProjection::from(ws);
     output::emit(ctx.output, &proj)
 }

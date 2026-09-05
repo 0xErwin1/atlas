@@ -56,7 +56,7 @@ fn exit_code_for(findings: &[DoctorFindingDto]) -> u8 {
 }
 
 pub(crate) async fn run(ctx: &Ctx, _args: DoctorArgs) -> Result<(), CliError> {
-    let report = ctx.client.doctor().await?;
+    let report = ctx.client.platform().doctor().await?;
 
     match ctx.output {
         OutputFormat::Json => output::print_json(&report)?,

@@ -67,6 +67,7 @@ async fn run_list(ctx: &Ctx, args: PropertyDefinitionsListArgs) -> Result<(), Cl
 
     let defs = ctx
         .client
+        .acta()
         .list_property_definitions(ws, args.applies_to.as_deref())
         .await?;
 
@@ -130,7 +131,11 @@ async fn run_create(ctx: &Ctx, args: PropertyDefinitionsCreateArgs) -> Result<()
         applies_to: args.applies_to,
     };
 
-    let def = ctx.client.create_property_definition(ws, body).await?;
+    let def = ctx
+        .client
+        .acta()
+        .create_property_definition(ws, body)
+        .await?;
     let proj = PropertyDefinitionProjection::from(def);
     output::emit(ctx.output, &proj)
 }
@@ -165,6 +170,7 @@ async fn run_delete(ctx: &Ctx, args: PropertyDefinitionsDeleteArgs) -> Result<()
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
 
     ctx.client
+        .acta()
         .delete_property_definition(ws, args.property_definition_id)
         .await?;
 

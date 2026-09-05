@@ -73,6 +73,7 @@ async fn run_list(ctx: &Ctx, args: ProjectsListArgs) -> Result<(), CliError> {
 
     let page = ctx
         .client
+        .acta()
         .list_projects(ws, args.cursor.as_deref(), Some(limit))
         .await?;
 
@@ -108,7 +109,7 @@ pub(crate) struct ProjectsGetArgs {
 
 async fn run_get(ctx: &Ctx, args: ProjectsGetArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
-    let dto = ctx.client.get_project(ws, &args.slug).await?;
+    let dto = ctx.client.acta().get_project(ws, &args.slug).await?;
     let proj = ProjectProjection::from(dto);
     output::emit(ctx.output, &proj)
 }

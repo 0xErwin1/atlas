@@ -71,7 +71,7 @@ async fn run_list(ctx: &Ctx, args: ColumnsListArgs) -> Result<(), CliError> {
         ))
     })?;
 
-    let cols = ctx.client.list_columns(ws, board_uuid).await?;
+    let cols = ctx.client.acta().list_columns(ws, board_uuid).await?;
 
     let items: Vec<ColumnProjection> = cols.into_iter().map(ColumnProjection::from).collect();
 

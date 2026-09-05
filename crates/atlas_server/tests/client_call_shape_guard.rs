@@ -507,7 +507,7 @@ fn file_name(path: &Path) -> String {
 
 /// `crates/atlas_cli/**`'s combined flat-call count — pinned as one
 /// crate-wide sum (design D7's PR6 migrates the whole crate in one PR).
-const ATLAS_CLI_PIN: usize = 149;
+const ATLAS_CLI_PIN: usize = 0;
 
 /// `crates/atlas_mcp/src/lib.rs`'s flat-call count.
 const ATLAS_MCP_PIN: usize = 128;
@@ -700,14 +700,14 @@ fn reverse_check_mismatches(
 /// migrated in the same PR as the namespace it depends on. Its own reverse
 /// check lives in
 /// [`atlas_client_helpers_namespaced_sites_match_their_declared_home`].
+/// `crates/atlas_cli/src` is excluded here too: PR6 namespaces all 149 of its
+/// sites directly, with no shim. Its own reverse check lives in
+/// [`atlas_cli_namespaced_sites_match_their_declared_home`].
 #[test]
-fn no_namespaced_call_site_exists_anywhere_yet_outside_atlas_client_helpers() {
+fn no_namespaced_call_site_exists_anywhere_yet_outside_atlas_client_helpers_and_atlas_cli() {
     let derived = derive_method_namespace_map();
     let mut all_sites = Vec::new();
 
-    for path in rust_files_recursive(&repo_root().join("crates/atlas_cli/src")) {
-        all_sites.extend(namespaced_call_sites(&masked_code(&path)));
-    }
     all_sites.extend(namespaced_call_sites(&masked_code(
         &repo_root().join("crates/atlas_mcp/src/lib.rs"),
     )));
@@ -718,8 +718,8 @@ fn no_namespaced_call_site_exists_anywhere_yet_outside_atlas_client_helpers() {
     assert_eq!(
         all_sites.len(),
         0,
-        "found a namespaced call site outside atlas_client::helpers.rs before its consumer PR migrated: \
-         {all_sites:?}"
+        "found a namespaced call site outside atlas_client::helpers.rs / atlas_cli before its \
+         consumer PR migrated: {all_sites:?}"
     );
 
     // The reverse check runs and reports zero mismatches over zero sites —
@@ -745,6 +745,24 @@ fn atlas_client_helpers_namespaced_sites_match_their_declared_home() {
         6,
         "expected 6 namespaced sites in atlas_client::helpers.rs (list_projects x2, \
          list_boards x2, list_columns x2), found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn atlas_cli_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let mut sites = Vec::new();
+    for path in rust_files_recursive(&repo_root().join("crates/atlas_cli/src")) {
+        sites.extend(namespaced_call_sites(&masked_code(&path)));
+    }
+
+    assert_eq!(
+        sites.len(),
+        149,
+        "expected 149 namespaced sites in crates/atlas_cli/src (PR6), found: {sites:?}"
     );
 
     let mismatches = reverse_check_mismatches(&sites, &derived.map);

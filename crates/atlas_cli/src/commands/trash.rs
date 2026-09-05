@@ -201,6 +201,7 @@ async fn run_list(ctx: &Ctx, args: TrashListArgs) -> Result<(), CliError> {
         .clamp(LIMIT_MIN, LIMIT_MAX);
     let page = ctx
         .client
+        .acta()
         .list_trash(
             args.workspace_id,
             args.kind.map(Into::into),
@@ -224,6 +225,7 @@ async fn run_list(ctx: &Ctx, args: TrashListArgs) -> Result<(), CliError> {
 
 async fn run_restore(ctx: &Ctx, args: TrashTargetArgs) -> Result<(), CliError> {
     ctx.client
+        .acta()
         .restore_trash(args.kind.into(), args.target_id)
         .await?;
     output::emit(
@@ -244,6 +246,7 @@ async fn run_purge(ctx: &Ctx, args: TrashPurgeArgs) -> Result<(), CliError> {
 
     match ctx
         .client
+        .acta()
         .purge_trash(args.kind.into(), args.target_id, true)
         .await?
     {
@@ -261,7 +264,11 @@ async fn run_purge(ctx: &Ctx, args: TrashPurgeArgs) -> Result<(), CliError> {
 }
 
 async fn run_status(ctx: &Ctx, args: TrashStatusArgs) -> Result<(), CliError> {
-    let status = ctx.client.get_purge_status(args.operation_id).await?;
+    let status = ctx
+        .client
+        .acta()
+        .get_purge_status(args.operation_id)
+        .await?;
     output::emit(ctx.output, &PurgeStatusProjection::from(status))
 }
 

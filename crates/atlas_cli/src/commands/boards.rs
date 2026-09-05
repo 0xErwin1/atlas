@@ -74,6 +74,7 @@ async fn run_list(ctx: &Ctx, args: BoardsListArgs) -> Result<(), CliError> {
 
     let page = ctx
         .client
+        .acta()
         .list_boards(ws, &args.project, args.cursor.as_deref(), Some(limit))
         .await?;
 

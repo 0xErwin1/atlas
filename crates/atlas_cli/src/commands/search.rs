@@ -26,6 +26,7 @@ pub(crate) async fn run(ctx: &Ctx, args: SearchArgs) -> Result<(), CliError> {
 
     let page = ctx
         .client
+        .acta()
         .search(
             ws,
             &args.query,

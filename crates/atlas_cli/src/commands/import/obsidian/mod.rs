@@ -58,7 +58,7 @@ pub(crate) async fn run_obsidian(ctx: &Ctx, args: ObsidianImportArgs) -> Result<
 
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
 
-    match ctx.client.get_project(ws, &args.project).await {
+    match ctx.client.acta().get_project(ws, &args.project).await {
         Ok(_) => {}
         Err(ClientError::Api(p)) if p.status == 404 => {
             return Err(CliError::Validation(format!(

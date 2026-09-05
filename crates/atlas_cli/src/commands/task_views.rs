@@ -67,7 +67,7 @@ pub(crate) struct TaskViewsListArgs {
 async fn run_list(ctx: &Ctx, args: TaskViewsListArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
 
-    let views = ctx.client.list_task_views(ws).await?;
+    let views = ctx.client.acta().list_task_views(ws).await?;
 
     let items: Vec<TaskViewProjection> = views.into_iter().map(TaskViewProjection::from).collect();
 
@@ -93,7 +93,7 @@ pub(crate) struct TaskViewsGetArgs {
 async fn run_get(ctx: &Ctx, args: TaskViewsGetArgs) -> Result<(), CliError> {
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
 
-    let view = ctx.client.get_task_view(ws, args.id).await?;
+    let view = ctx.client.acta().get_task_view(ws, args.id).await?;
     let proj = TaskViewProjection::from(view);
     output::emit(ctx.output, &proj)
 }
@@ -136,7 +136,7 @@ async fn run_create(ctx: &Ctx, args: TaskViewsCreateArgs) -> Result<(), CliError
         filters,
     };
 
-    let view = ctx.client.create_task_view(ws, body).await?;
+    let view = ctx.client.acta().create_task_view(ws, body).await?;
     let proj = TaskViewProjection::from(view);
     output::emit(ctx.output, &proj)
 }
@@ -180,7 +180,11 @@ async fn run_update(ctx: &Ctx, args: TaskViewsUpdateArgs) -> Result<(), CliError
         filters,
     };
 
-    let view = ctx.client.update_task_view(ws, args.id, body).await?;
+    let view = ctx
+        .client
+        .acta()
+        .update_task_view(ws, args.id, body)
+        .await?;
     let proj = TaskViewProjection::from(view);
     output::emit(ctx.output, &proj)
 }
@@ -214,7 +218,7 @@ async fn run_delete(ctx: &Ctx, args: TaskViewsDeleteArgs) -> Result<(), CliError
 
     let ws = ctx.require_workspace(args.workspace.as_deref())?;
 
-    ctx.client.delete_task_view(ws, args.id).await?;
+    ctx.client.acta().delete_task_view(ws, args.id).await?;
 
     let proj = DeleteByIdProjection {
         deleted: true,
