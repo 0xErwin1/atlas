@@ -148,6 +148,18 @@ fn platform_entry() -> ComponentEntry {
                     idempotent: false,
                     is_public: false,
                 },
+                // E11-S3b design D6.1: platform admin or root only
+                // (`RequireUserAdmin`), no new Custos action — matching
+                // `admin/status-templates`'s own `action: None` exemption
+                // pattern.
+                RouteDeclaration {
+                    method: HttpMethod::Post,
+                    path: route_path("/doctor"),
+                    operation_id: "doctor".to_string(),
+                    action: None,
+                    idempotent: false,
+                    is_public: false,
+                },
                 RouteDeclaration {
                     method: HttpMethod::Get,
                     path: route_path("/health"),

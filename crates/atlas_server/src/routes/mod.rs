@@ -20,6 +20,7 @@ pub(crate) mod integrations_ingest;
 pub(crate) mod members;
 pub mod openapi;
 pub(crate) mod platform;
+pub(crate) mod platform_doctor;
 pub(crate) mod platform_status_templates;
 pub(crate) mod presence;
 pub(crate) mod projects;

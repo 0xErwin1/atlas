@@ -775,6 +775,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "acta has no bound diagnostics implementer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComponentProbeDto"
+                }
+              }
+            }
           }
         },
         "x-atlas-component": "acta"
@@ -14219,6 +14229,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "custos has no bound diagnostics implementer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComponentProbeDto"
+                }
+              }
+            }
           }
         },
         "x-atlas-component": "custos"
@@ -15826,6 +15846,40 @@
         "x-atlas-component": "custos"
       }
     },
+    "/api/v2/platform/doctor": {
+      "post": {
+        "tags": [
+          "doctor",
+          "platform"
+        ],
+        "summary": "Runs every present component's doctor check and returns the aggregated\nfindings. Platform admin or root only; never gated by, or reachable\nfrom, the readiness path.",
+        "operationId": "doctor",
+        "responses": {
+          "200": {
+            "description": "Aggregated doctor report, whether or not it carries findings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DoctorReportDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "platform"
+      }
+    },
     "/api/v2/platform/me/ui-state": {
       "get": {
         "tags": [
@@ -15956,7 +16010,7 @@
           "crate::routes::health",
           "platform"
         ],
-        "summary": "Readiness probe: aggregates every mandatory component's own `Readiness`\nresult (`Registry::readiness_components()`, today `platform`, `custos`,\n`acta`) through `aggregate_readiness`, each bounded by\n[`READINESS_PER_COMPONENT_TIMEOUT`] (design D3, SHELL-OPS-2).",
+        "summary": "Readiness probe: aggregates every mandatory component's own `Readiness`\nresult (`Registry::readiness_components()`, today `platform`, `custos`,\n`acta`) through `aggregate_readiness`, each bounded by\n`AppState::readiness_timeout` (default\n[`crate::state::DEFAULT_READINESS_TIMEOUT`]; design D3, SHELL-OPS-2).\nThe mandatory set itself was captured once at startup by\n`DiagnosticsRegistry::bind`, so no registry is rebuilt per request.",
         "description": "Unlike `/health` (a cheap liveness signal), this endpoint performs one\nbounded probe per mandatory component. Answers 503 naming every\nnot-ready component with its own reason (SH2), never just the first.",
         "operationId": "ready",
         "responses": {
@@ -17206,7 +17260,7 @@
       },
       "ComponentProbeDto": {
         "type": "object",
-        "description": "Response from `GET /api/v2/{component}/ready` (custos/acta, E11-S3a\ndesign D3): that component's own `Readiness` result, rendered exactly —\nthe Shell never reinterprets or aggregates it (SHELL-OPS-3,\nINV-NO-REINTERPRET). `status` is `\"ready\"` or `\"not_ready\"`; `reason` is\npresent only when not ready.",
+        "description": "Response from `GET /api/v2/{component}/health` and\n`GET /api/v2/{component}/ready` (custos/acta, E11-S3a design D3): that\ncomponent's own `Health`/`Readiness` result, rendered exactly — the\nShell never reinterprets or aggregates it (SHELL-OPS-3,\nINV-NO-REINTERPRET). `status` is one of `\"ready\"`, `\"not_ready\"` (the\nreadiness probe) or `\"ok\"`, `\"degraded\"`, `\"down\"` (the health probe);\n`reason` is present only for `\"not_ready\"`, `\"degraded\"` and `\"down\"`.",
         "required": [
           "component",
           "status"
@@ -18031,6 +18085,45 @@
         "properties": {
           "name": {
             "type": "string"
+          }
+        }
+      },
+      "DoctorFindingDto": {
+        "type": "object",
+        "description": "One finding from `POST /api/v2/platform/doctor` (E11-S3b design D6.2):\nthe shipped four-field shape, unchanged from `atlas_core::ops::doctor`'s\n`DoctorFinding` — `severity` is `\"info\"`, `\"warning\"`, or `\"critical\"`.",
+        "required": [
+          "component",
+          "severity",
+          "finding",
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string"
+          },
+          "finding": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          }
+        }
+      },
+      "DoctorReportDto": {
+        "type": "object",
+        "description": "Response from `POST /api/v2/platform/doctor`: every present component's\nfindings, concatenated in aggregation order. Always 200, whether or not\n`findings` is empty (SHELL-OPS-4).",
+        "required": [
+          "findings"
+        ],
+        "properties": {
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DoctorFindingDto"
+            }
           }
         }
       },
@@ -22810,6 +22903,10 @@
     {
       "name": "ui-state",
       "description": "Per-user UI state"
+    },
+    {
+      "name": "doctor",
+      "description": "Platform-admin diagnostic report"
     },
     {
       "name": "audit",

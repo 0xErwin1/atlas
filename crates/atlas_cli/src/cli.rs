@@ -10,6 +10,7 @@ use crate::commands::columns::ColumnsArgs;
 use crate::commands::completions::CompletionsArgs;
 use crate::commands::config::ConfigArgs;
 use crate::commands::docs::DocsArgs;
+use crate::commands::doctor::DoctorArgs;
 use crate::commands::export::ExportArgs;
 use crate::commands::folders::FoldersArgs;
 use crate::commands::grants::GrantsArgs;
@@ -119,6 +120,10 @@ pub(crate) enum Commands {
     Import(ImportArgs),
     /// Export an Atlas project to an external format (e.g. an Obsidian vault).
     Export(ExportArgs),
+    /// Runs every present component's server-side doctor check and renders
+    /// the findings. The HTTP call always succeeds with 200; this command's
+    /// own exit code is 1 when any finding is `Critical`, 0 otherwise.
+    Doctor(DoctorArgs),
 }
 
 /// Arguments for the `search` subcommand.

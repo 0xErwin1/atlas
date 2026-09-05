@@ -52,7 +52,7 @@ Each variable's **Owner** names the typed config struct that reads it after
 | `ATLAS_DB_MAX_CONNECTIONS` | platform | No | `20` |
 | `ATLAS_DB_MIN_CONNECTIONS` | platform | No | `1` |
 | `ATLAS_DB_ACQUIRE_TIMEOUT_SECS` | platform | No | `10` seconds |
-| `ATLAS_SHUTDOWN_TIMEOUT_SECS` | platform | No | `20` seconds; upper bound on the graceful-drain window after a shutdown signal |
+| `ATLAS_SHUTDOWN_TIMEOUT_SECS` | platform | No | `20` seconds; one global budget for draining all six background workers in the exact reverse of their startup order. A worker that does not observe cancellation within its remaining share of the budget is cut off (not awaited further) and reported `Failed`, rather than hanging process exit |
 | `ATLAS_ROOT_PASSWORD` | custos | First boot only | used by bootstrap when no users exist yet |
 | `ATLAS_PORT` | platform | No | `8080`; server binds `0.0.0.0:<port>` |
 | `RUST_LOG` | — | No | `info,atlas_server=debug,tower_http=info` |
@@ -194,10 +194,38 @@ Backed by `crates/atlas_server/src/main.rs` and `state.rs`, startup:
 2. connects to Postgres
 3. applies migrations
 4. runs bootstrap for the root user
-5. builds application state
+5. builds application state (including the worker state table)
 6. initializes the configured attachment backend
-7. starts the webhook dispatcher background task
-8. serves HTTP
+7. builds the six registry-declared background workers (the webhook
+   dispatcher, the attachment reconciler, the live-event listener, the
+   presence sweeper, the presence agent consumer, and the search index
+   worker) and binds them against the registry's declarations — a declared
+   worker with no bound implementation, or vice versa, refuses startup and
+   exits non-zero naming the mismatched worker, before the listener ever
+   serves
+8. starts the bound workers in dependency/declaration order behind the
+   structural barrier of application state already being built
+9. serves HTTP
+10. on shutdown, drains all six workers in the exact reverse of their
+    startup order under the single `ATLAS_SHUTDOWN_TIMEOUT_SECS` budget
+
+## Doctor: `POST /api/v2/platform/doctor` and `atlas doctor`
+
+Platform admin (`is_root` or `is_system_admin`) only. Runs every present
+component's bounded diagnostic check — custos, acta, the active storage
+Module, and the active search Modules — and returns `200` with the
+aggregated findings whether or not any are present. Each finding is shaped
+`{component, severity, finding, action}`; `severity` is `info`, `warning`,
+or `critical`. Doctor is never part of the `/ready` readiness path: a
+`critical` doctor finding does not affect `/ready`'s status, and none of the
+six background workers is readiness-critical, so a downed worker is a
+doctor finding, not an outage signal.
+
+The CLI's `atlas doctor` command calls this route and renders the findings
+as a table (`--json` for the DTO verbatim). The HTTP response is always
+`200`; the CLI's own exit code is `1` when any finding is `critical`, `0`
+otherwise — a scriptability contract local to the CLI, not a server-side
+status.
 
 ## OpenAPI and web type generation
 
