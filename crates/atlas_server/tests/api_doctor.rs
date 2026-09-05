@@ -104,6 +104,7 @@ async fn sh7_platform_admin_authorization_matrix_with_a_seeded_finding() {
 
     let root = support::login_root_user(&server, &db).await;
     let report = root
+        .platform()
         .doctor()
         .await
         .expect("root must be able to run doctor");
@@ -129,6 +130,7 @@ async fn sh7_platform_admin_authorization_matrix_with_a_seeded_finding() {
 
     let system_admin = login_system_admin(&server, &db, "doctor-system-admin").await;
     let system_admin_report = system_admin
+        .platform()
         .doctor()
         .await
         .expect("is_system_admin must be able to run doctor");
@@ -137,6 +139,7 @@ async fn sh7_platform_admin_authorization_matrix_with_a_seeded_finding() {
     let (plain, _ws, _user) =
         support::login_user_with_workspace(&server, &db, "doctor-plain-user").await;
     let plain_err = plain
+        .platform()
         .doctor()
         .await
         .expect_err("a plain workspace owner is not an Atlas admin");
@@ -146,6 +149,7 @@ async fn sh7_platform_admin_authorization_matrix_with_a_seeded_finding() {
     );
 
     let api_key = plain
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "doctor-agent".to_string(),
             r#type: None,
@@ -157,6 +161,7 @@ async fn sh7_platform_admin_authorization_matrix_with_a_seeded_finding() {
         .expect("create API key");
     let agent = AtlasClient::new(server.base_url()).with_token(api_key.secret);
     let agent_err = agent
+        .platform()
         .doctor()
         .await
         .expect_err("API keys must not run doctor");
@@ -167,6 +172,7 @@ async fn sh7_platform_admin_authorization_matrix_with_a_seeded_finding() {
 
     let anonymous = AtlasClient::new(server.base_url());
     let anon_err = anonymous
+        .platform()
         .doctor()
         .await
         .expect_err("anonymous callers must not run doctor");
@@ -202,6 +208,7 @@ async fn sh3_a_downed_worker_is_ready_200_and_named_by_doctor() {
     );
 
     let report = root
+        .platform()
         .doctor()
         .await
         .expect("root must be able to run doctor");

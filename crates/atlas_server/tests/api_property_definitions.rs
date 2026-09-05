@@ -16,6 +16,7 @@ use serde_json::json;
 
 async fn seed_board_column(client: &AtlasClient, ws_slug: &str) -> (uuid::Uuid, uuid::Uuid) {
     let project = client
+        .acta()
         .create_project(
             ws_slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -30,6 +31,7 @@ async fn seed_board_column(client: &AtlasClient, ws_slug: &str) -> (uuid::Uuid, 
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             ws_slug,
             &project.slug,
@@ -42,6 +44,7 @@ async fn seed_board_column(client: &AtlasClient, ws_slug: &str) -> (uuid::Uuid, 
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             ws_slug,
             board.id,
@@ -82,6 +85,7 @@ async fn create_and_list_property_definitions() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "propdef-list").await;
 
     let severity = client
+        .acta()
         .create_property_definition(
             &ws.slug,
             def(
@@ -98,6 +102,7 @@ async fn create_and_list_property_definitions() {
     assert_eq!(severity.applies_to, "task", "applies_to defaults to task");
 
     client
+        .acta()
         .create_property_definition(&ws.slug, def("Story Points!", "number", None))
         .await
         .map(|d| assert_eq!(d.key, "story_points", "non-alphanumerics collapse to one _"))
@@ -105,6 +110,7 @@ async fn create_and_list_property_definitions() {
 
     for (name, kind) in [("Reviewed", "boolean"), ("Notes", "text"), ("Due", "date")] {
         client
+            .acta()
             .create_property_definition(&ws.slug, def(name, kind, None))
             .await
             .unwrap_or_else(|e| panic!("create {kind} definition failed: {e:?}"));
@@ -112,6 +118,7 @@ async fn create_and_list_property_definitions() {
 
     // A document-only field must be excluded from the task-applicability filter.
     client
+        .acta()
         .create_property_definition(
             &ws.slug,
             CreatePropertyDefinitionRequest {
@@ -125,6 +132,7 @@ async fn create_and_list_property_definitions() {
         .expect("create document-only definition");
 
     let all = client
+        .acta()
         .list_property_definitions(&ws.slug, None)
         .await
         .expect("list all");
@@ -135,6 +143,7 @@ async fn create_and_list_property_definitions() {
     );
 
     let task_scoped = client
+        .acta()
         .list_property_definitions(&ws.slug, Some("task"))
         .await
         .expect("list task-applicable");
@@ -162,11 +171,13 @@ async fn create_property_definition_validation() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "propdef-valid").await;
 
     client
+        .acta()
         .create_property_definition(&ws.slug, def("Severity", "select", Some(json!(["low"]))))
         .await
         .expect("create first severity");
 
     let collision = client
+        .acta()
         .create_property_definition(&ws.slug, def("severity", "text", None))
         .await;
     assert!(
@@ -175,6 +186,7 @@ async fn create_property_definition_validation() {
     );
 
     let symbol_only = client
+        .acta()
         .create_property_definition(&ws.slug, def("!!!", "text", None))
         .await;
     assert!(
@@ -183,6 +195,7 @@ async fn create_property_definition_validation() {
     );
 
     let unknown_kind = client
+        .acta()
         .create_property_definition(&ws.slug, def("Thing", "rating", None))
         .await;
     assert!(
@@ -191,6 +204,7 @@ async fn create_property_definition_validation() {
     );
 
     let select_without_options = client
+        .acta()
         .create_property_definition(&ws.slug, def("Level", "select", None))
         .await;
     assert!(
@@ -199,6 +213,7 @@ async fn create_property_definition_validation() {
     );
 
     let select_dup_options = client
+        .acta()
         .create_property_definition(&ws.slug, def("Level", "select", Some(json!(["a", "a"]))))
         .await;
     assert!(
@@ -207,6 +222,7 @@ async fn create_property_definition_validation() {
     );
 
     let text_with_options = client
+        .acta()
         .create_property_definition(&ws.slug, def("Note", "text", Some(json!(["a"]))))
         .await;
     assert!(
@@ -238,6 +254,7 @@ async fn task_custom_values_validated_on_create_and_update() {
         def("Tags", "multi_select", Some(json!(["a", "b", "c"]))),
     ] {
         client
+            .acta()
             .create_property_definition(&ws.slug, d)
             .await
             .expect("create definition");
@@ -247,6 +264,7 @@ async fn task_custom_values_validated_on_create_and_update() {
 
     // Valid custom values on create.
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board_id,
@@ -273,6 +291,7 @@ async fn task_custom_values_validated_on_create_and_update() {
 
     // Valid update replaces the whole custom map.
     client
+        .acta()
         .update_task(
             &ws.slug,
             &task.readable_id,
@@ -286,6 +305,7 @@ async fn task_custom_values_validated_on_create_and_update() {
 
     // Unknown key rejected.
     let unknown = client
+        .acta()
         .update_task(
             &ws.slug,
             &task.readable_id,
@@ -302,6 +322,7 @@ async fn task_custom_values_validated_on_create_and_update() {
 
     // Wrong-typed value rejected.
     let wrong_type = client
+        .acta()
         .update_task(
             &ws.slug,
             &task.readable_id,
@@ -318,6 +339,7 @@ async fn task_custom_values_validated_on_create_and_update() {
 
     // Invalid select option rejected.
     let bad_option = client
+        .acta()
         .update_task(
             &ws.slug,
             &task.readable_id,
@@ -334,6 +356,7 @@ async fn task_custom_values_validated_on_create_and_update() {
 
     // Invalid create is rejected too (validation runs on both paths).
     let bad_create = client
+        .acta()
         .create_task(
             &ws.slug,
             board_id,
@@ -370,16 +393,19 @@ async fn soft_delete_property_definition() {
     let (client, ws, _) = support::login_user_with_workspace(&server, &db, "propdef-delete").await;
 
     let created = client
+        .acta()
         .create_property_definition(&ws.slug, def("Severity", "select", Some(json!(["low"]))))
         .await
         .expect("create definition");
 
     client
+        .acta()
         .delete_property_definition(&ws.slug, created.id)
         .await
         .expect("delete definition");
 
     let listed = client
+        .acta()
         .list_property_definitions(&ws.slug, None)
         .await
         .expect("list after delete");

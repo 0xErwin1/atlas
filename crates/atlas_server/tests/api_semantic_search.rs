@@ -311,6 +311,7 @@ async fn seed_corpus_with_empty_queue(
         .expect("seed document");
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -541,6 +542,7 @@ async fn semantic_search_api_key_scope_filters_hit_families() {
         .await
         .expect("seed document");
     let project = owner
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -631,6 +633,7 @@ async fn semantic_search_api_key_scope_filters_hit_families() {
         .expect("index chunks");
 
     let key = owner
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "docs-only-semantic".to_owned(),
             r#type: None,

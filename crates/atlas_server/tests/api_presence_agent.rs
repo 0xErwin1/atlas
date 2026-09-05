@@ -257,6 +257,7 @@ async fn create_granted_agent(
         .expect("create api key");
 
     owner_client
+        .custos()
         .create_workspace_grant(
             ws_slug,
             CreateGrantRequest {
@@ -282,6 +283,7 @@ async fn seed_board_via_client(
     task_prefix: &str,
 ) -> (uuid::Uuid, uuid::Uuid) {
     let project = owner_client
+        .acta()
         .create_project(
             ws_slug,
             CreateProjectRequest {
@@ -296,6 +298,7 @@ async fn seed_board_via_client(
         .expect("create project");
 
     let board = owner_client
+        .acta()
         .create_board(
             ws_slug,
             &project.slug,
@@ -308,6 +311,7 @@ async fn seed_board_via_client(
         .expect("create board");
 
     let column = owner_client
+        .acta()
         .create_column(
             ws_slug,
             board.id,
@@ -334,6 +338,7 @@ async fn agent_create_task(
 ) {
     atlas_client::AtlasClient::new(base)
         .with_token(token.to_string())
+        .acta()
         .create_task(
             ws_slug,
             board_id,

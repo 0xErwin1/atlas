@@ -482,6 +482,7 @@ async fn seed_pending_user_with_token(
     let root = support::login_root_user(server, db).await;
 
     let result = root
+        .custos()
         .create_user(CreateUserRequest {
             username: username.to_string(),
             display_name: username.to_string(),

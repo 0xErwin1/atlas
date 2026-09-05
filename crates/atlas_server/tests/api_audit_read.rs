@@ -75,6 +75,7 @@ async fn get_workspace_audit(
     ws: &str,
 ) -> Result<Page<AuditEntryDto>, atlas_client::ClientError> {
     client
+        .custos()
         .list_workspace_audit(ws, None, None, None, None, None)
         .await
 }
@@ -83,6 +84,7 @@ async fn get_platform_audit(
     client: &atlas_client::AtlasClient,
 ) -> Result<Page<AuditEntryDto>, atlas_client::ClientError> {
     client
+        .custos()
         .list_platform_audit(None, None, None, None, None)
         .await
 }
@@ -148,6 +150,7 @@ async fn workspace_audit_admin_sees_rows() {
     insert_workspace_audit_row(&db, ws.id, owner.id, SecurityAction::MembershipRoleChanged).await;
 
     let page = admin_client
+        .custos()
         .list_workspace_audit(&ws.slug, None, None, None, None, None)
         .await
         .expect("admin GET audit");
@@ -179,6 +182,7 @@ async fn workspace_audit_member_forbidden() {
         .expect("add member membership");
 
     let err = member_client
+        .custos()
         .list_workspace_audit(&ws.slug, None, None, None, None, None)
         .await
         .expect_err("should be 403");
@@ -202,6 +206,7 @@ async fn workspace_audit_non_member_forbidden() {
     let (outsider, _) = support::login_user(&server, &db, "audit-outsider-user").await;
 
     let err = outsider
+        .custos()
         .list_workspace_audit(&ws.slug, None, None, None, None, None)
         .await
         .expect_err("should be 403");
@@ -226,6 +231,7 @@ async fn workspace_audit_break_glass_allowed() {
 
     let root_client = login_root_user(&server, &db).await;
     let page = root_client
+        .custos()
         .list_workspace_audit(&ws.slug, None, None, None, None, None)
         .await
         .expect("root GET audit");
@@ -345,6 +351,7 @@ async fn workspace_audit_filter_by_action() {
     insert_workspace_audit_row(&db, ws.id, user.id, SecurityAction::MembershipRemoved).await;
 
     let page = client
+        .custos()
         .list_workspace_audit(
             &ws.slug,
             None,
@@ -379,6 +386,7 @@ async fn workspace_audit_pagination() {
     }
 
     let page1 = client
+        .custos()
         .list_workspace_audit(&ws.slug, None, None, None, None, Some(2))
         .await
         .expect("GET audit page 1");
@@ -390,6 +398,7 @@ async fn workspace_audit_pagination() {
     let cursor = page1.next_cursor.as_deref().unwrap();
     // With explicit cursor:
     let page2_with_cursor = client
+        .custos()
         .list_workspace_audit_with_cursor(&ws.slug, None, None, None, Some(cursor), Some(2))
         .await
         .expect("GET audit page 2 with cursor");
@@ -472,6 +481,7 @@ async fn workspace_audit_filter_actor_user() {
 
     // Filter actor=user: only the user-actor row.
     let user_page = client
+        .custos()
         .list_workspace_audit(&ws.slug, Some("user"), None, None, None, None)
         .await
         .expect("GET audit actor=user");
@@ -487,6 +497,7 @@ async fn workspace_audit_filter_actor_user() {
 
     // Filter actor=api_key: only the api_key-actor row.
     let key_page = client
+        .custos()
         .list_workspace_audit(&ws.slug, Some("api_key"), None, None, None, None)
         .await
         .expect("GET audit actor=api_key");
@@ -532,6 +543,7 @@ async fn platform_audit_filter_actor_user() {
 
     // Without filter: both rows visible.
     let all_page = root_client
+        .custos()
         .list_platform_audit(None, None, None, None, None)
         .await
         .expect("GET platform audit all");
@@ -539,6 +551,7 @@ async fn platform_audit_filter_actor_user() {
 
     // Filter actor=user: only user row.
     let user_page = root_client
+        .custos()
         .list_platform_audit(Some("user"), None, None, None, None)
         .await
         .expect("GET platform audit actor=user");
@@ -547,6 +560,7 @@ async fn platform_audit_filter_actor_user() {
 
     // Filter actor=api_key: only api_key row.
     let key_page = root_client
+        .custos()
         .list_platform_audit(Some("api_key"), None, None, None, None)
         .await
         .expect("GET platform audit actor=api_key");

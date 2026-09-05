@@ -88,11 +88,13 @@ async fn seed_document(
     prefix: &str,
 ) -> (String, uuid::Uuid) {
     client
+        .acta()
         .create_project(ws_slug, project_req(proj_slug, prefix))
         .await
         .expect("create project");
 
     let doc = client
+        .acta()
         .create_document(
             ws_slug,
             proj_slug,
@@ -122,6 +124,7 @@ async fn create_list_delete_document_comment_roundtrip() {
     let (slug, doc_id) = seed_document(&client, &ws.slug, "doc-comment-proj", "DC").await;
 
     let created = client
+        .acta()
         .add_document_comment(
             &ws.slug,
             &slug,
@@ -143,6 +146,7 @@ async fn create_list_delete_document_comment_roundtrip() {
     );
 
     let page = client
+        .acta()
         .list_document_comments(&ws.slug, &slug, None, None)
         .await
         .expect("list document comments");
@@ -153,11 +157,13 @@ async fn create_list_delete_document_comment_roundtrip() {
     assert!(!page.has_more);
 
     client
+        .acta()
         .delete_document_comment(&ws.slug, &slug, created.id)
         .await
         .expect("delete document comment");
 
     let after = client
+        .acta()
         .list_document_comments(&ws.slug, &slug, None, None)
         .await
         .expect("list after delete");
@@ -180,6 +186,7 @@ async fn list_document_comments_empty_state() {
     let (slug, _) = seed_document(&client, &ws.slug, "doc-comment-empty-proj", "DE").await;
 
     let page = client
+        .acta()
         .list_document_comments(&ws.slug, &slug, None, None)
         .await
         .expect("list on document with no comments");
@@ -203,6 +210,7 @@ async fn list_document_comments_oldest_first_cursor_walk() {
     let mut created_ids = Vec::new();
     for i in 0..5 {
         let c = client
+            .acta()
             .add_document_comment(
                 &ws.slug,
                 &slug,
@@ -217,6 +225,7 @@ async fn list_document_comments_oldest_first_cursor_walk() {
     let mut cursor: Option<String> = None;
     loop {
         let page = client
+            .acta()
             .list_document_comments(&ws.slug, &slug, cursor.as_deref(), Some(2))
             .await
             .expect("list page");
@@ -252,6 +261,7 @@ async fn create_document_comment_rejects_invalid_body() {
 
     for blank in ["", "   ", "\n\t "] {
         let result = client
+            .acta()
             .add_document_comment(&ws.slug, &slug, CreateCommentRequest::published(blank))
             .await;
         assert!(
@@ -261,6 +271,7 @@ async fn create_document_comment_rejects_invalid_body() {
     }
 
     let oversize = client
+        .acta()
         .add_document_comment(
             &ws.slug,
             &slug,
@@ -283,6 +294,7 @@ async fn document_comment_document_not_found_404() {
         support::login_user_with_workspace(&server, &db, "doc-comment-404").await;
 
     let post = client
+        .acta()
         .add_document_comment(
             &ws.slug,
             "nonexistent-doc",
@@ -295,6 +307,7 @@ async fn document_comment_document_not_found_404() {
     );
 
     let list = client
+        .acta()
         .list_document_comments(&ws.slug, "nonexistent-doc", None, None)
         .await;
     assert!(
@@ -317,6 +330,7 @@ async fn viewer_cannot_create_document_comment() {
         support::login_user_with_workspace(&server, &db, "doc-comment-authz-owner").await;
 
     owner
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -331,6 +345,7 @@ async fn viewer_cannot_create_document_comment() {
         .expect("create project");
 
     let doc = owner
+        .acta()
         .create_document(
             &ws.slug,
             "doc-comment-authz-proj",
@@ -354,6 +369,7 @@ async fn viewer_cannot_create_document_comment() {
     .await;
 
     let result = viewer
+        .acta()
         .add_document_comment(
             &ws.slug,
             &slug,
@@ -377,11 +393,13 @@ async fn author_edits_own_document_comment() {
     let (slug, _) = seed_document(&owner, &ws.slug, "doc-comment-edit-proj", "DED").await;
 
     let created = owner
+        .acta()
         .add_document_comment(&ws.slug, &slug, CreateCommentRequest::published("original"))
         .await
         .expect("create comment");
 
     let updated = owner
+        .acta()
         .update_document_comment(
             &ws.slug,
             &slug,
@@ -418,6 +436,7 @@ async fn admin_deletes_but_cannot_edit_another_members_document_comment() {
     )
     .await;
     let comment = member
+        .acta()
         .add_document_comment(
             &ws.slug,
             &slug,
@@ -436,6 +455,7 @@ async fn admin_deletes_but_cannot_edit_another_members_document_comment() {
     .await;
 
     let edit = admin
+        .acta()
         .update_document_comment(
             &ws.slug,
             &slug,
@@ -451,11 +471,13 @@ async fn admin_deletes_but_cannot_edit_another_members_document_comment() {
     );
 
     admin
+        .acta()
         .delete_document_comment(&ws.slug, &slug, comment.id)
         .await
         .expect("admin must be able to delete another member's comment");
 
     let page = owner
+        .acta()
         .list_document_comments(&ws.slug, &slug, None, None)
         .await
         .expect("list");
@@ -475,6 +497,7 @@ async fn cross_workspace_document_comment_is_404() {
 
     let (slug, _) = seed_document(&owner, &ws_a.slug, "doc-comment-xws-proj", "DX").await;
     let comment = owner
+        .acta()
         .add_document_comment(
             &ws_a.slug,
             &slug,
@@ -484,6 +507,7 @@ async fn cross_workspace_document_comment_is_404() {
         .expect("create comment");
 
     let list = other
+        .acta()
         .list_document_comments(&ws_a.slug, &slug, None, None)
         .await;
     assert!(
@@ -492,6 +516,7 @@ async fn cross_workspace_document_comment_is_404() {
     );
 
     let del = other
+        .acta()
         .delete_document_comment(&ws_a.slug, &slug, comment.id)
         .await;
     assert!(

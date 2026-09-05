@@ -416,10 +416,10 @@ fn masked_code(path: &Path) -> String {
 
 /// Counts `code`'s occurrences of `\.\s*<method>\s*\(` that are not
 /// immediately preceded by a namespace accessor (`\.\s*(acta|custos|platform)\s*\(\s*\)\s*`)
-/// and whose receiver is not the `self` keyword — design D5.2's
-/// forward-check rule. `\s*` spans newlines by construction in the `regex`
-/// crate, so a chained `client\n    .<method>(` site counts identically to
-/// a single-line one.
+/// and whose receiver is not the `self` keyword or a known non-`AtlasClient`
+/// repository receiver — design D5.2's forward-check rule. `\s*` spans
+/// newlines by construction in the `regex` crate, so a chained
+/// `client\n    .<method>(` site counts identically to a single-line one.
 ///
 /// A `self` receiver (`self.<method>(`, `self\n    .<method>(`,
 /// `(self).<method>(`) is never an `AtlasClient` call in any consumer:
@@ -428,9 +428,39 @@ fn masked_code(path: &Path) -> String {
 /// `self`, several of which share a name with a client method. The
 /// exclusion is keyed on the whole keyword (`\bself`), so an identifier
 /// merely containing `self` still counts.
+///
+/// `PR11c` found `create_board` and `search` also name real inherent
+/// methods on `PgBoardRepo` and `PgSearchRepo`, database repository types
+/// test helpers construct directly (`PgBoardRepo::new(db.conn().clone())`
+/// or `db.board_repo()`) to seed or query fixtures without going through
+/// `AtlasClient` at all. Two receiver shapes are excluded here the same way
+/// `self` is, rather than left to inflate a per-file pin that can never
+/// reach 0 by namespacing (there is no `PgBoardRepo::acta()` or
+/// `PgSearchRepo::acta()` to call):
+///
+/// * a direct constructor or accessor receiver — `<Something>Repo::new(..)
+///   .<method>(` or `.<something>_repo().<method>(`;
+/// * a local binding whose provenance in the *same* `code` is one of those
+///   two shapes — `let repo = PgSearchRepo::new(..);` or
+///   `let board_repo = db.board_repo();` — resolved by
+///   [`repo_bound_identifiers`]. No identifier is excluded by name alone,
+///   so a future `let repo = login(..)` binding an `AtlasClient` still
+///   counts.
 fn flat_call_count(code: &str, method: &str) -> usize {
+    let mut receivers = vec![
+        r"\bself\s*".to_string(),
+        r"\(\s*self\s*\)\s*".to_string(),
+        r"\w*Repo::new\([^;]*?\)\s*".to_string(),
+        r"\.\s*\w+_repo\s*\(\s*\)\s*".to_string(),
+    ];
+
+    for identifier in repo_bound_identifiers(code) {
+        receivers.push(format!(r"\b{}\s*", regex::escape(&identifier)));
+    }
+
     let re = Regex::new(&format!(
-        r"(\bself\s*|\(\s*self\s*\)\s*)?(\.\s*(?:acta|custos|platform)\s*\(\s*\)\s*)?\.\s*{}\s*\(",
+        r"({})?(\.\s*(?:acta|custos|platform)\s*\(\s*\)\s*)?\.\s*{}\s*\(",
+        receivers.join("|"),
         regex::escape(method)
     ))
     .unwrap();
@@ -438,6 +468,28 @@ fn flat_call_count(code: &str, method: &str) -> usize {
     re.captures_iter(code)
         .filter(|caps| caps.get(1).is_none() && caps.get(2).is_none())
         .count()
+}
+
+/// Every identifier `code` binds with `let [mut] <name>[: T] =` directly
+/// from a `<Something>Repo::new(..)` constructor or a
+/// `<receiver>.<something>_repo()` accessor, sorted and deduplicated. Only
+/// these provenances mark a binding as a repository receiver for
+/// [`flat_call_count`]; a binding of the same name from any other
+/// expression contributes nothing.
+fn repo_bound_identifiers(code: &str) -> Vec<String> {
+    let re = Regex::new(
+        r"\blet\s+(?:mut\s+)?(\w+)\s*(?::[^=;]+)?=\s*(?:\w*Repo::new\s*\(|\w+\s*\.\s*\w+_repo\s*\(\s*\))",
+    )
+    .unwrap();
+
+    let mut identifiers: Vec<String> = re
+        .captures_iter(code)
+        .map(|caps| caps[1].to_string())
+        .collect();
+
+    identifiers.sort();
+    identifiers.dedup();
+    identifiers
 }
 
 /// Sums [`flat_call_count`] over every method in `map`, for one file's
@@ -527,50 +579,50 @@ const ATLAS_CLIENT_HELPERS_PIN: usize = 0;
 /// MUST measure 0 — checked by [`every_test_file_not_pinned_measures_zero`],
 /// the totality half of this table.
 const ATLAS_SERVER_TEST_PINS: &[(&str, usize)] = &[
-    ("api_account_status.rs", 20),
-    ("api_activation.rs", 1),
-    ("api_audit_read.rs", 14),
+    ("api_account_status.rs", 0),
+    ("api_activation.rs", 0),
+    ("api_audit_read.rs", 0),
     ("api_audit_writes.rs", 0),
-    ("api_auth.rs", 8),
+    ("api_auth.rs", 0),
     ("api_boards_tasks.rs", 0),
     ("api_capability_sweep.rs", 0),
     ("api_comment_attachments.rs", 0),
     ("api_comments.rs", 0),
-    ("api_copy.rs", 13),
-    ("api_create_workspace.rs", 7),
-    ("api_doctor.rs", 7),
-    ("api_document_comments.rs", 25),
+    ("api_copy.rs", 0),
+    ("api_create_workspace.rs", 0),
+    ("api_doctor.rs", 0),
+    ("api_document_comments.rs", 0),
     ("api_documents.rs", 0),
-    ("api_events_stream.rs", 7),
-    ("api_extractor.rs", 3),
+    ("api_events_stream.rs", 0),
+    ("api_extractor.rs", 0),
     ("api_folders.rs", 0),
-    ("api_global_admin_bypass.rs", 9),
+    ("api_global_admin_bypass.rs", 0),
     ("api_grants.rs", 0),
     ("api_group_grants.rs", 0),
     ("api_groups.rs", 0),
     ("api_key_grant_access.rs", 0),
     ("api_members.rs", 0),
     ("api_page_conformance.rs", 0),
-    ("api_permissions.rs", 26),
-    ("api_platform_status_templates.rs", 22),
-    ("api_presence_agent.rs", 6),
-    ("api_presence_document.rs", 2),
-    ("api_property_definitions.rs", 26),
+    ("api_permissions.rs", 0),
+    ("api_platform_status_templates.rs", 0),
+    ("api_presence_agent.rs", 0),
+    ("api_presence_document.rs", 0),
+    ("api_property_definitions.rs", 0),
     ("api_saved_searches.rs", 0),
-    ("api_search_permissions.rs", 2),
-    ("api_self_protection.rs", 18),
-    ("api_semantic_search.rs", 5),
+    ("api_search_permissions.rs", 0),
+    ("api_self_protection.rs", 0),
+    ("api_semantic_search.rs", 0),
     ("api_settings.rs", 0),
     ("api_status_templates.rs", 0),
     ("api_subtasks.rs", 0),
-    ("api_system_admin.rs", 16),
+    ("api_system_admin.rs", 0),
     ("api_task_attachments.rs", 0),
     ("api_task_views.rs", 0),
-    ("api_tenancy.rs", 9),
-    ("api_trash.rs", 2),
-    ("api_ui_state.rs", 11),
+    ("api_tenancy.rs", 0),
+    ("api_trash.rs", 0),
+    ("api_ui_state.rs", 0),
     ("api_user_api_keys.rs", 0),
-    ("api_users.rs", 19),
+    ("api_users.rs", 0),
     ("api_workspace_activity.rs", 0),
     ("api_workspace_attachments.rs", 0),
     ("api_workspace_tasks.rs", 0),
@@ -697,119 +749,55 @@ fn reverse_check_mismatches(
         .collect()
 }
 
-/// `atlas_client::helpers.rs` is excluded here: PR5 (T5.7) namespaces its
-/// six sites directly, with no shim, since it is a client-internal consumer
-/// migrated in the same PR as the namespace it depends on. Its own reverse
-/// check lives in
-/// [`atlas_client_helpers_namespaced_sites_match_their_declared_home`].
-/// `crates/atlas_cli/src` is excluded here too: PR6 namespaces all 149 of its
-/// sites directly, with no shim. Its own reverse check lives in
-/// [`atlas_cli_namespaced_sites_match_their_declared_home`].
-/// `crates/atlas_mcp/src/lib.rs` is excluded here too: PR7 namespaces all
-/// 128 of its sites directly, with no shim. Its own reverse check lives in
-/// [`atlas_mcp_namespaced_sites_match_their_declared_home`].
-/// `crates/atlas_server/tests/api_boards_tasks.rs` is excluded here too: PR8
-/// namespaces all 526 of its sites directly, with no shim. Its own reverse
-/// check lives in [`api_boards_tasks_namespaced_sites_match_their_declared_home`].
-/// `api_documents.rs`, `api_comment_attachments.rs`, and `api_folders.rs`
-/// are excluded here too: PR9 namespaces all of their sites directly, with
-/// no shim. Their own reverse checks live in
-/// [`api_documents_namespaced_sites_match_their_declared_home`],
-/// [`api_comment_attachments_namespaced_sites_match_their_declared_home`],
-/// and [`api_folders_namespaced_sites_match_their_declared_home`].
-/// `api_capability_sweep.rs`, `api_comments.rs`, `api_group_grants.rs`, and
-/// `api_user_api_keys.rs` are excluded here too: PR10 namespaces all of
-/// their sites directly, with no shim. Their own reverse checks live in
-/// [`api_capability_sweep_namespaced_sites_match_their_declared_home`],
-/// [`api_comments_namespaced_sites_match_their_declared_home`],
-/// [`api_group_grants_namespaced_sites_match_their_declared_home`], and
-/// [`api_user_api_keys_namespaced_sites_match_their_declared_home`].
-/// `api_task_views.rs`, `api_saved_searches.rs`, `api_status_templates.rs`,
-/// `api_workspace_activity.rs`, `api_members.rs`, `api_audit_writes.rs`,
-/// `api_workspace_attachments.rs`, and `api_grants.rs` are excluded here too:
-/// PR11a namespaces all of their sites directly, with no shim. Their own
-/// reverse checks live in
-/// [`api_task_views_namespaced_sites_match_their_declared_home`],
-/// [`api_saved_searches_namespaced_sites_match_their_declared_home`],
-/// [`api_status_templates_namespaced_sites_match_their_declared_home`],
-/// [`api_workspace_activity_namespaced_sites_match_their_declared_home`],
-/// [`api_members_namespaced_sites_match_their_declared_home`],
-/// [`api_audit_writes_namespaced_sites_match_their_declared_home`],
-/// [`api_workspace_attachments_namespaced_sites_match_their_declared_home`],
-/// and [`api_grants_namespaced_sites_match_their_declared_home`].
-/// `api_workspace_tasks.rs`, `api_workspaces.rs`, `api_settings.rs`,
-/// `api_key_grant_access.rs`, `idempotency_live_sweep.rs`, `api_subtasks.rs`,
-/// `api_page_conformance.rs`, `api_groups.rs`, and `api_task_attachments.rs`
-/// are excluded here too: PR11b namespaces all of their sites directly, with
-/// no shim. Their own reverse checks live in
-/// [`api_workspace_tasks_namespaced_sites_match_their_declared_home`],
-/// [`api_workspaces_namespaced_sites_match_their_declared_home`],
-/// [`api_settings_namespaced_sites_match_their_declared_home`],
-/// [`api_key_grant_access_namespaced_sites_match_their_declared_home`],
-/// [`idempotency_live_sweep_namespaced_sites_match_their_declared_home`],
-/// [`api_subtasks_namespaced_sites_match_their_declared_home`],
-/// [`api_page_conformance_namespaced_sites_match_their_declared_home`],
-/// [`api_groups_namespaced_sites_match_their_declared_home`], and
-/// [`api_task_attachments_namespaced_sites_match_their_declared_home`].
+/// T11.3 — the completeness gate PR12's shim deletion depends on. Through
+/// PR11a and PR11b this module carried a growing "not yet migrated" sweep
+/// (`no_namespaced_call_site_exists_anywhere_yet_outside_...`) that named an
+/// ever-longer exclusion list of already-migrated files, one PR at a time.
+/// By PR11c every pinned crate and file (`atlas_cli`, `atlas_mcp`,
+/// `atlas_client::helpers`, and all 49 nonzero-at-some-point
+/// `ATLAS_SERVER_TEST_PINS` entries) carries its own dedicated reverse-check
+/// test, so a hand-maintained exclusion list is no longer the right shape:
+/// [`every_forward_pin_is_zero_the_completeness_gate`] asserts the
+/// migration's actual completion condition directly, and
+/// [`a_flat_call_anywhere_in_the_consumer_set_would_still_be_caught`] proves
+/// the forward-check machinery underneath it still works.
 #[test]
-fn no_namespaced_call_site_exists_anywhere_yet_outside_atlas_client_helpers_and_atlas_cli_and_atlas_mcp_and_pr8_pr9_pr10_pr11a_and_pr11b_files()
- {
-    let derived = derive_method_namespace_map();
-    let mut all_sites = Vec::new();
-    let already_migrated = [
-        "api_boards_tasks.rs",
-        "api_documents.rs",
-        "api_comment_attachments.rs",
-        "api_folders.rs",
-        "api_capability_sweep.rs",
-        "api_comments.rs",
-        "api_group_grants.rs",
-        "api_user_api_keys.rs",
-        "api_task_views.rs",
-        "api_saved_searches.rs",
-        "api_status_templates.rs",
-        "api_workspace_activity.rs",
-        "api_members.rs",
-        "api_audit_writes.rs",
-        "api_workspace_attachments.rs",
-        "api_grants.rs",
-        "api_workspace_tasks.rs",
-        "api_workspaces.rs",
-        "api_settings.rs",
-        "api_key_grant_access.rs",
-        "idempotency_live_sweep.rs",
-        "api_subtasks.rs",
-        "api_page_conformance.rs",
-        "api_groups.rs",
-        "api_task_attachments.rs",
-    ];
-
-    for path in atlas_server_test_files() {
-        if already_migrated.contains(&file_name(&path).as_str()) {
-            continue;
-        }
-        all_sites.extend(namespaced_call_sites(&masked_code(&path)));
-    }
-
+fn every_forward_pin_is_zero_the_completeness_gate() {
+    assert_eq!(ATLAS_CLI_PIN, 0, "atlas_cli's forward pin must be 0");
+    assert_eq!(ATLAS_MCP_PIN, 0, "atlas_mcp's forward pin must be 0");
     assert_eq!(
-        all_sites.len(),
-        0,
-        "found a namespaced call site outside atlas_client::helpers.rs / atlas_cli / atlas_mcp / \
-         api_boards_tasks.rs / api_documents.rs / api_comment_attachments.rs / api_folders.rs / \
-         api_capability_sweep.rs / api_comments.rs / api_group_grants.rs / api_user_api_keys.rs / \
-         api_task_views.rs / api_saved_searches.rs / api_status_templates.rs / \
-         api_workspace_activity.rs / api_members.rs / api_audit_writes.rs / \
-         api_workspace_attachments.rs / api_grants.rs / api_workspace_tasks.rs / \
-         api_workspaces.rs / api_settings.rs / api_key_grant_access.rs / \
-         idempotency_live_sweep.rs / api_subtasks.rs / api_page_conformance.rs / \
-         api_groups.rs / api_task_attachments.rs before its consumer PR migrated: {all_sites:?}"
+        ATLAS_CLIENT_HELPERS_PIN, 0,
+        "atlas_client::helpers's forward pin must be 0"
     );
 
-    // The reverse check runs and reports zero mismatches over zero sites —
-    // distinct from "did not run at all" (design T2.5's non-vacuous-by-construction
-    // requirement).
-    let mismatches = reverse_check_mismatches(&all_sites, &derived.map);
-    assert_eq!(mismatches, Vec::<String>::new());
+    let nonzero: Vec<&str> = ATLAS_SERVER_TEST_PINS
+        .iter()
+        .filter(|(_, pinned)| *pinned != 0)
+        .map(|(name, _)| *name)
+        .collect();
+
+    assert!(
+        nonzero.is_empty(),
+        "every crates/atlas_server/tests pin must be 0 once PR11c lands: {nonzero:?}"
+    );
+}
+
+/// Self-test proving [`every_forward_pin_is_zero_the_completeness_gate`] is
+/// not vacuously true because the detection machinery stopped working: a
+/// synthetic flat call site, run through the same [`flat_call_count_all`]
+/// the real forward checks use, is still counted as nonzero.
+#[test]
+fn a_flat_call_anywhere_in_the_consumer_set_would_still_be_caught() {
+    let derived = derive_method_namespace_map();
+    let fixture = "let response = client.get_task(ws, id).await?;";
+
+    let measured = flat_call_count_all(fixture, &derived.map);
+
+    assert_eq!(
+        measured, 1,
+        "a synthetic flat call site must still be counted by the forward-check \
+         machinery this completeness gate relies on"
+    );
 }
 
 /// T5.6/T5.7 — `atlas_client::helpers.rs`'s six sites are namespaced
@@ -1320,6 +1308,445 @@ fn api_task_attachments_namespaced_sites_match_their_declared_home() {
 }
 
 #[test]
+fn api_account_status_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_account_status.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        20,
+        "expected 20 namespaced sites in crates/atlas_server/tests/api_account_status.rs (PR11c), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_activation_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_activation.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        1,
+        "expected 1 namespaced sites in crates/atlas_server/tests/api_activation.rs (PR11c), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_audit_read_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_audit_read.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        14,
+        "expected 14 namespaced sites in crates/atlas_server/tests/api_audit_read.rs (PR11c), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_auth_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_auth.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        8,
+        "expected 8 namespaced sites in crates/atlas_server/tests/api_auth.rs (PR11c), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_copy_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_copy.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        13,
+        "expected 13 namespaced sites in crates/atlas_server/tests/api_copy.rs (PR11c), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_create_workspace_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_create_workspace.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        7,
+        "expected 7 namespaced sites in crates/atlas_server/tests/api_create_workspace.rs (PR11c), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_doctor_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_doctor.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        7,
+        "expected 7 namespaced sites in crates/atlas_server/tests/api_doctor.rs (PR11c), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_document_comments_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_document_comments.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        25,
+        "expected 25 namespaced sites in crates/atlas_server/tests/api_document_comments.rs (PR11c), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_events_stream_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_events_stream.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        6,
+        "expected 6 namespaced sites in crates/atlas_server/tests/api_events_stream.rs (PR11c; \
+         one of the file's 7 flat-call-shaped sites is PgBoardRepo::create_board, never migrated), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_extractor_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_extractor.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        3,
+        "expected 3 namespaced sites in crates/atlas_server/tests/api_extractor.rs (PR11c), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_global_admin_bypass_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_global_admin_bypass.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        9,
+        "expected 9 namespaced sites in crates/atlas_server/tests/api_global_admin_bypass.rs (PR11c), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_permissions_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_permissions.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        26,
+        "expected 26 namespaced sites in crates/atlas_server/tests/api_permissions.rs (PR11c), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_platform_status_templates_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_platform_status_templates.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        22,
+        "expected 22 namespaced sites in crates/atlas_server/tests/api_platform_status_templates.rs (PR11c), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_presence_agent_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_presence_agent.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        5,
+        "expected 5 namespaced sites in crates/atlas_server/tests/api_presence_agent.rs (PR11c; \
+         one of the file's 6 flat-call-shaped sites is PgBoardRepo::create_board, never migrated), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_presence_document_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_presence_document.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        2,
+        "expected 2 namespaced sites in crates/atlas_server/tests/api_presence_document.rs (PR11c), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_property_definitions_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_property_definitions.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        26,
+        "expected 26 namespaced sites in crates/atlas_server/tests/api_property_definitions.rs (PR11c), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_search_permissions_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_search_permissions.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        0,
+        "expected 0 namespaced sites in crates/atlas_server/tests/api_search_permissions.rs \
+         (PR11c; the file's only client binding calls login(), which never moves to a \
+         sub-client, and token(), which is not a mapped method; both of the file's 2 \
+         flat-call-shaped sites — PgBoardRepo::create_board and PgSearchRepo::search — are \
+         never migrated), found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_self_protection_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_self_protection.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        18,
+        "expected 18 namespaced sites in crates/atlas_server/tests/api_self_protection.rs (PR11c), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_semantic_search_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_semantic_search.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        3,
+        "expected 3 namespaced sites in crates/atlas_server/tests/api_semantic_search.rs (PR11c; \
+         two of the file's 5 flat-call-shaped sites are PgBoardRepo::create_board, never migrated), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_system_admin_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_system_admin.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        16,
+        "expected 16 namespaced sites in crates/atlas_server/tests/api_system_admin.rs (PR11c), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_tenancy_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_tenancy.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        9,
+        "expected 9 namespaced sites in crates/atlas_server/tests/api_tenancy.rs (PR11c), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_trash_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_trash.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        1,
+        "expected 1 namespaced site in crates/atlas_server/tests/api_trash.rs (PR11c; \
+         one of the file's 2 flat-call-shaped sites is PgBoardRepo::create_board, never migrated), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_ui_state_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_ui_state.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        11,
+        "expected 11 namespaced sites in crates/atlas_server/tests/api_ui_state.rs (PR11c), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_users_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_users.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        19,
+        "expected 19 namespaced sites in crates/atlas_server/tests/api_users.rs (PR11c), \
+         found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
 fn a_call_namespaced_to_the_wrong_home_is_flagged_by_name() {
     let derived = derive_method_namespace_map();
     // `get_task`'s declared home is `acta`; this fixture calls it through `custos`.
@@ -1393,6 +1820,114 @@ fn a_self_receiver_is_never_counted_but_a_local_binding_is() {
         1
     );
     assert_eq!(flat_call_count("root.doctor(&ws).await?", "doctor"), 1);
+}
+
+/// PR11c: `PgBoardRepo::new(db.conn().clone())`, `db.board_repo()`, and a
+/// binding declared from either of those shapes in the same file are the
+/// verbatim receiver shapes this codebase uses to call
+/// `PgBoardRepo::create_board` or `PgSearchRepo::search` directly — never
+/// an `AtlasClient` call, since `create_board` and `search` are also
+/// `Acta`-homed client method names. None of these shapes is counted; a
+/// genuine client binding still is, including one that happens to be
+/// named `repo` but has no repository provenance.
+#[test]
+fn a_pg_repo_receiver_is_never_counted_but_a_client_binding_is() {
+    assert_eq!(
+        flat_call_count(
+            "PgBoardRepo::new(db.conn().clone())\n        .create_board(&ctx, new_board)",
+            "create_board"
+        ),
+        0
+    );
+    assert_eq!(
+        flat_call_count(
+            "db\n        .board_repo()\n        .create_board(&ctx, new_board)",
+            "create_board"
+        ),
+        0
+    );
+    assert_eq!(
+        flat_call_count(
+            "db.board_repo().create_board(&ctx, new_board)",
+            "create_board"
+        ),
+        0
+    );
+
+    // A binding declared from a repository constructor or accessor in the
+    // same code is a repository receiver.
+    assert_eq!(
+        flat_call_count(
+            "let repo = PgBoardRepo::new(db);\n    let board = repo.create_board(&ctx, new_board);",
+            "create_board"
+        ),
+        0
+    );
+    assert_eq!(
+        flat_call_count(
+            "let board_repo = PgBoardRepo::new(db.conn().clone());\n    let board = board_repo\n        .create_board(ctx, new_board)",
+            "create_board"
+        ),
+        0
+    );
+    assert_eq!(
+        flat_call_count(
+            "let repo = PgSearchRepo::new(db.conn().clone());\n    let hits = repo\n        .search(&ctx, &principal, &query)",
+            "search"
+        ),
+        0
+    );
+    assert_eq!(
+        flat_call_count(
+            "let board_repo = db.board_repo();\n    board_repo.create_board(&ctx, new_board)",
+            "create_board"
+        ),
+        0
+    );
+
+    // The same names with no repository provenance are ordinary receivers:
+    // an `AtlasClient` bound as `repo` must still count.
+    assert_eq!(
+        flat_call_count(
+            "let repo = login(&server, \"alice\").await;\n    repo.create_board(&ws, new_board)",
+            "create_board"
+        ),
+        1
+    );
+    assert_eq!(
+        flat_call_count(
+            "board_repo\n        .create_board(ctx, new_board)",
+            "create_board"
+        ),
+        1
+    );
+    assert_eq!(flat_call_count("repo.search(&ws, &query)", "search"), 1);
+
+    // Namespaced and flat client calls behave as everywhere else.
+    assert_eq!(
+        flat_call_count("client.acta().create_board(&ws, new_board)", "create_board"),
+        0
+    );
+    assert_eq!(
+        flat_call_count("client.create_board(&ws, new_board)", "create_board"),
+        1
+    );
+    assert_eq!(flat_call_count("client.search(&ws, &query)", "search"), 1);
+}
+
+#[test]
+fn repo_bound_identifiers_follow_provenance_not_names() {
+    let code = "let repo = PgSearchRepo::new(db.conn().clone());\n\
+                let mut board_repo = db.board_repo();\n\
+                let typed: PgBoardRepo = PgBoardRepo::new(db);\n\
+                let client = login(&server, \"alice\").await;\n\
+                let repo = PgSearchRepo::new(db.conn().clone());\n";
+
+    assert_eq!(
+        repo_bound_identifiers(code),
+        vec!["board_repo", "repo", "typed"]
+    );
+    assert!(repo_bound_identifiers("let repo = login(&server, \"alice\").await;").is_empty());
 }
 
 #[test]

@@ -90,7 +90,10 @@ async fn reset_password_as(
     client: &AtlasClient,
     user_id: uuid::Uuid,
 ) -> Result<(), atlas_client::ClientError> {
-    client.reset_user_password(user_id, "NewPassword1!").await
+    client
+        .custos()
+        .reset_user_password(user_id, "NewPassword1!")
+        .await
 }
 
 // ── boundary matrix tests ──────────────────────────────────────────────────────
@@ -104,7 +107,7 @@ async fn system_admin_can_list_users() {
     create_user_with_flags(&db, "sa-list-admin", false, true).await;
     let sysadmin = login_as(&server, "sa-list-admin").await;
 
-    let result = sysadmin.list_users().await;
+    let result = sysadmin.custos().list_users().await;
     assert!(
         result.is_ok(),
         "system-admin should be able to list users, got {result:?}"
@@ -126,6 +129,7 @@ async fn system_admin_can_create_user() {
     let (ws, _) = support::seed_workspace(&db, "sa-create-ws-owner").await;
 
     let result = sysadmin
+        .custos()
         .create_user(CreateUserRequest {
             username: "sa-created-plain".to_string(),
             display_name: "Created by SA".to_string(),
@@ -161,7 +165,7 @@ async fn system_admin_can_enable_plain_user() {
 
     let plain = create_user_with_flags(&db, "sa-enable-plain", false, false).await;
 
-    let result = sysadmin.enable_user(plain.id.0).await;
+    let result = sysadmin.custos().enable_user(plain.id.0).await;
     assert!(
         result.is_ok(),
         "system-admin should be able to enable plain user, got {result:?}"
@@ -181,7 +185,7 @@ async fn system_admin_can_disable_plain_user() {
 
     let plain = create_user_with_flags(&db, "sa-disable-plain", false, false).await;
 
-    let result = sysadmin.disable_user(plain.id.0).await;
+    let result = sysadmin.custos().disable_user(plain.id.0).await;
     assert!(
         result.is_ok(),
         "system-admin should be able to disable plain user, got {result:?}"
@@ -201,7 +205,7 @@ async fn system_admin_cannot_disable_root() {
 
     let root = create_user_with_flags(&db, "sa-disr-root", true, false).await;
 
-    let result = sysadmin.disable_user(root.id.0).await;
+    let result = sysadmin.custos().disable_user(root.id.0).await;
     assert!(
         matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 403),
         "system-admin should get 403 when disabling root, got {result:?}"
@@ -221,7 +225,7 @@ async fn system_admin_cannot_disable_peer_system_admin() {
 
     let peer = create_user_with_flags(&db, "sa-dispeer-peer", false, true).await;
 
-    let result = sysadmin.disable_user(peer.id.0).await;
+    let result = sysadmin.custos().disable_user(peer.id.0).await;
     assert!(
         matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 403),
         "system-admin should get 403 when disabling peer system-admin, got {result:?}"
@@ -383,13 +387,13 @@ async fn plain_user_gets_403_on_admin_routes() {
     let plain = login_as(&server, "sa-plain-actor").await;
     let target = create_user_with_flags(&db, "sa-plain-target", false, false).await;
 
-    let list_err = plain.list_users().await;
+    let list_err = plain.custos().list_users().await;
     assert!(
         matches!(list_err, Err(atlas_client::ClientError::Api(ref p)) if p.status == 403),
         "plain user should get 403 on list_users, got {list_err:?}"
     );
 
-    let disable_err = plain.disable_user(target.id.0).await;
+    let disable_err = plain.custos().disable_user(target.id.0).await;
     assert!(
         matches!(disable_err, Err(atlas_client::ClientError::Api(ref p)) if p.status == 403),
         "plain user should get 403 on disable, got {disable_err:?}"
@@ -413,7 +417,7 @@ async fn root_can_disable_plain_user() {
     let root = support::login_root_user(&server, &db).await;
     let plain = create_user_with_flags(&db, "sa-rootdis-plain", false, false).await;
 
-    let result = root.disable_user(plain.id.0).await;
+    let result = root.custos().disable_user(plain.id.0).await;
     assert!(
         result.is_ok(),
         "root should be able to disable plain user, got {result:?}"
@@ -431,7 +435,7 @@ async fn user_dto_includes_is_system_admin() {
     let root = support::login_root_user(&server, &db).await;
     create_user_with_flags(&db, "sa-dto-check-sa", false, true).await;
 
-    let users = root.list_users().await.expect("list users");
+    let users = root.custos().list_users().await.expect("list users");
     let sa = users.iter().find(|u| u.username == "sa-dto-check-sa");
     assert!(sa.is_some(), "seeded system-admin not found in list");
     assert!(
@@ -451,7 +455,7 @@ async fn me_response_includes_is_system_admin() {
     create_user_with_flags(&db, "sa-me-check", false, true).await;
     let sysadmin = login_as(&server, "sa-me-check").await;
 
-    let me = sysadmin.me().await.expect("me");
+    let me = sysadmin.custos().me().await.expect("me");
     assert!(
         me.is_system_admin,
         "is_system_admin should be true in MeResponse"
@@ -471,7 +475,7 @@ async fn system_admin_cannot_enable_root() {
 
     let root = create_user_with_flags(&db, "sa-enr-root", true, false).await;
 
-    let result = sysadmin.enable_user(root.id.0).await;
+    let result = sysadmin.custos().enable_user(root.id.0).await;
     assert!(
         matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 403),
         "system-admin should get 403 when enabling root, got {result:?}"
@@ -491,7 +495,7 @@ async fn system_admin_cannot_enable_peer_system_admin() {
 
     let peer = create_user_with_flags(&db, "sa-enpeer-peer", false, true).await;
 
-    let result = sysadmin.enable_user(peer.id.0).await;
+    let result = sysadmin.custos().enable_user(peer.id.0).await;
     assert!(
         matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 403),
         "system-admin should get 403 when enabling peer system-admin, got {result:?}"
@@ -509,11 +513,12 @@ async fn root_can_enable_system_admin() {
     let root = support::login_root_user(&server, &db).await;
     let sysadmin = create_user_with_flags(&db, "sa-rooten-sa", false, true).await;
 
-    root.disable_user(sysadmin.id.0)
+    root.custos()
+        .disable_user(sysadmin.id.0)
         .await
         .expect("root disables system-admin");
 
-    let result = root.enable_user(sysadmin.id.0).await;
+    let result = root.custos().enable_user(sysadmin.id.0).await;
     assert!(
         result.is_ok(),
         "root should be able to enable a system-admin, got {result:?}"

@@ -19,7 +19,11 @@ async fn get_ui_state_returns_empty_object_when_no_row() {
 
     let (client, _ws, _user) = login_user_with_workspace(&server, &db, "ui-empty").await;
 
-    let state = client.get_ui_state().await.expect("get_ui_state");
+    let state = client
+        .platform()
+        .get_ui_state()
+        .await
+        .expect("get_ui_state");
 
     assert_eq!(
         state,
@@ -41,10 +45,18 @@ async fn put_then_get_returns_state_verbatim() {
         "nested": { "flag": true, "n": null }
     });
 
-    let echoed = client.set_ui_state(&payload).await.expect("set_ui_state");
+    let echoed = client
+        .platform()
+        .set_ui_state(&payload)
+        .await
+        .expect("set_ui_state");
     assert_eq!(echoed, payload, "PUT must echo the stored state back");
 
-    let fetched = client.get_ui_state().await.expect("get_ui_state");
+    let fetched = client
+        .platform()
+        .get_ui_state()
+        .await
+        .expect("get_ui_state");
     assert_eq!(
         fetched, payload,
         "GET must return the stored state verbatim"
@@ -59,17 +71,23 @@ async fn put_overwrites_previous_state() {
     let (client, _ws, _user) = login_user_with_workspace(&server, &db, "ui-upsert").await;
 
     client
+        .platform()
         .set_ui_state(&json!({ "first": 1 }))
         .await
         .expect("first set_ui_state");
 
     let second = json!({ "second": 2, "extra": "x" });
     client
+        .platform()
         .set_ui_state(&second)
         .await
         .expect("second set_ui_state");
 
-    let fetched = client.get_ui_state().await.expect("get_ui_state");
+    let fetched = client
+        .platform()
+        .get_ui_state()
+        .await
+        .expect("get_ui_state");
 
     assert_eq!(
         fetched, second,
@@ -85,6 +103,7 @@ async fn api_key_principal_is_forbidden_on_both_endpoints() {
     let (owner, _ws, _user) = login_user_with_workspace(&server, &db, "ui-agent-owner").await;
 
     let created_key = owner
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "agent-key".to_string(),
             r#type: None,
@@ -98,6 +117,7 @@ async fn api_key_principal_is_forbidden_on_both_endpoints() {
     let agent = atlas_client::AtlasClient::new(server.base_url()).with_token(created_key.secret);
 
     let get_err = agent
+        .platform()
         .get_ui_state()
         .await
         .expect_err("api key must not read ui-state");
@@ -107,6 +127,7 @@ async fn api_key_principal_is_forbidden_on_both_endpoints() {
     }
 
     let put_err = agent
+        .platform()
         .set_ui_state(&json!({ "x": 1 }))
         .await
         .expect_err("api key must not write ui-state");
@@ -123,6 +144,7 @@ async fn unauthenticated_is_rejected_on_both_endpoints() {
 
     let get_err = server
         .client()
+        .platform()
         .get_ui_state()
         .await
         .expect_err("unauthenticated GET must fail");
@@ -133,6 +155,7 @@ async fn unauthenticated_is_rejected_on_both_endpoints() {
 
     let put_err = server
         .client()
+        .platform()
         .set_ui_state(&json!({ "x": 1 }))
         .await
         .expect_err("unauthenticated PUT must fail");

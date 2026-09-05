@@ -40,6 +40,7 @@ async fn seed_task(
     name: &str,
 ) -> String {
     client
+        .acta()
         .create_project(
             ws,
             atlas_api::dtos::CreateProjectRequest {
@@ -54,6 +55,7 @@ async fn seed_task(
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             ws,
             project,
@@ -66,6 +68,7 @@ async fn seed_task(
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             ws,
             board.id,
@@ -80,6 +83,7 @@ async fn seed_task(
         .expect("create column");
 
     let task = client
+        .acta()
         .create_task(
             ws,
             board.id,
@@ -138,6 +142,7 @@ async fn disabled_assignee_is_visible_and_marked_deactivated() {
     let task_rid = seed_task(&client, &ws.slug, "acst-t01-proj", "T1", "Task T01").await;
 
     client
+        .acta()
         .add_assignee(
             &ws.slug,
             &task_rid,
@@ -156,6 +161,7 @@ async fn disabled_assignee_is_visible_and_marked_deactivated() {
         .expect("disable user");
 
     let list = client
+        .acta()
         .list_assignees(&ws.slug, &task_rid)
         .await
         .expect("list assignees");
@@ -209,6 +215,7 @@ async fn pending_user_assignable_and_marked_pending() {
     let task_rid = seed_task(&client, &ws.slug, "acst-t02-proj", "T2", "Task T02").await;
 
     let result = client
+        .acta()
         .add_assignee(
             &ws.slug,
             &task_rid,
@@ -225,6 +232,7 @@ async fn pending_user_assignable_and_marked_pending() {
     );
 
     let list = client
+        .acta()
         .list_assignees(&ws.slug, &task_rid)
         .await
         .expect("list assignees");
@@ -285,6 +293,7 @@ async fn new_assignment_to_disabled_user_returns_422() {
     let task_rid = seed_task(&client, &ws.slug, "acst-t03-proj", "T3", "Task T03").await;
 
     let result = client
+        .acta()
         .add_assignee(
             &ws.slug,
             &task_rid,
@@ -352,6 +361,7 @@ async fn existing_assignment_stays_visible_after_user_disabled() {
     let task_rid = seed_task(&client, &ws.slug, "acst-t04-proj", "T4", "Task T04").await;
 
     client
+        .acta()
         .add_assignee(
             &ws.slug,
             &task_rid,
@@ -369,6 +379,7 @@ async fn existing_assignment_stays_visible_after_user_disabled() {
         .expect("disable user");
 
     let list = client
+        .acta()
         .list_assignees(&ws.slug, &task_rid)
         .await
         .expect("list assignees after disable");
@@ -470,6 +481,7 @@ async fn member_list_marks_account_status_correctly() {
         .expect("add pending membership");
 
     let members = client
+        .acta()
         .list_workspace_members(&ws.slug)
         .await
         .expect("list members");
@@ -552,6 +564,7 @@ async fn attribution_actor_has_no_account_status() {
     // `add_assignee` returns AssigneeDto containing both `assignee` (the user-assignee
     // actor — SHOULD carry account_status) and `assigned_by` (attribution — MUST NOT).
     let assignee_dto = client
+        .acta()
         .add_assignee(
             &ws.slug,
             &task_rid,
@@ -572,6 +585,7 @@ async fn attribution_actor_has_no_account_status() {
 
     // Verify created_by on the task DTO also has no account_status.
     let task = client
+        .acta()
         .get_task(&ws.slug, &task_rid)
         .await
         .expect("get task");
@@ -648,6 +662,7 @@ async fn board_summary_marks_disabled_assignee_deactivated() {
         .expect("add membership");
 
     client
+        .acta()
         .create_project(
             &ws.slug,
             atlas_api::dtos::CreateProjectRequest {
@@ -662,6 +677,7 @@ async fn board_summary_marks_disabled_assignee_deactivated() {
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             "acst-t08-proj",
@@ -674,6 +690,7 @@ async fn board_summary_marks_disabled_assignee_deactivated() {
         .expect("board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -688,6 +705,7 @@ async fn board_summary_marks_disabled_assignee_deactivated() {
         .expect("col");
 
     let task = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -705,6 +723,7 @@ async fn board_summary_marks_disabled_assignee_deactivated() {
         .expect("task");
 
     client
+        .acta()
         .add_assignee(
             &ws.slug,
             &task.readable_id,
@@ -723,6 +742,7 @@ async fn board_summary_marks_disabled_assignee_deactivated() {
 
     // The board task list (board_assignees_by_task path) is exercised by list_tasks.
     let summaries = client
+        .acta()
         .list_tasks(&ws.slug, board.id, None, None)
         .await
         .expect("list board tasks");

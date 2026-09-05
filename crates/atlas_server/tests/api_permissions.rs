@@ -116,11 +116,13 @@ async fn agent_cannot_share_project() {
         support::login_user_with_workspace(&server, &db, "perm-agent-owner").await;
 
     let project = owner
+        .acta()
         .create_project(&ws.slug, proj_req("Agent Project", "agent-proj"))
         .await
         .expect("create project");
 
     let key_created = owner
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "test-agent-key".to_string(),
             r#type: None,
@@ -168,6 +170,7 @@ async fn agent_cannot_share_project() {
         .expect("seed agent grant on project");
 
     let result = agent_client
+        .custos()
         .create_project_grant(
             &ws.slug,
             "agent-proj",
@@ -197,6 +200,7 @@ async fn agent_with_all_capabilities_still_cannot_share_project() {
         support::login_user_with_workspace(&server, &db, "perm-allcap-owner").await;
 
     owner
+        .acta()
         .create_project(&ws.slug, proj_req("AllCap Project", "allcap-proj"))
         .await
         .expect("create project");
@@ -234,6 +238,7 @@ async fn agent_with_all_capabilities_still_cannot_share_project() {
 
     let agent_client = atlas_client::AtlasClient::new(server.base_url()).with_token(plain);
     let result = agent_client
+        .custos()
         .create_project_grant(
             &ws.slug,
             "allcap-proj",
@@ -258,6 +263,7 @@ async fn editor_cannot_grant_admin() {
         support::login_user_with_workspace(&server, &db, "perm-editor-owner").await;
 
     owner
+        .acta()
         .create_project(
             &ws.slug,
             proj_req("Editor Guardrail Project", "editor-guard-proj"),
@@ -296,6 +302,7 @@ async fn editor_cannot_grant_admin() {
             resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
                 &atlas_acta::permissions::ResourceRef::Project(
                     owner
+                        .acta()
                         .get_project(&ws.slug, "editor-guard-proj")
                         .await
                         .expect("get project")
@@ -312,6 +319,7 @@ async fn editor_cannot_grant_admin() {
         .expect("seed editor grant");
 
     let result = editor
+        .custos()
         .create_project_grant(
             &ws.slug,
             "editor-guard-proj",
@@ -336,6 +344,7 @@ async fn viewer_cannot_update_project() {
         support::login_user_with_workspace(&server, &db, "perm-viewer-owner").await;
 
     let project = owner
+        .acta()
         .create_project(
             &ws.slug,
             private_proj_req("Viewer Test Project", "viewer-test-proj"),
@@ -374,6 +383,7 @@ async fn viewer_cannot_update_project() {
         .expect("seed viewer grant");
 
     let result = viewer
+        .acta()
         .update_project(
             &ws.slug,
             "viewer-test-proj",
@@ -403,6 +413,7 @@ async fn non_member_cannot_access_workspace_resource() {
         support::login_user_with_workspace(&server, &db, "perm-nonmember-owner").await;
 
     owner
+        .acta()
         .create_project(
             &ws.slug,
             proj_req("Non-member Test Project", "nonmember-proj"),
@@ -413,7 +424,10 @@ async fn non_member_cannot_access_workspace_resource() {
     let (non_member, _, _) =
         support::login_user_with_workspace(&server, &db, "perm-nonmember-outsider").await;
 
-    let result = non_member.get_project(&ws.slug, "nonmember-proj").await;
+    let result = non_member
+        .acta()
+        .get_project(&ws.slug, "nonmember-proj")
+        .await;
 
     assert!(
         matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 403 || p.status == 404),
@@ -432,6 +446,7 @@ async fn agent_with_grant_sees_private_project_in_list() {
         support::login_user_with_workspace(&server, &db, "perm-agentvis-owner").await;
 
     let project = owner
+        .acta()
         .create_project(
             &ws.slug,
             private_proj_req("Agent Visible Private", "agent-visible-priv"),
@@ -440,6 +455,7 @@ async fn agent_with_grant_sees_private_project_in_list() {
         .expect("create private project");
 
     let key_created = owner
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "agent-visibility-key".to_string(),
             r#type: None,
@@ -478,6 +494,7 @@ async fn agent_with_grant_sees_private_project_in_list() {
         .expect("seed agent grant on private project");
 
     let page = agent_client
+        .acta()
         .list_projects(&ws.slug, None, None)
         .await
         .expect("agent with grant must be able to list projects");
@@ -503,6 +520,7 @@ async fn agent_without_grant_cannot_see_workspace_visibility_project() {
         support::login_user_with_workspace(&server, &db, "perm-agentnogrant-owner").await;
 
     owner
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -517,6 +535,7 @@ async fn agent_without_grant_cannot_see_workspace_visibility_project() {
         .expect("create workspace-visibility project");
 
     let key_created = owner
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "no-grant-agent-key".to_string(),
             r#type: None,
@@ -532,7 +551,10 @@ async fn agent_without_grant_cannot_see_workspace_visibility_project() {
 
     // A key with no grant receives a uniform 404 at the workspace gate — it cannot
     // even reach the project list, which is a stronger guarantee than per-row filtering.
-    let result = agent_client.list_projects(&ws.slug, None, None).await;
+    let result = agent_client
+        .acta()
+        .list_projects(&ws.slug, None, None)
+        .await;
     assert!(
         matches!(result, Err(atlas_client::ClientError::Api(ref p)) if p.status == 404),
         "agent with no grant must be denied at the workspace gate (404), got: {result:?}"
@@ -552,6 +574,7 @@ async fn workspace_admin_sees_other_users_private_project_in_list() {
         support::login_user_with_workspace(&server, &db, "perm-adminvis-owner").await;
 
     let project = owner
+        .acta()
         .create_project(
             &ws.slug,
             private_proj_req("Admin Can See This", "admin-visible-priv"),
@@ -569,6 +592,7 @@ async fn workspace_admin_sees_other_users_private_project_in_list() {
     .await;
 
     let page = admin
+        .acta()
         .list_projects(&ws.slug, None, None)
         .await
         .expect("admin list request must succeed");
@@ -594,6 +618,7 @@ async fn user_with_workspace_scoped_grant_sees_private_projects_in_list() {
         support::login_user_with_workspace(&server, &db, "perm-wsgrant-owner").await;
 
     let project = owner
+        .acta()
         .create_project(
             &ws.slug,
             private_proj_req("WS-Grant Visible", "ws-grant-priv"),
@@ -632,6 +657,7 @@ async fn user_with_workspace_scoped_grant_sees_private_projects_in_list() {
         .expect("seed workspace-scoped viewer grant");
 
     let page = grantee
+        .acta()
         .list_projects(&ws.slug, None, None)
         .await
         .expect("grantee list request must succeed");
@@ -656,11 +682,13 @@ async fn share_denied_403_does_not_leak_variant_name() {
         support::login_user_with_workspace(&server, &db, "perm-sharedeny-owner").await;
 
     let project = owner
+        .acta()
         .create_project(&ws.slug, proj_req("ShareDeny Project", "sharedeny-proj"))
         .await
         .expect("create project");
 
     let key_created = owner
+        .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
             name: "sharedeny-key".to_string(),
             r#type: None,
@@ -751,6 +779,7 @@ async fn owner_sees_own_private_project_in_list() {
         support::login_user_with_workspace(&server, &db, "perm-ownpriv-owner").await;
 
     let project = owner
+        .acta()
         .create_project(
             &ws.slug,
             private_proj_req("Owner Private", "owner-private-proj"),
@@ -759,6 +788,7 @@ async fn owner_sees_own_private_project_in_list() {
         .expect("create private project");
 
     let page = owner
+        .acta()
         .list_projects(&ws.slug, None, None)
         .await
         .expect("owner must be able to list projects");

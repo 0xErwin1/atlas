@@ -15,6 +15,7 @@ async fn no_credentials_on_workspace_route_returns_401() {
     let server = support::TestServer::spawn(&db).await;
 
     let result = AtlasClient::new(server.base_url())
+        .acta()
         .get_workspace("ws-no-creds")
         .await;
 
@@ -28,7 +29,7 @@ async fn wrong_workspace_returns_404() {
     let server = support::TestServer::spawn(&db).await;
     let (client, _user) = support::login_user(&server, &db, "extractor-ws-404").await;
 
-    let result = client.get_workspace("nonexistent-workspace").await;
+    let result = client.acta().get_workspace("nonexistent-workspace").await;
 
     assert!(result.is_err(), "wrong workspace must return 404");
     db.teardown().await;
@@ -41,7 +42,7 @@ async fn valid_member_on_workspace_route_returns_200() {
     let (client, ws, _user) =
         support::login_user_with_workspace(&server, &db, "extractor-valid-member").await;
 
-    let result = client.get_workspace(&ws.slug).await;
+    let result = client.acta().get_workspace(&ws.slug).await;
 
     assert!(result.is_ok(), "valid workspace member must get 200");
     db.teardown().await;
