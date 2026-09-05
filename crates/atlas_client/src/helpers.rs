@@ -279,6 +279,7 @@ pub async fn resolve_board_id(
 
     loop {
         let projects = client
+            .acta()
             .list_projects(ws, project_cursor.as_deref(), Some(200))
             .await
             .map_err(|e| ResolverError::Client {
@@ -290,6 +291,7 @@ pub async fn resolve_board_id(
             let mut board_cursor: Option<String> = None;
             loop {
                 let boards = client
+                    .acta()
                     .list_boards(ws, &project.slug, board_cursor.as_deref(), Some(200))
                     .await
                     .map_err(|e| ResolverError::Client {
@@ -337,14 +339,14 @@ async fn collect_columns(
                 .map_err(|_| ResolverError::InvalidBoardUuid {
                     board_id: board_id.clone(),
                 })?;
-        let cols =
-            client
-                .list_columns(ws, board_uuid)
-                .await
-                .map_err(|e| ResolverError::Client {
-                    context: "list_columns failed".into(),
-                    source: e,
-                })?;
+        let cols = client
+            .acta()
+            .list_columns(ws, board_uuid)
+            .await
+            .map_err(|e| ResolverError::Client {
+                context: "list_columns failed".into(),
+                source: e,
+            })?;
         return Ok(cols);
     }
 
@@ -353,6 +355,7 @@ async fn collect_columns(
 
     loop {
         let projects = client
+            .acta()
             .list_projects(ws, project_cursor.as_deref(), Some(200))
             .await
             .map_err(|e| ResolverError::Client {
@@ -364,6 +367,7 @@ async fn collect_columns(
             let mut board_cursor: Option<String> = None;
             loop {
                 let boards = client
+                    .acta()
                     .list_boards(ws, &project.slug, board_cursor.as_deref(), Some(200))
                     .await
                     .map_err(|e| ResolverError::Client {
@@ -372,12 +376,14 @@ async fn collect_columns(
                     })?;
 
                 for board in &boards.items {
-                    let cols = client.list_columns(ws, board.id).await.map_err(|e| {
-                        ResolverError::Client {
+                    let cols = client
+                        .acta()
+                        .list_columns(ws, board.id)
+                        .await
+                        .map_err(|e| ResolverError::Client {
                             context: format!("list_columns for board '{}' failed", board.name),
                             source: e,
-                        }
-                    })?;
+                        })?;
                     all_cols.extend(cols);
                 }
 
