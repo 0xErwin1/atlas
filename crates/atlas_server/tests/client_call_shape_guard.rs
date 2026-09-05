@@ -46,6 +46,7 @@ mod support;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 
 use regex::Regex;
 
@@ -105,27 +106,6 @@ fn client_production_source(file_name: &str) -> String {
 /// split the client (`custos.rs` in PR3). Each one is walked in full by
 /// [`derive_method_namespace_map`], on equal footing with `lib.rs`.
 const SPLIT_PRODUCTION_FILES: &[&str] = &["custos.rs", "acta.rs", "platform.rs"];
-
-/// The names of every `pub async fn` in `source` whose attribute block
-/// carries `#[doc(hidden)]` (doc-comment lines may sit between the
-/// attribute and the `fn`) — a D6 shim forwarder, not a real
-/// implementation. Excluded from `lib.rs`'s own method population so a
-/// method that moved to a split file is derived from its new home, not
-/// double-counted (once as a real call there, once as a rootless forwarder
-/// here). `#[doc(hidden)]` is the marker because the forwarders are not
-/// `#[deprecated]`: this guard already pins every flat call site, so a new
-/// flat call fails here without a deprecation warning, and a warning would
-/// force `#![allow(deprecated)]` into every consumer crate under
-/// `-D warnings`.
-fn hidden_forwarder_names(source: &str) -> std::collections::HashSet<String> {
-    let re = Regex::new(
-        r"(?m)^[ \t]*#\[doc\(hidden\)\][ \t]*\r?\n(?:[ \t]*///[^\n]*\r?\n)*[ \t]*pub async fn (\w+)",
-    )
-    .unwrap();
-    re.captures_iter(source)
-        .map(|caps| caps[1].to_string())
-        .collect()
-}
 
 /// (byte offset of the `fn` keyword, function name, whether it is `pub
 /// async fn`), sorted by offset ascending.
@@ -220,19 +200,28 @@ struct DerivedMap {
     naturally_rootless: Vec<String>,
 }
 
+/// Every test in this module calls [`derive_method_namespace_map`], and the
+/// map's inputs (`lib.rs` plus every [`SPLIT_PRODUCTION_FILES`] entry) never
+/// change within one test run, so this cache computes it once per process
+/// instead of once per test — PR12's runtime cut (design's "if cheap, cut
+/// the guard's runtime" note): rebuilding the map from disk on every one of
+/// this module's ~85 tests was the single largest repeated cost.
+fn derive_method_namespace_map() -> &'static DerivedMap {
+    static CACHE: OnceLock<DerivedMap> = OnceLock::new();
+    CACHE.get_or_init(build_method_namespace_map)
+}
+
 /// Walks `atlas_client`'s production source and derives every `pub async
 /// fn`'s home namespace, independently of `atlas_client_route_contract.rs`'s
 /// `extract_calls` (design D5: "independent implementation, not a shared
 /// function").
 ///
 /// Walks `lib.rs` plus every [`SPLIT_PRODUCTION_FILES`] entry, on equal
-/// footing. `lib.rs`'s own D6 shim forwarders (`#[doc(hidden)]`-attributed
-/// `pub async fn`s with no direct verb call of their own) are excluded from
-/// its population entirely — once a method's real implementation moves to a
-/// split file, its home is derived from that file's own `Component::X`
-/// literal, not treated as newly rootless because the root now only
-/// forwards to it.
-fn derive_method_namespace_map() -> DerivedMap {
+/// footing. Since PR12 deleted `lib.rs`'s D6 shim forwarders for good, every
+/// `pub async fn` this walk finds is a real implementation: `lib.rs`
+/// contributes only `login` and `health`, and each split file contributes
+/// its own component's methods.
+fn build_method_namespace_map() -> DerivedMap {
     let verb_re = Regex::new(r"self\s*\.\s*(get|post|patch|put|delete|root_get)\s*\(").unwrap();
 
     let mut total_pub_async_fns = 0;
@@ -246,15 +235,10 @@ fn derive_method_namespace_map() -> DerivedMap {
     for file_name in files {
         let source = client_production_source(file_name);
         let boundaries = function_boundaries(&source);
-        let shim_names = if file_name == "lib.rs" {
-            hidden_forwarder_names(&source)
-        } else {
-            std::collections::HashSet::new()
-        };
 
         let pub_async_names: Vec<&str> = boundaries
             .iter()
-            .filter(|b| b.is_pub_async && !shim_names.contains(&b.name))
+            .filter(|b| b.is_pub_async)
             .map(|b| b.name.as_str())
             .collect();
 
@@ -293,49 +277,26 @@ fn derive_method_namespace_map() -> DerivedMap {
     }
 }
 
+/// T12.1/T12.5 — PR12 deletes every D6 shim forwarder (PR3's 34 `custos()`
+/// forwarders, PR4's 157 `acta()` forwarders, PR5's 4 `platform()`
+/// forwarders). The `#[doc(hidden)]` marker was this guard's own way of
+/// telling a forwarder apart from a real implementation while the shim
+/// existed (design D6's closing paragraph); now that the shim is gone for
+/// good, this is a plain regression check that none of it reappears in
+/// `lib.rs` or in any split file.
 #[test]
-fn hidden_forwarder_names_match_only_doc_hidden_pub_async_fns() {
-    let source = "\
-    #[doc(hidden)]
-    pub async fn plain(&self) {}
+fn no_doc_hidden_shim_forwarder_remains_anywhere_in_atlas_client() {
+    let doc_hidden_re = Regex::new(r"#\[doc\(hidden\)\]").unwrap();
 
-    #[doc(hidden)]
-    /// Forwarder to `custos()`; removed in PR12 of this slice.
-    pub async fn documented(&self, ws: &str) {}
-
-    /// `GET /real`
-    pub async fn real(&self) {}
-
-    #[doc(hidden)]
-    pub fn not_async(&self) {}
-";
-
-    let names = hidden_forwarder_names(source);
-
-    let mut sorted: Vec<&str> = names.iter().map(String::as_str).collect();
-    sorted.sort_unstable();
-    assert_eq!(sorted, vec!["documented", "plain"]);
-}
-
-#[test]
-fn lib_rs_forwarders_are_the_pr3_pr4_and_pr5_moves() {
-    let names = hidden_forwarder_names(&client_production_source("lib.rs"));
-
-    assert_eq!(
-        names.len(),
-        195,
-        "PR3 added 34 custos() forwarders, PR4 added 157 acta() forwarders, \
-         PR5 added 4 platform() forwarders"
-    );
-    assert!(names.contains("me"));
-    assert!(names.contains("list_workspace_audit"));
-    assert!(names.contains("list_projects"));
-    assert!(names.contains("list_workspace_activity_with_cursor"));
-    assert!(names.contains("get_ui_state"));
-    assert!(names.contains("doctor"));
-    assert!(hidden_forwarder_names(&client_production_source("custos.rs")).is_empty());
-    assert!(hidden_forwarder_names(&client_production_source("acta.rs")).is_empty());
-    assert!(hidden_forwarder_names(&client_production_source("platform.rs")).is_empty());
+    for file_name in ["lib.rs", "custos.rs", "acta.rs", "platform.rs"] {
+        let count = doc_hidden_re
+            .find_iter(&client_production_source(file_name))
+            .count();
+        assert_eq!(
+            count, 0,
+            "{file_name} must carry no #[doc(hidden)] shim forwarder after PR12"
+        );
+    }
 }
 
 #[test]
@@ -409,9 +370,28 @@ fn repo_root() -> PathBuf {
 /// `content`'s comments and string-literal contents masked out via
 /// [`support::scan`], so a doc comment or a help string mentioning a mapped
 /// method name is never counted as a call site.
+///
+/// Cached per path: this module's forward and reverse checks re-mask the
+/// same `crates/atlas_server/tests/*.rs` file across many tests (once per
+/// dedicated per-file reverse-check test, plus again inside every aggregate
+/// check that walks the whole pinned set), so masking each file's content
+/// once per process — not once per test — is PR12's runtime cut alongside
+/// [`derive_method_namespace_map`]'s cache.
 fn masked_code(path: &Path) -> String {
+    static CACHE: OnceLock<Mutex<HashMap<PathBuf, String>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+
+    if let Some(code) = cache.lock().unwrap().get(path) {
+        return code.clone();
+    }
+
     let content = fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path:?}: {e}"));
-    scan(&content).code
+    let code = scan(&content).code;
+    cache
+        .lock()
+        .unwrap()
+        .insert(path.to_path_buf(), code.clone());
+    code
 }
 
 /// Counts `code`'s occurrences of `\.\s*<method>\s*\(` that are not
@@ -446,24 +426,53 @@ fn masked_code(path: &Path) -> String {
 ///   [`repo_bound_identifiers`]. No identifier is excluded by name alone,
 ///   so a future `let repo = login(..)` binding an `AtlasClient` still
 ///   counts.
+///
+/// PR12's unconditional walk then reached the service-layer tests
+/// (`comment_service.rs`, `semantic_index_pipeline.rs`, ...), whose
+/// `TaskService`/`DocumentService` instances share method names with the
+/// client the same way the repositories do. The same two shapes are
+/// excluded for services, by provenance only: a direct
+/// `<Something>Service::new(..).<method>(` or `.<something>_service()
+/// .<method>(` receiver, and a local binding from one of those in the same
+/// `code`.
 fn flat_call_count(code: &str, method: &str) -> usize {
+    flat_call_count_with(code, &repo_bound_identifiers(code), method)
+}
+
+/// [`flat_call_count`] with `code`'s repository-bound identifiers already
+/// resolved, so [`flat_call_count_all`] resolves them once per file rather
+/// than once per method. The compiled pattern is cached per process: most
+/// files bind no repository identifier, so one pattern per method serves
+/// every such file, and the sweep compiles a few hundred regexes instead of
+/// one per (file, method) pair.
+fn flat_call_count_with(code: &str, repo_identifiers: &[String], method: &str) -> usize {
+    static CACHE: OnceLock<Mutex<HashMap<String, Regex>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+
     let mut receivers = vec![
         r"\bself\s*".to_string(),
         r"\(\s*self\s*\)\s*".to_string(),
         r"\w*Repo::new\([^;]*?\)\s*".to_string(),
         r"\.\s*\w+_repo\s*\(\s*\)\s*".to_string(),
+        r"\w*Service::new\([^;]*?\)\s*".to_string(),
+        r"\.\s*\w+_service\s*\(\s*\)\s*".to_string(),
     ];
 
-    for identifier in repo_bound_identifiers(code) {
-        receivers.push(format!(r"\b{}\s*", regex::escape(&identifier)));
+    for identifier in repo_identifiers {
+        receivers.push(format!(r"\b{}\s*", regex::escape(identifier)));
     }
 
-    let re = Regex::new(&format!(
+    let pattern = format!(
         r"({})?(\.\s*(?:acta|custos|platform)\s*\(\s*\)\s*)?\.\s*{}\s*\(",
         receivers.join("|"),
         regex::escape(method)
-    ))
-    .unwrap();
+    );
+    let re = cache
+        .lock()
+        .unwrap()
+        .entry(pattern)
+        .or_insert_with_key(|pattern| Regex::new(pattern).unwrap())
+        .clone();
 
     re.captures_iter(code)
         .filter(|caps| caps.get(1).is_none() && caps.get(2).is_none())
@@ -471,31 +480,75 @@ fn flat_call_count(code: &str, method: &str) -> usize {
 }
 
 /// Every identifier `code` binds with `let [mut] <name>[: T] =` directly
-/// from a `<Something>Repo::new(..)` constructor or a
-/// `<receiver>.<something>_repo()` accessor, sorted and deduplicated. Only
-/// these provenances mark a binding as a repository receiver for
-/// [`flat_call_count`]; a binding of the same name from any other
-/// expression contributes nothing.
+/// from a `<Something>Repo::new(..)` or `<Something>Service::new(..)`
+/// constructor, or from a `<receiver>.<something>_repo()` or
+/// `<receiver>.<something>_service()` accessor, sorted and deduplicated.
+/// A binding from a call to a helper the same `code` declares with a
+/// `Repo`/`Service` return type (`let svc = make_svc(&db);` next to
+/// `fn make_svc(..) -> TaskService`) is resolved one hop through
+/// [`repo_constructor_helpers`]. Only these provenances mark a binding as a
+/// repository or service receiver for [`flat_call_count`]; a binding of the
+/// same name from any other expression contributes nothing.
 fn repo_bound_identifiers(code: &str) -> Vec<String> {
-    let re = Regex::new(
-        r"\blet\s+(?:mut\s+)?(\w+)\s*(?::[^=;]+)?=\s*(?:\w*Repo::new\s*\(|\w+\s*\.\s*\w+_repo\s*\(\s*\))",
+    let direct_re = Regex::new(
+        r"\blet\s+(?:mut\s+)?(\w+)\s*(?::[^=;]+)?=\s*(?:\w*(?:Repo|Service)::new\s*\(|\w+\s*\.\s*\w+_(?:repo|service)\s*\(\s*\))",
     )
     .unwrap();
 
-    let mut identifiers: Vec<String> = re
+    let mut identifiers: Vec<String> = direct_re
         .captures_iter(code)
         .map(|caps| caps[1].to_string())
         .collect();
+
+    let helpers = repo_constructor_helpers(code);
+    if !helpers.is_empty() {
+        let helper_re = Regex::new(&format!(
+            r"\blet\s+(?:mut\s+)?(\w+)\s*(?::[^=;]+)?=\s*(?:{})\s*\(",
+            helpers
+                .iter()
+                .map(|name| regex::escape(name))
+                .collect::<Vec<_>>()
+                .join("|")
+        ))
+        .unwrap();
+        identifiers.extend(
+            helper_re
+                .captures_iter(code)
+                .map(|caps| caps[1].to_string()),
+        );
+    }
 
     identifiers.sort();
     identifiers.dedup();
     identifiers
 }
 
+/// Every function `code` declares whose return type's last path segment
+/// ends in `Repo` or `Service` (`fn make_svc(..) -> TaskService`,
+/// `fn make_doc_repo(..) -> repos::PgDocumentRepo`), sorted and
+/// deduplicated. One hop only: a helper that returns through another
+/// helper, or through a type alias, is not followed.
+fn repo_constructor_helpers(code: &str) -> Vec<String> {
+    let re = Regex::new(r"\bfn\s+(\w+)\s*\([^)]*\)\s*->\s*(?:\w+\s*::\s*)*\w*(?:Repo|Service)\b")
+        .unwrap();
+
+    let mut names: Vec<String> = re
+        .captures_iter(code)
+        .map(|caps| caps[1].to_string())
+        .collect();
+
+    names.sort();
+    names.dedup();
+    names
+}
+
 /// Sums [`flat_call_count`] over every method in `map`, for one file's
 /// masked code.
 fn flat_call_count_all(code: &str, map: &HashMap<String, &'static str>) -> usize {
-    map.keys().map(|method| flat_call_count(code, method)).sum()
+    let repo_identifiers = repo_bound_identifiers(code);
+    map.keys()
+        .map(|method| flat_call_count_with(code, &repo_identifiers, method))
+        .sum()
 }
 
 fn rust_files_recursive(dir: &Path) -> Vec<PathBuf> {
@@ -516,80 +569,206 @@ fn rust_files_recursive(dir: &Path) -> Vec<PathBuf> {
         }
     }
 
-    files
-}
-
-/// Whether `code` (already comment/string-masked) references `AtlasClient`
-/// as a real identifier — a doc comment or an allowlist reason string
-/// mentioning the name is never enough, since [`masked_code`] already
-/// stripped it.
-fn references_atlas_client(code: &str) -> bool {
-    Regex::new(r"\bAtlasClient\b").unwrap().is_match(code)
-}
-
-/// Every top-level `.rs` file directly in `crates/atlas_server/tests/`
-/// (excluding `support/` and this guard's own file) whose masked code
-/// references `AtlasClient` as a real identifier — the genuine consumer set
-/// this PR pins, matching spec ground truth §0.4's "51 files import
-/// `AtlasClient`" measurement (a raw, unmasked grep; masking here narrows
-/// it to files that use the identifier in code, not only in a comment or an
-/// allowlist reason string — see this PR's body for the resulting count).
-fn atlas_server_test_files() -> Vec<PathBuf> {
-    let dir = repo_root().join("crates/atlas_server/tests");
-    let mut files: Vec<PathBuf> = fs::read_dir(&dir)
-        .expect("read crates/atlas_server/tests")
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| path.extension().is_some_and(|ext| ext == "rs"))
-        .filter(|path| {
-            path.file_name().and_then(|n| n.to_str()) != Some("client_call_shape_guard.rs")
-        })
-        .filter(|path| references_atlas_client(&masked_code(path)))
-        .collect();
     files.sort();
     files
 }
 
-fn file_name(path: &Path) -> String {
-    path.file_name()
-        .and_then(|n| n.to_str())
-        .expect("utf-8 file name")
-        .to_string()
+/// `path` relative to `root`, `/`-separated — the key every per-file pin
+/// table uses, so a file under a nested directory (`support/mod.rs`,
+/// `commands/task.rs`) is named by its full root-relative path rather than
+/// by a bare file name that two directories could share.
+fn relative_key(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .expect("walked path lies under its root")
+        .components()
+        .map(|c| c.as_os_str().to_str().expect("utf-8 path component"))
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
-/// `crates/atlas_cli/**`'s combined flat-call count — pinned as one
-/// crate-wide sum (design D7's PR6 migrates the whole crate in one PR).
-const ATLAS_CLI_PIN: usize = 0;
+/// One directory the forward check walks in full, with the pin table that
+/// must name every `.rs` file under it.
+///
+/// The file set is the directory walk itself, unconditionally: through
+/// PR11c the `atlas_server/tests` set was narrowed to files whose masked
+/// code mentioned the literal `AtlasClient`, and PR12 found 153 flat sites
+/// in files that never spell the name because they obtain a client through
+/// `support::login_*` or `server.client()` and simply call methods on it.
+/// The compiler caught those once the forwarders were gone, but the guard's
+/// completeness gate must not lean on a heuristic to decide which files it
+/// looks at. `excluded` names only files that are not consumers by
+/// construction: the client sources the map is derived from, and this guard
+/// itself.
+struct ConsumerRoot {
+    dir: &'static str,
+    excluded: &'static [&'static str],
+    pins: &'static [(&'static str, usize)],
+}
 
-/// `crates/atlas_mcp/src/lib.rs`'s flat-call count. Flipped to 0 in PR7:
-/// all 128 sites (123 acta, 5 custos) are namespaced directly, with no
-/// shim, mirroring PR6's `atlas_cli` migration.
-const ATLAS_MCP_PIN: usize = 0;
+impl ConsumerRoot {
+    fn path(&self) -> PathBuf {
+        repo_root().join(self.dir)
+    }
 
-/// `crates/atlas_client/src/helpers.rs`'s flat-call count. Flipped to 0 in
-/// PR5 (T5.7): its six sites (`list_projects`, `list_boards`,
-/// `list_columns`) are namespaced directly, with no shim, since `helpers.rs`
-/// is a client-internal consumer of the `acta` namespace it depends on.
-const ATLAS_CLIENT_HELPERS_PIN: usize = 0;
+    /// Every `.rs` file under this root minus `excluded`, sorted, as
+    /// root-relative keys paired with their absolute paths.
+    fn files(&self) -> Vec<(String, PathBuf)> {
+        walk_root(&self.path(), self.excluded)
+    }
+}
 
-/// Every `crates/atlas_server/tests/*.rs` file with a nonzero flat-call
-/// count, pinned individually (design T2.4: "pin each file's count
-/// individually, not as one crate-wide sum, so PR8-PR11's per-file
-/// migration can flip pins one file at a time"). A file not listed here
-/// MUST measure 0 — checked by [`every_test_file_not_pinned_measures_zero`],
-/// the totality half of this table.
+fn walk_root(root: &Path, excluded: &[&str]) -> Vec<(String, PathBuf)> {
+    rust_files_recursive(root)
+        .into_iter()
+        .map(|path| (relative_key(root, &path), path))
+        .filter(|(key, _)| !excluded.contains(&key.as_str()))
+        .collect()
+}
+
+/// `(key, measured flat-call count)` for every file [`walk_root`] yields
+/// under `root` — the one measurement every forward check and the
+/// completeness gate run through, so a self-test on a synthetic directory
+/// exercises the exact code path the real roots do.
+fn measure_root(
+    root: &Path,
+    excluded: &[&str],
+    map: &HashMap<String, &'static str>,
+) -> Vec<(String, usize)> {
+    walk_root(root, excluded)
+        .into_iter()
+        .map(|(key, path)| {
+            let measured = flat_call_count_all(&masked_code(&path), map);
+            (key, measured)
+        })
+        .collect()
+}
+
+/// The four consumer roots design D5 names, each pinned per file.
+const CONSUMER_ROOTS: &[ConsumerRoot] = &[
+    ConsumerRoot {
+        dir: "crates/atlas_cli/src",
+        excluded: &[],
+        pins: ATLAS_CLI_PINS,
+    },
+    ConsumerRoot {
+        dir: "crates/atlas_mcp/src",
+        excluded: &[],
+        pins: ATLAS_MCP_PINS,
+    },
+    ConsumerRoot {
+        dir: "crates/atlas_client/src",
+        excluded: &["lib.rs", "custos.rs", "acta.rs", "platform.rs"],
+        pins: ATLAS_CLIENT_PINS,
+    },
+    ConsumerRoot {
+        dir: "crates/atlas_server/tests",
+        excluded: &["client_call_shape_guard.rs"],
+        pins: ATLAS_SERVER_TEST_PINS,
+    },
+];
+
+/// Every `crates/atlas_cli/src/**/*.rs` file's flat-call count. Pinned as
+/// one crate-wide sum through PR11c (design D7's PR6 migrated the whole
+/// crate in one PR); per file since PR12 so the table itself proves which
+/// files the walk sees.
+const ATLAS_CLI_PINS: &[(&str, usize)] = &[
+    ("cli.rs", 0),
+    ("commands/activity.rs", 0),
+    ("commands/api_keys.rs", 0),
+    ("commands/audit.rs", 0),
+    ("commands/boards.rs", 0),
+    ("commands/bulk.rs", 0),
+    ("commands/columns.rs", 0),
+    ("commands/common.rs", 0),
+    ("commands/completions.rs", 0),
+    ("commands/config.rs", 0),
+    ("commands/docs.rs", 0),
+    ("commands/doctor.rs", 0),
+    ("commands/export/mod.rs", 0),
+    ("commands/export/obsidian/mod.rs", 0),
+    ("commands/export/obsidian/plan.rs", 0),
+    ("commands/export/obsidian/render.rs", 0),
+    ("commands/export/obsidian/write.rs", 0),
+    ("commands/folders.rs", 0),
+    ("commands/grants.rs", 0),
+    ("commands/groups.rs", 0),
+    ("commands/import/mod.rs", 0),
+    ("commands/import/obsidian/create.rs", 0),
+    ("commands/import/obsidian/frontmatter.rs", 0),
+    ("commands/import/obsidian/manifest.rs", 0),
+    ("commands/import/obsidian/mapping.rs", 0),
+    ("commands/import/obsidian/mod.rs", 0),
+    ("commands/import/obsidian/parser.rs", 0),
+    ("commands/import/obsidian/plan.rs", 0),
+    ("commands/members.rs", 0),
+    ("commands/mod.rs", 0),
+    ("commands/platform_status_templates.rs", 0),
+    ("commands/projects.rs", 0),
+    ("commands/property_definitions.rs", 0),
+    ("commands/saved_searches.rs", 0),
+    ("commands/search.rs", 0),
+    ("commands/status_templates.rs", 0),
+    ("commands/tags.rs", 0),
+    ("commands/task_views.rs", 0),
+    ("commands/tasks.rs", 0),
+    ("commands/trash.rs", 0),
+    ("commands/users.rs", 0),
+    ("commands/workspaces.rs", 0),
+    ("config.rs", 0),
+    ("ctx.rs", 0),
+    ("error.rs", 0),
+    ("main.rs", 0),
+    ("output.rs", 0),
+    ("projections.rs", 0),
+];
+
+/// Every `crates/atlas_mcp/src/**/*.rs` file's flat-call count. Through
+/// PR11c only `lib.rs` was measured (PR7 flipped its 128 sites to 0);
+/// `catalog.rs`, `main.rs`, and `response.rs` are now pinned as well.
+const ATLAS_MCP_PINS: &[(&str, usize)] = &[
+    ("catalog.rs", 0),
+    ("lib.rs", 0),
+    ("main.rs", 0),
+    ("response.rs", 0),
+];
+
+/// Every `crates/atlas_client/src/*.rs` file's flat-call count except the
+/// namespace sources [`derive_method_namespace_map`] is built from
+/// (`lib.rs` and every [`SPLIT_PRODUCTION_FILES`] entry). `helpers.rs`'s
+/// six sites were namespaced in PR5 (T5.7).
+const ATLAS_CLIENT_PINS: &[(&str, usize)] = &[("helpers.rs", 0)];
+
+/// Every `crates/atlas_server/tests/**/*.rs` file's flat-call count,
+/// including `support/`, pinned individually (design T2.4: "pin each file's
+/// count individually, not as one crate-wide sum, so PR8-PR11's per-file
+/// migration can flip pins one file at a time"). This guard's own file is
+/// the only exclusion. A file on disk with no entry here, or an entry with
+/// no file on disk, fails
+/// [`every_consumer_root_pin_table_equals_its_directory_walk`].
 const ATLAS_SERVER_TEST_PINS: &[(&str, usize)] = &[
+    ("acta_boards_tasks_set_schema.rs", 0),
+    ("acta_comments_events_tags_set_schema.rs", 0),
+    ("acta_custos_raw_join_inventory.rs", 0),
+    ("acta_documents_set_schema.rs", 0),
+    ("acta_identity_workspaces_set_schema.rs", 0),
+    ("acta_search_attachments_lifecycle_set_schema.rs", 0),
+    ("anchor_interval_divergence.rs", 0),
+    ("api_401_sweep.rs", 0),
     ("api_account_status.rs", 0),
+    ("api_acta_router_parity.rs", 0),
     ("api_activation.rs", 0),
     ("api_audit_read.rs", 0),
     ("api_audit_writes.rs", 0),
     ("api_auth.rs", 0),
+    ("api_automation_rules.rs", 0),
     ("api_boards_tasks.rs", 0),
     ("api_capability_sweep.rs", 0),
     ("api_comment_attachments.rs", 0),
     ("api_comments.rs", 0),
     ("api_copy.rs", 0),
     ("api_create_workspace.rs", 0),
+    ("api_csrf_ratelimit.rs", 0),
+    ("api_custos_router_parity.rs", 0),
     ("api_doctor.rs", 0),
     ("api_document_comments.rs", 0),
     ("api_documents.rs", 0),
@@ -600,15 +779,33 @@ const ATLAS_SERVER_TEST_PINS: &[(&str, usize)] = &[
     ("api_grants.rs", 0),
     ("api_group_grants.rs", 0),
     ("api_groups.rs", 0),
+    ("api_health.rs", 0),
+    ("api_integration_configs.rs", 0),
     ("api_key_grant_access.rs", 0),
+    ("api_key_revoke_split.rs", 0),
+    ("api_key_scope_gate.rs", 0),
+    ("api_key_scope_migration.rs", 0),
+    ("api_login_rate_limit.rs", 0),
     ("api_members.rs", 0),
+    ("api_meta_contract.rs", 0),
     ("api_page_conformance.rs", 0),
+    ("api_path_literal_guard.rs", 0),
     ("api_permissions.rs", 0),
+    ("api_platform_router_parity.rs", 0),
     ("api_platform_status_templates.rs", 0),
+    ("api_presence.rs", 0),
     ("api_presence_agent.rs", 0),
     ("api_presence_document.rs", 0),
+    ("api_projects.rs", 0),
     ("api_property_definitions.rs", 0),
+    ("api_rate_limit.rs", 0),
+    ("api_readiness.rs", 0),
+    ("api_rfc9457_sweep.rs", 0),
+    ("api_route_exclusion_list.rs", 0),
+    ("api_router_mount_assertion.rs", 0),
     ("api_saved_searches.rs", 0),
+    ("api_search.rs", 0),
+    ("api_search_pagination.rs", 0),
     ("api_search_permissions.rs", 0),
     ("api_self_protection.rs", 0),
     ("api_semantic_search.rs", 0),
@@ -616,18 +813,96 @@ const ATLAS_SERVER_TEST_PINS: &[(&str, usize)] = &[
     ("api_status_templates.rs", 0),
     ("api_subtasks.rs", 0),
     ("api_system_admin.rs", 0),
+    ("api_tags.rs", 0),
     ("api_task_attachments.rs", 0),
     ("api_task_views.rs", 0),
     ("api_tenancy.rs", 0),
     ("api_trash.rs", 0),
     ("api_ui_state.rs", 0),
+    ("api_unmatched_path_fallback.rs", 0),
     ("api_user_api_keys.rs", 0),
     ("api_users.rs", 0),
+    ("api_webhooks.rs", 0),
     ("api_workspace_activity.rs", 0),
     ("api_workspace_attachments.rs", 0),
     ("api_workspace_tasks.rs", 0),
     ("api_workspaces.rs", 0),
+    ("app_state.rs", 0),
+    ("atlas_client_route_contract.rs", 0),
+    ("attachment_store.rs", 0),
+    ("authz_policy.rs", 0),
+    ("automation_rule_repo.rs", 0),
+    ("automation_service.rs", 0),
+    ("board_res_extractor.rs", 0),
+    ("boards.rs", 0),
+    ("bootstrap.rs", 0),
+    ("comment_attachment_draft_repos.rs", 0),
+    ("comment_freedom_migration.rs", 0),
+    ("comment_mutation_service.rs", 0),
+    ("comment_repo.rs", 0),
+    ("comment_service.rs", 0),
+    ("composed_migrator.rs", 0),
+    ("config_registry_composition.rs", 0),
+    ("custos_set_schema_migration.rs", 0),
+    ("dead_cascade_evidence.rs", 0),
+    ("desktop_gate_support.rs", 0),
+    ("dispatcher.rs", 0),
+    ("document_links.rs", 0),
+    ("document_repo_ext.rs", 0),
+    ("document_res_extractor.rs", 0),
+    ("document_slug_migration.rs", 0),
+    ("documents.rs", 0),
+    ("e2e_incoming_automation.rs", 0),
+    ("e2e_webhooks.rs", 0),
+    ("embeddings_semantic_search.rs", 0),
+    ("env_binding.rs", 0),
+    ("error_model.rs", 0),
+    ("grant_diagnostics.rs", 0),
+    ("grant_hygiene.rs", 0),
+    ("grant_resource_ref_migration.rs", 0),
+    ("harness_self_test.rs", 0),
+    ("idempotency_declare_and_verify_audit.rs", 0),
+    ("idempotency_keys_migration.rs", 0),
     ("idempotency_live_sweep.rs", 0),
+    ("idempotency_middleware.rs", 0),
+    ("idempotency_repo.rs", 0),
+    ("identity.rs", 0),
+    ("integration_config_repo.rs", 0),
+    ("lifecycle_audit.rs", 0),
+    ("lifecycle_persistence.rs", 0),
+    ("live_events.rs", 0),
+    ("migration_slug_backfill.rs", 0),
+    ("openapi_idempotency_annotations.rs", 0),
+    ("openapi_semantic_contracts.rs", 0),
+    ("openapi_zero_drift.rs", 0),
+    ("outbox_repo.rs", 0),
+    ("permission_grant_repo.rs", 0),
+    ("purge_audit_string_guard.rs", 0),
+    ("recoverable_deletion_migration.rs", 0),
+    ("reg5_idempotent_rule_conformance.rs", 0),
+    ("reg5_registry_build.rs", 0),
+    ("schema_constraints.rs", 0),
+    ("schema_qualification_gate.rs", 0),
+    ("search_infra.rs", 0),
+    ("search_repo.rs", 0),
+    ("security_audit_repo.rs", 0),
+    ("semantic_index_pipeline.rs", 0),
+    ("semantic_search_migration.rs", 0),
+    ("semantic_search_repo.rs", 0),
+    ("shutdown_drain.rs", 0),
+    ("startup_gate.rs", 0),
+    ("support/mod.rs", 0),
+    ("support/path.rs", 0),
+    ("support/route_matrix.rs", 0),
+    ("support/scan.rs", 0),
+    ("task_references.rs", 0),
+    ("task_repos_ext.rs", 0),
+    ("task_service.rs", 0),
+    ("tasks.rs", 0),
+    ("tenancy.rs", 0),
+    ("ui_state_repo_characterization.rs", 0),
+    ("visibility_ancestors.rs", 0),
+    ("workspace_core.rs", 0),
 ];
 
 /// The self-test harness (design T2.7/T2.8): a pure, independently-testable
@@ -646,54 +921,25 @@ fn pin_check(label: &str, pinned: usize, measured: usize) -> Result<(), String> 
 }
 
 #[test]
-fn atlas_cli_forward_pin_is_exact() {
+fn every_consumer_file_matches_its_pinned_count() {
     let derived = derive_method_namespace_map();
-    let files = rust_files_recursive(&repo_root().join("crates/atlas_cli/src"));
-    let total: usize = files
-        .iter()
-        .map(|path| flat_call_count_all(&masked_code(path), &derived.map))
-        .sum();
-
-    pin_check("atlas_cli", ATLAS_CLI_PIN, total).unwrap();
-}
-
-#[test]
-fn atlas_mcp_forward_pin_is_exact() {
-    let derived = derive_method_namespace_map();
-    let path = repo_root().join("crates/atlas_mcp/src/lib.rs");
-    let total = flat_call_count_all(&masked_code(&path), &derived.map);
-
-    pin_check("atlas_mcp", ATLAS_MCP_PIN, total).unwrap();
-}
-
-#[test]
-fn atlas_client_helpers_forward_pin_is_exact() {
-    let derived = derive_method_namespace_map();
-    let path = repo_root().join("crates/atlas_client/src/helpers.rs");
-    let total = flat_call_count_all(&masked_code(&path), &derived.map);
-
-    pin_check("atlas_client::helpers", ATLAS_CLIENT_HELPERS_PIN, total).unwrap();
-}
-
-#[test]
-fn every_pinned_test_file_matches_its_measured_count() {
-    let derived = derive_method_namespace_map();
-    let pins: HashMap<&str, usize> = ATLAS_SERVER_TEST_PINS.iter().copied().collect();
     let mut mismatches = Vec::new();
 
-    for path in atlas_server_test_files() {
-        let name = file_name(&path);
-        let measured = flat_call_count_all(&masked_code(&path), &derived.map);
-        match pins.get(name.as_str()) {
-            Some(&pinned) => {
-                if let Err(message) = pin_check(&name, pinned, measured) {
-                    mismatches.push(message);
+    for root in CONSUMER_ROOTS {
+        let pins: HashMap<&str, usize> = root.pins.iter().copied().collect();
+
+        for (key, measured) in measure_root(&root.path(), root.excluded, &derived.map) {
+            let label = format!("{}/{key}", root.dir);
+            match pins.get(key.as_str()) {
+                Some(&pinned) => {
+                    if let Err(message) = pin_check(&label, pinned, measured) {
+                        mismatches.push(message);
+                    }
+                }
+                None => {
+                    mismatches.push(format!("{label}: measured {measured} but has no pin entry"))
                 }
             }
-            None if measured != 0 => {
-                mismatches.push(format!("{name}: measured {measured} but has no pin entry"));
-            }
-            None => {}
         }
     }
 
@@ -701,21 +947,33 @@ fn every_pinned_test_file_matches_its_measured_count() {
 }
 
 #[test]
-fn every_pin_table_entry_names_a_real_file() {
-    let real_files: Vec<String> = atlas_server_test_files()
-        .iter()
-        .map(|p| file_name(p))
-        .collect();
-    let stale: Vec<&str> = ATLAS_SERVER_TEST_PINS
-        .iter()
-        .map(|(name, _)| *name)
-        .filter(|name| !real_files.contains(&(*name).to_string()))
-        .collect();
+fn every_consumer_root_pin_table_equals_its_directory_walk() {
+    let mut problems = Vec::new();
 
-    assert!(
-        stale.is_empty(),
-        "pin table names a file that no longer exists: {stale:?}"
-    );
+    for root in CONSUMER_ROOTS {
+        let on_disk: Vec<String> = root.files().into_iter().map(|(key, _)| key).collect();
+        let pinned: Vec<&str> = root.pins.iter().map(|(name, _)| *name).collect();
+
+        for key in &on_disk {
+            if !pinned.contains(&key.as_str()) {
+                problems.push(format!(
+                    "{}/{key}: on disk but missing from the pin table",
+                    root.dir
+                ));
+            }
+        }
+
+        for name in &pinned {
+            if !on_disk.iter().any(|key| key == name) {
+                problems.push(format!(
+                    "{}/{name}: in the pin table but not on disk",
+                    root.dir
+                ));
+            }
+        }
+    }
+
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
 }
 
 // ---------------------------------------------------------------------------
@@ -740,11 +998,14 @@ fn reverse_check_mismatches(
 ) -> Vec<String> {
     sites
         .iter()
-        .filter_map(|(namespace, method)| {
-            let home = map.get(method)?;
-            (namespace != home).then(|| {
-                format!("client.{namespace}().{method}(..) — {method}'s declared home is {home}")
-            })
+        .filter_map(|(namespace, method)| match map.get(method) {
+            Some(home) if namespace == home => None,
+            Some(home) => Some(format!(
+                "client.{namespace}().{method}(..) — {method}'s declared home is {home}"
+            )),
+            None => Some(format!(
+                "client.{namespace}().{method}(..) — {method} is not a mapped AtlasClient method"
+            )),
         })
         .collect()
 }
@@ -763,22 +1024,62 @@ fn reverse_check_mismatches(
 /// the forward-check machinery underneath it still works.
 #[test]
 fn every_forward_pin_is_zero_the_completeness_gate() {
-    assert_eq!(ATLAS_CLI_PIN, 0, "atlas_cli's forward pin must be 0");
-    assert_eq!(ATLAS_MCP_PIN, 0, "atlas_mcp's forward pin must be 0");
-    assert_eq!(
-        ATLAS_CLIENT_HELPERS_PIN, 0,
-        "atlas_client::helpers's forward pin must be 0"
-    );
-
-    let nonzero: Vec<&str> = ATLAS_SERVER_TEST_PINS
+    let nonzero: Vec<String> = CONSUMER_ROOTS
         .iter()
-        .filter(|(_, pinned)| *pinned != 0)
-        .map(|(name, _)| *name)
+        .flat_map(|root| {
+            root.pins
+                .iter()
+                .filter(|(_, pinned)| *pinned != 0)
+                .map(move |(name, pinned)| format!("{}/{name} = {pinned}", root.dir))
+        })
         .collect();
 
     assert!(
         nonzero.is_empty(),
-        "every crates/atlas_server/tests pin must be 0 once PR11c lands: {nonzero:?}"
+        "every consumer file's forward pin must be 0 once PR11c lands: {nonzero:?}"
+    );
+}
+
+/// Self-test proving the file set is the directory walk, not a heuristic: a
+/// fixture file that never spells `AtlasClient` (it receives a client from a
+/// `support::login_*`-shaped helper, as most `atlas_server/tests` files do)
+/// but carries one flat call is walked and measured as 1, a sibling under a
+/// nested directory with no call at all is still walked and measured as 0,
+/// and a non-`.rs` file is not walked.
+#[test]
+fn a_file_without_the_atlas_client_literal_is_still_walked_and_counted() {
+    let derived = derive_method_namespace_map();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock after epoch")
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!(
+        "client_call_shape_guard_{}_{nanos}",
+        std::process::id()
+    ));
+    fs::create_dir_all(dir.join("support")).expect("create fixture dir");
+
+    let fixture = "async fn flow(server: &TestServer) {\n\
+                   \x20   let client = support::login_admin(server).await;\n\
+                   \x20   let response = client.get_task(ws, id).await?;\n\
+                   }\n";
+    fs::write(dir.join("api_fixture.rs"), fixture).expect("write fixture");
+    fs::write(dir.join("support/mod.rs"), "pub fn noop() {}\n").expect("write sibling");
+    fs::write(dir.join("notes.txt"), "client.get_task(ws, id)\n").expect("write non-rust file");
+
+    let measured = measure_root(&dir, &[], &derived.map);
+    fs::remove_dir_all(&dir).expect("remove fixture dir");
+
+    assert!(
+        !Regex::new(r"\bAtlasClient\b").unwrap().is_match(fixture),
+        "the fixture must not spell the literal the old gate keyed on"
+    );
+    assert_eq!(
+        measured,
+        vec![
+            ("api_fixture.rs".to_string(), 1),
+            ("support/mod.rs".to_string(), 0)
+        ]
     );
 }
 
@@ -1771,6 +2072,26 @@ fn a_call_namespaced_to_its_declared_home_is_not_flagged() {
     assert!(mismatches.is_empty());
 }
 
+/// PR12 orchestrator note: a namespaced call to a method absent from the
+/// derived map must itself be a mismatch, not silently skipped — an unknown
+/// method name is never a legitimate namespaced call.
+#[test]
+fn a_call_to_a_method_absent_from_the_map_is_flagged_as_a_mismatch() {
+    let derived = derive_method_namespace_map();
+    let fixture = "let response = client.acta().not_a_real_method(ws, id).await?;";
+    let sites = namespaced_call_sites(fixture);
+    assert_eq!(
+        sites,
+        vec![("acta".to_string(), "not_a_real_method".to_string())]
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches.len(), 1);
+    let mismatch = mismatches.first().expect("checked len() == 1 above");
+    assert!(mismatch.contains("not_a_real_method"));
+    assert!(mismatch.contains("acta"));
+}
+
 // ---------------------------------------------------------------------------
 // Self-test probes: a real chained atlas_mcp site is counted; a stale pin
 // is caught
@@ -1913,6 +2234,46 @@ fn a_pg_repo_receiver_is_never_counted_but_a_client_binding_is() {
         1
     );
     assert_eq!(flat_call_count("client.search(&ws, &query)", "search"), 1);
+}
+
+/// PR12 orchestrator decision O2: a service receiver is excluded by the
+/// same provenance rule a repository receiver is, and a binding of the same
+/// name from any other expression still counts.
+#[test]
+fn a_service_receiver_is_never_counted_but_a_client_binding_of_the_same_name_is() {
+    let service_bound = "let svc = TaskService::new(db);\nsvc.delete_task(&ctx, task.id).await?;\n";
+    let accessor_bound = "let svc = db.task_service();\nsvc.delete_task(&ctx, task.id).await?;\n";
+    let direct_constructor = "TaskService::new(db).delete_task(&ctx, task.id).await?;\n";
+    let direct_accessor = "db.task_service().delete_task(&ctx, task.id).await?;\n";
+    let client_bound =
+        "let svc = login(&server, \"alice\").await;\nsvc.delete_task(ws, id).await?;\n";
+
+    assert_eq!(flat_call_count(service_bound, "delete_task"), 0);
+    assert_eq!(flat_call_count(accessor_bound, "delete_task"), 0);
+    assert_eq!(flat_call_count(direct_constructor, "delete_task"), 0);
+    assert_eq!(flat_call_count(direct_accessor, "delete_task"), 0);
+    assert_eq!(flat_call_count(client_bound, "delete_task"), 1);
+    assert_eq!(repo_bound_identifiers(service_bound), vec!["svc"]);
+    assert!(repo_bound_identifiers(client_bound).is_empty());
+}
+
+/// PR12 orchestrator decision: provenance follows a same-file constructor
+/// helper one hop, keyed on the helper's declared return type, never on a
+/// name.
+#[test]
+fn a_same_file_helper_returning_a_service_marks_its_binding_but_a_client_helper_does_not() {
+    let service_helper = "fn make_svc(db: &TestDb) -> TaskService {\n    TaskService::new(db.conn().clone())\n}\n\
+                          let svc = make_svc(&db);\nsvc.delete_task(&ctx, task.id).await?;\n";
+    let qualified_repo_helper = "fn make_doc_repo(db: &TestDb, n: u32) -> repos::PgDocumentRepo {\n    todo!()\n}\n\
+                                 let repo = make_doc_repo(&db, 50);\nrepo.update_content(&ctx, id, rev, \"v2\").await?;\n";
+    let client_helper = "async fn make_client(server: &TestServer) -> AtlasClient {\n    login(server, \"alice\").await\n}\n\
+                         let c = make_client(&server).await;\nc.delete_task(ws, id).await?;\n";
+
+    assert_eq!(repo_constructor_helpers(service_helper), vec!["make_svc"]);
+    assert_eq!(flat_call_count(service_helper, "delete_task"), 0);
+    assert_eq!(flat_call_count(qualified_repo_helper, "update_content"), 0);
+    assert!(repo_constructor_helpers(client_helper).is_empty());
+    assert_eq!(flat_call_count(client_helper, "delete_task"), 1);
 }
 
 #[test]

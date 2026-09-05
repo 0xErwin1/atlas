@@ -85,7 +85,7 @@ async fn log_startup_identity(server: &AtlasMcp) {
         }
     };
 
-    match client.me().await {
+    match client.custos().me().await {
         Ok(me) if me.principal_type == "api_key" => {
             tracing::info!("authenticated as api_key agent");
         }

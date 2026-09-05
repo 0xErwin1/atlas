@@ -35,6 +35,7 @@ async fn create_project_succeeds_for_workspace_member() {
     let (client, ws, _) = login_user_with_workspace(&server, &db, "proj-owner").await;
 
     let project = client
+        .acta()
         .create_project(&ws.slug, project_req("My Project", "my-project"))
         .await
         .expect("create project");
@@ -52,6 +53,7 @@ async fn create_project_commits_creator_grant_and_project_created_event() {
 
     let (client, ws, user) = login_user_with_workspace(&server, &db, "proj-created-event").await;
     let project = client
+        .acta()
         .create_project(&ws.slug, project_req("Remote Project", "remote-project"))
         .await
         .expect("create project");
@@ -93,11 +95,13 @@ async fn list_projects_returns_created_project() {
     let (client, ws, _) = login_user_with_workspace(&server, &db, "proj-owner2").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("Listed Project", "listed-proj"))
         .await
         .expect("create project");
 
     let page = client
+        .acta()
         .list_projects(&ws.slug, None, None)
         .await
         .expect("list projects");
@@ -117,6 +121,7 @@ async fn root_user_lists_private_project_without_membership() {
     let root_client = login_root_user(&server, &db).await;
 
     owner_client
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -131,6 +136,7 @@ async fn root_user_lists_private_project_without_membership() {
         .expect("create private project");
 
     let page = root_client
+        .acta()
         .list_projects(&ws.slug, None, None)
         .await
         .expect("root list projects");
@@ -149,11 +155,13 @@ async fn get_project_returns_project_data() {
     let (client, ws, _) = login_user_with_workspace(&server, &db, "proj-owner3").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("Get Project", "get-proj"))
         .await
         .expect("create project");
 
     let project = client
+        .acta()
         .get_project(&ws.slug, "get-proj")
         .await
         .expect("get project");
@@ -170,11 +178,13 @@ async fn update_project_changes_name() {
     let (client, ws, _) = login_user_with_workspace(&server, &db, "proj-owner4").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("Original Name", "upd-proj"))
         .await
         .expect("create project");
 
     let updated = client
+        .acta()
         .update_project(
             &ws.slug,
             "upd-proj",
@@ -199,17 +209,20 @@ async fn delete_project_soft_deletes() {
     let (client, ws, _) = login_user_with_workspace(&server, &db, "proj-owner5").await;
 
     client
+        .acta()
         .create_project(&ws.slug, project_req("To Delete", "del-proj"))
         .await
         .expect("create project");
 
     client
+        .acta()
         .delete_project(&ws.slug, "del-proj")
         .await
         .expect("delete project");
 
     // After soft delete, the project should not appear in the list.
     let page = client
+        .acta()
         .list_projects(&ws.slug, None, None)
         .await
         .expect("list after delete");
@@ -227,7 +240,11 @@ async fn get_workspace_returns_workspace_info() {
 
     let (client, ws, _) = login_user_with_workspace(&server, &db, "ws-owner").await;
 
-    let ws_dto = client.get_workspace(&ws.slug).await.expect("get workspace");
+    let ws_dto = client
+        .acta()
+        .get_workspace(&ws.slug)
+        .await
+        .expect("get workspace");
 
     assert_eq!(ws_dto.id, ws.id.0);
     assert_eq!(ws_dto.slug, ws.slug);
@@ -242,6 +259,7 @@ async fn non_member_cannot_create_project() {
     let (stranger, _, _) = login_user_with_workspace(&server, &db, "stranger-proj").await;
 
     let err = stranger
+        .acta()
         .create_project(&ws.slug, project_req("Intruder Project", "intruder"))
         .await;
 
@@ -259,6 +277,7 @@ async fn update_project_task_prefix_persists() {
     let (client, ws, _) = login_user_with_workspace(&server, &db, "prefix-upd-1").await;
 
     client
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -273,6 +292,7 @@ async fn update_project_task_prefix_persists() {
         .expect("create project");
 
     let updated = client
+        .acta()
         .update_project(
             &ws.slug,
             "prefix-proj",
@@ -289,6 +309,7 @@ async fn update_project_task_prefix_persists() {
     assert_eq!(updated.task_prefix, "NEW2");
 
     let fetched = client
+        .acta()
         .get_project(&ws.slug, "prefix-proj")
         .await
         .expect("get project");
@@ -305,6 +326,7 @@ async fn update_project_task_prefix_new_tasks_use_new_prefix() {
     let (client, ws, _) = login_user_with_workspace(&server, &db, "prefix-tasks-1").await;
 
     let project = client
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -319,6 +341,7 @@ async fn update_project_task_prefix_new_tasks_use_new_prefix() {
         .expect("create project");
 
     let board = client
+        .acta()
         .create_board(
             &ws.slug,
             &project.slug,
@@ -331,6 +354,7 @@ async fn update_project_task_prefix_new_tasks_use_new_prefix() {
         .expect("create board");
 
     let col = client
+        .acta()
         .create_column(
             &ws.slug,
             board.id,
@@ -345,6 +369,7 @@ async fn update_project_task_prefix_new_tasks_use_new_prefix() {
         .expect("create column");
 
     let task_before = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -362,6 +387,7 @@ async fn update_project_task_prefix_new_tasks_use_new_prefix() {
         .expect("create task before prefix change");
 
     client
+        .acta()
         .update_project(
             &ws.slug,
             "prefix-tasks-proj",
@@ -376,6 +402,7 @@ async fn update_project_task_prefix_new_tasks_use_new_prefix() {
         .expect("update prefix");
 
     let task_after = client
+        .acta()
         .create_task(
             &ws.slug,
             board.id,
@@ -413,6 +440,7 @@ async fn update_project_task_prefix_invalid_format_returns_422() {
     let (client, ws, _) = login_user_with_workspace(&server, &db, "prefix-422-1").await;
 
     client
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -428,6 +456,7 @@ async fn update_project_task_prefix_invalid_format_returns_422() {
 
     for bad in &["a", "AB-CD", "1ABC", "toolongprefix", ""] {
         let result = client
+            .acta()
             .update_project(
                 &ws.slug,
                 "proj-422",
@@ -456,6 +485,7 @@ async fn update_project_task_prefix_duplicate_in_workspace_returns_409() {
     let (client, ws, _) = login_user_with_workspace(&server, &db, "prefix-409-1").await;
 
     client
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -470,6 +500,7 @@ async fn update_project_task_prefix_duplicate_in_workspace_returns_409() {
         .expect("create project A");
 
     client
+        .acta()
         .create_project(
             &ws.slug,
             CreateProjectRequest {
@@ -484,6 +515,7 @@ async fn update_project_task_prefix_duplicate_in_workspace_returns_409() {
         .expect("create project B");
 
     let result = client
+        .acta()
         .update_project(
             &ws.slug,
             "proj-b",

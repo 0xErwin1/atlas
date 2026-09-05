@@ -83,6 +83,7 @@ async fn version_and_meta_share_identical_version_build_and_components() {
         .expect("version body decodes");
 
     let meta = client
+        .platform()
         .server_meta()
         .await
         .expect("server_meta request must succeed");
