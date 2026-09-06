@@ -40,6 +40,11 @@ use atlas_core::registry::HttpMethod;
 use regex::Regex;
 
 use support::route_matrix::{RouteMatrixEntry, route_matrix};
+use support::source_walk::{
+    capitalize, enclosing_fn_name, first_path_literal, function_body, function_boundaries,
+    match_paren, normalize_template, resolve_relative, split_top_level_comma,
+    truncate_at_test_module,
+};
 
 /// `atlas_client`'s three `Component` variants, matched against the
 /// registry's own stable ids (`crate::reg5`) — the same three strings
@@ -62,13 +67,6 @@ fn client_source_path(file_name: &str) -> PathBuf {
 fn production_source() -> String {
     let content = fs::read_to_string(client_lib_path()).expect("read atlas_client/src/lib.rs");
     truncate_at_test_module(&content)
-}
-
-fn truncate_at_test_module(content: &str) -> String {
-    match content.find("#[cfg(test)]") {
-        Some(index) => content[..index].to_string(),
-        None => content.to_string(),
-    }
 }
 
 /// Reads and truncates `crates/atlas_client/src/<file_name>`'s production
@@ -109,248 +107,13 @@ impl ExtractedCall {
     }
 }
 
-/// (start byte offset of the `fn` keyword's line, function name), sorted by
-/// offset ascending — the enumeration `enclosing_fn_name` and
-/// `function_body` walk.
-fn function_boundaries(source: &str) -> Vec<(usize, String)> {
-    let fn_re = Regex::new(r"(?m)^\s*(?:pub(?:\(crate\))? )?(?:async )?fn (\w+)").unwrap();
-    fn_re
-        .captures_iter(source)
-        .map(|caps| {
-            let whole = caps.get(0).unwrap();
-            (whole.start(), caps[1].to_string())
-        })
-        .collect()
-}
-
-fn enclosing_fn_name(boundaries: &[(usize, String)], offset: usize) -> String {
-    boundaries
-        .iter()
-        .rev()
-        .find(|(start, _)| *start <= offset)
-        .map(|(_, name)| name.clone())
-        .unwrap_or_else(|| "<module scope>".to_string())
-}
-
-/// The text from `name`'s own `fn` declaration to the next function
-/// boundary (or end of `source`) — a bounded window for local `let`
-/// resolution and (for a helper like `build_search_path`) its own
-/// hardcoded literal.
-fn function_body<'a>(
-    source: &'a str,
-    boundaries: &[(usize, String)],
-    name: &str,
-) -> Option<&'a str> {
-    let index = boundaries.iter().position(|(_, n)| n == name)?;
-    let start = boundaries.get(index)?.0;
-    let end = boundaries
-        .get(index + 1)
-        .map_or(source.len(), |(next, _)| *next);
-    Some(&source[start..end])
-}
-
-/// A safe, in-bounds-or-sentinel byte read, so the depth-tracking scanners
-/// below never index a slice directly (`clippy::indexing_slicing`, denied
-/// workspace-wide). `0` never collides with any byte this module matches on
-/// (`(`, `)`, `{`, `}`, `[`, `]`, `,`, `;`, `"`, `\`).
-fn byte_at(bytes: &[u8], index: usize) -> u8 {
-    bytes.get(index).copied().unwrap_or(0)
-}
-
-/// Advances `i` past a `"…"` string literal's contents (honouring `\`
-/// escapes), leaving `i` on the closing quote (or at `bytes.len()` if the
-/// literal is unterminated).
-fn skip_string_contents(bytes: &[u8], i: &mut usize) {
-    *i += 1;
-    while *i < bytes.len() && byte_at(bytes, *i) != b'"' {
-        if byte_at(bytes, *i) == b'\\' {
-            *i += 1;
-        }
-        *i += 1;
-    }
-}
-
-/// Finds the byte offset of `text`'s matching close paren for the open
-/// paren at `open`, skipping over `(`/`)` inside string literals.
-fn match_paren(text: &str, open: usize) -> usize {
-    let bytes = text.as_bytes();
-    let mut depth = 0i32;
-    let mut i = open;
-    while i < bytes.len() {
-        match byte_at(bytes, i) {
-            b'(' => depth += 1,
-            b')' => {
-                depth -= 1;
-                if depth == 0 {
-                    return i;
-                }
-            }
-            b'"' => skip_string_contents(bytes, &mut i),
-            _ => {}
-        }
-        i += 1;
-    }
-    panic!("unbalanced parens starting at byte {open} in:\n{text}");
-}
-
-/// Splits `text` at its first comma sitting at bracket depth 0 and outside
-/// any string literal — the boundary between a verb call's `Component::X`
-/// argument and its relative-path argument.
-fn split_top_level_comma(text: &str) -> Option<(String, String)> {
-    let bytes = text.as_bytes();
-    let mut depth = 0i32;
-    let mut i = 0;
-    while i < bytes.len() {
-        match byte_at(bytes, i) {
-            b'(' | b'{' | b'[' => depth += 1,
-            b')' | b'}' | b']' => depth -= 1,
-            b',' if depth == 0 => {
-                return Some((text[..i].to_string(), text[i + 1..].to_string()));
-            }
-            b'"' => skip_string_contents(bytes, &mut i),
-            _ => {}
-        }
-        i += 1;
-    }
-    None
-}
-
-/// The content of the first string literal in `text` whose content starts
-/// with `/` — the shared shape of a relative-path template, whether it sits
-/// directly in a verb call's argument, in a `let` binding's right-hand
-/// side, or inside a path-building helper's own body. Skips literals that
-/// don't start with `/` (a query-fragment literal such as `"cursor={c}"`
-/// inside a helper's body never wins over its own path-shaped literal).
-fn first_path_literal(text: &str) -> Option<String> {
-    let bytes = text.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if byte_at(bytes, i) == b'"' {
-            let start = i + 1;
-            let mut j = start;
-            while j < bytes.len() && byte_at(bytes, j) != b'"' {
-                if byte_at(bytes, j) == b'\\' {
-                    j += 1;
-                }
-                j += 1;
-            }
-            let literal = &text[start..j.min(text.len())];
-            if literal.starts_with('/') {
-                return Some(literal.to_string());
-            }
-            i = j + 1;
-        } else {
-            i += 1;
-        }
-    }
-    None
-}
-
-/// Finds `let (mut )?{ident} = <rhs>;` in `scope` and returns `<rhs>`
-/// (bracket/brace/paren depth 0 is what ends the statement, so a `match { .. }`
-/// or multi-line `format!(..)` right-hand side is captured whole).
-fn find_let_binding(scope: &str, ident: &str) -> Option<String> {
-    let pattern = format!(r"let\s+(?:mut\s+)?{}\s*=\s*", regex::escape(ident));
-    let re = Regex::new(&pattern).unwrap();
-    let m = re.find(scope)?;
-    let rhs_start = m.end();
-    let bytes = scope.as_bytes();
-    let mut depth = 0i32;
-    let mut i = rhs_start;
-    while i < bytes.len() {
-        match byte_at(bytes, i) {
-            b'(' | b'{' | b'[' => depth += 1,
-            b')' | b'}' | b']' => depth -= 1,
-            b';' if depth == 0 => {
-                return Some(scope[rhs_start..i].to_string());
-            }
-            b'"' => skip_string_contents(bytes, &mut i),
-            _ => {}
-        }
-        i += 1;
-    }
-    None
-}
-
-/// Resolves `expr` (a verb call's relative-path argument, already stripped
-/// of its leading `&`) to its relative-path template:
-///
-/// 1. A literal or `format!("...")` directly in `expr` — used as-is.
-/// 2. A bare identifier bound by a local `let` in `fn_body` — recurse into
-///    its right-hand side (covers both a direct literal/`format!` binding
-///    and a passthrough helper call like `build_paginated_path(&format!(
-///    "/api-keys"), ..)`, whose literal argument is textually present in
-///    the right-hand side regardless of nesting).
-/// 3. A call to a helper with no literal in its own call arguments (an
-///    "owning" helper like `build_search_path(ws, q, ..)`, which hardcodes
-///    its template internally) — resolved from the callee's own body,
-///    looked up by name in `source`.
-///
-/// A trailing `?query=...` is stripped: registry templates never carry one.
-fn resolve_relative(
-    expr: &str,
-    fn_body: &str,
-    boundaries: &[(usize, String)],
-    source: &str,
-) -> Option<String> {
-    let expr = expr.trim().trim_start_matches('&').trim();
-
-    let resolved = if let Some(literal) = first_path_literal(expr) {
-        Some(literal)
-    } else if is_identifier(expr) {
-        let rhs = find_let_binding(fn_body, expr)?;
-        if let Some(literal) = first_path_literal(&rhs) {
-            Some(literal)
-        } else {
-            let callee = call_target_name(&rhs)?;
-            // The owning helper's own body is looked up first in `source`
-            // (the calling method's own file), then in `lib.rs` — these
-            // private path-builder free functions have not moved with the
-            // per-component split (D2.2), so a call from `acta.rs`/
-            // `custos.rs` resolves its callee's body in the root file.
-            if let Some(callee_body) = function_body(source, boundaries, &callee) {
-                first_path_literal(callee_body)
-            } else {
-                let root_source = production_source();
-                let root_boundaries = function_boundaries(&root_source);
-                let callee_body = function_body(&root_source, &root_boundaries, &callee)?;
-                first_path_literal(callee_body)
-            }
-        }
-    } else {
-        None
-    };
-
-    resolved.map(|template| {
-        template
-            .split('?')
-            .next()
-            .expect("split always yields at least one element")
-            .to_string()
-    })
-}
-
-fn is_identifier(text: &str) -> bool {
-    !text.is_empty()
-        && text.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-        && text.chars().next().is_some_and(|c| !c.is_ascii_digit())
-}
-
-/// If `text` (trimmed) is a plain call expression `name(..)`, returns
-/// `name`.
-fn call_target_name(text: &str) -> Option<String> {
-    let text = text.trim();
-    let paren = text.find('(')?;
-    let name = &text[..paren];
-    is_identifier(name).then(|| name.to_string())
-}
-
 /// Extracts every `self.<verb>(..)` and `self.root_get(..)` call in
 /// `source`, using `boundaries` to name each call's enclosing function.
 /// `self.http.get(..)` (the seam's own implementation) never matches: the
 /// token immediately after `self.` there is `http`, not a verb name.
 fn extract_calls(source: &str, boundaries: &[(usize, String)]) -> Vec<ExtractedCall> {
     let mut calls = Vec::new();
+    let root_source = production_source();
 
     for verb in ["get", "post", "patch", "put", "delete"] {
         let re = Regex::new(&format!(r"self\s*\.\s*{verb}\s*\(")).unwrap();
@@ -370,12 +133,13 @@ fn extract_calls(source: &str, boundaries: &[(usize, String)]) -> Vec<ExtractedC
                         .iter()
                         .find(|name| component_expr == format!("Component::{}", capitalize(name)))
                         .map(|name| name.to_string());
-                    let relative = resolve_relative(&relative_expr, fn_body, boundaries, source);
+                    let relative =
+                        resolve_relative(&relative_expr, fn_body, boundaries, source, &root_source);
                     (component, relative)
                 }
                 None => (
                     None,
-                    resolve_relative(arg_text, fn_body, boundaries, source),
+                    resolve_relative(arg_text, fn_body, boundaries, source, &root_source),
                 ),
             };
 
@@ -420,30 +184,6 @@ fn extract_calls(source: &str, boundaries: &[(usize, String)]) -> Vec<ExtractedC
 
     calls.sort_by_key(|c| c.line);
     calls
-}
-
-fn capitalize(name: &str) -> String {
-    let mut chars = name.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-        None => String::new(),
-    }
-}
-
-/// `{...}` -> `{}` on every path segment, so `{ws}` and `{project_slug}`
-/// compare equal (D2.3/R6): the client and the registry name the same
-/// positional placeholder differently at 14 custos sites.
-fn normalize_template(path: &str) -> String {
-    path.split('/')
-        .map(|segment| {
-            if segment.starts_with('{') && segment.ends_with('}') && segment.len() >= 2 {
-                "{}"
-            } else {
-                segment
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("/")
 }
 
 /// A `crates/atlas_client/src/*.rs` file's declared owning component for the
@@ -1422,7 +1162,7 @@ fn resolve_relative_follows_a_passthrough_helper_argument() {
     let body = function_body(source, &boundaries, "probe").unwrap();
 
     assert_eq!(
-        resolve_relative("&path", body, &boundaries, source),
+        resolve_relative("&path", body, &boundaries, source, ""),
         Some("/api-keys".to_string())
     );
 }
@@ -1434,7 +1174,7 @@ fn resolve_relative_follows_an_owning_helper_to_its_own_body() {
     let body = function_body(source, &boundaries, "probe").unwrap();
 
     assert_eq!(
-        resolve_relative("&path", body, &boundaries, source),
+        resolve_relative("&path", body, &boundaries, source, ""),
         Some("/workspaces/{ws}/search".to_string())
     );
 }

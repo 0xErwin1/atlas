@@ -28,9 +28,16 @@
 //! "uncovered by both" would be nearly empty. `CLI_UNCOVERED` and
 //! `MCP_UNCOVERED` are two separate, closed, route-keyed lists.
 //!
-//! **PR6a scope**: composition, both exclusion lists, and direction 1
-//! (unnamed gap) only. PR6b adds direction 2 (stale exclusion) and
-//! direction 3 (exclusion creep) to this same file.
+//! **Three failure directions (design D7.3), all live.** Direction 1
+//! (unnamed gap): a registry route reachable through neither surface and
+//! absent from that surface's exclusion list. Direction 2 (stale
+//! exclusion): a listed route the surface now covers. Direction 3
+//! (exclusion creep, epic R5): a `Category` used on a surface it is not
+//! valid for, or a `Category` with zero rows on every surface (dead).
+//! `Category`'s own closure — no value outside the enum — is a compile-time
+//! property: [`Category::valid_for_surface`]'s match has no wildcard arm, so
+//! adding a thirteenth variant without updating it fails to compile, in a
+//! diff a reviewer sees, exactly as design D7.3 asks.
 
 mod support;
 
@@ -53,8 +60,29 @@ use support::source_walk::{
 // Category (design D7.2, D7.3 direction 3) — closed, per-surface.
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Category {
+/// Declares `Category` and `Category::ALL` from one variant list, so a
+/// variant cannot exist without appearing in `ALL` — [`dead_category_failures`]
+/// is exhaustive by construction rather than by a hand-maintained constant
+/// (design D7.3 direction 3).
+macro_rules! closed_category {
+    ($($(#[$attr:meta])* $variant:ident),+ $(,)?) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        enum Category {
+            $($(#[$attr])* $variant,)+
+        }
+
+        impl Category {
+            /// Number of closed-enum variants.
+            const COUNT: usize = [$(Category::$variant),+].len();
+
+            /// Every closed-enum variant, once — [`dead_category_failures`]'s
+            /// universe. Generated from the same list as the enum itself.
+            const ALL: &'static [Category] = &[$(Category::$variant),+];
+        }
+    };
+}
+
+closed_category! {
     // CLI-only: MCP covers this domain instead.
     Comments,
     Webhooks,
@@ -99,16 +127,11 @@ enum Category {
     SpecializedMutation,
 }
 
-/// PR6a defines this method so PR6a's own exclusion tables are already
-/// written against it; PR6b's exclusion-creep direction (design D7.3
-/// direction 3) is the first consumer. Left `#[allow(dead_code)]` in the
-/// interim — the same posture `atlas_cli/src/component.rs` (design D3) takes
-/// for a declaration with no production consumer yet.
-#[allow(dead_code)]
 impl Category {
     /// The closed set of categories a given surface's exclusion list may
     /// carry (design D7.3 direction 3: a category on the wrong surface is
-    /// exclusion creep, not a valid entry).
+    /// exclusion creep, not a valid entry). No wildcard arm: a thirteenth
+    /// `Category` variant fails to compile here until this match names it.
     fn valid_for_surface(self, surface: Surface) -> bool {
         match self {
             Category::Comments | Category::Webhooks | Category::Auth => surface == Surface::Cli,
@@ -1892,6 +1915,67 @@ fn unnamed_gap_failures(
 }
 
 // ---------------------------------------------------------------------------
+// Direction 2 (T6b.1/T6b.2) — a listed exclusion the surface now covers
+// fails, naming the stale entry (design D7.3, INV-BIDIRECTIONAL-COVERAGE).
+// ---------------------------------------------------------------------------
+
+fn stale_exclusion_failures(
+    covered: &BTreeSet<RouteKey>,
+    exclusions: &[UncoveredRoute],
+    surface: Surface,
+) -> Vec<String> {
+    exclusions
+        .iter()
+        .filter(|entry| covered.contains(&exclusion_key(entry)))
+        .map(|entry| {
+            let (component, method, path, _category, _reason) = *entry;
+            format!(
+                "{method} {path} ({component}) is listed in the {} exclusion list but is now \
+                 reachable through a command or resource on that surface — stale entry",
+                surface.as_str()
+            )
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Direction 3 (T6b.3/T6b.4, epic R5) — exclusion creep: a category used on
+// the surface it is not valid for, or a category with zero rows on every
+// surface (dead — nothing exercises it, so it cannot be reviewed for creep).
+// ---------------------------------------------------------------------------
+
+fn exclusion_creep_failures(exclusions: &[UncoveredRoute], surface: Surface) -> Vec<String> {
+    exclusions
+        .iter()
+        .filter(|entry| {
+            let (_, _, _, category, _) = *entry;
+            !category.valid_for_surface(surface)
+        })
+        .map(|entry| {
+            let (component, method, path, category, _reason) = *entry;
+            format!(
+                "{method} {path} ({component}) is classified {category:?} in the {} exclusion \
+                 list, but {category:?} is not valid for that surface — exclusion creep",
+                surface.as_str()
+            )
+        })
+        .collect()
+}
+
+fn dead_category_failures(cli: &[UncoveredRoute], mcp: &[UncoveredRoute]) -> Vec<String> {
+    Category::ALL
+        .iter()
+        .filter(|category| {
+            !cli.iter().any(|entry| entry.3 == **category)
+                && !mcp.iter().any(|entry| entry.3 == **category)
+        })
+        .map(|category| {
+            format!("{category:?} has zero rows on either exclusion list — dead category")
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
 // T6a.5 — anti-vacuity (design R4).
 // ---------------------------------------------------------------------------
 
@@ -1923,7 +2007,7 @@ fn registry_client_and_surface_walks_are_not_vacuous() {
 }
 
 // ---------------------------------------------------------------------------
-// The composed coverage test (direction 1: unnamed gap).
+// The composed coverage test (all three D7.3 directions).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -1959,10 +2043,159 @@ fn every_registry_route_is_reachable_or_explicitly_excluded_per_surface() {
         MCP_UNCOVERED,
         Surface::Mcp,
     ));
+    failures.extend(stale_exclusion_failures(
+        &cli_covered,
+        CLI_UNCOVERED,
+        Surface::Cli,
+    ));
+    failures.extend(stale_exclusion_failures(
+        &mcp_covered,
+        MCP_UNCOVERED,
+        Surface::Mcp,
+    ));
+    failures.extend(exclusion_creep_failures(CLI_UNCOVERED, Surface::Cli));
+    failures.extend(exclusion_creep_failures(MCP_UNCOVERED, Surface::Mcp));
+    failures.extend(dead_category_failures(CLI_UNCOVERED, MCP_UNCOVERED));
 
     assert!(
         failures.is_empty(),
-        "coverage gaps (direction 1, unnamed gap):\n{}",
+        "coverage gaps (directions 1-3: unnamed gap, stale exclusion, exclusion creep):\n{}",
+        failures.join("\n")
+    );
+}
+
+// ---------------------------------------------------------------------------
+// T6b.1/T6b.2 probes — direction 2 (stale exclusion), synthetic fixtures.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_stale_exclusion_that_is_now_covered_is_flagged_by_name() {
+    let covered: BTreeSet<RouteKey> =
+        BTreeSet::from([route_key("acta", HttpMethod::Get, "/probe/{id}")]);
+    let stale_entry: UncoveredRoute = (
+        "acta",
+        HttpMethod::Get,
+        "/probe/{id}",
+        Category::RootProbe,
+        "probe: planted stale entry for a route the surface now covers",
+    );
+
+    let failures = stale_exclusion_failures(&covered, &[stale_entry], Surface::Cli);
+
+    assert_eq!(
+        failures.len(),
+        1,
+        "a stale exclusion entry (route now covered) must be flagged by name"
+    );
+    assert!(
+        failures
+            .first()
+            .is_some_and(|failure| failure.contains("/probe/{id}"))
+    );
+}
+
+#[test]
+fn a_genuinely_uncovered_exclusion_is_not_flagged_as_stale() {
+    let covered: BTreeSet<RouteKey> = BTreeSet::new();
+    let entry: UncoveredRoute = (
+        "acta",
+        HttpMethod::Get,
+        "/probe/{id}",
+        Category::RootProbe,
+        "probe: genuinely uncovered, must not be flagged",
+    );
+
+    let failures = stale_exclusion_failures(&covered, &[entry], Surface::Cli);
+
+    assert!(
+        failures.is_empty(),
+        "an exclusion for a route no surface covers must not be flagged stale"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// T6b.3/T6b.4 probes — direction 3 (exclusion creep), synthetic fixtures.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_category_used_on_the_wrong_surface_is_flagged_as_creep() {
+    let entry: UncoveredRoute = (
+        "custos",
+        HttpMethod::Get,
+        "/probe/{id}",
+        Category::Users, // MCP-only category, planted on the CLI list.
+        "probe: Users planted on the CLI exclusion list",
+    );
+
+    let failures = exclusion_creep_failures(&[entry], Surface::Cli);
+
+    assert_eq!(
+        failures.len(),
+        1,
+        "a category not valid for its surface must be flagged as exclusion creep"
+    );
+}
+
+#[test]
+fn a_category_valid_for_its_surface_is_not_flagged_as_creep() {
+    let entry: UncoveredRoute = (
+        "acta",
+        HttpMethod::Get,
+        "/probe/{id}",
+        Category::Comments, // CLI-only category, correctly on the CLI list.
+        "probe: correctly classified",
+    );
+
+    let failures = exclusion_creep_failures(&[entry], Surface::Cli);
+
+    assert!(
+        failures.is_empty(),
+        "a category valid for its surface must not be flagged as creep"
+    );
+}
+
+#[test]
+fn a_category_absent_from_both_exclusion_lists_is_flagged_as_dead() {
+    let cli: Vec<UncoveredRoute> = vec![(
+        "acta",
+        HttpMethod::Get,
+        "/probe/{id}",
+        Category::Comments,
+        "probe: the only category this synthetic universe uses",
+    )];
+    let mcp: Vec<UncoveredRoute> = vec![];
+
+    let failures = dead_category_failures(&cli, &mcp);
+
+    assert!(
+        !failures.iter().any(|f| f.contains("Comments")),
+        "a category with a row on some surface must not be flagged dead"
+    );
+    assert!(
+        failures.iter().any(|f| f.contains("Webhooks")),
+        "a category with zero rows on every surface must be flagged dead"
+    );
+}
+
+#[test]
+fn category_all_lists_every_variant_exactly_once() {
+    let distinct: BTreeSet<String> = Category::ALL.iter().map(|c| format!("{c:?}")).collect();
+
+    assert_eq!(Category::ALL.len(), Category::COUNT);
+    assert_eq!(
+        distinct.len(),
+        Category::ALL.len(),
+        "Category::ALL must not repeat a variant"
+    );
+}
+
+#[test]
+fn no_real_exclusion_list_category_is_dead() {
+    let failures = dead_category_failures(CLI_UNCOVERED, MCP_UNCOVERED);
+
+    assert!(
+        failures.is_empty(),
+        "every closed Category variant must have at least one real row on some surface:\n{}",
         failures.join("\n")
     );
 }
