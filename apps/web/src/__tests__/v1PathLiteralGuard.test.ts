@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { findApiLiterals, findViolations, loadDocumentKeys, loadProductionSrc } from './v1PathLiteralGuard';
+import {
+  findApiLiterals,
+  findViolations,
+  loadDocumentKeys,
+  loadDocumentOwners,
+  loadProductionSrc,
+} from './v1PathLiteralGuard';
 
 describe('v1PathLiteralGuard — probe self-test', () => {
   const documentKeys = new Set(['/api/v2/acta/workspaces/{}/tasks', '/api/v2/custos/auth/me']);
@@ -117,6 +123,70 @@ describe('v1PathLiteralGuard — probe self-test', () => {
   });
 });
 
+describe('v1PathLiteralGuard — ownership check (D5.3)', () => {
+  const documentKeys = new Set(['/api/v2/acta/workspaces/{}/tasks', '/api/v2/custos/workspaces/{}/tasks']);
+  const documentOwners = new Map([
+    ['/api/v2/acta/workspaces/{}/tasks', 'acta'],
+    ['/api/v2/custos/workspaces/{}/tasks', 'custos'],
+  ]);
+
+  it('passes a document key called through its own component', () => {
+    const violations = findViolations(
+      new Map([['src/scratch/i.ts', "acta.get('/api/v2/acta/workspaces/{ws}/tasks');"]]),
+      documentKeys,
+      new Set(),
+      documentOwners,
+    );
+
+    expect(violations).toEqual([]);
+  });
+
+  it("flags a document key called through another component's sub-client", () => {
+    const violations = findViolations(
+      new Map([['src/scratch/j.ts', "custos.get('/api/v2/acta/workspaces/{ws}/tasks');"]]),
+      documentKeys,
+      new Set(),
+      documentOwners,
+    );
+
+    expect(violations).toEqual([
+      {
+        file: 'src/scratch/j.ts',
+        literal: '/api/v2/acta/workspaces/{ws}/tasks',
+        reason: 'owned by acta, called through custos',
+      },
+    ]);
+  });
+
+  it('still flags a V2-shaped literal naming a component the document does not declare, when called through a sub-client', () => {
+    const violations = findViolations(
+      new Map([['src/scratch/k.ts', "custos.get('/api/v2/custos/workspaces/{ws}/tasks');"]]),
+      new Set(['/api/v2/acta/workspaces/{}/tasks']),
+      new Set(),
+      new Map([['/api/v2/acta/workspaces/{}/tasks', 'acta']]),
+    );
+
+    expect(violations).toEqual([
+      {
+        file: 'src/scratch/k.ts',
+        literal: '/api/v2/custos/workspaces/{ws}/tasks',
+        reason: 'not a key in openapi.json',
+      },
+    ]);
+  });
+});
+
+describe('v1PathLiteralGuard — document owners (D5.3)', () => {
+  it('maps every path key to its x-atlas-component, with 142 entries and known owners', () => {
+    const owners = loadDocumentOwners();
+
+    expect(owners.size).toBe(142);
+    expect(owners.get('/health')).toBe('platform');
+    expect(owners.get('/api/v2/acta/admin/status-templates')).toBe('acta');
+    expect(owners.get('/api/v2/custos/activate/{}')).toBe('custos');
+  });
+});
+
 describe('v1PathLiteralGuard — production src', () => {
   it('has zero violations across every non-generated, non-test production file', async () => {
     const files = await loadProductionSrc();
@@ -132,5 +202,11 @@ describe('v1PathLiteralGuard — production src', () => {
 
     expect(files.size).toBeGreaterThan(200);
     expect(findApiLiterals(files.get('src/platform/browser.ts') ?? '')).not.toHaveLength(0);
+  });
+
+  it('covers apps/web/scripts/ (D5.4) so the generator is not a blind spot', async () => {
+    const files = await loadProductionSrc();
+
+    expect(files.has('scripts/gen-types.mjs')).toBe(true);
   });
 });

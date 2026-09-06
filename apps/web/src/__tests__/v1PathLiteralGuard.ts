@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 
+import { DECLARED_COMPONENTS } from '../api/components';
+
 /**
  * D4.5 layer 2: the source guard for the two sites `vue-tsc` cannot see
  * (`EventSource`, the 401-suppression `Set`) and for any future untyped site.
@@ -14,6 +16,7 @@ import { join, relative } from 'node:path';
 
 export const WEB_ROOT = join(__dirname, '..', '..');
 const SRC_ROOT = join(WEB_ROOT, 'src');
+const SCRIPTS_ROOT = join(WEB_ROOT, 'scripts');
 const OPENAPI_PATH = join(WEB_ROOT, 'openapi.json');
 
 // A string literal (single/double/backtick-quoted) whose content is an API
@@ -232,9 +235,40 @@ export function findApiLiterals(content: string): string[] {
   return literals;
 }
 
+interface OpenApiOperation {
+  'x-atlas-component'?: string;
+}
+
+type OpenApiPathItem = Record<string, OpenApiOperation | unknown>;
+
+interface OpenApiDocument {
+  paths: Record<string, OpenApiPathItem>;
+}
+
+function readDocument(): OpenApiDocument {
+  return JSON.parse(readFileSync(OPENAPI_PATH, 'utf8')) as OpenApiDocument;
+}
+
 export function loadDocumentKeys(): Set<string> {
-  const doc = JSON.parse(readFileSync(OPENAPI_PATH, 'utf8')) as { paths: Record<string, unknown> };
-  return new Set(Object.keys(doc.paths).map(normalize));
+  return new Set(Object.keys(readDocument().paths).map(normalize));
+}
+
+/** Normalized path key ⇒ `x-atlas-component`, read from the same document
+ * `loadDocumentKeys` already reads (no second document, D5.3). */
+export function loadDocumentOwners(): Map<string, string> {
+  const owners = new Map<string, string>();
+
+  for (const [path, pathItem] of Object.entries(readDocument().paths)) {
+    for (const operation of Object.values(pathItem)) {
+      const component = (operation as OpenApiOperation)?.['x-atlas-component'];
+      if (typeof component === 'string') {
+        owners.set(normalize(path), component);
+        break;
+      }
+    }
+  }
+
+  return owners;
 }
 
 /** (file, literal) pairs that are not real routes and are exempted by name,
@@ -251,6 +285,17 @@ export const DEFAULT_ALLOWLIST = new Set([
   'src/lib/legacyApiPath.ts::/api/v2/acta/workspaces/',
 ]);
 
+/** A literal reached through `<ident>.VERB('<literal>'`, where `<ident>` is one
+ * the audited `DECLARED_COMPONENTS` — the call-site receiver identifier that
+ * D5.3's ownership check reads back from source text. `null` when the
+ * literal was not reached that way (a raw string, `wrappedClient`, etc). */
+function subClientReceiver(content: string, literalStart: number): string | null {
+  const prefix = content.slice(0, literalStart);
+  const match = /([A-Za-z_$][A-Za-z0-9_$]*)\.[A-Za-z_$][A-Za-z0-9_$]*\(\s*$/.exec(prefix);
+  const ident = match?.[1];
+  return ident && (DECLARED_COMPONENTS as readonly string[]).includes(ident) ? ident : null;
+}
+
 /**
  * The allowlist is bidirectional, like the Rust guards': an entry exempts a
  * literal, and an entry whose literal no longer exists in the scanned tree is
@@ -260,12 +305,18 @@ export function findViolations(
   files: Map<string, string>,
   documentKeys: Set<string>,
   allowlist: Set<string> = DEFAULT_ALLOWLIST,
+  documentOwners: Map<string, string> = loadDocumentOwners(),
 ): Violation[] {
   const violations: Violation[] = [];
   const unmatchedAllowlist = new Set(allowlist);
 
   for (const [file, content] of [...files.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-    for (const literal of findApiLiterals(content)) {
+    const masked = maskComments(content);
+
+    for (const match of masked.matchAll(STRING_LITERAL_RE)) {
+      const literal = match[2] ?? '';
+      if (!API_PATH_RE.test(literal)) continue;
+
       const allowlistKey = `${file}::${literal}`;
       if (allowlist.has(allowlistKey)) {
         unmatchedAllowlist.delete(allowlistKey);
@@ -278,8 +329,16 @@ export function findViolations(
       }
 
       const [relNoQuery] = literal.split('?');
-      if (!documentKeys.has(normalize(relNoQuery ?? literal))) {
+      const normalized = normalize(relNoQuery ?? literal);
+      if (!documentKeys.has(normalized)) {
         violations.push({ file, literal, reason: 'not a key in openapi.json' });
+        continue;
+      }
+
+      const receiver = subClientReceiver(masked, match.index);
+      const owner = documentOwners.get(normalized);
+      if (receiver && owner && owner !== receiver) {
+        violations.push({ file, literal, reason: `owned by ${owner}, called through ${receiver}` });
       }
     }
   }
@@ -296,28 +355,43 @@ export function findViolations(
   return violations.sort((a, b) => a.file.localeCompare(b.file) || a.literal.localeCompare(b.literal));
 }
 
+/** Loads every production source file under `dir` whose name matches
+ * `extensionRe`, skipping `__tests__`, declaration files, and test files. */
+async function walkProductionFiles(
+  dir: string,
+  extensionRe: RegExp,
+  files: Map<string, string>,
+): Promise<void> {
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+
+    if (entry.isDirectory()) {
+      if (entry.name === '__tests__') continue;
+      await walkProductionFiles(full, extensionRe, files);
+      continue;
+    }
+
+    if (!extensionRe.test(entry.name)) continue;
+    if (
+      entry.name.endsWith('.d.ts') ||
+      entry.name.endsWith('.d.mts') ||
+      entry.name.endsWith('.spec.ts') ||
+      entry.name.endsWith('.test.ts')
+    ) {
+      continue;
+    }
+
+    files.set(relative(WEB_ROOT, full), readFileSync(full, 'utf8'));
+  }
+}
+
+/** Scans `src/` (`.ts`/`.vue`) and `scripts/` (`.ts`/`.mjs`, D5.4) — the two
+ * production trees a hand-written path literal can hide in. */
 export async function loadProductionSrc(): Promise<Map<string, string>> {
   const files = new Map<string, string>();
 
-  async function walk(dir: string): Promise<void> {
-    for (const entry of await readdir(dir, { withFileTypes: true })) {
-      const full = join(dir, entry.name);
+  await walkProductionFiles(SRC_ROOT, /\.(ts|vue)$/, files);
+  await walkProductionFiles(SCRIPTS_ROOT, /\.(ts|mjs)$/, files);
 
-      if (entry.isDirectory()) {
-        if (entry.name === '__tests__') continue;
-        await walk(full);
-        continue;
-      }
-
-      if (!/\.(ts|vue)$/.test(entry.name)) continue;
-      if (entry.name === 'types.d.ts' || entry.name.endsWith('.spec.ts') || entry.name.endsWith('.test.ts')) {
-        continue;
-      }
-
-      files.set(relative(WEB_ROOT, full), readFileSync(full, 'utf8'));
-    }
-  }
-
-  await walk(SRC_ROOT);
   return files;
 }
