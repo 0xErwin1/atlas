@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import type { components } from '@/api/types.d.ts';
-import { wrappedClient } from '@/api/wrapper';
+import { custos } from '@/api';
+import type { components } from '@/api/generated/custos.d.ts';
 import { errorHint } from '@/lib/apiError';
 
 export type GroupDto = components['schemas']['GroupDto'];
@@ -44,7 +44,7 @@ export const useGroupsStore = defineStore('groups', () => {
     loading.value = true;
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.GET('/api/v2/custos/workspaces/{ws}/groups', {
+    const { data, error: apiError } = await custos.GET('/api/v2/custos/workspaces/{ws}/groups', {
       params: { path: { ws } },
     });
 
@@ -63,7 +63,7 @@ export const useGroupsStore = defineStore('groups', () => {
     const generation = bindWorkspace(ws);
     error.value = null;
 
-    const { error: apiError } = await wrappedClient.POST('/api/v2/custos/workspaces/{ws}/groups', {
+    const { error: apiError } = await custos.POST('/api/v2/custos/workspaces/{ws}/groups', {
       params: { path: { ws } },
       body: { name },
     });
@@ -82,12 +82,9 @@ export const useGroupsStore = defineStore('groups', () => {
     const generation = bindWorkspace(ws);
     error.value = null;
 
-    const { error: apiError } = await wrappedClient.DELETE(
-      '/api/v2/custos/workspaces/{ws}/groups/{group_id}',
-      {
-        params: { path: { ws, group_id: groupId } },
-      },
-    );
+    const { error: apiError } = await custos.DELETE('/api/v2/custos/workspaces/{ws}/groups/{group_id}', {
+      params: { path: { ws, group_id: groupId } },
+    });
 
     if (!isCurrentWorkspace(ws, generation)) return apiError === undefined;
     if (apiError !== undefined) {
@@ -103,7 +100,7 @@ export const useGroupsStore = defineStore('groups', () => {
     const generation = bindWorkspace(ws);
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.GET(
+    const { data, error: apiError } = await custos.GET(
       '/api/v2/custos/workspaces/{ws}/groups/{group_id}/members',
       { params: { path: { ws, group_id: groupId } } },
     );
@@ -122,7 +119,7 @@ export const useGroupsStore = defineStore('groups', () => {
     const generation = bindWorkspace(ws);
     error.value = null;
 
-    const { error: apiError } = await wrappedClient.POST(
+    const { error: apiError } = await custos.POST(
       '/api/v2/custos/workspaces/{ws}/groups/{group_id}/members',
       {
         params: { path: { ws, group_id: groupId } },
@@ -144,7 +141,7 @@ export const useGroupsStore = defineStore('groups', () => {
     const generation = bindWorkspace(ws);
     error.value = null;
 
-    const { error: apiError } = await wrappedClient.DELETE(
+    const { error: apiError } = await custos.DELETE(
       '/api/v2/custos/workspaces/{ws}/groups/{group_id}/members/{user_id}',
       { params: { path: { ws, group_id: groupId, user_id: userId } } },
     );

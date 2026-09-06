@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { z } from 'zod';
-import { wrappedClient } from '@/api/wrapper';
+import { custos } from '@/api';
 import Btn from '@/components/ui/Btn.vue';
 import FormField from '@/components/ui/FormField.vue';
 import Icon from '@/components/ui/Icon.vue';
@@ -52,7 +52,7 @@ onMounted(async () => {
   }
 
   try {
-    const { data, error } = await wrappedClient.GET('/api/v2/custos/activate/{token}', {
+    const { data, error } = await custos.GET('/api/v2/custos/activate/{token}', {
       params: { path: { token: token.value } },
     });
 
@@ -109,7 +109,7 @@ async function handleSubmit(): Promise<void> {
   submitting.value = true;
 
   try {
-    const { error } = await wrappedClient.POST('/api/v2/custos/activate/{token}', {
+    const { error } = await custos.POST('/api/v2/custos/activate/{token}', {
       params: { path: { token: token.value } },
       body: { password: result.data.password },
     });

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import type { components } from '@/api/types.d.ts';
-import { wrappedClient } from '@/api/wrapper';
+import { custos } from '@/api';
+import type { components } from '@/api/generated/custos.d.ts';
 import { errorHint } from '@/lib/apiError';
 import { collectPaged } from '@/lib/pagination';
 
@@ -23,7 +23,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
 
     try {
       const { items, error: e } = await collectPaged<ApiKeyDto>((cursor) =>
-        wrappedClient.GET('/api/v2/custos/api-keys', {
+        custos.GET('/api/v2/custos/api-keys', {
           params: { query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) } },
         }),
       );
@@ -47,7 +47,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     error.value = null;
 
     try {
-      const { data, error: e } = await wrappedClient.POST('/api/v2/custos/api-keys', {
+      const { data, error: e } = await custos.POST('/api/v2/custos/api-keys', {
         body: req,
       });
 
@@ -67,7 +67,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     error.value = null;
 
     try {
-      const { data, error: e } = await wrappedClient.PATCH('/api/v2/custos/api-keys/{key_id}', {
+      const { data, error: e } = await custos.PATCH('/api/v2/custos/api-keys/{key_id}', {
         params: { path: { key_id: keyId } },
         body: { is_global: isGlobal },
       });
@@ -99,7 +99,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     error.value = null;
 
     try {
-      const { data, error: e } = await wrappedClient.PATCH('/api/v2/custos/api-keys/{key_id}', {
+      const { data, error: e } = await custos.PATCH('/api/v2/custos/api-keys/{key_id}', {
         params: { path: { key_id: keyId } },
         body: { scopes },
       });
@@ -125,7 +125,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     error.value = null;
 
     try {
-      const { error: e } = await wrappedClient.DELETE('/api/v2/custos/api-keys/{key_id}', {
+      const { error: e } = await custos.DELETE('/api/v2/custos/api-keys/{key_id}', {
         params: { path: { key_id: id } },
       });
 
@@ -146,7 +146,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     error.value = null;
 
     try {
-      const { data, error: e } = await wrappedClient.GET('/api/v2/custos/api-keys/{key_id}/grants', {
+      const { data, error: e } = await custos.GET('/api/v2/custos/api-keys/{key_id}/grants', {
         params: { path: { key_id: keyId } },
       });
 
@@ -172,7 +172,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     error.value = null;
 
     try {
-      const { error: e } = await wrappedClient.POST('/api/v2/custos/workspaces/{ws}/grants', {
+      const { error: e } = await custos.POST('/api/v2/custos/workspaces/{ws}/grants', {
         params: { path: { ws: slug } },
         body: { principal: { type: 'api_key', id: keyId }, role },
       });
@@ -193,7 +193,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     error.value = null;
 
     try {
-      const { error: e } = await wrappedClient.DELETE('/api/v2/custos/api-keys/{key_id}/grants/{grant_id}', {
+      const { error: e } = await custos.DELETE('/api/v2/custos/api-keys/{key_id}/grants/{grant_id}', {
         params: { path: { key_id: keyId, grant_id: grantId } },
       });
 

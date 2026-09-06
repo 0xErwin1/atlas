@@ -1,10 +1,10 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import type { components } from '@/api/types.d.ts';
-import { wrappedClient } from '@/api/wrapper';
+import { custos } from '@/api';
+import type { components } from '@/api/generated/custos.d.ts';
 import { errorHint } from '@/lib/apiError';
 
-export type AuditEntryDto = components['schemas']['AuditEntryDto'];
+export type AuditEntryDto = components['schemas']['Page_AuditEntryDto']['items'][number];
 
 /** Actor-type filter for the security audit feed. `null` means "all". */
 export type AuditActorFilter = 'user' | 'api_key' | null;
@@ -105,7 +105,7 @@ export const useAuditStore = defineStore('audit', () => {
     ws: string,
     pageCursor?: string,
   ): Promise<{ page: AuditPage | null; error: string | null }> {
-    const { data, error: apiError } = await wrappedClient.GET('/api/v2/custos/workspaces/{ws}/audit', {
+    const { data, error: apiError } = await custos.GET('/api/v2/custos/workspaces/{ws}/audit', {
       params: {
         path: { ws },
         query: buildQuery(pageCursor),
@@ -122,7 +122,7 @@ export const useAuditStore = defineStore('audit', () => {
   async function fetchPlatformPage(
     pageCursor?: string,
   ): Promise<{ page: AuditPage | null; error: string | null }> {
-    const { data, error: apiError } = await wrappedClient.GET('/api/v2/custos/admin/audit', {
+    const { data, error: apiError } = await custos.GET('/api/v2/custos/admin/audit', {
       params: {
         query: buildQuery(pageCursor),
       },

@@ -1,20 +1,20 @@
-import { wrappedClient } from '@/api/wrapper';
+import { custos } from '@/api';
 import type { PlatformTransport } from './transport';
 
 export function createBrowserPlatformTransport(): PlatformTransport {
   return {
     isDesktop: false,
     login(credentials) {
-      return wrappedClient.POST('/api/v2/custos/auth/login', { body: credentials });
+      return custos.POST('/api/v2/custos/auth/login', { body: credentials });
     },
     me() {
-      return wrappedClient.GET('/api/v2/custos/auth/me', {});
+      return custos.GET('/api/v2/custos/auth/me', {});
     },
     resume() {
-      return wrappedClient.GET('/api/v2/custos/auth/me', {});
+      return custos.GET('/api/v2/custos/auth/me', {});
     },
     logout() {
-      return wrappedClient.POST('/api/v2/custos/auth/logout', {});
+      return custos.POST('/api/v2/custos/auth/logout', {});
     },
     getOrigin() {
       return Promise.resolve({ data: { origin: globalThis.location?.origin ?? '' } });

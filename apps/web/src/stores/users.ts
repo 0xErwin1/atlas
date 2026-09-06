@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import type { components } from '@/api/types.d.ts';
-import { wrappedClient } from '@/api/wrapper';
+import { custos } from '@/api';
+import type { components } from '@/api/generated/custos.d.ts';
 import { errorHint } from '@/lib/apiError';
 import { toPublicUrl } from '@/platform/publicUrl';
 
@@ -34,7 +34,7 @@ export const useUsersStore = defineStore('users', () => {
     error.value = null;
 
     try {
-      const { data, error: e } = await wrappedClient.GET('/api/v2/custos/users', {});
+      const { data, error: e } = await custos.GET('/api/v2/custos/users', {});
       if (e || !data) {
         error.value = errorHint(e, 'Failed to load users');
         users.value = [];
@@ -59,7 +59,7 @@ export const useUsersStore = defineStore('users', () => {
     error.value = null;
 
     try {
-      const { data, error: e } = await wrappedClient.POST('/api/v2/custos/users', { body });
+      const { data, error: e } = await custos.POST('/api/v2/custos/users', { body });
       if (e || !data) {
         error.value = errorHint(e, 'Failed to create user');
         return null;
@@ -81,7 +81,7 @@ export const useUsersStore = defineStore('users', () => {
     error.value = null;
 
     try {
-      const { data, error: e } = await wrappedClient.POST('/api/v2/custos/users/{user_id}/activation-link', {
+      const { data, error: e } = await custos.POST('/api/v2/custos/users/{user_id}/activation-link', {
         params: { path: { user_id: id } },
       });
       if (e || !data) {
@@ -102,7 +102,7 @@ export const useUsersStore = defineStore('users', () => {
       ? '/api/v2/custos/users/{user_id}/disable'
       : '/api/v2/custos/users/{user_id}/enable';
     try {
-      const { error: e } = await wrappedClient.POST(path, { params: { path: { user_id: id } } });
+      const { error: e } = await custos.POST(path, { params: { path: { user_id: id } } });
       if (e) {
         error.value = errorHint(e, 'Failed to update user');
         return false;
@@ -119,7 +119,7 @@ export const useUsersStore = defineStore('users', () => {
     error.value = null;
 
     try {
-      const { error: e } = await wrappedClient.POST('/api/v2/custos/users/{user_id}/reset-password', {
+      const { error: e } = await custos.POST('/api/v2/custos/users/{user_id}/reset-password', {
         params: { path: { user_id: id } },
         body: { new_password: newPassword },
       });
@@ -143,7 +143,7 @@ export const useUsersStore = defineStore('users', () => {
     error.value = null;
 
     try {
-      const { data, error: e } = await wrappedClient.GET('/api/v2/custos/users/{user_id}/memberships', {
+      const { data, error: e } = await custos.GET('/api/v2/custos/users/{user_id}/memberships', {
         params: { path: { user_id: id } },
       });
       if (e || !data) {
@@ -166,7 +166,7 @@ export const useUsersStore = defineStore('users', () => {
     error.value = null;
 
     try {
-      const { data, error: e } = await wrappedClient.POST('/api/v2/custos/users/{user_id}/system-admin', {
+      const { data, error: e } = await custos.POST('/api/v2/custos/users/{user_id}/system-admin', {
         params: { path: { user_id: id } },
         body: { is_system_admin: value },
       });
