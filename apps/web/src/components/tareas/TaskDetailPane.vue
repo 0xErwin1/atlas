@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import type { components } from '@/api/types.d.ts';
+import type { components } from '@/api/generated/acta.d.ts';
 import ActivityComments from '@/components/tareas/ActivityComments.vue';
 import TaskBody from '@/components/tareas/TaskBody.vue';
 import TaskDetailHeader from '@/components/tareas/TaskDetailHeader.vue';

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import type { components } from '@/api/types.d.ts';
+import type { components } from '@/api/generated/acta.d.ts';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import DatePicker from '@/components/ui/DatePicker.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';

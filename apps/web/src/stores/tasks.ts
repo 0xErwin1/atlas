@@ -1,8 +1,8 @@
 import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
 import { z } from 'zod';
-import type { components } from '@/api/types.d.ts';
-import { wrappedClient } from '@/api/wrapper';
+import { acta } from '@/api';
+import type { components } from '@/api/generated/acta.d.ts';
 import {
   getResourceCachePrincipal,
   hydrateAndRevalidateResource,
@@ -102,12 +102,9 @@ export const useTasksStore = defineStore('tasks', () => {
     }
 
     const load = async (): Promise<TaskDto> => {
-      const { data, error: apiError } = await wrappedClient.GET(
-        '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}',
-        {
-          params: { path: { ws, readable_id: readableId } },
-        },
-      );
+      const { data, error: apiError } = await acta.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}', {
+        params: { path: { ws, readable_id: readableId } },
+      });
 
       if (apiError !== undefined || data === undefined) {
         throw taskLoadError(apiError);
@@ -195,13 +192,10 @@ export const useTasksStore = defineStore('tasks', () => {
       openTask.value = { ...previous, description };
     }
 
-    const { data, error: apiError } = await wrappedClient.PATCH(
-      '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}',
-      {
-        params: { path: { ws, readable_id: readableId } },
-        body: { description },
-      },
-    );
+    const { data, error: apiError } = await acta.PATCH('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}', {
+      params: { path: { ws, readable_id: readableId } },
+      body: { description },
+    });
 
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to update description');

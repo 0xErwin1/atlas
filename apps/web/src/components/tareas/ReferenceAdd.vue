@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import type { components } from '@/api/types.d.ts';
+import type { components } from '@/api/generated/acta.d.ts';
 import SearchPicker from '@/components/tareas/SearchPicker.vue';
 import Dropdown, { type DropdownOption } from '@/components/ui/Dropdown.vue';
 import type { SearchHitDto } from '@/stores/search';

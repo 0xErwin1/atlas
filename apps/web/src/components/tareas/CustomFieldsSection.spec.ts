@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { components } from '@/api/types.d.ts';
+import type { components } from '@/api/generated/acta.d.ts';
 
 const { load, updateTask, patchOpenTask, showBanner } = vi.hoisted(() => ({
   load: vi.fn(),
