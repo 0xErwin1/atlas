@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia';
 import { computed, readonly, ref } from 'vue';
-import type { components } from '@/api/types';
-import { type CacheInvalidationScope, wrappedClient } from '@/api/wrapper';
+import { acta } from '@/api';
+import type { components } from '@/api/generated/acta.d.ts';
+import type { CacheInvalidationScope } from '@/api/wrapper';
 import { errorHint } from '@/lib/apiError';
 import { collectPaged } from '@/lib/pagination';
 import { disposeWorkspaceLiveUpdates } from '@/lib/workspaceLiveUpdates';
@@ -242,7 +243,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   async function loadWorkspaces(): Promise<string | null> {
     const requestGeneration = ++workspaceLoadGeneration;
     const requestSessionGeneration = auth.sessionGeneration;
-    const { data, error } = await wrappedClient.GET('/api/v2/acta/workspaces');
+    const { data, error } = await acta.GET('/api/v2/acta/workspaces');
 
     if (!isCurrentWorkspaceRequest(requestGeneration, requestSessionGeneration)) return null;
 
@@ -295,7 +296,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   async function createWorkspace(name: string): Promise<string | null> {
     const requestGeneration = ++workspaceLoadGeneration;
     const requestSessionGeneration = auth.sessionGeneration;
-    const { data, error: apiError } = await wrappedClient.POST('/api/v2/acta/workspaces', {
+    const { data, error: apiError } = await acta.POST('/api/v2/acta/workspaces', {
       body: { name },
     });
 
@@ -306,7 +307,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       return null;
     }
 
-    const list = await wrappedClient.GET('/api/v2/acta/workspaces');
+    const list = await acta.GET('/api/v2/acta/workspaces');
     if (!isCurrentWorkspaceRequest(requestGeneration, requestSessionGeneration)) return null;
 
     if (list.data !== undefined) {
@@ -341,7 +342,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     const generation = ++projectsLoadGeneration;
 
     const { items, error: loadError } = await collectPaged<ProjectDto>((cursor) =>
-      wrappedClient.GET('/api/v2/acta/workspaces/{ws}/projects', {
+      acta.GET('/api/v2/acta/workspaces/{ws}/projects', {
         params: { path: { ws }, query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) } },
       }),
     );
@@ -383,7 +384,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         .replace(/[^A-Z0-9]/g, '')
         .slice(0, 4) || 'PRJ';
 
-    const { data, error: apiError } = await wrappedClient.POST('/api/v2/acta/workspaces/{ws}/projects', {
+    const { data, error: apiError } = await acta.POST('/api/v2/acta/workspaces/{ws}/projects', {
       params: { path: { ws } },
       body: { name, slug, task_prefix: taskPrefix, visibility: 'workspace' },
     });
@@ -399,13 +400,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   /** Renames a project. Returns true on success; sets `error` and returns false otherwise. */
   async function renameProject(ws: string, slug: string, name: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.PATCH(
-      '/api/v2/acta/workspaces/{ws}/projects/{project_slug}',
-      {
-        params: { path: { ws, project_slug: slug } },
-        body: { name },
-      },
-    );
+    const { error: apiError } = await acta.PATCH('/api/v2/acta/workspaces/{ws}/projects/{project_slug}', {
+      params: { path: { ws, project_slug: slug } },
+      body: { name },
+    });
 
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to rename project');
@@ -427,13 +425,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     slug: string,
     patch: { name?: string; task_prefix?: string; visibility?: 'private' | 'workspace' | 'public' },
   ): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.PATCH(
-      '/api/v2/acta/workspaces/{ws}/projects/{project_slug}',
-      {
-        params: { path: { ws, project_slug: slug } },
-        body: patch,
-      },
-    );
+    const { error: apiError } = await acta.PATCH('/api/v2/acta/workspaces/{ws}/projects/{project_slug}', {
+      params: { path: { ws, project_slug: slug } },
+      body: patch,
+    });
 
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to update project');
@@ -449,12 +444,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    * Returns true on success; sets `error` and returns false otherwise.
    */
   async function deleteProject(ws: string, slug: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.DELETE(
-      '/api/v2/acta/workspaces/{ws}/projects/{project_slug}',
-      {
-        params: { path: { ws, project_slug: slug } },
-      },
-    );
+    const { error: apiError } = await acta.DELETE('/api/v2/acta/workspaces/{ws}/projects/{project_slug}', {
+      params: { path: { ws, project_slug: slug } },
+    });
 
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to delete project');
@@ -474,7 +466,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   async function renameWorkspace(ws: string, name: string): Promise<boolean> {
     const requestGeneration = ++workspaceLoadGeneration;
     const requestSessionGeneration = auth.sessionGeneration;
-    const { data, error: apiError } = await wrappedClient.PATCH('/api/v2/acta/workspaces/{ws}', {
+    const { data, error: apiError } = await acta.PATCH('/api/v2/acta/workspaces/{ws}', {
       params: { path: { ws } },
       body: { name },
     });
@@ -508,7 +500,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   async function updateWorkspaceSlug(ws: string, slug: string): Promise<boolean> {
     const requestGeneration = ++workspaceLoadGeneration;
     const requestSessionGeneration = auth.sessionGeneration;
-    const { data, error: apiError } = await wrappedClient.PATCH('/api/v2/acta/admin/workspaces/{ws}', {
+    const { data, error: apiError } = await acta.PATCH('/api/v2/acta/admin/workspaces/{ws}', {
       params: { path: { ws } },
       body: { slug },
     });
@@ -550,7 +542,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    * sets `error` and returns false otherwise.
    */
   async function deleteWorkspace(ws: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.DELETE('/api/v2/acta/admin/workspaces/{ws}', {
+    const { error: apiError } = await acta.DELETE('/api/v2/acta/admin/workspaces/{ws}', {
       params: { path: { ws } },
     });
 
@@ -582,7 +574,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    * list and sets `error` on failure (e.g. a non-root caller gets 403).
    */
   async function loadAdminWorkspaces(): Promise<void> {
-    const { data, error: apiError } = await wrappedClient.GET('/api/v2/acta/admin/workspaces');
+    const { data, error: apiError } = await acta.GET('/api/v2/acta/admin/workspaces');
 
     if (apiError !== undefined || data === undefined) {
       adminWorkspaces.value = [];
@@ -599,7 +591,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     membersLoadRequest = request;
 
     try {
-      const { data, error: apiError } = await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/members', {
+      const { data, error: apiError } = await acta.GET('/api/v2/acta/workspaces/{ws}/members', {
         params: { path: { ws } },
       });
 
@@ -630,7 +622,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    * Returns true on success.
    */
   async function updateMemberRole(ws: string, userId: string, role: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.PATCH('/api/v2/acta/workspaces/{ws}/members/{user_id}', {
+    const { error: apiError } = await acta.PATCH('/api/v2/acta/workspaces/{ws}/members/{user_id}', {
       params: { path: { ws, user_id: userId } },
       body: { role },
     });
@@ -650,7 +642,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    * owner). Returns true on success.
    */
   async function removeMember(ws: string, userId: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.DELETE('/api/v2/acta/workspaces/{ws}/members/{user_id}', {
+    const { error: apiError } = await acta.DELETE('/api/v2/acta/workspaces/{ws}/members/{user_id}', {
       params: { path: { ws, user_id: userId } },
     });
 
@@ -671,12 +663,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   async function loadAssignableUsers(ws: string): Promise<void> {
     const request = {};
     assignableUsersLoadRequest = request;
-    const { data, error: apiError } = await wrappedClient.GET(
-      '/api/v2/acta/workspaces/{ws}/assignable-users',
-      {
-        params: { path: { ws } },
-      },
-    );
+    const { data, error: apiError } = await acta.GET('/api/v2/acta/workspaces/{ws}/assignable-users', {
+      params: { path: { ws } },
+    });
 
     if (assignableUsersLoadRequest !== request || activeWorkspaceSlug.value !== ws) return;
 
@@ -696,7 +685,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    * success — the caller reloads the member list.
    */
   async function addMember(ws: string, userId: string, role: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.POST('/api/v2/acta/workspaces/{ws}/members', {
+    const { error: apiError } = await acta.POST('/api/v2/acta/workspaces/{ws}/members', {
       params: { path: { ws } },
       body: { user_id: userId, role },
     });

@@ -1,8 +1,8 @@
 import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
 import { z } from 'zod';
-import type { components } from '@/api/types.d.ts';
-import { wrappedClient } from '@/api/wrapper';
+import { acta } from '@/api';
+import type { components } from '@/api/generated/acta.d.ts';
 import {
   getResourceCachePrincipal,
   hydrateAndRevalidateResource,
@@ -239,7 +239,7 @@ export const useWorkspaceTasksStore = defineStore('workspaceTasks', () => {
           });
 
     const fetchPage = async (): Promise<WorkspaceTaskPage> => {
-      const { data, error: apiError } = await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/tasks', {
+      const { data, error: apiError } = await acta.GET('/api/v2/acta/workspaces/{ws}/tasks', {
         params: {
           path: { ws },
           query: requestParams,

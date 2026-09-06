@@ -1,13 +1,13 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import type { components } from '@/api/types.d.ts';
-import { wrappedClient } from '@/api/wrapper';
+import { acta } from '@/api';
+import type { components } from '@/api/generated/acta.d.ts';
 import { errorHint } from '@/lib/apiError';
 
 export type WebhookDto = components['schemas']['WebhookDto'];
 export type WebhookCreatedDto = components['schemas']['WebhookCreatedDto'];
 export type CreateWebhookRequest = components['schemas']['CreateWebhookRequest'];
-export type WebhookDeliveryDto = components['schemas']['WebhookDeliveryDto'];
+export type WebhookDeliveryDto = components['schemas']['Page_WebhookDeliveryDto']['items'][number];
 export type IntegrationConfigDto = components['schemas']['IntegrationConfigDto'];
 export type IntegrationConfigCreatedDto = components['schemas']['IntegrationConfigCreatedDto'];
 
@@ -65,7 +65,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
     const generation = bindWorkspace(ws);
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/webhooks', {
+    const { data, error: apiError } = await acta.GET('/api/v2/acta/workspaces/{ws}/webhooks', {
       params: { path: { ws } },
     });
 
@@ -82,7 +82,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
     const generation = bindWorkspace(ws);
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.POST('/api/v2/acta/workspaces/{ws}/webhooks', {
+    const { data, error: apiError } = await acta.POST('/api/v2/acta/workspaces/{ws}/webhooks', {
       params: { path: { ws } },
       body,
     });
@@ -101,13 +101,10 @@ export const useWebhooksStore = defineStore('webhooks', () => {
     const generation = bindWorkspace(ws);
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.PATCH(
-      '/api/v2/acta/workspaces/{ws}/webhooks/{webhook_id}',
-      {
-        params: { path: { ws, webhook_id: id } },
-        body: patch,
-      },
-    );
+    const { data, error: apiError } = await acta.PATCH('/api/v2/acta/workspaces/{ws}/webhooks/{webhook_id}', {
+      params: { path: { ws, webhook_id: id } },
+      body: patch,
+    });
 
     if (!isCurrentWorkspace(ws, generation)) return apiError === undefined && data !== undefined;
     if (apiError !== undefined || data === undefined) {
@@ -123,12 +120,9 @@ export const useWebhooksStore = defineStore('webhooks', () => {
     const generation = bindWorkspace(ws);
     error.value = null;
 
-    const { error: apiError } = await wrappedClient.DELETE(
-      '/api/v2/acta/workspaces/{ws}/webhooks/{webhook_id}',
-      {
-        params: { path: { ws, webhook_id: id } },
-      },
-    );
+    const { error: apiError } = await acta.DELETE('/api/v2/acta/workspaces/{ws}/webhooks/{webhook_id}', {
+      params: { path: { ws, webhook_id: id } },
+    });
 
     if (!isCurrentWorkspace(ws, generation)) return apiError === undefined;
     if (apiError !== undefined) {
@@ -144,7 +138,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
     const generation = bindWorkspace(ws);
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.GET(
+    const { data, error: apiError } = await acta.GET(
       '/api/v2/acta/workspaces/{ws}/webhooks/{webhook_id}/deliveries',
       { params: { path: { ws, webhook_id: id } } },
     );
@@ -162,12 +156,9 @@ export const useWebhooksStore = defineStore('webhooks', () => {
     const generation = bindWorkspace(ws);
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.GET(
-      '/api/v2/acta/workspaces/{ws}/integration-configs',
-      {
-        params: { path: { ws } },
-      },
-    );
+    const { data, error: apiError } = await acta.GET('/api/v2/acta/workspaces/{ws}/integration-configs', {
+      params: { path: { ws } },
+    });
 
     if (!isCurrentWorkspace(ws, generation)) return;
     if (apiError !== undefined || data === undefined) {
@@ -185,13 +176,10 @@ export const useWebhooksStore = defineStore('webhooks', () => {
     const generation = bindWorkspace(ws);
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.POST(
-      '/api/v2/acta/workspaces/{ws}/integration-configs',
-      {
-        params: { path: { ws } },
-        body: { integration },
-      },
-    );
+    const { data, error: apiError } = await acta.POST('/api/v2/acta/workspaces/{ws}/integration-configs', {
+      params: { path: { ws } },
+      body: { integration },
+    });
 
     if (!isCurrentWorkspace(ws, generation)) return data ?? null;
     if (apiError !== undefined || data === undefined) {
@@ -207,7 +195,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
     const generation = bindWorkspace(ws);
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.PATCH(
+    const { data, error: apiError } = await acta.PATCH(
       '/api/v2/acta/workspaces/{ws}/integration-configs/{config_id}',
       {
         params: { path: { ws, config_id: id } },
@@ -229,7 +217,7 @@ export const useWebhooksStore = defineStore('webhooks', () => {
     const generation = bindWorkspace(ws);
     error.value = null;
 
-    const { error: apiError } = await wrappedClient.DELETE(
+    const { error: apiError } = await acta.DELETE(
       '/api/v2/acta/workspaces/{ws}/integration-configs/{config_id}',
       { params: { path: { ws, config_id: id } } },
     );

@@ -1,10 +1,10 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import type { components } from '@/api/types.d.ts';
-import { wrappedClient } from '@/api/wrapper';
+import { acta } from '@/api';
+import type { components } from '@/api/generated/acta.d.ts';
 import { errorHint } from '@/lib/apiError';
 
-export type ActivityEntryDto = components['schemas']['ActivityEntryDto'];
+export type ActivityEntryDto = components['schemas']['Page_ActivityEntryDto']['items'][number];
 
 /** Actor-type filter for the workspace activity feed. `null` means "all". */
 export type ActorFilter = 'user' | 'api_key' | null;
@@ -86,7 +86,7 @@ export const useActivityStore = defineStore('activity', () => {
     ws: string,
     pageCursor?: string,
   ): Promise<{ page: ActivityPage | null; error: string | null }> {
-    const { data, error: apiError } = await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/activity', {
+    const { data, error: apiError } = await acta.GET('/api/v2/acta/workspaces/{ws}/activity', {
       params: {
         path: { ws },
         query: buildQuery(pageCursor),

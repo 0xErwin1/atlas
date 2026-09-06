@@ -1,4 +1,4 @@
-import { wrappedClient } from '@/api/wrapper';
+import { acta } from '@/api';
 import { invalidateLiveResourceCache, resourceCacheEpoch } from '@/cache/cacheRuntime';
 import { EVENT_TYPES, LIVE_ONLY_EVENT_TYPES, type LiveEnvelope } from '@/lib/eventTypes';
 import { getPlatformTransport, type WorkspaceEventSource } from '@/platform/transport';
@@ -239,7 +239,7 @@ export function createWorkspaceLiveUpdatesBroker(
   }
 
   function probeAuthorization(candidate: Lifetime, sourceToken: symbol, recoveryAttempt: symbol): void {
-    void wrappedClient
+    void acta
       .GET('/api/v2/acta/workspaces/{ws}', { params: { path: { ws: candidate.workspaceSlug } } })
       .then(({ response }) => {
         if (!isCurrent(candidate, sourceToken, recoveryAttempt)) return;
