@@ -32,10 +32,24 @@
 //! that merely mentions `.acta()` is never counted as a real call site.
 //! `#[cfg(test)] mod tests { .. }` is truncated off first, matching
 //! `atlas_client_route_contract.rs:59-64`'s scope rule.
+//!
+//! `v2-e11-s5` PR5 (design D6, MCP half) extends this same file with the
+//! MCP-side walk: it proves every `catalog::OPERATIONS` entry's declared
+//! `component` equals the sub-client namespace the entry's own dispatcher
+//! arm resolves to, through `crates/atlas_mcp/src/lib.rs`'s verb-tool
+//! `match call.resource.as_str()` arms into the handler function each arm
+//! calls. Two independent facts again: [`parse_operations`] reads
+//! `catalog.rs`'s own array as text; [`parse_resource_handlers`] and
+//! [`resolve_handler_namespaces`] independently read `lib.rs`'s dispatch
+//! arms and handler bodies. `identity/ping` is the MCP half of D3.2's
+//! closed, justified zero-call-site exception (it answers `"pong"`
+//! locally); `crates/atlas_mcp/src/main.rs`'s single `.custos().me()` call
+//! is out of scope by a written rule (startup diagnostics, not an
+//! operation), never read by this walk.
 
 mod support;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -559,4 +573,554 @@ fn version_has_no_module_and_no_call_site() {
 
     let resolved = resolve_namespaces_in_source(&version_arm.body);
     assert!(resolved.is_empty(), "Version issues no request");
+}
+
+// ---------------------------------------------------------------------------
+// PR5 — MCP half (design D6). Source: crates/atlas_mcp/src/{catalog.rs,lib.rs}.
+// ---------------------------------------------------------------------------
+
+fn mcp_src_root() -> PathBuf {
+    repo_root().join("crates/atlas_mcp/src")
+}
+
+fn read_mcp_source(path: &Path) -> String {
+    read_production_source(path)
+}
+
+fn mcp_lib_source() -> String {
+    read_mcp_source(&mcp_src_root().join("lib.rs"))
+}
+
+// ---------------------------------------------------------------------------
+// Step 1 — parse the declared tables out of atlas_mcp/src/catalog.rs
+// ---------------------------------------------------------------------------
+
+/// Extracts `(verb, resource, component)` from `OPERATIONS`'s own literal
+/// `Operation { .. }` entries — a text parse, not a hand-retyped copy, for
+/// the same reason as `parse_declared_components` on the CLI side.
+fn parse_operations() -> Vec<(String, String, Component)> {
+    let source = read_mcp_source(&mcp_src_root().join("catalog.rs"));
+    let table = extract_array_body(&source, "OPERATIONS");
+
+    let row_re = Regex::new(
+        r#"verb:\s*"([a-z_]+)"[\s\S]*?resource:\s*"([a-z_]+)"[\s\S]*?component:\s*Component::(Acta|Custos|Platform)"#,
+    )
+    .expect("valid regex");
+
+    row_re
+        .captures_iter(&table)
+        .map(|caps| {
+            let verb = caps[1].to_string();
+            let resource = caps[2].to_string();
+            let component = match &caps[3] {
+                "Acta" => Component::Acta,
+                "Custos" => Component::Custos,
+                "Platform" => Component::Platform,
+                other => panic!("unknown Component variant {other}"),
+            };
+            (verb, resource, component)
+        })
+        .collect()
+}
+
+/// Extracts `(verb, resource)` from `NO_CALL_SITE`'s `(&str, &str, &str)`
+/// rows (verb, resource, reason) — the reason string is not needed by this
+/// audit; `catalog.rs`'s own tests cover its content.
+fn parse_mcp_no_call_site() -> Vec<(String, String)> {
+    let source = read_mcp_source(&mcp_src_root().join("catalog.rs"));
+    let table = extract_array_body(&source, "NO_CALL_SITE");
+
+    let row_re = Regex::new(r#"\(\s*"([a-z_]+)"\s*,\s*"([a-z_]+)"\s*,"#).expect("valid regex");
+    row_re
+        .captures_iter(&table)
+        .map(|caps| (caps[1].to_string(), caps[2].to_string()))
+        .collect()
+}
+
+/// Extracts the `VERBS` array's entries, in the order they are advertised.
+fn parse_verbs() -> Vec<String> {
+    let source = read_mcp_source(&mcp_src_root().join("catalog.rs"));
+    let table = extract_array_body(&source, "VERBS");
+
+    let row_re = Regex::new(r#""([a-z_]+)""#).expect("valid regex");
+    row_re
+        .captures_iter(&table)
+        .map(|caps| caps[1].to_string())
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Step 2 — resolve a verb's advertised name to its resource-match body
+// ---------------------------------------------------------------------------
+
+/// Finds the `impl` method whose body contains `catalog::unknown_resource
+/// ("<verb>", ..)` — every verb's `match call.resource.as_str()` ends with
+/// exactly this fallback arm, so it is a reliable anchor for the match
+/// block regardless of which function holds it.
+///
+/// This does **not** assume the match lives in the function named after the
+/// verb: `delete`'s own `#[tool]` function only runs the confirmation flow
+/// and delegates to a private `delete_resource`, which is where the actual
+/// match lives; `move`'s function is named `move_resource` because `move`
+/// is a reserved keyword. Anchoring on the verb string threaded through
+/// `catalog::unknown_resource` finds the real match block in both cases,
+/// without a hand-maintained function-name table.
+fn find_verb_match_body<'a>(fns: &'a [McpFn], source: &'a str, verb: &str) -> &'a str {
+    let anchor = format!(r#"unknown_resource("{verb}","#);
+    let mut matches = fns
+        .iter()
+        .filter(|candidate| source[candidate.start..candidate.end].contains(&anchor));
+
+    let found = matches.next().unwrap_or_else(|| {
+        panic!("no function contains `catalog::unknown_resource(\"{verb}\", ..)` — verb `{verb}` has no resolvable match block")
+    });
+    assert!(
+        matches.next().is_none(),
+        "more than one function contains the `{verb}` unknown-resource anchor — ambiguous match block"
+    );
+
+    &source[found.start..found.end]
+}
+
+#[test]
+fn every_verb_has_exactly_one_resolvable_match_block() {
+    let source = mcp_lib_source();
+    let fns = parse_impl_fn_boundaries(&source);
+    let verbs = parse_verbs();
+
+    for verb in &verbs {
+        let body = find_verb_match_body(&fns, &source, verb);
+        assert!(
+            body.contains("match call.resource.as_str()"),
+            "the `{verb}` match block must dispatch on call.resource.as_str()"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Step 3 — function boundaries inside atlas_mcp's `impl AtlasMcp` blocks
+// ---------------------------------------------------------------------------
+
+/// One method inside an `impl` block, bounded by its own header and the next
+/// sibling method's header (or end of source for the last one). No brace
+/// matching — the same next-marker slicing `parse_dispatch_arms` uses on the
+/// CLI side, applied one level up (methods rather than match arms).
+struct McpFn {
+    name: String,
+    start: usize,
+    end: usize,
+}
+
+fn parse_impl_fn_boundaries(source: &str) -> Vec<McpFn> {
+    let header_re = Regex::new(r"(?m)^    (?:pub(?:\(crate\))?\s+)?(?:async\s+)?fn\s+(\w+)\s*\(")
+        .expect("valid regex");
+
+    let starts: Vec<(usize, String)> = header_re
+        .captures_iter(source)
+        .map(|caps| {
+            let whole = caps.get(0).expect("match 0 exists");
+            (whole.start(), caps[1].to_string())
+        })
+        .collect();
+
+    starts
+        .iter()
+        .enumerate()
+        .map(|(index, (start, name))| {
+            let end = starts.get(index + 1).map_or(source.len(), |(s, _)| *s);
+            McpFn {
+                name: name.clone(),
+                start: *start,
+                end,
+            }
+        })
+        .collect()
+}
+
+fn find_fn_body<'a>(fns: &[McpFn], source: &'a str, name: &str) -> Option<&'a str> {
+    fns.iter()
+        .find(|candidate| candidate.name == name)
+        .map(|candidate| &source[candidate.start..candidate.end])
+}
+
+// ---------------------------------------------------------------------------
+// Step 4 — parse a verb function's match arms: "resource" -> handler fn name
+// ---------------------------------------------------------------------------
+
+/// One `"resource" => ...` arm resolved to the handler function name its
+/// body calls. Both real arm shapes resolve the same way: the decode shape
+/// (`self.h(catalog::decode(..)?, ctx)`) and the bare shape
+/// (`self.list_platform_status_templates(ctx)`) both contain exactly one
+/// `self.<name>(` call in the arm's own text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct McpArm {
+    resource: String,
+    handler: String,
+}
+
+fn parse_resource_handlers(body: &str) -> Vec<McpArm> {
+    let arm_re = Regex::new(r#""([a-z_]+)"\s*=>"#).expect("valid regex");
+    let markers: Vec<(usize, usize, String)> = arm_re
+        .captures_iter(body)
+        .map(|caps| {
+            let whole = caps.get(0).expect("match 0 exists");
+            (whole.start(), whole.end(), caps[1].to_string())
+        })
+        .collect();
+
+    // `self` and its call sometimes split across lines (e.g. `self\n    .list_attachments(`
+    // when a `.map(ContentBlock::text)` chains after `.await`), so the gap
+    // between `self` and `.` must be permitted, not just the gap after it.
+    let handler_re = Regex::new(r"self\s*\.\s*(\w+)\s*\(").expect("valid regex");
+
+    markers
+        .iter()
+        .enumerate()
+        .filter_map(|(index, (_, end, resource))| {
+            let arm_end = markers.get(index + 1).map_or(body.len(), |(s, _, _)| *s);
+            let arm_text = &body[*end..arm_end];
+            handler_re.captures(arm_text).map(|caps| McpArm {
+                resource: resource.clone(),
+                handler: caps[1].to_string(),
+            })
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Step 5 — resolve a handler function's namespace set
+// ---------------------------------------------------------------------------
+
+fn resolve_handler_namespaces(fns: &[McpFn], source: &str, handler: &str) -> BTreeSet<Component> {
+    let body = find_fn_body(fns, source, handler)
+        .unwrap_or_else(|| panic!("no function body found for handler `{handler}`"));
+    let masked = scan(body).code;
+    resolve_namespaces_in_source(&masked)
+}
+
+// ---------------------------------------------------------------------------
+// Step 6 — totality both ways (design D6, T5.1c)
+// ---------------------------------------------------------------------------
+
+/// A catalogued `(verb, resource)` with no matching dispatcher entry fails
+/// as an unmatched operation; a dispatcher entry with no catalog entry fails
+/// as an unmatched arm. Factored out so the real-tree test and its probe
+/// exercise the same logic, not a duplicate copy of it.
+fn check_totality(
+    operations: &[(String, String, Component)],
+    dispatcher: &BTreeMap<(String, String), String>,
+) -> Vec<String> {
+    let mut failures = Vec::new();
+
+    let operation_keys: BTreeSet<(String, String)> = operations
+        .iter()
+        .map(|(v, r, _)| (v.clone(), r.clone()))
+        .collect();
+
+    for (verb, resource, _component) in operations {
+        let key = (verb.clone(), resource.clone());
+        if !dispatcher.contains_key(&key) {
+            failures.push(format!(
+                "{verb}/{resource}: catalogued operation has no dispatcher arm — unmatched"
+            ));
+        }
+    }
+
+    for key in dispatcher.keys() {
+        if !operation_keys.contains(key) {
+            failures.push(format!(
+                "{}/{}: dispatcher arm has no catalog entry — unmatched",
+                key.0, key.1
+            ));
+        }
+    }
+
+    failures
+}
+
+// ---------------------------------------------------------------------------
+// T5.1 — self-test probes: the MCP walk must fail against a planted defect
+// ---------------------------------------------------------------------------
+
+#[test]
+fn probe_d_a_dispatcher_arm_calling_a_different_namespace_than_catalogued_is_flagged_by_name() {
+    let verb_body = r#"
+        match call.resource.as_str() {
+            "widget" => {
+                self.synthetic_widget_handler(catalog::decode("synthetic_verb", "widget", call.params)?, ctx)
+                    .await
+            }
+            other => Err(catalog::unknown_resource("synthetic_verb", other)),
+        }
+    "#;
+    let handler_body = r#"
+        async fn synthetic_widget_handler(
+            &self,
+            Parameters(params): Parameters<SyntheticParams>,
+            ctx: RequestContext<RoleServer>,
+        ) -> Result<String, String> {
+            let client = self.resolve_client(&ctx)?;
+            let page = client.custos().list_widgets().await.map_err(|e| e.to_string())?;
+            serde_json::to_string(&page).map_err(|e| e.to_string())
+        }
+    "#;
+
+    let arms = parse_resource_handlers(verb_body);
+    assert_eq!(
+        arms,
+        vec![McpArm {
+            resource: "widget".to_string(),
+            handler: "synthetic_widget_handler".to_string(),
+        }]
+    );
+
+    let masked = scan(handler_body).code;
+    let resolved = resolve_namespaces_in_source(&masked);
+
+    let result = check_command("synthetic_verb/widget", Component::Acta, false, &resolved);
+    let error = result
+        .expect_err("a handler calling a different namespace than catalogued must be flagged");
+    assert!(error.contains("synthetic_verb/widget"));
+    assert!(error.contains("mismatch"));
+}
+
+#[test]
+fn probe_e_both_real_mcp_arm_shapes_resolve_to_the_correct_handler_name() {
+    // Verbatim from lib.rs's `find` verb: the decode shape.
+    let decode_shape_arm = r#"
+        "search" => {
+            self.search(catalog::decode("find", "search", call.params)?, ctx)
+                .await
+        }
+    "#;
+    assert_eq!(
+        parse_resource_handlers(decode_shape_arm),
+        vec![McpArm {
+            resource: "search".to_string(),
+            handler: "search".to_string(),
+        }]
+    );
+
+    // Verbatim from lib.rs's `find` verb: the bare shape (no
+    // `catalog::decode` — `platform_status_templates` takes no parameters).
+    let bare_shape_arm =
+        r#""platform_status_templates" => self.list_platform_status_templates(ctx).await,"#;
+    assert_eq!(
+        parse_resource_handlers(bare_shape_arm),
+        vec![McpArm {
+            resource: "platform_status_templates".to_string(),
+            handler: "list_platform_status_templates".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn probe_f_totality_both_ways_flags_an_unmatched_catalog_entry_and_an_unmatched_dispatcher_arm() {
+    let operations = vec![
+        ("find".to_string(), "widget".to_string(), Component::Acta),
+        ("find".to_string(), "gadget".to_string(), Component::Acta),
+    ];
+    let mut dispatcher: BTreeMap<(String, String), String> = BTreeMap::new();
+    dispatcher.insert(
+        ("find".to_string(), "widget".to_string()),
+        "list_widgets".to_string(),
+    );
+    dispatcher.insert(
+        ("find".to_string(), "extra".to_string()),
+        "list_extra".to_string(),
+    );
+
+    let failures = check_totality(&operations, &dispatcher);
+
+    assert!(
+        failures
+            .iter()
+            .any(|f| f.contains("find/gadget") && f.contains("no dispatcher arm")),
+        "a catalogued operation with no dispatcher arm must be flagged: {failures:?}"
+    );
+    assert!(
+        failures
+            .iter()
+            .any(|f| f.contains("find/extra") && f.contains("no catalog entry")),
+        "a dispatcher arm with no catalog entry must be flagged: {failures:?}"
+    );
+    assert!(
+        !failures.iter().any(|f| f.contains("find/widget")),
+        "a matched pair must not be flagged: {failures:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// T5.3 — main.rs's `.custos().me()` is excluded by a written scope rule
+// ---------------------------------------------------------------------------
+
+/// `atlas_mcp/src/main.rs`'s single `.custos().me()` call is startup
+/// diagnostics, not an operation (design D6, §0.4), and is excluded from
+/// this walk by scope: the walk only ever reads `catalog.rs` and `lib.rs`.
+/// This proves the exclusion is a written rule, not an accident of the
+/// regex failing to match `main.rs` at all — first confirming the site is
+/// real, then confirming the walked file set does not include it.
+#[test]
+fn main_rs_custos_me_call_is_excluded_by_a_written_scope_rule_not_a_regex_miss() {
+    let main_path = mcp_src_root().join("main.rs");
+    let main_source =
+        fs::read_to_string(&main_path).unwrap_or_else(|e| panic!("read {main_path:?}: {e}"));
+    let masked = scan(&main_source).code;
+    let resolved = resolve_namespaces_in_source(&masked);
+    assert!(
+        resolved.contains(&Component::Custos),
+        "main.rs must still contain a real `.custos()` call (startup diagnostics) — \
+         if this ever becomes empty, the exclusion below would be vacuous"
+    );
+
+    let walked_files = [
+        mcp_src_root().join("lib.rs"),
+        mcp_src_root().join("catalog.rs"),
+    ];
+    assert!(
+        !walked_files.contains(&main_path),
+        "main.rs must not be part of the MCP walk's file set (startup diagnostics, not an operation)"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Real-tree checks: non-vacuity (design R4) and the actual MCP audit
+// ---------------------------------------------------------------------------
+
+#[test]
+fn operations_table_has_112_rows_split_108_3_1() {
+    let operations = parse_operations();
+    assert_eq!(
+        operations.len(),
+        112,
+        "parsed OPERATIONS must have 112 rows"
+    );
+
+    let acta = operations
+        .iter()
+        .filter(|(_, _, c)| *c == Component::Acta)
+        .count();
+    let custos = operations
+        .iter()
+        .filter(|(_, _, c)| *c == Component::Custos)
+        .count();
+    let platform = operations
+        .iter()
+        .filter(|(_, _, c)| *c == Component::Platform)
+        .count();
+    assert_eq!(
+        (acta, custos, platform),
+        (108, 3, 1),
+        "measured split (design §0.4): 108 acta, 3 custos, 1 platform"
+    );
+}
+
+#[test]
+fn mcp_no_call_site_is_closed_to_identity_ping() {
+    let listed = parse_mcp_no_call_site();
+    assert_eq!(listed, vec![("identity".to_string(), "ping".to_string())]);
+}
+
+#[test]
+fn verbs_table_has_11_entries() {
+    let verbs = parse_verbs();
+    assert_eq!(
+        verbs.len(),
+        11,
+        "VERBS must have 11 entries, not the stale 12"
+    );
+}
+
+#[test]
+fn every_mcp_operation_matches_its_dispatcher_handler_component() {
+    let operations = parse_operations();
+    let no_call_site = parse_mcp_no_call_site();
+    let verbs = parse_verbs();
+
+    assert!(
+        !operations.is_empty(),
+        "anti-vacuity: no operations resolved"
+    );
+    assert!(!verbs.is_empty(), "anti-vacuity: no verbs resolved");
+
+    let source = mcp_lib_source();
+    let fns = parse_impl_fn_boundaries(&source);
+
+    let mut dispatcher: BTreeMap<(String, String), String> = BTreeMap::new();
+    for verb in &verbs {
+        let body = find_verb_match_body(&fns, &source, verb);
+        let arms = parse_resource_handlers(body);
+        assert!(
+            !arms.is_empty(),
+            "anti-vacuity: verb `{verb}` resolved zero resource arms"
+        );
+        for arm in arms {
+            dispatcher.insert((verb.clone(), arm.resource), arm.handler);
+        }
+    }
+
+    let mut failures = check_totality(&operations, &dispatcher);
+
+    let mut resolved_count = 0usize;
+    for (verb, resource, component) in &operations {
+        let key = (verb.clone(), resource.clone());
+        let Some(handler) = dispatcher.get(&key) else {
+            continue;
+        };
+
+        let resolved = resolve_handler_namespaces(&fns, &source, handler);
+        resolved_count += 1;
+
+        let is_listed = no_call_site.contains(&key);
+        let label = format!("{verb}/{resource}");
+        if let Err(error) = check_command(&label, *component, is_listed, &resolved) {
+            failures.push(error);
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "MCP component derivation audit failures:\n{}",
+        failures.join("\n")
+    );
+    assert_eq!(
+        resolved_count, 112,
+        "anti-vacuity: expected to resolve all 112 operations to a dispatcher handler"
+    );
+}
+
+#[test]
+fn identity_ping_resolves_to_no_namespace_and_is_the_sole_no_call_site_entry() {
+    let source = mcp_lib_source();
+    let fns = parse_impl_fn_boundaries(&source);
+    let resolved = resolve_handler_namespaces(&fns, &source, "ping");
+    assert!(
+        resolved.is_empty(),
+        "identity/ping answers \"pong\" locally and calls no sub-client"
+    );
+
+    let no_call_site = parse_mcp_no_call_site();
+    assert_eq!(
+        no_call_site,
+        vec![("identity".to_string(), "ping".to_string())]
+    );
+}
+
+#[test]
+fn the_three_custos_operations_resolve_to_custos_via_their_own_handlers() {
+    let source = mcp_lib_source();
+    let fns = parse_impl_fn_boundaries(&source);
+
+    for handler in [
+        "get_agent_identity",
+        "get_workspace_audit",
+        "get_platform_audit",
+    ] {
+        let resolved = resolve_handler_namespaces(&fns, &source, handler);
+        assert_eq!(
+            resolved,
+            BTreeSet::from([Component::Custos]),
+            "{handler} must resolve exclusively to client.custos()"
+        );
+    }
 }
