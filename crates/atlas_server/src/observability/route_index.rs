@@ -20,7 +20,7 @@ pub struct RouteTag {
 /// `(method, mounted path template) -> RouteTag`, built once from the
 /// registry (design D1).
 #[derive(Debug, Default)]
-pub struct RouteIndex(HashMap<(HttpMethod, String), RouteTag>);
+pub struct RouteIndex(HashMap<HttpMethod, HashMap<String, RouteTag>>);
 
 impl RouteIndex {
     /// Walks every declared route in `registry` and keys it on
@@ -29,7 +29,7 @@ impl RouteIndex {
     /// (`routes/openapi.rs`) already uses, never a second path-building
     /// rule (design §0.2).
     pub fn from_registry(registry: &Registry) -> Self {
-        let mut map = HashMap::new();
+        let mut map: HashMap<HttpMethod, HashMap<String, RouteTag>> = HashMap::new();
 
         for entry in registry.entries() {
             let namespace = v2_namespace(entry.identity.stable_id.as_str());
@@ -42,7 +42,7 @@ impl RouteIndex {
                     operation: Arc::from(route.operation_id.as_str()),
                 };
 
-                map.insert((route.method, mounted), tag);
+                map.entry(route.method).or_default().insert(mounted, tag);
             }
         }
 
@@ -52,19 +52,21 @@ impl RouteIndex {
     /// Looks up the `RouteTag` owning `template` under `method`, converting
     /// `method` through [`to_registry_method`]. Returns `None` for an
     /// unmappable HTTP method or an unindexed `(method, template)` pair.
+    /// The lookup borrows `template`, so the per-request path allocates
+    /// nothing.
     pub fn get(&self, method: &axum::http::Method, template: &str) -> Option<&RouteTag> {
         let method = to_registry_method(method)?;
-        self.0.get(&(method, template.to_string()))
+        self.0.get(&method)?.get(template)
     }
 
     /// The number of `(method, path)` entries the index holds.
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.0.values().map(HashMap::len).sum()
     }
 
     /// Whether the index holds no entries.
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.len() == 0
     }
 
     /// An index with no entries — test-only (`test_app_with_route`, which
