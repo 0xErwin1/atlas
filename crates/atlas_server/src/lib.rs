@@ -179,7 +179,11 @@ pub fn app(state: AppState) -> Router {
         .nest("/api/v2/custos", custos_router)
         .nest("/api/v2/acta", acta_router)
         .merge(root_router)
-        .merge(fallback_router);
+        .merge(fallback_router)
+        .layer(axum_middleware::from_fn_with_state(
+            route_index.clone(),
+            crate::observability::metrics::record_request_metrics,
+        ));
     apply_layers(router, route_index)
 }
 
