@@ -2353,6 +2353,12 @@ pub struct HelpParams {
     /// Resource to describe within `verb`. Omit to summarize the whole verb.
     #[serde(default)]
     pub resource: Option<String>,
+    /// Component to filter by (`acta` | `custos` | `platform`). Omit to list
+    /// every component's operations, exactly as before this field existed.
+    /// Has no effect when both `verb` and `resource` are given: naming one
+    /// resource is already exact.
+    #[serde(default)]
+    pub component: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -3143,30 +3149,47 @@ impl AtlasMcp {
                        name passed as the verb answers with where that capability moved to."
     )]
     fn help(&self, Parameters(params): Parameters<HelpParams>) -> Result<String, String> {
-        let result = match (params.verb.as_deref(), params.resource.as_deref()) {
-            (None, _) => json!({
-                "verbs": catalog::VERBS
-                    .iter()
-                    .map(|verb| json!({
-                        "verb": verb,
-                        "resources": catalog::operations_for(verb)
-                            .map(|op| op.resource)
-                            .collect::<Vec<_>>(),
-                    }))
-                    .collect::<Vec<_>>(),
-            }),
-            (Some(verb), None) => {
-                let resources = catalog::operations_for(verb)
-                    .map(|op| {
-                        json!({
-                            "resource": op.resource,
-                            "summary": op.summary,
-                            "parameters": catalog::accepted_parameters(op),
-                        })
-                    })
-                    .collect::<Vec<_>>();
+        let component_filter = params
+            .component
+            .as_deref()
+            .map(|value| {
+                catalog::Component::parse(value).ok_or_else(|| catalog::unknown_component(value))
+            })
+            .transpose()?;
 
-                if resources.is_empty() {
+        let matches_filter =
+            |op: &catalog::Operation| component_filter.is_none_or(|wanted| op.component == wanted);
+
+        let result = match (params.verb.as_deref(), params.resource.as_deref()) {
+            (None, _) => {
+                // `resources` keeps its pre-component shape (bare names) so an
+                // existing client keeps parsing it; the component of each
+                // listed resource travels in the separate `components` map.
+                let components = catalog::OPERATIONS
+                    .iter()
+                    .filter(|op| matches_filter(op))
+                    .map(|op| (op.resource.to_string(), json!(op.component.as_str())))
+                    .collect::<serde_json::Map<_, _>>();
+
+                json!({
+                    "verbs": catalog::VERBS
+                        .iter()
+                        .map(|verb| json!({
+                            "verb": verb,
+                            "resources": catalog::operations_for(verb)
+                                .filter(|op| matches_filter(op))
+                                .map(|op| op.resource)
+                                .collect::<Vec<_>>(),
+                        }))
+                        .collect::<Vec<_>>(),
+                    "components": components,
+                })
+            }
+            (Some(verb), None) => {
+                let all_operations: Vec<&catalog::Operation> =
+                    catalog::operations_for(verb).collect();
+
+                if all_operations.is_empty() {
                     // A client that still knows a pre-consolidation tool name
                     // is told where that capability went rather than that its
                     // name is wrong.
@@ -3177,6 +3200,7 @@ impl AtlasMcp {
                             "resource": op.resource,
                             "summary": op.summary,
                             "parameters": catalog::accepted_parameters(op),
+                            "component": op.component.as_str(),
                         }))
                         .map_err(|e| e.to_string());
                     }
@@ -3186,6 +3210,20 @@ impl AtlasMcp {
                         catalog::VERBS.join(" | ")
                     ));
                 }
+
+                let resources = all_operations
+                    .into_iter()
+                    .filter(|op| matches_filter(op))
+                    .map(|op| {
+                        json!({
+                            "resource": op.resource,
+                            "summary": op.summary,
+                            "parameters": catalog::accepted_parameters(op),
+                            "component": op.component.as_str(),
+                        })
+                    })
+                    .collect::<Vec<_>>();
+
                 json!({ "verb": verb, "resources": resources })
             }
             (Some(verb), Some(resource)) => {
@@ -3197,6 +3235,7 @@ impl AtlasMcp {
                     "resource": resource,
                     "summary": op.summary,
                     "schema": (op.schema)(),
+                    "component": op.component.as_str(),
                 })
             }
         };
@@ -7015,6 +7054,187 @@ mod tests {
         assert!(result.is_error.unwrap_or(false), "{text}");
         assert!(text.contains("unknown verb `frobnicate`"), "{text}");
         assert!(text.contains("document_edit"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn help_filtered_by_component_lists_only_that_component() {
+        let (base_url, _requests) = serve_recording_atlas(vec![]);
+        let client =
+            start_mcp_client(AtlasMcp::new(base_url, "atlas_test").expect("server config")).await;
+
+        let call = |arguments: serde_json::Value| {
+            client.call_tool(
+                CallToolRequestParams::new("help".to_string()).with_arguments(
+                    arguments
+                        .as_object()
+                        .expect("help arguments are an object")
+                        .clone(),
+                ),
+            )
+        };
+
+        let result = call(serde_json::json!({ "component": "custos" }))
+            .await
+            .expect("help succeeds");
+        let result: serde_json::Value =
+            serde_json::from_str(tool_text(&result)).expect("help returns JSON");
+
+        let resources: Vec<&str> = result
+            .pointer("/verbs")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .flat_map(|verb| {
+                verb.pointer("/resources")
+                    .and_then(serde_json::Value::as_array)
+                    .into_iter()
+                    .flatten()
+            })
+            .map(|entry| entry.as_str().unwrap_or_default())
+            .collect();
+
+        assert_eq!(resources.len(), 3, "{resources:?}");
+
+        let components = result
+            .pointer("/components")
+            .and_then(serde_json::Value::as_object)
+            .expect("components map");
+        assert_eq!(components.len(), resources.len(), "{components:?}");
+        for resource in &resources {
+            assert_eq!(
+                components
+                    .get(*resource)
+                    .and_then(serde_json::Value::as_str),
+                Some("custos"),
+                "{resource}"
+            );
+        }
+
+        let verb_result = call(serde_json::json!({ "verb": "get", "component": "acta" }))
+            .await
+            .expect("help succeeds");
+        let verb_result: serde_json::Value =
+            serde_json::from_str(tool_text(&verb_result)).expect("help returns JSON");
+
+        assert!(
+            verb_result
+                .pointer("/resources")
+                .and_then(serde_json::Value::as_array)
+                .into_iter()
+                .flatten()
+                .all(|entry| entry
+                    .pointer("/component")
+                    .and_then(serde_json::Value::as_str)
+                    == Some("acta")),
+            "{verb_result}"
+        );
+    }
+
+    async fn unfiltered_help(
+        client: &rmcp::service::RunningService<rmcp::RoleClient, TestClientHandler>,
+    ) -> serde_json::Value {
+        let result = client
+            .call_tool(CallToolRequestParams::new("help".to_string()))
+            .await
+            .expect("help succeeds");
+
+        serde_json::from_str(tool_text(&result)).expect("help returns JSON")
+    }
+
+    #[tokio::test]
+    async fn help_unfiltered_keeps_the_pre_component_verbs_shape_byte_for_byte() {
+        let (base_url, _requests) = serve_recording_atlas(vec![]);
+        let client =
+            start_mcp_client(AtlasMcp::new(base_url, "atlas_test").expect("server config")).await;
+
+        let result = unfiltered_help(&client).await;
+
+        let expected_verbs = catalog::VERBS
+            .iter()
+            .map(|verb| {
+                serde_json::json!({
+                    "verb": verb,
+                    "resources": catalog::operations_for(verb)
+                        .map(|op| op.resource)
+                        .collect::<Vec<_>>(),
+                })
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            result.pointer("/verbs"),
+            Some(&serde_json::Value::Array(expected_verbs)),
+            "{result}"
+        );
+
+        let top_level_keys: Vec<&str> = result
+            .as_object()
+            .expect("help returns an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            top_level_keys,
+            ["components", "verbs"],
+            "exactly one key added beside the pre-component `verbs`"
+        );
+    }
+
+    #[tokio::test]
+    async fn help_unfiltered_components_map_names_every_resource_component() {
+        let (base_url, _requests) = serve_recording_atlas(vec![]);
+        let client =
+            start_mcp_client(AtlasMcp::new(base_url, "atlas_test").expect("server config")).await;
+
+        let result = unfiltered_help(&client).await;
+
+        let components = result
+            .pointer("/components")
+            .and_then(serde_json::Value::as_object)
+            .expect("components map");
+
+        let distinct_resources: std::collections::BTreeSet<&str> =
+            catalog::OPERATIONS.iter().map(|op| op.resource).collect();
+        assert_eq!(components.len(), distinct_resources.len(), "{components:?}");
+
+        for op in catalog::OPERATIONS {
+            assert_eq!(
+                components
+                    .get(op.resource)
+                    .and_then(serde_json::Value::as_str),
+                Some(op.component.as_str()),
+                "resource `{}` (verb `{}`) must map to its own component; a resource name \
+                 shared by two verbs with different components cannot be keyed by name",
+                op.resource,
+                op.verb
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn help_rejects_an_unknown_component() {
+        let (base_url, _requests) = serve_recording_atlas(vec![]);
+        let client =
+            start_mcp_client(AtlasMcp::new(base_url, "atlas_test").expect("server config")).await;
+
+        let result = client
+            .call_tool(
+                CallToolRequestParams::new("help".to_string()).with_arguments(
+                    serde_json::json!({ "component": "frobnicate" })
+                        .as_object()
+                        .expect("object")
+                        .clone(),
+                ),
+            )
+            .await
+            .expect("the call itself succeeds");
+
+        let text = tool_text(&result);
+        assert!(result.is_error.unwrap_or(false), "{text}");
+        assert!(text.contains("unknown component `frobnicate`"), "{text}");
+        assert!(text.contains("acta"), "{text}");
+        assert!(text.contains("custos"), "{text}");
+        assert!(text.contains("platform"), "{text}");
     }
 
     #[test]
