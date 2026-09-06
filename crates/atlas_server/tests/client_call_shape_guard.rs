@@ -884,6 +884,7 @@ const ATLAS_SERVER_TEST_PINS: &[(&str, usize)] = &[
     ("outbox_repo.rs", 0),
     ("permission_grant_repo.rs", 0),
     ("purge_audit_string_guard.rs", 0),
+    ("rate_limit_field_pin.rs", 0),
     ("recoverable_deletion_migration.rs", 0),
     ("reg5_idempotent_rule_conformance.rs", 0),
     ("reg5_registry_build.rs", 0),

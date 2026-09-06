@@ -1,3 +1,8 @@
+//! Container-backed CSRF and rate-limit checks. Also names SH8
+//! (`shell-requirements.md:152`, "usuario con cookie y sin header CSRF ·
+//! PATCH cualquier ruta · 403"), exercised by
+//! [`csrf_cookie_mutation_without_header_is_rejected`] below.
+
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
