@@ -251,7 +251,7 @@
                 set -euo pipefail
                 cd "$DEVENV_ROOT"
                 cargo run -p atlas_server --bin dump_openapi > apps/web/openapi.json
-                pnpm --filter @atlas/web exec openapi-typescript openapi.json -o src/api/types.d.ts
+                pnpm --filter @atlas/web run gen-types
               '';
 
               desktop-dev.exec = ''

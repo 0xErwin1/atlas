@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "openapi-typescript openapi.json -o src/api/types.d.ts && vue-tsc -b && vite build",
+    "build": "node scripts/gen-types.mjs && vue-tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "openapi-typescript openapi.json -o src/api/types.d.ts && vue-tsc -b --noEmit",
+    "typecheck": "node scripts/gen-types.mjs && vue-tsc -b --noEmit",
+    "gen-types": "node scripts/gen-types.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
