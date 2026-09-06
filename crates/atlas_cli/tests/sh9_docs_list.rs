@@ -108,7 +108,7 @@ fn short_form_and_component_prefixed_alias_send_identical_requests() {
     let (base_url, requests, stub) = spawn_two_request_stub();
     let binary = atlas_binary();
 
-    let short_form = Command::new(binary)
+    let short_form = Command::new(&binary)
         .args([
             "docs",
             "list",
@@ -132,7 +132,7 @@ fn short_form_and_component_prefixed_alias_send_identical_requests() {
         .recv_timeout(RECORD_TIMEOUT)
         .expect("stub recorded the short-form request");
 
-    let prefixed = Command::new(binary)
+    let prefixed = Command::new(&binary)
         .args([
             "acta",
             "docs",
@@ -188,7 +188,7 @@ fn short_form_and_component_prefixed_alias_send_identical_requests() {
 fn help_shows_docs_grouped_under_acta_at_the_binary_level() {
     let binary = atlas_binary();
 
-    let output = Command::new(binary)
+    let output = Command::new(&binary)
         .arg("--help")
         .output()
         .expect("`atlas --help` runs");
