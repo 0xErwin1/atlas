@@ -1,7 +1,7 @@
 import { z } from 'zod';
+import { acta } from '@/api';
 import type { AtlasProblem, ConflictProblem } from '@/api/problem';
 import { isConflictProblem } from '@/api/problem';
-import { wrappedClient } from '@/api/wrapper';
 import {
   getResourceCachePrincipal,
   hydrateAndRevalidateResource,
@@ -55,12 +55,9 @@ const loadResultSchema = z.object({
  */
 export function useMarkdownDoc() {
   async function loadFromNetwork(ws: string, slug: string): Promise<LoadResult> {
-    const { data, error, response } = await wrappedClient.GET(
-      '/api/v2/acta/workspaces/{ws}/documents/{slug}',
-      {
-        params: { path: { ws, slug } },
-      },
-    );
+    const { data, error, response } = await acta.GET('/api/v2/acta/workspaces/{ws}/documents/{slug}', {
+      params: { path: { ws, slug } },
+    });
 
     if (error !== undefined || data === undefined) {
       const err = new Error(
@@ -131,7 +128,7 @@ export function useMarkdownDoc() {
   ): Promise<SaveResult> {
     const content = joinFrontmatter(meta, body);
 
-    const { data, error } = await wrappedClient.PUT('/api/v2/acta/workspaces/{ws}/documents/{slug}/content', {
+    const { data, error } = await acta.PUT('/api/v2/acta/workspaces/{ws}/documents/{slug}/content', {
       params: { path: { ws, slug } },
       body: { content, base_revision_id: baseRevisionId },
     });

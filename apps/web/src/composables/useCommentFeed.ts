@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue';
-import type { components } from '@/api/types.d.ts';
-import { wrappedClient } from '@/api/wrapper';
+import { acta } from '@/api';
+import type { components } from '@/api/generated/acta.d.ts';
 import { errorHint } from '@/lib/apiError';
 
 type CommentListResponse = components['schemas']['CommentListResponseDto'];
@@ -118,12 +118,12 @@ export function useCommentFeed() {
     };
 
     if (requestTarget.kind === 'task') {
-      return wrappedClient.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments', {
+      return acta.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments', {
         params: { path: { ws: requestTarget.ws, readable_id: requestTarget.readableId }, query },
       });
     }
 
-    return wrappedClient.GET('/api/v2/acta/workspaces/{ws}/documents/{slug}/comments', {
+    return acta.GET('/api/v2/acta/workspaces/{ws}/documents/{slug}/comments', {
       params: { path: { ws: requestTarget.ws, slug: requestTarget.slug }, query },
     });
   }

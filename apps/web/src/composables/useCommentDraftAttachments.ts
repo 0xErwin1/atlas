@@ -1,6 +1,6 @@
 import { type Ref, ref } from 'vue';
-import type { components } from '@/api/types.d.ts';
-import { wrappedClient } from '@/api/wrapper';
+import { acta } from '@/api';
+import type { components } from '@/api/generated/acta.d.ts';
 import type { ImageUploadResult } from '@/components/editor/imageUpload';
 import type { CommentParentTarget } from '@/composables/useCommentFeed';
 import { errorHint } from '@/lib/apiError';
@@ -50,13 +50,13 @@ export function useCommentDraftAttachments(target: Ref<CommentParentTarget>) {
       try {
         const response =
           requestTarget.kind === 'task'
-            ? await wrappedClient.POST('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comment-drafts', {
+            ? await acta.POST('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comment-drafts', {
                 params: {
                   path: { ws: requestTarget.ws, readable_id: requestTarget.readableId },
                   header: { 'x-create-token': createToken },
                 },
               })
-            : await wrappedClient.POST('/api/v2/acta/workspaces/{ws}/documents/{slug}/comment-drafts', {
+            : await acta.POST('/api/v2/acta/workspaces/{ws}/documents/{slug}/comment-drafts', {
                 params: {
                   path: { ws: requestTarget.ws, slug: requestTarget.slug },
                   header: { 'x-create-token': createToken },
@@ -103,7 +103,7 @@ export function useCommentDraftAttachments(target: Ref<CommentParentTarget>) {
     try {
       const response =
         requestTarget.kind === 'task'
-          ? await wrappedClient.POST(
+          ? await acta.POST(
               '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}/attachments',
               {
                 params: {
@@ -210,7 +210,7 @@ export function useCommentDraftAttachments(target: Ref<CommentParentTarget>) {
     const requestTarget = target.value;
     const response =
       requestTarget.kind === 'task'
-        ? await wrappedClient.DELETE(
+        ? await acta.DELETE(
             '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}',
             {
               params: {
@@ -223,7 +223,7 @@ export function useCommentDraftAttachments(target: Ref<CommentParentTarget>) {
               },
             },
           )
-        : await wrappedClient.DELETE(
+        : await acta.DELETE(
             '/api/v2/acta/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}',
             {
               params: {
@@ -258,18 +258,12 @@ export function useCommentDraftAttachments(target: Ref<CommentParentTarget>) {
     const requestTarget = target.value;
     const response =
       requestTarget.kind === 'task'
-        ? await wrappedClient.DELETE(
-            '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}',
-            {
-              params: { path: { ws: requestTarget.ws, readable_id: requestTarget.readableId, draft_id: id } },
-            },
-          )
-        : await wrappedClient.DELETE(
-            '/api/v2/acta/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}',
-            {
-              params: { path: { ws: requestTarget.ws, slug: requestTarget.slug, draft_id: id } },
-            },
-          );
+        ? await acta.DELETE('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comment-drafts/{draft_id}', {
+            params: { path: { ws: requestTarget.ws, readable_id: requestTarget.readableId, draft_id: id } },
+          })
+        : await acta.DELETE('/api/v2/acta/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}', {
+            params: { path: { ws: requestTarget.ws, slug: requestTarget.slug, draft_id: id } },
+          });
 
     const status = (response.error as { status?: number } | undefined)?.status;
     if (response.error !== undefined && status !== 410) {
@@ -293,16 +287,13 @@ async function uploadDocumentDraftAttachment(
   uploadToken: string,
 ) {
   const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
-  return wrappedClient.POST(
-    '/api/v2/acta/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments',
-    {
-      params: {
-        path: { ws: target.ws, slug: target.slug, draft_id: draftId },
-        header: { 'x-file-name': file.name, 'x-upload-token': uploadToken },
-      },
-      body: bytes,
-      bodySerializer: () => file,
-      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+  return acta.POST('/api/v2/acta/workspaces/{ws}/documents/{slug}/comment-drafts/{draft_id}/attachments', {
+    params: {
+      path: { ws: target.ws, slug: target.slug, draft_id: draftId },
+      header: { 'x-file-name': file.name, 'x-upload-token': uploadToken },
     },
-  );
+    body: bytes,
+    bodySerializer: () => file,
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+  });
 }

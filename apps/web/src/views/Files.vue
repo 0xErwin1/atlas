@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { wrappedClient } from '@/api/wrapper';
+import { acta } from '@/api';
 import ExpandableRow from '@/components/settings/ExpandableRow.vue';
 import PanelHeader from '@/components/settings/PanelHeader.vue';
 import RowAction from '@/components/settings/RowAction.vue';
@@ -103,7 +103,7 @@ async function download(attachment: WorkspaceAttachment): Promise<void> {
 
   downloading.value = new Set(downloading.value).add(attachment.id);
   try {
-    const { data } = await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/attachments/{attachment_id}', {
+    const { data } = await acta.GET('/api/v2/acta/workspaces/{ws}/attachments/{attachment_id}', {
       params: { path: { ws: ws.value, attachment_id: attachment.id } },
       parseAs: 'blob',
     });

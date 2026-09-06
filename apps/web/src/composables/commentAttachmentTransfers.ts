@@ -1,4 +1,4 @@
-import { wrappedClient } from '@/api/wrapper';
+import { acta } from '@/api';
 import type { CommentParentTarget } from '@/composables/useCommentFeed';
 
 export async function uploadDocumentCommentAttachment(
@@ -8,18 +8,15 @@ export async function uploadDocumentCommentAttachment(
 ) {
   const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
 
-  return wrappedClient.POST(
-    '/api/v2/acta/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments',
-    {
-      params: {
-        path: { ws: target.ws, slug: target.slug, comment_id: commentId },
-        header: { 'x-file-name': file.name },
-      },
-      body: bytes,
-      bodySerializer: () => file,
-      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+  return acta.POST('/api/v2/acta/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments', {
+    params: {
+      path: { ws: target.ws, slug: target.slug, comment_id: commentId },
+      header: { 'x-file-name': file.name },
     },
-  );
+    body: bytes,
+    bodySerializer: () => file,
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+  });
 }
 
 export async function downloadCommentAttachment(
@@ -28,7 +25,7 @@ export async function downloadCommentAttachment(
   attachmentId: string,
 ) {
   if (target.kind === 'task') {
-    return wrappedClient.GET(
+    return acta.GET(
       '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}/content',
       {
         params: {
@@ -44,7 +41,7 @@ export async function downloadCommentAttachment(
     );
   }
 
-  return wrappedClient.GET(
+  return acta.GET(
     '/api/v2/acta/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}',
     {
       params: {
@@ -61,7 +58,7 @@ export async function deleteCommentAttachment(
   attachmentId: string,
 ) {
   if (target.kind === 'task') {
-    return wrappedClient.DELETE(
+    return acta.DELETE(
       '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments/{attachment_id}',
       {
         params: {
@@ -76,7 +73,7 @@ export async function deleteCommentAttachment(
     );
   }
 
-  return wrappedClient.DELETE(
+  return acta.DELETE(
     '/api/v2/acta/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments/{attachment_id}',
     {
       params: {

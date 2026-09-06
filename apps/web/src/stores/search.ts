@@ -1,10 +1,11 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import type { components } from '@/api/types.d.ts';
-import { wrappedClient } from '@/api/wrapper';
+import { acta } from '@/api';
+import type { components, operations } from '@/api/generated/acta.d.ts';
 import { errorHint } from '@/lib/apiError';
 
-export type SearchHitDto = components['schemas']['SearchHitDto'];
+export type SearchHitDto =
+  operations['search']['responses']['200']['content']['application/json']['items'][number];
 export type SearchKind = components['schemas']['SearchKindDto'];
 export type SearchSort = 'relevance' | 'updated';
 
@@ -89,7 +90,7 @@ export const useSearchStore = defineStore('search', () => {
   }
 
   async function fetchPage(ws: string, pageCursor?: string): Promise<SearchPage | null> {
-    const { data, error: apiError } = await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/search', {
+    const { data, error: apiError } = await acta.GET('/api/v2/acta/workspaces/{ws}/search', {
       params: {
         path: { ws },
         query: {
