@@ -94,6 +94,12 @@ pub struct AppState {
     /// rest of this state, and shared by the workers that write it and by
     /// diagnostics implementers that will read it (PR2).
     pub workers: Arc<crate::ops::workers::WorkerStates>,
+    /// Registry-derived `(method, mounted path) -> (component, operation)`
+    /// lookup (E11-S7 design D1, D-S7-2): built once by
+    /// [`crate::observability::route_index::RouteIndex::from_registry`] in
+    /// both `new` and `for_test`, alongside `registry` and `workers`, so no
+    /// request-handling code path ever rebuilds it.
+    pub route_index: Arc<crate::observability::route_index::RouteIndex>,
 }
 
 impl AppState {
@@ -115,6 +121,8 @@ impl AppState {
 
         let registry = Arc::new(crate::ops::component_registry(&cfg.modules.storage)?);
         let workers = Arc::new(crate::ops::workers::WorkerStates::from_registry(&registry));
+        let route_index =
+            Arc::new(crate::observability::route_index::RouteIndex::from_registry(&registry));
         let diagnostics = Arc::new(crate::ops::default_registry(
             &registry,
             Arc::new(db.clone()),
@@ -150,6 +158,7 @@ impl AppState {
             readiness_timeout: DEFAULT_READINESS_TIMEOUT,
             doctor_timeout: DEFAULT_DOCTOR_TIMEOUT,
             workers,
+            route_index,
         })
     }
 
@@ -186,6 +195,8 @@ impl AppState {
             root: attachment_root,
         };
         let registry = Arc::new(crate::ops::component_registry(&storage)?);
+        let route_index =
+            Arc::new(crate::observability::route_index::RouteIndex::from_registry(&registry));
         // `for_test` seeds every declared worker `Running` (design R11,
         // orchestrator's 2026-09-04 correction), modelling a supervised
         // process: a container test forces exactly the worker it cares
@@ -233,6 +244,7 @@ impl AppState {
             readiness_timeout: DEFAULT_READINESS_TIMEOUT,
             doctor_timeout: DEFAULT_DOCTOR_TIMEOUT,
             workers,
+            route_index,
         })
     }
 

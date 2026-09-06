@@ -888,6 +888,7 @@ const ATLAS_SERVER_TEST_PINS: &[(&str, usize)] = &[
     ("recoverable_deletion_migration.rs", 0),
     ("reg5_idempotent_rule_conformance.rs", 0),
     ("reg5_registry_build.rs", 0),
+    ("route_index_derivation.rs", 0),
     ("schema_constraints.rs", 0),
     ("schema_qualification_gate.rs", 0),
     ("search_infra.rs", 0),
