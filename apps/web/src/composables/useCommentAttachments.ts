@@ -1,6 +1,6 @@
 import { type Ref, ref, watch } from 'vue';
-import type { components } from '@/api/types.d.ts';
-import { wrappedClient } from '@/api/wrapper';
+import { acta } from '@/api';
+import type { components } from '@/api/generated/acta.d.ts';
 import {
   deleteCommentAttachment,
   downloadCommentAttachment,
@@ -97,22 +97,16 @@ export function useCommentAttachments(target: Ref<CommentParentTarget>, entries:
 
   async function listRequest(requestTarget: CommentParentTarget, commentId: string) {
     if (requestTarget.kind === 'task') {
-      return wrappedClient.GET(
-        '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments',
-        {
-          params: {
-            path: { ws: requestTarget.ws, readable_id: requestTarget.readableId, comment_id: commentId },
-          },
+      return acta.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments', {
+        params: {
+          path: { ws: requestTarget.ws, readable_id: requestTarget.readableId, comment_id: commentId },
         },
-      );
+      });
     }
 
-    return wrappedClient.GET(
-      '/api/v2/acta/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments',
-      {
-        params: { path: { ws: requestTarget.ws, slug: requestTarget.slug, comment_id: commentId } },
-      },
-    );
+    return acta.GET('/api/v2/acta/workspaces/{ws}/documents/{slug}/comments/{comment_id}/attachments', {
+      params: { path: { ws: requestTarget.ws, slug: requestTarget.slug, comment_id: commentId } },
+    });
   }
 
   async function reload(commentId: string): Promise<void> {
@@ -154,7 +148,7 @@ export function useCommentAttachments(target: Ref<CommentParentTarget>, entries:
     try {
       const response =
         requestTarget.kind === 'task'
-          ? await wrappedClient.POST(
+          ? await acta.POST(
               '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}/attachments',
               {
                 params: {

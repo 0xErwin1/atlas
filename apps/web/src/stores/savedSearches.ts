@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import type { components } from '@/api/types.d.ts';
-import { wrappedClient } from '@/api/wrapper';
+import { acta } from '@/api';
+import type { components } from '@/api/generated/acta.d.ts';
 import { errorHint } from '@/lib/apiError';
 
 export type SavedSearchDto = components['schemas']['SavedSearchDto'];
@@ -14,7 +14,7 @@ export const useSavedSearchesStore = defineStore('savedSearches', () => {
   async function load(ws: string, force = false): Promise<void> {
     if (!force && loadedWs === ws) return;
 
-    const { data, error: apiError } = await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/saved-searches', {
+    const { data, error: apiError } = await acta.GET('/api/v2/acta/workspaces/{ws}/saved-searches', {
       params: { path: { ws } },
     });
 
@@ -31,13 +31,10 @@ export const useSavedSearchesStore = defineStore('savedSearches', () => {
     ws: string,
     payload: { name: string; query: string },
   ): Promise<SavedSearchDto | null> {
-    const { data, error: apiError } = await wrappedClient.POST(
-      '/api/v2/acta/workspaces/{ws}/saved-searches',
-      {
-        params: { path: { ws } },
-        body: { name: payload.name, query: payload.query },
-      },
-    );
+    const { data, error: apiError } = await acta.POST('/api/v2/acta/workspaces/{ws}/saved-searches', {
+      params: { path: { ws } },
+      body: { name: payload.name, query: payload.query },
+    });
 
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to save search');
@@ -49,13 +46,10 @@ export const useSavedSearchesStore = defineStore('savedSearches', () => {
   }
 
   async function rename(ws: string, id: string, name: string): Promise<boolean> {
-    const { data, error: apiError } = await wrappedClient.PATCH(
-      '/api/v2/acta/workspaces/{ws}/saved-searches/{id}',
-      {
-        params: { path: { ws, id } },
-        body: { name },
-      },
-    );
+    const { data, error: apiError } = await acta.PATCH('/api/v2/acta/workspaces/{ws}/saved-searches/{id}', {
+      params: { path: { ws, id } },
+      body: { name },
+    });
 
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to rename saved search');
@@ -70,12 +64,9 @@ export const useSavedSearchesStore = defineStore('savedSearches', () => {
   }
 
   async function remove(ws: string, id: string): Promise<boolean> {
-    const { error: apiError } = await wrappedClient.DELETE(
-      '/api/v2/acta/workspaces/{ws}/saved-searches/{id}',
-      {
-        params: { path: { ws, id } },
-      },
-    );
+    const { error: apiError } = await acta.DELETE('/api/v2/acta/workspaces/{ws}/saved-searches/{id}', {
+      params: { path: { ws, id } },
+    });
 
     if (apiError !== undefined) {
       error.value = errorHint(apiError, 'Failed to delete saved search');

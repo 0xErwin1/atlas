@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import type { components } from '@/api/types';
-import { wrappedClient } from '@/api/wrapper';
+import { acta } from '@/api';
+import type { components } from '@/api/generated/acta.d.ts';
 import { errorHint } from '@/lib/apiError';
 
 export type WorkspaceAttachment = components['schemas']['WorkspaceAttachmentDto'];
@@ -71,7 +71,7 @@ export const useAttachmentsStore = defineStore('attachments', () => {
       ...(cursor === undefined ? {} : { cursor }),
     };
 
-    const { data, error: apiError } = await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/attachments', {
+    const { data, error: apiError } = await acta.GET('/api/v2/acta/workspaces/{ws}/attachments', {
       params: { path: { ws }, query },
     });
 
@@ -98,7 +98,7 @@ export const useAttachmentsStore = defineStore('attachments', () => {
   async function rename(ws: string, attachmentId: string, fileName: string): Promise<boolean> {
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.PATCH(
+    const { data, error: apiError } = await acta.PATCH(
       '/api/v2/acta/workspaces/{ws}/attachments/{attachment_id}',
       {
         params: { path: { ws, attachment_id: attachmentId } },
@@ -118,7 +118,7 @@ export const useAttachmentsStore = defineStore('attachments', () => {
   async function remove(ws: string, attachmentId: string): Promise<boolean> {
     error.value = null;
 
-    const { error: apiError } = await wrappedClient.DELETE(
+    const { error: apiError } = await acta.DELETE(
       '/api/v2/acta/workspaces/{ws}/attachments/{attachment_id}',
       { params: { path: { ws, attachment_id: attachmentId } } },
     );

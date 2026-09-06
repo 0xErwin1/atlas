@@ -1,10 +1,10 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import type { components } from '@/api/types';
-import { wrappedClient } from '@/api/wrapper';
+import { acta } from '@/api';
+import type { components } from '@/api/generated/acta.d.ts';
 import { errorHint } from '@/lib/apiError';
 
-export type TrashItem = components['schemas']['TrashItemDto'];
+export type TrashItem = components['schemas']['Page_TrashItemDto']['items'][number];
 export type TrashKind = components['schemas']['TrashKindDto'];
 export type PurgeStatus = components['schemas']['PurgeStatusDtoResponse'];
 
@@ -44,7 +44,7 @@ export const useTrashStore = defineStore('trash', () => {
       ...(nextFilter.kind !== undefined ? { kind: nextFilter.kind } : {}),
       ...(cursor !== undefined ? { cursor } : {}),
     };
-    const { data, error: apiError } = await wrappedClient.GET('/api/v2/acta/admin/trash', {
+    const { data, error: apiError } = await acta.GET('/api/v2/acta/admin/trash', {
       params: { query },
     });
 
@@ -68,7 +68,7 @@ export const useTrashStore = defineStore('trash', () => {
 
   async function restore(item: TrashItem): Promise<boolean> {
     error.value = null;
-    const { error: apiError } = await wrappedClient.POST('/api/v2/acta/admin/trash/restore', {
+    const { error: apiError } = await acta.POST('/api/v2/acta/admin/trash/restore', {
       body: { kind: item.kind, target_id: item.target_id },
     });
 
@@ -83,7 +83,7 @@ export const useTrashStore = defineStore('trash', () => {
 
   async function purge(item: TrashItem): Promise<PurgeStatus | null> {
     error.value = null;
-    const { data, error: apiError } = await wrappedClient.POST('/api/v2/acta/admin/trash/purge', {
+    const { data, error: apiError } = await acta.POST('/api/v2/acta/admin/trash/purge', {
       body: { kind: item.kind, target_id: item.target_id, confirm: true },
     });
 
@@ -103,12 +103,9 @@ export const useTrashStore = defineStore('trash', () => {
   async function poll(operationId: string): Promise<PurgeStatus | null> {
     if (operationId === '') return null;
 
-    const { data, error: apiError } = await wrappedClient.GET(
-      '/api/v2/acta/admin/trash/purges/{operation_id}',
-      {
-        params: { path: { operation_id: operationId } },
-      },
-    );
+    const { data, error: apiError } = await acta.GET('/api/v2/acta/admin/trash/purges/{operation_id}', {
+      params: { path: { operation_id: operationId } },
+    });
 
     if (apiError !== undefined || data === undefined) {
       error.value = errorHint(apiError, 'Failed to check purge status');

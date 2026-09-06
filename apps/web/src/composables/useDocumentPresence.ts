@@ -1,5 +1,5 @@
 import { onScopeDispose, type Ref, reactive, ref, watch } from 'vue';
-import { wrappedClient } from '@/api';
+import { acta } from '@/api';
 import { eventString, type LiveEnvelope } from '@/lib/eventTypes';
 import { getPlatformTransport } from '@/platform/transport';
 import type { ActorDto } from '@/stores/boards';
@@ -46,7 +46,7 @@ export function useDocumentPresence(ws: Ref<string>, slug: Ref<string | null>): 
 
   async function heartbeat(wsSlug: string, docSlug: string): Promise<void> {
     try {
-      const { data } = await wrappedClient.POST(PRESENCE_PATH, {
+      const { data } = await acta.POST(PRESENCE_PATH, {
         params: { path: { ws: wsSlug, slug: docSlug } },
       });
 
@@ -61,7 +61,7 @@ export function useDocumentPresence(ws: Ref<string>, slug: Ref<string | null>): 
 
   async function leave(wsSlug: string, docSlug: string): Promise<void> {
     try {
-      await wrappedClient.DELETE(PRESENCE_PATH, {
+      await acta.DELETE(PRESENCE_PATH, {
         params: { path: { ws: wsSlug, slug: docSlug } },
       });
     } catch (error) {
