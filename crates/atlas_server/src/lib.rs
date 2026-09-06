@@ -8,12 +8,16 @@
     )
 )]
 
+use std::sync::Arc;
+
 use axum::{Router, middleware as axum_middleware};
 use tower_http::{
     classify::ServerErrorsFailureClass,
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     trace::TraceLayer,
 };
+
+use crate::observability::route_index::RouteIndex;
 
 pub mod auth;
 pub mod authz;
@@ -167,6 +171,7 @@ pub fn app(state: AppState) -> Router {
     let root_router =
         routes::platform::root_router(state.clone()).merge(routes::acta::root_router());
 
+    let route_index = state.route_index.clone();
     let fallback_router = routes::protection::protect(Router::new().fallback(not_found), state);
 
     let router = Router::new()
@@ -175,7 +180,7 @@ pub fn app(state: AppState) -> Router {
         .nest("/api/v2/acta", acta_router)
         .merge(root_router)
         .merge(fallback_router);
-    apply_layers(router)
+    apply_layers(router, route_index)
 }
 
 /// Response body-less 404, identical to axum's default fallback, so the only
@@ -191,14 +196,26 @@ async fn not_found() -> axum::http::StatusCode {
 /// handling a request is correlated by that id. Request start, completion (with
 /// status and latency), and failures are logged at INFO/ERROR.
 ///
+/// When the request's `axum::extract::MatchedPath` resolves through
+/// `route_index` (E11-S7 design D1/D2, D-S7-2), the span additionally carries
+/// `component` and `operation`, naming the registry entry that owns the
+/// matched route. An unmatched path, or one `route_index` does not cover,
+/// carries neither field — never an empty placeholder
+/// (INV-SPAN-FIELDS-CLOSED) — which is why the span is opened through two
+/// separate `info_span!` arms rather than `Empty` fields filled in later.
+/// `MatchedPath`'s presence at this outer layering position, applied after
+/// every `.nest()`/`.merge()` call, was confirmed for this repository's
+/// pinned axum/tower_http versions by `tests/matched_path_visibility.rs`
+/// (R2, design §0.1/D3.4).
+///
 /// `/health`, `/ready`, and `/version` are intentionally excluded: they are polled
 /// at high frequency by probes and carry no useful per-request signal. Their span
 /// is disabled, and the lifecycle callbacks short-circuit on a disabled span so
 /// nothing is logged for them (a failing readiness probe still logs from its own
 /// handler).
-fn apply_layers(router: Router) -> Router {
+fn apply_layers(router: Router, route_index: Arc<RouteIndex>) -> Router {
     let trace_layer = TraceLayer::new_for_http()
-        .make_span_with(|request: &axum::http::Request<_>| {
+        .make_span_with(move |request: &axum::http::Request<_>| {
             if matches!(request.uri().path(), "/health" | "/version" | "/ready") {
                 return tracing::Span::none();
             }
@@ -209,12 +226,27 @@ fn apply_layers(router: Router) -> Router {
                 .and_then(|value| value.to_str().ok())
                 .unwrap_or("-");
 
-            tracing::info_span!(
-                "http",
-                method = %request.method(),
-                uri = %request.uri(),
-                request_id = %request_id,
-            )
+            let tag = request
+                .extensions()
+                .get::<axum::extract::MatchedPath>()
+                .and_then(|matched| route_index.get(request.method(), matched.as_str()));
+
+            match tag {
+                Some(tag) => tracing::info_span!(
+                    "http",
+                    method = %request.method(),
+                    uri = %request.uri(),
+                    request_id = %request_id,
+                    component = %tag.component,
+                    operation = %tag.operation,
+                ),
+                None => tracing::info_span!(
+                    "http",
+                    method = %request.method(),
+                    uri = %request.uri(),
+                    request_id = %request_id,
+                ),
+            }
         })
         .on_request(|_request: &axum::http::Request<_>, span: &tracing::Span| {
             if span.is_disabled() {
@@ -259,7 +291,39 @@ fn apply_layers(router: Router) -> Router {
 /// Test helper: builds a minimal app with a single route and the full middleware stack.
 ///
 /// Used by `tests/error_model.rs` to exercise the problem-stamp middleware without
-/// starting a real server.
+/// starting a real server. Passes `RouteIndex::empty()` (design D2), which also
+/// gives `tests/span_fields.rs` a second, container-free witness for the
+/// absent-fields case.
 pub fn test_app_with_route(path: &str, handler: axum::routing::MethodRouter) -> Router {
-    apply_layers(Router::new().route(path, handler))
+    apply_layers(
+        Router::new().route(path, handler),
+        Arc::new(RouteIndex::empty()),
+    )
+}
+
+/// Test helper: builds a minimal app with a single route, the full
+/// middleware stack, and a caller-supplied `RouteIndex`.
+///
+/// Used by `tests/span_fields.rs` to exercise the present-fields case
+/// against a route the index actually maps, which `test_app_with_route`'s
+/// fixed `RouteIndex::empty()` cannot express.
+pub fn test_app_with_route_and_index(
+    path: &str,
+    handler: axum::routing::MethodRouter,
+    route_index: Arc<RouteIndex>,
+) -> Router {
+    apply_layers(Router::new().route(path, handler), route_index)
+}
+
+/// Test helper: applies the full middleware stack over a caller-assembled
+/// `router` and a caller-supplied `RouteIndex`.
+///
+/// Used by `tests/span_fields.rs` to prove the span lookup keys on the same
+/// `MatchedPath` a real component mount produces, which
+/// `test_app_with_route_and_index`'s single flat `.route()` call cannot
+/// express: the caller nests `router` the way `app()` nests a component's
+/// routes, so `MatchedPath` reflects the real mount shape rather than a
+/// hand-picked template string.
+pub fn test_app_with_router_and_index(router: Router, route_index: Arc<RouteIndex>) -> Router {
+    apply_layers(router, route_index)
 }
