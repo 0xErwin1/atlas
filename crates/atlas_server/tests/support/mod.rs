@@ -1,8 +1,10 @@
 #![allow(dead_code)]
 
+pub(crate) mod client_routes;
 pub(crate) mod path;
 pub(crate) mod route_matrix;
 pub(crate) mod scan;
+pub(crate) mod source_walk;
 
 use atlas_acta::actor::Actor;
 use atlas_acta::actor::WorkspaceCtx;
