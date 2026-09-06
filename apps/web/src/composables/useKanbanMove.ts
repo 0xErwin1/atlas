@@ -1,4 +1,4 @@
-import { wrappedClient } from '@/api/wrapper';
+import { acta } from '@/api';
 import { type TaskSummaryDto, useBoardsStore } from '@/stores/boards';
 
 const POSITION_EXHAUSTED_TYPE = 'urn:atlas:error:position-exhausted';
@@ -80,7 +80,7 @@ export function useKanbanMove(ws: string) {
     const destTasks = store.tasksByColumn(columnId).filter((t) => t.readable_id !== readableId);
     const neighbors = computeNeighbors(destTasks, toIndex);
 
-    const result = await wrappedClient.POST('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/move', {
+    const result = await acta.POST('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/move', {
       params: { path: { ws, readable_id: readableId } },
       body: {
         column_id: columnId,

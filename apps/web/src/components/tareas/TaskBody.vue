@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import type { components } from '@/api/types.d.ts';
+import type { components } from '@/api/generated/acta.d.ts';
 import type { ImageUploadResult } from '@/components/editor/imageUpload';
 import ErrorState from '@/components/states/ErrorState.vue';
 import LoadingState from '@/components/states/LoadingState.vue';

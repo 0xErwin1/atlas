@@ -11,7 +11,7 @@
  */
 import { computed, ref, watch } from 'vue';
 import { z } from 'zod';
-import type { components } from '@/api/types.d.ts';
+import type { components } from '@/api/generated/acta.d.ts';
 import Btn from '@/components/ui/Btn.vue';
 import FormField from '@/components/ui/FormField.vue';
 import Icon from '@/components/ui/Icon.vue';

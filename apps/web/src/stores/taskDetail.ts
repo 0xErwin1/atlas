@@ -1,8 +1,8 @@
 import { defineStore } from 'pinia';
 import { type Ref, ref, watch } from 'vue';
 import { z } from 'zod';
-import type { components } from '@/api/types.d.ts';
-import { wrappedClient } from '@/api/wrapper';
+import { acta } from '@/api';
+import type { components } from '@/api/generated/acta.d.ts';
 import {
   getResourceCachePrincipal,
   hydrateAndRevalidateResource,
@@ -17,9 +17,9 @@ import { useTasksStore } from '@/stores/tasks';
 
 export type AssigneeDto = components['schemas']['AssigneeDto'];
 export type ReferenceDto = components['schemas']['UnifiedReferenceDto'];
-export type TaskBacklinkDto = components['schemas']['TaskBacklinkDto'];
+export type TaskBacklinkDto = components['schemas']['Page_TaskBacklinkDto']['items'][number];
 export type ChecklistItemDto = components['schemas']['ChecklistItemDto'];
-export type ActivityEntryDto = components['schemas']['ActivityEntryDto'];
+export type ActivityEntryDto = components['schemas']['Page_ActivityEntryDto']['items'][number];
 export type ActorDto = components['schemas']['ActorDto'];
 export type SubtaskDto = components['schemas']['TaskSummaryDto'];
 export type TaskDto = components['schemas']['TaskDto'];
@@ -85,15 +85,12 @@ async function getLegacyTaskCommentPage(
   readableId: string,
   cursor?: string,
 ): Promise<{ data?: CommentPage; error?: unknown }> {
-  const { data, error } = await wrappedClient.GET(
-    '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments',
-    {
-      params: {
-        path: { ws, readable_id: readableId },
-        ...(cursor !== undefined ? { query: { cursor } } : {}),
-      },
+  const { data, error } = await acta.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments', {
+    params: {
+      path: { ws, readable_id: readableId },
+      ...(cursor !== undefined ? { query: { cursor } } : {}),
     },
-  );
+  });
 
   if (error !== undefined || data === undefined) return { error };
 
@@ -407,7 +404,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       settleCollection(
         'assignees',
         () =>
-          wrappedClient.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/assignees', {
+          acta.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/assignees', {
             params: { path },
           }),
         sequence,
@@ -421,7 +418,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       settleCollection(
         'references',
         () =>
-          wrappedClient.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/references', {
+          acta.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/references', {
             params: { path },
           }),
         sequence,
@@ -435,7 +432,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       settleCollection(
         'backlinks',
         () =>
-          wrappedClient.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/backlinks', {
+          acta.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/backlinks', {
             params: { path },
           }),
         sequence,
@@ -449,7 +446,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       settleCollection(
         'subtasks',
         () =>
-          wrappedClient.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/subtasks', {
+          acta.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/subtasks', {
             params: { path },
           }),
         sequence,
@@ -463,7 +460,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       settleCollection(
         'checklist',
         () =>
-          wrappedClient.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/checklist', {
+          acta.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/checklist', {
             params: { path },
           }),
         sequence,
@@ -477,7 +474,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       settleCollection(
         'activity',
         () =>
-          wrappedClient.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/activity', {
+          acta.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/activity', {
             params: { path },
           }),
         sequence,
@@ -491,7 +488,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       settleCollection(
         'attachments',
         () =>
-          wrappedClient.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/attachments', {
+          acta.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/attachments', {
             params: { path },
           }),
         sequence,
@@ -617,7 +614,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     if (!isOperationCurrent(operation)) return false;
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.POST(
+    const { data, error: apiError } = await acta.POST(
       '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments',
       {
         params: { path: { ws, readable_id: readableId } },
@@ -652,7 +649,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     const snapshot = [...comments.value];
     comments.value = comments.value.filter((c) => c.id !== commentId);
 
-    const { error: apiError } = await wrappedClient.DELETE(
+    const { error: apiError } = await acta.DELETE(
       '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}',
       { params: { path: { ws, readable_id: readableId, comment_id: commentId } } },
     );
@@ -683,7 +680,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     if (!isOperationCurrent(operation)) return false;
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.PATCH(
+    const { data, error: apiError } = await acta.PATCH(
       '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/comments/{comment_id}',
       {
         params: { path: { ws, readable_id: readableId, comment_id: commentId } },
@@ -714,7 +711,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     if (!isOperationCurrent(operation)) return false;
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.POST(
+    const { data, error: apiError } = await acta.POST(
       '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/assignees',
       {
         params: { path: { ws, readable_id: readableId } },
@@ -753,7 +750,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
 
     const assigneeRef = `${assigneeType}:${assigneeId}`;
 
-    const { error: apiError } = await wrappedClient.DELETE(
+    const { error: apiError } = await acta.DELETE(
       '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/assignees/{assignee_ref}',
       { params: { path: { ws, readable_id: readableId, assignee_ref: assigneeRef } } },
     );
@@ -784,7 +781,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     setCollectionEntry(collectionErrors, 'activity', null);
 
     try {
-      const result = await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/activity', {
+      const result = await acta.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/activity', {
         params: { path: { ws, readable_id: readableId } },
       });
       if (!isOperationCurrent(operation)) return;
@@ -827,7 +824,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     optimistic[idx] = { ...item, checked: nextChecked };
     checklist.value = optimistic;
 
-    const { data, error: apiError } = await wrappedClient.PATCH(
+    const { data, error: apiError } = await acta.PATCH(
       '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}',
       {
         params: { path: { ws, readable_id: readableId, item_id: itemId } },
@@ -880,7 +877,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     optimistic[idx] = { ...item, title: trimmed };
     checklist.value = optimistic;
 
-    const { data, error: apiError } = await wrappedClient.PATCH(
+    const { data, error: apiError } = await acta.PATCH(
       '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}',
       {
         params: { path: { ws, readable_id: readableId, item_id: itemId } },
@@ -917,7 +914,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     if (!isOperationCurrent(operation)) return { ok: false };
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.POST(
+    const { data, error: apiError } = await acta.POST(
       '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}/promote',
       {
         params: { path: { ws, readable_id: readableId, item_id: itemId } },
@@ -949,7 +946,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     if (!isOperationCurrent(operation)) return false;
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.POST(
+    const { data, error: apiError } = await acta.POST(
       '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/checklist',
       { params: { path: { ws, readable_id: readableId } }, body: { title } },
     );
@@ -971,7 +968,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     if (!isOperationCurrent(operation)) return false;
     error.value = null;
 
-    const { error: apiError } = await wrappedClient.DELETE(
+    const { error: apiError } = await acta.DELETE(
       '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/checklist/{item_id}',
       { params: { path: { ws, readable_id: readableId, item_id: itemId } } },
     );
@@ -993,7 +990,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     if (!isOperationCurrent(operation)) return false;
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.POST(
+    const { data, error: apiError } = await acta.POST(
       '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/subtasks',
       { params: { path: { ws, readable_id: readableId } }, body: { title } },
     );
@@ -1037,13 +1034,10 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     if (!isOperationCurrent(operation)) return false;
     error.value = null;
 
-    const { error: apiError } = await wrappedClient.POST(
-      '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/parent',
-      {
-        params: { path: { ws, readable_id: taskReadableId } },
-        body: { parent_readable_id: readableId },
-      },
-    );
+    const { error: apiError } = await acta.POST('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/parent', {
+      params: { path: { ws, readable_id: taskReadableId } },
+      body: { parent_readable_id: readableId },
+    });
 
     if (apiError !== undefined) {
       publishOperationError(operation, errorHint(apiError, 'Failed to attach the task'));
@@ -1052,7 +1046,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
 
     if (!isOperationCurrent(operation)) return false;
 
-    const { data } = await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/subtasks', {
+    const { data } = await acta.GET('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/subtasks', {
       params: { path: { ws, readable_id: readableId } },
     });
     if (data !== undefined && isOperationCurrent(operation)) subtasks.value = data;
@@ -1088,13 +1082,10 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       subtasks.value = optimistic;
     }
 
-    const { error: apiError } = await wrappedClient.POST(
-      '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/move',
-      {
-        params: { path: { ws, readable_id: subtaskReadableId } },
-        body: { column_id: columnId, before: null, after: null },
-      },
-    );
+    const { error: apiError } = await acta.POST('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/move', {
+      params: { path: { ws, readable_id: subtaskReadableId } },
+      body: { column_id: columnId, before: null, after: null },
+    });
 
     if (apiError !== undefined) {
       if (!isOperationCurrent(operation)) return false;
@@ -1122,12 +1113,9 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     error.value = null;
     const child = subtasks.value.find((subtask) => subtask.readable_id === subtaskReadableId);
 
-    const { error: apiError } = await wrappedClient.POST(
-      '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/promote',
-      {
-        params: { path: { ws, readable_id: subtaskReadableId } },
-      },
-    );
+    const { error: apiError } = await acta.POST('/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/promote', {
+      params: { path: { ws, readable_id: subtaskReadableId } },
+    });
 
     if (apiError !== undefined) {
       publishOperationError(operation, errorHint(apiError, 'Failed to promote sub-task'));
@@ -1152,7 +1140,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     if (!isOperationCurrent(operation)) return false;
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.POST(
+    const { data, error: apiError } = await acta.POST(
       '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/references',
       { params: { path: { ws, readable_id: readableId } }, body },
     );
@@ -1207,7 +1195,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
       ];
     });
 
-    const { error: apiError } = await wrappedClient.DELETE(
+    const { error: apiError } = await acta.DELETE(
       '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/references/{reference_id}',
       { params: { path: { ws, readable_id: readableId, reference_id: referenceId } } },
     );
@@ -1221,7 +1209,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
 
     if (!isOperationCurrent(operation)) return false;
 
-    const { data, error: reloadError } = await wrappedClient.GET(
+    const { data, error: reloadError } = await acta.GET(
       '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/references',
       { params: { path: { ws, readable_id: readableId } } },
     );
@@ -1247,7 +1235,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     if (!isOperationCurrent(operation)) return null;
     error.value = null;
 
-    const { data, error: apiError } = await wrappedClient.POST(
+    const { data, error: apiError } = await acta.POST(
       '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/attachments',
       {
         params: { path: { ws, readable_id: readableId } },
@@ -1289,7 +1277,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     let data: TaskAttachmentDto | undefined;
     let apiError: unknown;
     try {
-      const response = await wrappedClient.PATCH(
+      const response = await acta.PATCH(
         '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}',
         {
           params: { path: { ws, readable_id: readableId, attachment_id: attachmentId } },
@@ -1323,7 +1311,7 @@ export const useTaskDetailStore = defineStore('taskDetail', () => {
     const snapshot = [...attachments.value];
     attachments.value = attachments.value.filter((a) => a.id !== attachmentId);
 
-    const { error: apiError } = await wrappedClient.DELETE(
+    const { error: apiError } = await acta.DELETE(
       '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}',
       { params: { path: { ws, readable_id: readableId, attachment_id: attachmentId } } },
     );

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import type { components } from '@/api/types.d.ts';
+import type { components } from '@/api/generated/acta.d.ts';
 import SharePanel from '@/components/share/SharePanel.vue';
 import ErrorState from '@/components/states/ErrorState.vue';
 import LoadingState from '@/components/states/LoadingState.vue';
