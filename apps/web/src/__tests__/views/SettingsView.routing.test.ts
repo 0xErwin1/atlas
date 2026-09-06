@@ -66,6 +66,19 @@ function mountView(section: string | undefined, flags: UserFlags = {}) {
   return mount(SettingsView, { global: { stubs } });
 }
 
+/**
+ * Also names SHELL-NAV-6 (`shell-requirements.md`, the four settings panels
+ * — account, API keys, about, app — and their gating). The cases below
+ * already prove the panels compose and gate as shipped: account/keys render
+ * unconditionally ("renders the Account panel for the account section",
+ * "renders the API keys panel for the keys section"), about is admin-gated
+ * `rootOnly` ("hides administration sections from a non-admin user",
+ * "blocks a non-admin user from reaching a root-only section via the URL"),
+ * and app is Desktop-only ("hides the app settings section on the web
+ * build", "shows the app settings section on the desktop build and routes
+ * to its panel"). No new case is added here — per `CLAUDE.md`'s reuse rule
+ * and design §0.4/F9, this composition is already asserted.
+ */
 describe('SettingsView routing', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
