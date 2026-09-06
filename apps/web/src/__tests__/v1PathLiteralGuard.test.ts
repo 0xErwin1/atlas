@@ -176,6 +176,45 @@ describe('v1PathLiteralGuard — ownership check (D5.3)', () => {
   });
 });
 
+describe('v1PathLiteralGuard — flat-client closure (D5.5)', () => {
+  const documentKeys = new Set(['/api/v2/acta/workspaces/{}/tasks']);
+  const documentOwners = new Map([['/api/v2/acta/workspaces/{}/tasks', 'acta']]);
+
+  it('flags a document key called through wrappedClient, naming the component to use instead', () => {
+    const violations = findViolations(
+      new Map([['src/scratch/l.ts', "wrappedClient.get('/api/v2/acta/workspaces/{ws}/tasks');"]]),
+      documentKeys,
+      new Set(),
+      documentOwners,
+    );
+
+    expect(violations).toEqual([
+      {
+        file: 'src/scratch/l.ts',
+        literal: '/api/v2/acta/workspaces/{ws}/tasks',
+        reason: 'owned by acta, called through wrappedClient',
+      },
+    ]);
+  });
+
+  it('flags a document key called through apiClient, naming the component to use instead', () => {
+    const violations = findViolations(
+      new Map([['src/scratch/m.ts', "apiClient.get('/api/v2/acta/workspaces/{ws}/tasks');"]]),
+      documentKeys,
+      new Set(),
+      documentOwners,
+    );
+
+    expect(violations).toEqual([
+      {
+        file: 'src/scratch/m.ts',
+        literal: '/api/v2/acta/workspaces/{ws}/tasks',
+        reason: 'owned by acta, called through apiClient',
+      },
+    ]);
+  });
+});
+
 describe('v1PathLiteralGuard — document owners (D5.3)', () => {
   it('maps every path key to its x-atlas-component, with 142 entries and known owners', () => {
     const owners = loadDocumentOwners();

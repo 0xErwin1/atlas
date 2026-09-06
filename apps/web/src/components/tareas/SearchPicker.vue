@@ -5,7 +5,7 @@
  * pick means (add a reference, attach a sub-task, …).
  */
 import { onMounted, ref, watch } from 'vue';
-import { wrappedClient } from '@/api/wrapper';
+import { acta } from '@/api';
 import Icon from '@/components/ui/Icon.vue';
 import type { SearchHitDto } from '@/stores/search';
 
@@ -53,7 +53,7 @@ watch([query, () => props.type], () => {
   debounce = setTimeout(async () => {
     searching.value = true;
     try {
-      const { data } = await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/search', {
+      const { data } = await acta.GET('/api/v2/acta/workspaces/{ws}/search', {
         params: {
           path: { ws: props.ws },
           query: { q: term, type: props.type, sort: 'relevance', prefix: true },

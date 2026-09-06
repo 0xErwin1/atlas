@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue';
-import { wrappedClient } from '@/api/wrapper';
+import { acta } from '@/api';
 import Icon from '@/components/ui/Icon.vue';
 import PromptDialog from '@/components/ui/PromptDialog.vue';
 import { attachmentMarkdown, taskAttachmentContentUrl } from '@/lib/attachments';
@@ -89,7 +89,7 @@ async function download(att: TaskAttachmentDto): Promise<void> {
 
   downloading.value = new Set(downloading.value).add(att.id);
   try {
-    const { data } = await wrappedClient.GET(
+    const { data } = await acta.GET(
       '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content',
       {
         params: { path: { ws: props.ws, readable_id: props.readableId, attachment_id: att.id } },
@@ -129,7 +129,7 @@ async function loadPreview(attachmentId: string): Promise<void> {
   if (loadedPreviewIds.has(attachmentId)) return;
   loadedPreviewIds.add(attachmentId);
 
-  const { data } = await wrappedClient.GET(
+  const { data } = await acta.GET(
     '/api/v2/acta/workspaces/{ws}/tasks/{readable_id}/attachments/{attachment_id}/content',
     {
       params: { path: { ws: props.ws, readable_id: props.readableId, attachment_id: attachmentId } },

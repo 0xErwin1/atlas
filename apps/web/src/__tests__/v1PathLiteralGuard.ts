@@ -285,15 +285,24 @@ export const DEFAULT_ALLOWLIST = new Set([
   'src/lib/legacyApiPath.ts::/api/v2/acta/workspaces/',
 ]);
 
-/** A literal reached through `<ident>.VERB('<literal>'`, where `<ident>` is one
- * the audited `DECLARED_COMPONENTS` — the call-site receiver identifier that
- * D5.3's ownership check reads back from source text. `null` when the
- * literal was not reached that way (a raw string, `wrappedClient`, etc). */
+/** After PR7, the flat client is no longer exported for call-site use (D5.5):
+ * a literal reached through either name is a violation naming the component
+ * it should use instead, reusing the same "owned by" reason the ownership
+ * check produces for a wrong sub-client. */
+const FLAT_CLIENT_IDENTIFIERS = new Set(['wrappedClient', 'apiClient']);
+
+/** A literal reached through `<ident>.VERB('<literal>'`, where `<ident>` is
+ * one of the audited `DECLARED_COMPONENTS` or a flat-client identifier
+ * (D5.5) — the call-site receiver identifier that the ownership check reads
+ * back from source text. `null` when the literal was not reached that way
+ * (a raw string, a receiver the guard does not track, etc). */
 function subClientReceiver(content: string, literalStart: number): string | null {
   const prefix = content.slice(0, literalStart);
   const match = /([A-Za-z_$][A-Za-z0-9_$]*)\.[A-Za-z_$][A-Za-z0-9_$]*\(\s*$/.exec(prefix);
   const ident = match?.[1];
-  return ident && (DECLARED_COMPONENTS as readonly string[]).includes(ident) ? ident : null;
+  if (!ident) return null;
+  if ((DECLARED_COMPONENTS as readonly string[]).includes(ident)) return ident;
+  return FLAT_CLIENT_IDENTIFIERS.has(ident) ? ident : null;
 }
 
 /**

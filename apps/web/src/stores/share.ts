@@ -1,14 +1,15 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import type { components } from '@/api/types.d.ts';
-import { wrappedClient } from '@/api/wrapper';
+import { acta, custos } from '@/api';
+import type { components as ActaComponents } from '@/api/generated/acta.d.ts';
+import type { components as CustosComponents } from '@/api/generated/custos.d.ts';
 import { errorHint } from '@/lib/apiError';
 import { type GrantRole, isRoleAllowedFor } from '@/lib/grantRoles';
 import { collectPaged } from '@/lib/pagination';
 
-export type GrantDto = components['schemas']['GrantDto'];
-export type GrantPrincipal = components['schemas']['GrantPrincipal'];
-export type PrincipalDto = components['schemas']['PrincipalDto'];
+export type GrantDto = CustosComponents['schemas']['GrantDto'];
+export type GrantPrincipal = CustosComponents['schemas']['GrantPrincipal'];
+export type PrincipalDto = ActaComponents['schemas']['PrincipalDto'];
 
 export type ShareResource =
   | { kind: 'workspace'; ws: string }
@@ -35,7 +36,7 @@ export const useShareStore = defineStore('share', () => {
 
     if (resource.kind === 'workspace') {
       const result = await collectPaged<GrantDto>((cursor) =>
-        wrappedClient.GET('/api/v2/custos/workspaces/{ws}/grants', {
+        custos.GET('/api/v2/custos/workspaces/{ws}/grants', {
           params: {
             path: { ws: resource.ws },
             query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) },
@@ -46,7 +47,7 @@ export const useShareStore = defineStore('share', () => {
       apiError = result.error;
     } else {
       const result = await collectPaged<GrantDto>((cursor) =>
-        wrappedClient.GET('/api/v2/custos/workspaces/{ws}/projects/{project_slug}/grants', {
+        custos.GET('/api/v2/custos/workspaces/{ws}/projects/{project_slug}/grants', {
           params: {
             path: { ws: resource.ws, project_slug: resource.projectSlug },
             query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) },
@@ -68,7 +69,7 @@ export const useShareStore = defineStore('share', () => {
   }
 
   async function loadMembers(ws: string): Promise<void> {
-    const { data, error: apiError } = await wrappedClient.GET('/api/v2/acta/workspaces/{ws}/members', {
+    const { data, error: apiError } = await acta.GET('/api/v2/acta/workspaces/{ws}/members', {
       params: { path: { ws } },
     });
 
@@ -93,19 +94,16 @@ export const useShareStore = defineStore('share', () => {
     let apiError: unknown;
 
     if (resource.kind === 'workspace') {
-      const result = await wrappedClient.POST('/api/v2/custos/workspaces/{ws}/grants', {
+      const result = await custos.POST('/api/v2/custos/workspaces/{ws}/grants', {
         params: { path: { ws: resource.ws } },
         body: { principal, role },
       });
       apiError = result.error;
     } else {
-      const result = await wrappedClient.POST(
-        '/api/v2/custos/workspaces/{ws}/projects/{project_slug}/grants',
-        {
-          params: { path: { ws: resource.ws, project_slug: resource.projectSlug } },
-          body: { principal, role },
-        },
-      );
+      const result = await custos.POST('/api/v2/custos/workspaces/{ws}/projects/{project_slug}/grants', {
+        params: { path: { ws: resource.ws, project_slug: resource.projectSlug } },
+        body: { principal, role },
+      });
       apiError = result.error;
     }
 
@@ -133,12 +131,12 @@ export const useShareStore = defineStore('share', () => {
     let apiError: unknown;
 
     if (resource.kind === 'workspace') {
-      const result = await wrappedClient.DELETE('/api/v2/custos/workspaces/{ws}/grants/{grant_id}', {
+      const result = await custos.DELETE('/api/v2/custos/workspaces/{ws}/grants/{grant_id}', {
         params: { path: { ws: resource.ws, grant_id: grantId } },
       });
       apiError = result.error;
     } else {
-      const result = await wrappedClient.DELETE(
+      const result = await custos.DELETE(
         '/api/v2/custos/workspaces/{ws}/projects/{project_slug}/grants/{grant_id}',
         {
           params: { path: { ws: resource.ws, project_slug: resource.projectSlug, grant_id: grantId } },
