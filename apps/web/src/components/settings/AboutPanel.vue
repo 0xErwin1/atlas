@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
-import { wrappedClient } from '@/api/wrapper';
+import { platform } from '@/api';
 import PanelHeader from '@/components/settings/PanelHeader.vue';
 
 const version = ref<string | null>(null);
@@ -10,7 +10,7 @@ const loading = ref(true);
 
 onMounted(async () => {
   try {
-    const { data } = await wrappedClient.GET('/api/v2/platform/meta', {});
+    const { data } = await platform.GET('/api/v2/platform/meta', {});
     if (data) {
       version.value = data.version;
       build.value = data.build ?? null;
