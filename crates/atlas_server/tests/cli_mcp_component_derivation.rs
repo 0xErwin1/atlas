@@ -56,6 +56,10 @@ use std::path::{Path, PathBuf};
 use regex::Regex;
 
 use support::scan::scan;
+use support::source_walk::{
+    McpArm, McpFn, extract_array_body, find_fn_body, find_verb_match_body, module_source_files,
+    parse_impl_fn_boundaries, parse_resource_handlers, read_production_source, repo_root,
+};
 
 // ---------------------------------------------------------------------------
 // Component (independent of atlas_cli's own enum — atlas_cli is bin-only
@@ -93,26 +97,8 @@ impl Component {
 // Source locations
 // ---------------------------------------------------------------------------
 
-fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
-
 fn cli_src_root() -> PathBuf {
     repo_root().join("crates/atlas_cli/src")
-}
-
-fn read_production_source(path: &Path) -> String {
-    let content = fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path:?}: {e}"));
-    truncate_at_test_module(&content)
-}
-
-/// Truncates a Rust source file at its first `#[cfg(test)]`, the same scope
-/// rule `atlas_client_route_contract.rs:59-64` uses.
-fn truncate_at_test_module(content: &str) -> String {
-    match content.find("#[cfg(test)]") {
-        Some(index) => content[..index].to_string(),
-        None => content.to_string(),
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -156,43 +142,6 @@ fn parse_no_call_site() -> Vec<String> {
         .captures_iter(&table)
         .map(|caps| caps[1].to_string())
         .collect()
-}
-
-/// Returns the text between `pub(crate) const <name>: ... = &[` and its
-/// matching `];`, by counting `[`/`]` depth from the opening bracket.
-fn extract_array_body(source: &str, const_name: &str) -> String {
-    let marker = format!("const {const_name}");
-    let const_start = source
-        .find(&marker)
-        .unwrap_or_else(|| panic!("{const_name} not found in component.rs"));
-    // Skip past the type annotation's own `[...]` (e.g. `&[(&str, Component)]`)
-    // by anchoring on the `=` that introduces the array literal itself.
-    let assign = source[const_start..]
-        .find('=')
-        .map(|offset| const_start + offset)
-        .unwrap_or_else(|| panic!("{const_name}: no `=` found"));
-    let open = source[assign..]
-        .find('[')
-        .map(|offset| assign + offset)
-        .unwrap_or_else(|| panic!("{const_name}: no opening `[` found"));
-
-    let bytes = source.as_bytes();
-    let mut depth = 0i32;
-    let mut i = open;
-    while i < bytes.len() {
-        match bytes.get(i).copied().unwrap_or(0) {
-            b'[' => depth += 1,
-            b']' => {
-                depth -= 1;
-                if depth == 0 {
-                    return source[open + 1..i].to_string();
-                }
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-    panic!("{const_name}: unbalanced brackets");
 }
 
 // ---------------------------------------------------------------------------
@@ -264,44 +213,6 @@ fn camel_to_kebab(variant: &str) -> String {
 // Step 3 — resolve a module's (or an inline arm body's) namespace set
 // ---------------------------------------------------------------------------
 
-/// Every source file under `crates/atlas_cli/src/commands/<module>.rs` or,
-/// when that module is itself a directory (e.g. `import`, `export`, each
-/// with a nested `obsidian/` tree), every `.rs` file under
-/// `crates/atlas_cli/src/commands/<module>/`.
-fn module_source_files(module: &str) -> Vec<PathBuf> {
-    let single_file = cli_src_root().join("commands").join(format!("{module}.rs"));
-    if single_file.is_file() {
-        return vec![single_file];
-    }
-
-    let dir = cli_src_root().join("commands").join(module);
-    if dir.is_dir() {
-        return rust_files_recursive(&dir);
-    }
-
-    panic!("no source file or directory for module `{module}`");
-}
-
-fn rust_files_recursive(dir: &Path) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    let mut stack = vec![dir.to_path_buf()];
-
-    while let Some(current) = stack.pop() {
-        for entry in fs::read_dir(&current).unwrap_or_else(|e| panic!("read_dir {current:?}: {e}"))
-        {
-            let entry = entry.expect("dir entry");
-            let path = entry.path();
-            if path.is_dir() {
-                stack.push(path);
-            } else if path.extension().is_some_and(|ext| ext == "rs") {
-                files.push(path);
-            }
-        }
-    }
-
-    files
-}
-
 /// Finds every `.acta()`/`.custos()`/`.platform()` namespace accessor call
 /// in already-masked `code` (comments and string-literal contents already
 /// stripped by [`scan`]).
@@ -314,7 +225,7 @@ fn resolve_namespaces_in_source(masked_code: &str) -> BTreeSet<Component> {
 
 fn resolve_module_namespaces(module: &str) -> BTreeSet<Component> {
     let mut namespaces = BTreeSet::new();
-    for path in module_source_files(module) {
+    for path in module_source_files(&cli_src_root().join("commands"), module) {
         let source = read_production_source(&path);
         let masked = scan(&source).code;
         namespaces.extend(resolve_namespaces_in_source(&masked));
@@ -653,35 +564,6 @@ fn parse_verbs() -> Vec<String> {
 // Step 2 — resolve a verb's advertised name to its resource-match body
 // ---------------------------------------------------------------------------
 
-/// Finds the `impl` method whose body contains `catalog::unknown_resource
-/// ("<verb>", ..)` — every verb's `match call.resource.as_str()` ends with
-/// exactly this fallback arm, so it is a reliable anchor for the match
-/// block regardless of which function holds it.
-///
-/// This does **not** assume the match lives in the function named after the
-/// verb: `delete`'s own `#[tool]` function only runs the confirmation flow
-/// and delegates to a private `delete_resource`, which is where the actual
-/// match lives; `move`'s function is named `move_resource` because `move`
-/// is a reserved keyword. Anchoring on the verb string threaded through
-/// `catalog::unknown_resource` finds the real match block in both cases,
-/// without a hand-maintained function-name table.
-fn find_verb_match_body<'a>(fns: &'a [McpFn], source: &'a str, verb: &str) -> &'a str {
-    let anchor = format!(r#"unknown_resource("{verb}","#);
-    let mut matches = fns
-        .iter()
-        .filter(|candidate| source[candidate.start..candidate.end].contains(&anchor));
-
-    let found = matches.next().unwrap_or_else(|| {
-        panic!("no function contains `catalog::unknown_resource(\"{verb}\", ..)` — verb `{verb}` has no resolvable match block")
-    });
-    assert!(
-        matches.next().is_none(),
-        "more than one function contains the `{verb}` unknown-resource anchor — ambiguous match block"
-    );
-
-    &source[found.start..found.end]
-}
-
 #[test]
 fn every_verb_has_exactly_one_resolvable_match_block() {
     let source = mcp_lib_source();
@@ -695,96 +577,6 @@ fn every_verb_has_exactly_one_resolvable_match_block() {
             "the `{verb}` match block must dispatch on call.resource.as_str()"
         );
     }
-}
-
-// ---------------------------------------------------------------------------
-// Step 3 — function boundaries inside atlas_mcp's `impl AtlasMcp` blocks
-// ---------------------------------------------------------------------------
-
-/// One method inside an `impl` block, bounded by its own header and the next
-/// sibling method's header (or end of source for the last one). No brace
-/// matching — the same next-marker slicing `parse_dispatch_arms` uses on the
-/// CLI side, applied one level up (methods rather than match arms).
-struct McpFn {
-    name: String,
-    start: usize,
-    end: usize,
-}
-
-fn parse_impl_fn_boundaries(source: &str) -> Vec<McpFn> {
-    let header_re = Regex::new(r"(?m)^    (?:pub(?:\(crate\))?\s+)?(?:async\s+)?fn\s+(\w+)\s*\(")
-        .expect("valid regex");
-
-    let starts: Vec<(usize, String)> = header_re
-        .captures_iter(source)
-        .map(|caps| {
-            let whole = caps.get(0).expect("match 0 exists");
-            (whole.start(), caps[1].to_string())
-        })
-        .collect();
-
-    starts
-        .iter()
-        .enumerate()
-        .map(|(index, (start, name))| {
-            let end = starts.get(index + 1).map_or(source.len(), |(s, _)| *s);
-            McpFn {
-                name: name.clone(),
-                start: *start,
-                end,
-            }
-        })
-        .collect()
-}
-
-fn find_fn_body<'a>(fns: &[McpFn], source: &'a str, name: &str) -> Option<&'a str> {
-    fns.iter()
-        .find(|candidate| candidate.name == name)
-        .map(|candidate| &source[candidate.start..candidate.end])
-}
-
-// ---------------------------------------------------------------------------
-// Step 4 — parse a verb function's match arms: "resource" -> handler fn name
-// ---------------------------------------------------------------------------
-
-/// One `"resource" => ...` arm resolved to the handler function name its
-/// body calls. Both real arm shapes resolve the same way: the decode shape
-/// (`self.h(catalog::decode(..)?, ctx)`) and the bare shape
-/// (`self.list_platform_status_templates(ctx)`) both contain exactly one
-/// `self.<name>(` call in the arm's own text.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct McpArm {
-    resource: String,
-    handler: String,
-}
-
-fn parse_resource_handlers(body: &str) -> Vec<McpArm> {
-    let arm_re = Regex::new(r#""([a-z_]+)"\s*=>"#).expect("valid regex");
-    let markers: Vec<(usize, usize, String)> = arm_re
-        .captures_iter(body)
-        .map(|caps| {
-            let whole = caps.get(0).expect("match 0 exists");
-            (whole.start(), whole.end(), caps[1].to_string())
-        })
-        .collect();
-
-    // `self` and its call sometimes split across lines (e.g. `self\n    .list_attachments(`
-    // when a `.map(ContentBlock::text)` chains after `.await`), so the gap
-    // between `self` and `.` must be permitted, not just the gap after it.
-    let handler_re = Regex::new(r"self\s*\.\s*(\w+)\s*\(").expect("valid regex");
-
-    markers
-        .iter()
-        .enumerate()
-        .filter_map(|(index, (_, end, resource))| {
-            let arm_end = markers.get(index + 1).map_or(body.len(), |(s, _, _)| *s);
-            let arm_text = &body[*end..arm_end];
-            handler_re.captures(arm_text).map(|caps| McpArm {
-                resource: resource.clone(),
-                handler: caps[1].to_string(),
-            })
-        })
-        .collect()
 }
 
 // ---------------------------------------------------------------------------
