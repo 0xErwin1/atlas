@@ -1153,7 +1153,10 @@ fn repo_relative_paths(root: &Path) -> Vec<(String, FileLiterals)> {
 /// files this slice deleted, and of `namespaces_for`, which no longer
 /// exists anywhere in the codebase): the sweeps and per-component
 /// router-parity tests that legitimately build a request path at a specific
-/// component's own mount, by intent.
+/// component's own mount, by intent; and `route_index_derivation.rs`
+/// (`v2-e11-s7` D1), which compares the observability route index's keys
+/// against the seam primitive itself, including a synthetic component the
+/// route matrix cannot know.
 const SEAM_EXCEPTIONS: &[&str] = &[
     "api_401_sweep.rs",
     "api_rfc9457_sweep.rs",
@@ -1161,6 +1164,7 @@ const SEAM_EXCEPTIONS: &[&str] = &[
     "api_platform_router_parity.rs",
     "api_custos_router_parity.rs",
     "api_acta_router_parity.rs",
+    "route_index_derivation.rs",
 ];
 
 /// INV-SEAM (spec "one seam, not two", T1.29/T1.33): outside
