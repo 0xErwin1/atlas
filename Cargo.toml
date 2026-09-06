@@ -123,6 +123,15 @@ async-trait        = "0.1"
 schemars           = "0.8"
 futures            = "0.3"
 
+# Observability (SHELL-XC-3 / H3). `metrics` is the recording facade: the layer inside `app()`
+# depends on it alone, so no component crate ever names an exporter. `metrics-exporter-prometheus`
+# is the recorder, confined to `observability::exposition` and `main.rs`, and is taken WITHOUT
+# default features so its own `http-listener`/`push-gateway` HTTP stack is never compiled in —
+# exposition is served by this repository's own second `axum::serve` on `platform.metrics`
+# (E11-S7 D-S7-1), never by a listener the exporter opens for us.
+metrics = "0.24"
+metrics-exporter-prometheus = { version = "0.18", default-features = false }
+
 # Test harness only (crates/atlas_test_harness). Pulls in ~210 extra
 # transitive crates (bollard, hyper, tonic, rustls), so it stays a normal
 # dependency of that one crate rather than a dev-dependency anywhere else.

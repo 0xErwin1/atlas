@@ -1158,7 +1158,9 @@ fn repo_relative_paths(root: &Path) -> Vec<(String, FileLiterals)> {
 /// against the seam primitive itself, including a synthetic component the
 /// route matrix cannot know; and `span_fields.rs` (`v2-e11-s7` D2), which
 /// mounts a synthetic component's route to prove the span lookup keys on
-/// the same seam.
+/// the same seam; and `metric_labels.rs` (`v2-e11-s7` D3), which mounts a
+/// synthetic component's route the same way to prove the metrics lookup
+/// keys on that seam too.
 const SEAM_EXCEPTIONS: &[&str] = &[
     "api_401_sweep.rs",
     "api_rfc9457_sweep.rs",
@@ -1168,6 +1170,7 @@ const SEAM_EXCEPTIONS: &[&str] = &[
     "api_acta_router_parity.rs",
     "route_index_derivation.rs",
     "span_fields.rs",
+    "metric_labels.rs",
 ];
 
 /// INV-SEAM (spec "one seam, not two", T1.29/T1.33): outside

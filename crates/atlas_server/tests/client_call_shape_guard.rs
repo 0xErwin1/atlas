@@ -877,6 +877,7 @@ const ATLAS_SERVER_TEST_PINS: &[(&str, usize)] = &[
     ("lifecycle_persistence.rs", 0),
     ("live_events.rs", 0),
     ("matched_path_visibility.rs", 0),
+    ("metric_labels.rs", 0),
     ("migration_slug_backfill.rs", 0),
     ("openapi_committed_document_drift.rs", 0),
     ("openapi_idempotency_annotations.rs", 0),
