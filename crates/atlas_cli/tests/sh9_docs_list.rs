@@ -33,6 +33,14 @@ const CANNED_DOCUMENTS_PAGE: &str = r#"{"items":[],"next_cursor":null,"has_more"
 /// the only thing that can make the two recorded requests differ is
 /// `strip_component_prefix`'s own behavior, not an incidental difference in
 /// where the stub happened to bind.
+/// The built `atlas` binary. Cargo bakes its path in at compile time; a
+/// nextest archive runs on another machine and hands the relocated path
+/// through `NEXTEST_BIN_EXE_atlas` instead.
+fn atlas_binary() -> String {
+    std::env::var("NEXTEST_BIN_EXE_atlas")
+        .unwrap_or_else(|_| env!("CARGO_BIN_EXE_atlas").to_string())
+}
+
 /// A CLI that exits without sending a request must fail the test, not park it.
 const RECORD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
@@ -98,7 +106,7 @@ fn request_target(raw: &str) -> &str {
 #[test]
 fn short_form_and_component_prefixed_alias_send_identical_requests() {
     let (base_url, requests, stub) = spawn_two_request_stub();
-    let binary = env!("CARGO_BIN_EXE_atlas");
+    let binary = atlas_binary();
 
     let short_form = Command::new(binary)
         .args([
@@ -178,7 +186,7 @@ fn short_form_and_component_prefixed_alias_send_identical_requests() {
 
 #[test]
 fn help_shows_docs_grouped_under_acta_at_the_binary_level() {
-    let binary = env!("CARGO_BIN_EXE_atlas");
+    let binary = atlas_binary();
 
     let output = Command::new(binary)
         .arg("--help")
