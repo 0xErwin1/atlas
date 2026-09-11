@@ -540,6 +540,27 @@ pub fn acta_protected_route_paths() -> Vec<(atlas_core::registry::HttpMethod, &'
     component_route_paths(&crate::routes::acta::protected_declared_routes())
 }
 
+/// Test-only surface for `tests/metrics_exposition.rs`'s G1a structural
+/// guard (E11-S7 D6): platform's **full** declared `(method, path)` union,
+/// including routes behind `require_authn` — unlike [`platform_route_paths`],
+/// which exposes only the public subset the mount probe needs. Same `pub
+/// fn`-for-tests precedent as [`platform_idempotent_route_paths`], which
+/// already reads this same full union filtered on one field; this exposes
+/// it unfiltered.
+pub fn platform_declared_route_paths() -> Vec<(atlas_core::registry::HttpMethod, &'static str)> {
+    component_route_paths(&crate::routes::platform::declared_routes())
+}
+
+/// See [`platform_declared_route_paths`].
+pub fn custos_declared_route_paths() -> Vec<(atlas_core::registry::HttpMethod, &'static str)> {
+    component_route_paths(&crate::routes::custos::declared_routes())
+}
+
+/// See [`platform_declared_route_paths`].
+pub fn acta_declared_route_paths() -> Vec<(atlas_core::registry::HttpMethod, &'static str)> {
+    component_route_paths(&crate::routes::acta::declared_routes())
+}
+
 /// Test-only surface for the `v2-e3-s3` PR4 idempotency declare-and-verify
 /// audit (`tests/idempotency_declare_and_verify_audit.rs`): the `(method,
 /// path)` set of routes `component_routes!`'s `idempotent` modifier (or a
