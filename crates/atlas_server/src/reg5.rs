@@ -573,7 +573,7 @@ fn custos_entry() -> ComponentEntry {
             doctor: true,
         },
         experience: Experience {
-            navigation_providers: vec![],
+            navigation_providers: vec!["custos.admin".to_string()],
             context_providers: vec![],
         },
         persistence: Some(Persistence {
@@ -2079,7 +2079,7 @@ fn acta_entry() -> ComponentEntry {
             doctor: true,
         },
         experience: Experience {
-            navigation_providers: vec![],
+            navigation_providers: vec!["acta.workspace".to_string()],
             context_providers: vec![],
         },
         persistence: Some(Persistence {

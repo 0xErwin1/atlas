@@ -703,6 +703,10 @@ mod tests {
         let component = meta.components.first().expect("one component");
         assert_eq!(component.stable_id, "platform");
         assert_eq!(component.kind, "platform-service");
+        assert!(
+            component.navigation_providers.is_empty(),
+            "a server response without the field decodes to no providers"
+        );
         assert_eq!(component.contract_version, 1);
 
         let malformed = AtlasClient::new(serve_once(
