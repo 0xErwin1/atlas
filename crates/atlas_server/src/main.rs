@@ -1,9 +1,12 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
+use atlas_server::observability::{drain_signal, exposition};
 use atlas_server::persistence::migrator::ComposedMigrator;
+use metrics_exporter_prometheus::PrometheusBuilder;
 use sea_orm_migration::prelude::MigratorTrait;
 use std::future::IntoFuture;
 use std::net::SocketAddr;
 use std::time::Duration;
+use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tracing::info;
 
@@ -40,6 +43,19 @@ async fn main() -> Result<()> {
         Ok(cfg) => cfg,
         Err(exit_code) => std::process::exit(exit_code),
     };
+
+    // Installs the process-wide Prometheus recorder before any listener
+    // opens (E11-S7 design D5): every `metrics::counter!`/`histogram!` call
+    // `record_request_metrics` makes on the very first served request must
+    // already have a real recorder behind it, never the `metrics` facade's
+    // silent no-op default. A failure here — an empty bucket list, or a
+    // second recorder already installed — is a startup error, not a
+    // best-effort fallback.
+    let prometheus_handle = PrometheusBuilder::new()
+        .set_buckets(atlas_server::observability::metrics::REQUEST_DURATION_BUCKETS)
+        .map_err(|e| anyhow!("invalid REQUEST_DURATION_BUCKETS: {e}"))?
+        .install_recorder()
+        .map_err(|e| anyhow!("installing the Prometheus recorder: {e}"))?;
 
     info!("connecting to database");
     let db = atlas_postgres::connect(&cfg.platform.postgres).await?;
@@ -95,11 +111,34 @@ async fn main() -> Result<()> {
     // first OS signal so the server stops accepting and starts draining.
     let (drain_tx, drain_rx) = watch::channel(false);
 
-    let mut serve_drain_rx = drain_rx.clone();
+    // The second, independently bound Prometheus exposition listener
+    // (E11-S7 design D4/D5, D-S7-1): only binds when `platform.metrics` is
+    // configured (INV-METRICS-DISABLED-BY-DEFAULT). A bind failure is a
+    // startup error naming the address, never a silent skip. It shares the
+    // primary listener's drain signal (`drain_rx.clone()`, INV-SHARED-DRAIN)
+    // and is never an arm of the `select!` below — an exposition failure
+    // must never terminate a healthy API process.
+    let metrics_task = match cfg.platform.metrics {
+        Some(metrics) => {
+            let metrics_listener = TcpListener::bind(metrics.bind)
+                .await
+                .map_err(|e| anyhow!("metrics listener bind {}: {e}", metrics.bind))?;
+            info!("metrics exposition listening on {}", metrics.bind);
+
+            let metrics_router = exposition::router(prometheus_handle.clone());
+            let metrics_drain_rx = drain_rx.clone();
+
+            Some(tokio::spawn(
+                axum::serve(metrics_listener, metrics_router)
+                    .with_graceful_shutdown(drain_signal(metrics_drain_rx))
+                    .into_future(),
+            ))
+        }
+        None => None,
+    };
+
     let server = axum::serve(listener, make_service)
-        .with_graceful_shutdown(async move {
-            let _ = serve_drain_rx.wait_for(|drained| *drained).await;
-        })
+        .with_graceful_shutdown(drain_signal(drain_rx.clone()))
         .into_future();
     tokio::pin!(server);
 
@@ -122,6 +161,33 @@ async fn main() -> Result<()> {
                     timeout_secs = cfg.platform.shutdown_timeout_secs,
                     "graceful drain exceeded timeout; forcing shutdown"
                 ),
+            }
+        }
+    }
+
+    // Join the metrics listener, bounded by the shorter of `shutdown_timeout`
+    // and five seconds (E11-S3b's worker budget runs next, unaffected by
+    // this window). A one-route, one-response exposition router needing
+    // longer than that to drain is a bug, not a slow client, so a timeout
+    // aborts the task rather than blocking process exit on it.
+    if let Some(metrics_task) = metrics_task {
+        let abort_handle = metrics_task.abort_handle();
+        let metrics_join_timeout = Duration::from_secs(cfg.platform.shutdown_timeout_secs.min(5));
+
+        match tokio::time::timeout(metrics_join_timeout, metrics_task).await {
+            Ok(Ok(Ok(()))) => {}
+            Ok(Ok(Err(e))) => {
+                tracing::error!(error = %e, "metrics listener exited with an error");
+            }
+            Ok(Err(join_error)) => {
+                tracing::error!(error = %join_error, "metrics listener task panicked");
+            }
+            Err(_) => {
+                abort_handle.abort();
+                tracing::warn!(
+                    timeout_secs = metrics_join_timeout.as_secs(),
+                    "metrics listener did not drain within the bounded shutdown window; aborting"
+                );
             }
         }
     }

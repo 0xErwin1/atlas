@@ -28,7 +28,7 @@ mod storage;
 
 pub use acta::ActaConfig;
 pub use custos::CustosConfig;
-pub use platform::PlatformConfig;
+pub use platform::{MetricsConfig, PlatformConfig};
 pub use search::{SearchLexicalConfig, SearchSemanticConfig};
 pub use storage::StorageConfig;
 
@@ -547,6 +547,7 @@ mod tests {
             session_ttl_hours: 168,
             session_max_ttl_hours: 720,
             idempotency_retention_hours: 24,
+            metrics: None,
         };
 
         let output = format!("{config:?}");
