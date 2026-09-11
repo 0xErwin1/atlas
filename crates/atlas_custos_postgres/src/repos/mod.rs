@@ -1,3 +1,4 @@
+pub mod discovery;
 pub mod grant_hygiene;
 pub mod identity;
 pub mod permissions;

@@ -20,6 +20,9 @@ tracing.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true
+atlas_test_db = { path = "../atlas_test_db" }
+migration.workspace = true
+sea-orm-migration.workspace = true
 
 [lints]
 workspace = true

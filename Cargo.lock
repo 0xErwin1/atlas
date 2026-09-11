@@ -698,6 +698,7 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
+ "tokio",
  "uuid",
 ]
 
@@ -709,7 +710,9 @@ dependencies = [
  "atlas_core",
  "atlas_custos",
  "atlas_postgres",
+ "atlas_test_db",
  "chrono",
+ "migration",
  "sea-orm",
  "sea-orm-migration",
  "serde_json",
