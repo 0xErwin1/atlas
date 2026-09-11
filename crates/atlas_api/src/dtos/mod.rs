@@ -209,13 +209,15 @@ pub struct SetSystemAdminRequest {
 /// declared shell navigation provider ids verbatim from
 /// `Experience::navigation_providers`; the web shell resolves each id
 /// through its own static manifest, so this field is never parsed as a
-/// dotted namespace.
+/// dotted namespace. It defaults to empty on decode so clients keep reading
+/// responses from servers that predate it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ComponentSummaryDto {
     pub stable_id: String,
     pub kind: String,
     pub contract_version: u32,
+    #[serde(default)]
     pub navigation_providers: Vec<String>,
 }
 
