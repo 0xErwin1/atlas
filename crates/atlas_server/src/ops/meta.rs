@@ -17,6 +17,7 @@ pub fn component_summaries(registry: &Registry) -> Vec<ComponentSummaryDto> {
             stable_id: entry.identity.stable_id.as_str().to_string(),
             kind: entry.identity.kind.to_string(),
             contract_version: entry.identity.contract_version.value(),
+            navigation_providers: entry.experience.navigation_providers.clone(),
         })
         .collect()
 }
@@ -82,6 +83,41 @@ mod tests {
                 .iter()
                 .any(|s| s.stable_id == "storage.filesystem")
         );
+    }
+
+    /// E11-S8 design D-S8-4: acta and custos each declare one navigation
+    /// provider id in `reg5.rs`, and `component_summaries` must carry that
+    /// declaration through verbatim so the web shell can resolve it.
+    #[test]
+    fn component_summaries_carry_the_registry_declared_navigation_providers() {
+        let registry =
+            build(reg5_component_entries(StorageBackend::Filesystem)).expect("valid registry");
+
+        let summaries = component_summaries(&registry);
+
+        let acta = summaries
+            .iter()
+            .find(|s| s.stable_id == "acta")
+            .expect("acta must be present");
+        assert_eq!(
+            acta.navigation_providers,
+            vec!["acta.workspace".to_string()]
+        );
+
+        let custos = summaries
+            .iter()
+            .find(|s| s.stable_id == "custos")
+            .expect("custos must be present");
+        assert_eq!(
+            custos.navigation_providers,
+            vec!["custos.admin".to_string()]
+        );
+
+        let platform = summaries
+            .iter()
+            .find(|s| s.stable_id == "platform")
+            .expect("platform must be present");
+        assert!(platform.navigation_providers.is_empty());
     }
 
     #[test]

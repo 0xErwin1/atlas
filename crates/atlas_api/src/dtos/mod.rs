@@ -204,12 +204,19 @@ pub struct SetSystemAdminRequest {
 /// and `/api/v2/platform/meta` (E11-S3a design D4). Derived from
 /// `Registry::entries()`; release metadata only, never a runtime/config
 /// value (SHELL-OPS-7).
+///
+/// `navigation_providers` (E11-S8 design D-S8-4) carries the component's
+/// declared shell navigation provider ids verbatim from
+/// `Experience::navigation_providers`; the web shell resolves each id
+/// through its own static manifest, so this field is never parsed as a
+/// dotted namespace.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ComponentSummaryDto {
     pub stable_id: String,
     pub kind: String,
     pub contract_version: u32,
+    pub navigation_providers: Vec<String>,
 }
 
 /// Response from `GET /version`: identity-only, no config (E11-S3a design
@@ -709,6 +716,7 @@ mod tests {
                 stable_id: "platform".to_string(),
                 kind: "platform-service".to_string(),
                 contract_version: 1,
+                navigation_providers: vec![],
             }],
         };
 
@@ -716,7 +724,7 @@ mod tests {
 
         assert_eq!(
             json,
-            r#"{"version":"1","build":null,"components":[{"stable_id":"platform","kind":"platform-service","contract_version":1}]}"#
+            r#"{"version":"1","build":null,"components":[{"stable_id":"platform","kind":"platform-service","contract_version":1,"navigation_providers":[]}]}"#
         );
         assert!(!json.contains("max_attachment_bytes"));
         assert!(!json.contains("semantic_search_enabled"));
@@ -731,6 +739,7 @@ mod tests {
                 stable_id: "custos".to_string(),
                 kind: "product".to_string(),
                 contract_version: 2,
+                navigation_providers: vec!["custos.admin".to_string()],
             }],
         };
 
@@ -738,7 +747,7 @@ mod tests {
 
         assert_eq!(
             json,
-            r#"{"version":"1","build":"abc123","components":[{"stable_id":"custos","kind":"product","contract_version":2}]}"#
+            r#"{"version":"1","build":"abc123","components":[{"stable_id":"custos","kind":"product","contract_version":2,"navigation_providers":["custos.admin"]}]}"#
         );
     }
 

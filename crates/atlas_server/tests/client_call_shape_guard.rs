@@ -880,6 +880,7 @@ const ATLAS_SERVER_TEST_PINS: &[(&str, usize)] = &[
     ("metric_labels.rs", 0),
     ("metrics_exposition.rs", 0),
     ("migration_slug_backfill.rs", 0),
+    ("navigation_providers_web_copy.rs", 0),
     ("openapi_committed_document_drift.rs", 0),
     ("openapi_idempotency_annotations.rs", 0),
     ("openapi_semantic_contracts.rs", 0),

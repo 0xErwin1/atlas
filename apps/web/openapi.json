@@ -17282,11 +17282,12 @@
       },
       "ComponentSummaryDto": {
         "type": "object",
-        "description": "One registry-present component's identity summary, listed in `/version`\nand `/api/v2/platform/meta` (E11-S3a design D4). Derived from\n`Registry::entries()`; release metadata only, never a runtime/config\nvalue (SHELL-OPS-7).",
+        "description": "One registry-present component's identity summary, listed in `/version`\nand `/api/v2/platform/meta` (E11-S3a design D4). Derived from\n`Registry::entries()`; release metadata only, never a runtime/config\nvalue (SHELL-OPS-7).\n\n`navigation_providers` (E11-S8 design D-S8-4) carries the component's\ndeclared shell navigation provider ids verbatim from\n`Experience::navigation_providers`; the web shell resolves each id\nthrough its own static manifest, so this field is never parsed as a\ndotted namespace.",
         "required": [
           "stable_id",
           "kind",
-          "contract_version"
+          "contract_version",
+          "navigation_providers"
         ],
         "properties": {
           "contract_version": {
@@ -17296,6 +17297,12 @@
           },
           "kind": {
             "type": "string"
+          },
+          "navigation_providers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "stable_id": {
             "type": "string"
