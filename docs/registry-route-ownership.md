@@ -45,6 +45,7 @@ reading Rust.
 | `auth` | custos | baseline (explicit) |
 | `automation_rules` | acta | baseline family ("automations") |
 | `boards` | acta | baseline (explicit) |
+| `discover` | custos | E11-S8: self-service discovery of the principal's reachable components and scopes (grants and memberships) |
 | `documents` | acta | baseline (explicit) |
 | `events` | acta | `events_outbox` is an Acta-owned table (E2 S4 PR1/PR5) |
 | `folders` | acta | baseline (explicit) |

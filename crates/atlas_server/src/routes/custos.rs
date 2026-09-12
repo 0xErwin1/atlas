@@ -452,8 +452,9 @@ mod tests {
         );
         assert_eq!(
             router_set.len(),
-            37,
-            "custos owns exactly 35 docs/registry-route-ownership.md routes plus the 2 \
+            38,
+            "custos owns exactly 36 docs/registry-route-ownership.md routes (E11-S8 added \
+             discover) plus the 2 \
              health/ready probes E11-S3a design D2 added"
         );
     }
