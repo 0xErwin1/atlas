@@ -13,6 +13,7 @@ import {
   setWorkspaceLiveUpdatesAuthorizationInvalidator,
 } from '@/lib/workspaceLiveUpdates';
 import { getPlatformTransport } from '@/platform/transport';
+import { useDiscoveryStore } from '@/stores/discovery';
 import { useUiStateStore } from '@/stores/uiState';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -108,6 +109,7 @@ export const useAuthStore = defineStore('auth', () => {
     disposeWorkspaceLiveUpdates();
     useWorkspaceStore().clearWorkspaceAliases();
     useUiStateStore().reset();
+    useDiscoveryStore().reset();
     user.value = null;
     isAuthenticated.value = false;
     apiKeyWarning.value = false;

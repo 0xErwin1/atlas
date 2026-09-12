@@ -22,6 +22,14 @@ vi.mock('@/stores/uiState', () => ({
   useUiStateStore: () => ({ loaded: true, load: vi.fn() }),
 }));
 
+const { discoveryStore } = vi.hoisted(() => ({
+  discoveryStore: { ensureLoaded: vi.fn().mockResolvedValue(undefined) },
+}));
+
+vi.mock('@/stores/discovery', () => ({
+  useDiscoveryStore: () => discoveryStore,
+}));
+
 import type { RouteLocationNormalized } from 'vue-router';
 import { workspaceBeforeEach } from '@/router';
 import { useWorkspaceStore } from '@/stores/workspace';
@@ -40,6 +48,16 @@ describe('workspaceBeforeEach bootstrap guard', () => {
     vi.clearAllMocks();
     authStore.isAuthenticated = true;
     authStore.isInitializationComplete = true;
+    discoveryStore.ensureLoaded.mockClear();
+  });
+
+  it('ensures discovery is loaded for an authenticated navigation', async () => {
+    const workspace = useWorkspaceStore();
+    workspace.setActiveWorkspace('atlas');
+
+    await workspaceBeforeEach(notesRoute);
+
+    expect(discoveryStore.ensureLoaded).toHaveBeenCalledTimes(1);
   });
 
   it('does not duplicate the identity request after startup completed unauthenticated', async () => {

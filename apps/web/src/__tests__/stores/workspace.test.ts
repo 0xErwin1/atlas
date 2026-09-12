@@ -20,6 +20,8 @@ import { wrappedClient } from '@/api/wrapper';
 import { disposeWorkspaceLiveUpdates } from '@/lib/workspaceLiveUpdates';
 import type { MeResponse } from '@/stores/auth';
 import { useAuthStore } from '@/stores/auth';
+import type { DiscoverResponseDto } from '@/stores/discovery';
+import { useDiscoveryStore } from '@/stores/discovery';
 import { useLastViewedStore } from '@/stores/lastViewed';
 import { setWorkspaceAliasInvalidationHandler, useWorkspaceStore } from '@/stores/workspace';
 
@@ -960,5 +962,69 @@ describe('useWorkspaceStore', () => {
 
     expect(store.adminWorkspaces).toEqual([]);
     expect(store.error).toBe('Root only');
+  });
+});
+
+describe('discoverableWorkspaces (E11-S8 PR4, narrowing only)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+  });
+
+  function seedWorkspaces() {
+    const store = useWorkspaceStore();
+    store.workspaces = [
+      { id: 'w1', name: 'Alpha', slug: 'alpha', created_at: 'x', updated_at: 'x' },
+      { id: 'w2', name: 'Beta', slug: 'beta', created_at: 'x', updated_at: 'x' },
+    ];
+    return store;
+  }
+
+  function seedDiscover(discover: DiscoverResponseDto) {
+    useDiscoveryStore().discover = discover;
+  }
+
+  it('returns the full membership list before discover has loaded', () => {
+    const store = seedWorkspaces();
+
+    expect(store.discoverableWorkspaces).toEqual(store.workspaces);
+  });
+
+  it('narrows to only the workspaces discover also confirms', () => {
+    const store = seedWorkspaces();
+    seedDiscover({
+      admin: false,
+      truncated: false,
+      components: [{ component: 'acta', scopes: ['acta::workspace::w1'] }],
+    });
+
+    expect(store.discoverableWorkspaces.map((w) => w.id)).toEqual(['w1']);
+  });
+
+  it('narrows to nothing when discover names no acta component at all', () => {
+    const store = seedWorkspaces();
+    seedDiscover({ admin: false, truncated: false, components: [] });
+
+    expect(store.discoverableWorkspaces).toEqual([]);
+  });
+
+  it('never widens: a scope discover lists for a workspace outside the membership list contributes nothing extra', () => {
+    const store = seedWorkspaces();
+    seedDiscover({
+      admin: false,
+      truncated: false,
+      components: [
+        { component: 'acta', scopes: ['acta::workspace::w1', 'acta::workspace::not-a-member-here'] },
+      ],
+    });
+
+    expect(store.discoverableWorkspaces.map((w) => w.id)).toEqual(['w1']);
+  });
+
+  it('returns the full membership list unfiltered for an admin principal (empty scopes mean total reach, not zero reach)', () => {
+    const store = seedWorkspaces();
+    seedDiscover({ admin: true, truncated: false, components: [{ component: 'acta', scopes: [] }] });
+
+    expect(store.discoverableWorkspaces).toEqual(store.workspaces);
   });
 });

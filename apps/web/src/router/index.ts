@@ -57,6 +57,9 @@ export async function workspaceBeforeEach(
     await workspace.loadWorkspaces();
   }
 
+  const { useDiscoveryStore } = await import('@/stores/discovery');
+  await useDiscoveryStore().ensureLoaded();
+
   const { useUiStateStore } = await import('@/stores/uiState');
   const uiState = useUiStateStore();
   if (!uiState.loaded) {

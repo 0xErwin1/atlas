@@ -22,7 +22,7 @@ import WorkspaceAuditPanel from '@/components/settings/WorkspaceAuditPanel.vue';
 import WorkspaceGeneralPanel from '@/components/settings/WorkspaceGeneralPanel.vue';
 import Icon from '@/components/ui/Icon.vue';
 import { getPlatformTransport } from '@/platform/transport';
-import { useAuthStore } from '@/stores/auth';
+import { useDiscoveryStore } from '@/stores/discovery';
 import { useWorkspaceStore } from '@/stores/workspace';
 import AppShell from '@/views/AppShell.vue';
 
@@ -76,7 +76,7 @@ const MEMBERSHIP_GATED_SECTIONS = new Set<SettingsSection>(['groups', 'audit']);
 
 const route = useRoute();
 const router = useRouter();
-const auth = useAuthStore();
+const discovery = useDiscoveryStore();
 const wsStore = useWorkspaceStore();
 const transport = getPlatformTransport();
 const readyWorkspaceSlug = ref(
@@ -99,8 +99,10 @@ interface NavGroup {
   entries: NavEntry[];
 }
 
-const isRoot = computed(() => auth.user?.is_root === true);
-const isAdmin = computed(() => isRoot.value || auth.user?.is_system_admin === true);
+// Sourced from `discover`'s server-derived flag (`is_root || is_system_admin`,
+// E11-S8 design D4) instead of reading the client-side flags directly — one
+// admin gate, not two (design D6).
+const isAdmin = computed(() => discovery.admin);
 
 // The workspace security log (audit) 403s for plain members, so it is only
 // shown to a workspace owner/admin or to a global admin (root / system admin).

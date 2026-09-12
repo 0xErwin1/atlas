@@ -11,10 +11,14 @@
 //!
 //! **SH5 in two fixture shapes (D7, design D-S8-8)**: an api-key principal
 //! (the literal wording) and a user principal with the identical grant and
-//! no membership. Both are proven here; the user-shape 404 divergence
-//! against Acta's own workspace route is out of this PR's scope (handed to
-//! the epic closeout per D-S8-8) — this file proves only what `discover`
-//! itself returns for that shape.
+//! no membership. Both are proven here, including the user-shape divergence
+//! against Acta's own workspace route (E11-S8 PR4): `discover` lists the
+//! grant-only workspace and project, but `GET
+//! /api/v2/acta/workspaces/{ws}` still answers 404 for that same user,
+//! because Acta's own `Authorized` extractor gates on membership
+//! (`authorized.rs:1087-1089`), not on a Custos grant. This is a named,
+//! shipped divergence handed to the epic closeout (SHELL-NAV-3), not a bug
+//! this slice fixes.
 
 mod support;
 
@@ -183,6 +187,82 @@ async fn api_key_with_a_grant_only_discovers_exactly_that_grant() {
         vec![expected_ref],
         "SH5: an api-key grant-only principal must see exactly its granted project, nothing else \
          (no workspace, no membership — api keys have no membership ceiling, design D4 R5)"
+    );
+
+    db.teardown().await;
+}
+
+/// SH5, user shape (D-S8-8): a user with a grant on a workspace and a project
+/// but no membership row sees both refs through the grant-derived source
+/// (D-S8-1), identically to the api-key shape above — but unlike the api-key
+/// shape, this principal is a `User`, so the divergence against Acta's own
+/// membership-gated workspace route is observable and asserted here.
+#[tokio::test]
+async fn user_with_a_grant_only_diverges_from_actas_membership_gated_workspace_route() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+
+    let (_owner_client, ws, owner_user) =
+        support::login_user_with_workspace(&server, &db, "discover-user-grant-owner").await;
+    let (grantee_client, grantee_user) =
+        support::login_user(&server, &db, "discover-user-grant-only").await;
+
+    let project_id = ProjectId(Uuid::now_v7());
+    let grant_repo = PgPermissionGrantRepo {
+        conn: db.conn().clone(),
+    };
+    let workspace_ref = atlas_acta::permissions::resource_ref_codec::to_core(
+        &atlas_acta::permissions::ResourceRef::Workspace,
+        ws.id,
+    );
+    let project_ref = atlas_acta::permissions::resource_ref_codec::to_core(
+        &atlas_acta::permissions::ResourceRef::Project(project_id),
+        ws.id,
+    );
+    for resource_ref in [workspace_ref.clone(), project_ref.clone()] {
+        grant_repo
+            .upsert(NewPermissionGrant {
+                workspace_id: WorkspaceScope(ws.id.0),
+                user_id: Some(grantee_user.id),
+                api_key_id: None,
+                group_id: None,
+                resource_ref,
+                role: ResourceRole::Editor,
+                created_by_user_id: Some(owner_user.id),
+                created_by_api_key_id: None,
+            })
+            .await
+            .expect("seed user grant");
+    }
+
+    let response = grantee_client.custos().discover().await.expect("discover");
+
+    assert!(!response.admin, "a grant-only user is not admin");
+
+    let acta = response
+        .components
+        .iter()
+        .find(|c| c.component == "acta")
+        .expect("acta component must be present for the granted user");
+    let mut scopes = acta.scopes.clone();
+    scopes.sort();
+    let mut expected = vec![workspace_ref.to_string(), project_ref.to_string()];
+    expected.sort();
+    assert_eq!(
+        scopes, expected,
+        "SH5 (user shape): discover must list exactly the granted workspace and project, \
+         through the grant-derived source alone (no membership row exists for this user)"
+    );
+
+    let workspace_lookup_error = grantee_client
+        .acta()
+        .get_workspace(&ws.slug)
+        .await
+        .expect_err("a grant-only user with no membership must not reach the Acta workspace route");
+    assert!(
+        matches!(workspace_lookup_error, atlas_client::ClientError::Api(ref p) if p.status == 404),
+        "named divergence (D-S8-8): discover lists the workspace, but Acta's own membership-gated \
+         route still 404s for the same grant-only user — {workspace_lookup_error:?}"
     );
 
     db.teardown().await;
