@@ -7,7 +7,13 @@ import Avatar from '@/components/ui/Avatar.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
 import Icon from '@/components/ui/Icon.vue';
 import Popover from '@/components/ui/Popover.vue';
+import {
+  type ComposedNavigationEntry,
+  composeManifestEntries,
+  NAVIGATION_MANIFEST,
+} from '@/shell/navigationManifest';
 import { useAuthStore } from '@/stores/auth';
+import { useDiscoveryStore } from '@/stores/discovery';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -16,31 +22,24 @@ const router = useRouter();
 const auth = useAuthStore();
 const ui = useUiStore();
 const workspace = useWorkspaceStore();
+const discovery = useDiscoveryStore();
 
-interface RailItem {
-  name: string;
-  icon: string;
-  routeName: string;
-  // Route names that also light up this entry — the unified Acta entry owns both
-  // the notes routes and every kept tasks route under one rail section.
-  activeRoutes?: string[];
-}
+// The rail composes `NAVIGATION_MANIFEST`'s rail entries against whichever
+// provider ids `discovery` currently makes available (E11-S8 design D6, PR4
+// composer) — never a static list. An empty/failed discover simply composes
+// to an empty rail rather than crashing.
+const items = computed<ComposedNavigationEntry[]>(() =>
+  composeManifestEntries(NAVIGATION_MANIFEST, discovery.availableProviderIds, 'rail'),
+);
 
-const items: RailItem[] = [
-  {
-    name: 'Acta',
-    icon: 'files',
-    routeName: 'notes',
-    activeRoutes: ['notes', 'tasks', 'task-view', 'task-detail', 'search', 'files'],
-  },
-];
+const showNavigationError = computed(() => items.value.length === 0 && discovery.error !== null);
 
-function isActive(item: RailItem) {
+function isActive(item: ComposedNavigationEntry) {
   const activeRoutes = item.activeRoutes ?? [item.routeName];
   return typeof route.name === 'string' && activeRoutes.includes(route.name);
 }
 
-function navigate(item: RailItem) {
+function navigate(item: ComposedNavigationEntry) {
   router.push({ name: item.routeName });
 }
 
@@ -141,10 +140,10 @@ async function confirmHardRefresh(): Promise<void> {
     <div class="flex flex-col" style="width: 100%;">
       <button
         v-for="item in items"
-        :key="item.name"
+        :key="item.id"
         type="button"
-        :title="item.name"
-        :aria-label="item.name"
+        :title="item.label"
+        :aria-label="item.label"
         :aria-current="isActive(item) ? 'page' : undefined"
         class="atl-railitem flex items-center justify-center"
         :class="{ on: isActive(item) }"
@@ -160,6 +159,25 @@ async function confirmHardRefresh(): Promise<void> {
         @click="navigate(item)"
       >
         <Icon :name="item.icon" :size="16" :stroke-width="isActive(item) ? 2 : 1.8" />
+      </button>
+
+      <button
+        v-if="showNavigationError"
+        type="button"
+        :title="discovery.error ?? 'Navigation unavailable'"
+        aria-label="Retry loading navigation"
+        class="atl-railitem flex items-center justify-center"
+        style="
+          width: 40px;
+          height: 40px;
+          border: none;
+          cursor: pointer;
+          background: transparent;
+          color: var(--c-danger);
+        "
+        @click="discovery.retry()"
+      >
+        <Icon name="alert-triangle" :size="16" />
       </button>
     </div>
 

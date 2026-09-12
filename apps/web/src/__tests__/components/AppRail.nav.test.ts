@@ -16,6 +16,7 @@ vi.mock('vue-router', () => ({
 
 import { configureResourceCacheForTest } from '@/cache/cacheRuntime';
 import AppRail from '@/components/shell/AppRail.vue';
+import { useDiscoveryStore } from '@/stores/discovery';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -23,6 +24,20 @@ function seed() {
   const workspace = useWorkspaceStore();
   workspace.setActiveWorkspace('atlas');
   workspace.workspaces = [{ id: 'w1', name: 'Atlas', slug: 'atlas', created_at: 'x', updated_at: 'x' }];
+
+  // The rail composes against `discovery` (E11-S8 PR4) — seed it so the
+  // pre-existing Acta rail entry keeps appearing for these route/navigation
+  // assertions, which are unrelated to the composer itself (that logic is
+  // unit-tested in `navigationManifest.test.ts`/`discovery.test.ts`).
+  const discovery = useDiscoveryStore();
+  discovery.metaComponents = [
+    { stable_id: 'acta', kind: 'product', contract_version: 1, navigation_providers: ['acta.workspace'] },
+  ];
+  discovery.discover = {
+    admin: false,
+    truncated: false,
+    components: [{ component: 'acta', scopes: ['acta::workspace::w1'] }],
+  };
 }
 
 describe('AppRail unified navigation', () => {
@@ -105,5 +120,35 @@ describe('AppRail unified navigation', () => {
     const wrapper = mount(AppRail);
 
     expect(wrapper.get('[aria-label="Acta"]').attributes('aria-current')).toBe('page');
+  });
+});
+
+describe('AppRail navigation error state', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+    routeState.name = 'notes';
+    configureResourceCacheForTest({
+      allow: vi.fn(),
+      block: vi.fn(),
+      clear: vi.fn().mockResolvedValue(undefined),
+      purge: vi.fn().mockResolvedValue(undefined),
+      purgeTags: vi.fn().mockResolvedValue(undefined),
+      purgeWorkspace: vi.fn().mockImplementation(async () => undefined),
+    });
+  });
+
+  it('shows a retry action carrying the error message when discovery fails and composes nothing', async () => {
+    const discovery = useDiscoveryStore();
+    discovery.error = 'Failed to load discoverable navigation';
+    const retry = vi.spyOn(discovery, 'retry').mockResolvedValue(undefined);
+    const wrapper = mount(AppRail);
+
+    const retryButton = wrapper.get('[aria-label="Retry loading navigation"]');
+    expect(retryButton.attributes('title')).toBe('Failed to load discoverable navigation');
+
+    await retryButton.trigger('click');
+
+    expect(retry).toHaveBeenCalledOnce();
   });
 });

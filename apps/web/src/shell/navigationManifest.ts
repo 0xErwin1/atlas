@@ -35,6 +35,54 @@ export const NAVIGATION_MANIFEST: Record<string, NavigationManifestEntry> = {
   },
 };
 
+/** The subset of `ComponentSummaryDto` the PR4 composer needs (E11-S8 D6). */
+export interface NavigationProviderComponent {
+  stable_id: string;
+  navigation_providers?: string[];
+}
+
+/**
+ * Provider ids the shell may compose: declared by a present meta component
+ * (its `navigation_providers`, an absent field treated as empty) AND whose
+ * component `discover` also lists as present. Neither source decides alone —
+ * a component present in the platform meta but absent from `discover` (no
+ * grant, no membership) contributes no provider id, and vice versa.
+ */
+export function availableNavigationProviderIds(
+  metaComponents: readonly NavigationProviderComponent[],
+  presentComponents: ReadonlySet<string>,
+): Set<string> {
+  const available = new Set<string>();
+
+  for (const component of metaComponents) {
+    if (!presentComponents.has(component.stable_id)) continue;
+    for (const providerId of component.navigation_providers ?? []) {
+      available.add(providerId);
+    }
+  }
+
+  return available;
+}
+
+export interface ComposedNavigationEntry extends NavigationManifestEntry {
+  id: string;
+}
+
+/**
+ * Filters `manifest` down to the entries for one surface whose id is in
+ * `availableIds` (the PR4 composer's intersection). Returns each entry with
+ * its manifest id attached, since the entry itself carries no id.
+ */
+export function composeManifestEntries(
+  manifest: Record<string, NavigationManifestEntry>,
+  availableIds: ReadonlySet<string>,
+  surface: NavigationSurface,
+): ComposedNavigationEntry[] {
+  return Object.entries(manifest)
+    .filter(([id, entry]) => entry.surface === surface && availableIds.has(id))
+    .map(([id, entry]) => ({ id, ...entry }));
+}
+
 export interface NavigationManifestAuditResult {
   /** Manifest keys with no declaring component (INV-MANIFEST-BIDIRECTIONAL, "declared -> manifest" direction violated). */
   fabricatedKeys: string[];

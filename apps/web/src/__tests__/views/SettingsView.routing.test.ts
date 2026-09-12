@@ -21,6 +21,7 @@ vi.mock('@/platform/transport', () => ({
 }));
 
 import { type MeResponse, useAuthStore } from '@/stores/auth';
+import { useDiscoveryStore } from '@/stores/discovery';
 import { type PrincipalDto, useWorkspaceStore } from '@/stores/workspace';
 import SettingsView from '@/views/SettingsView.vue';
 
@@ -40,8 +41,7 @@ const stubs = {
 const SELF_ID = '00000000-0000-0000-0000-000000000001';
 
 interface UserFlags {
-  isRoot?: boolean;
-  isSystemAdmin?: boolean;
+  admin?: boolean;
 }
 
 function seedUser(flags: UserFlags): void {
@@ -49,9 +49,17 @@ function seedUser(flags: UserFlags): void {
   auth.user = {
     id: SELF_ID,
     username: 'u',
-    is_root: flags.isRoot ?? false,
-    is_system_admin: flags.isSystemAdmin ?? false,
+    is_root: false,
+    is_system_admin: false,
   } as MeResponse;
+
+  // The admin gate is sourced from `discover` (E11-S8 D6), not from the
+  // client-side `is_root`/`is_system_admin` flags above.
+  useDiscoveryStore().discover = {
+    admin: flags.admin ?? false,
+    truncated: false,
+    components: [],
+  };
 }
 
 function seedMembership(role: 'owner' | 'admin' | 'member'): void {
@@ -115,27 +123,21 @@ describe('SettingsView routing', () => {
     expect(replace).toHaveBeenCalledWith({ name: 'settings', params: { section: 'account' } });
   });
 
-  it('shows administration sections to a root user', () => {
-    const wrapper = mountView('users', { isRoot: true });
+  // The gate is one boolean (`discover.admin`, E11-S8 D6) — root and system
+  // admin are indistinguishable to the client now, so one seed proves every
+  // administration row renders, instead of a root-flavored and a
+  // system-admin-flavored duplicate of the same assertion.
+  it('shows administration sections to an admin principal', () => {
+    const wrapper = mountView('users', { admin: true });
 
     expect(wrapper.find('[data-settings-row="users"]').exists()).toBe(true);
     expect(wrapper.find('[data-settings-row="about"]').exists()).toBe(true);
-    expect(wrapper.find('[data-stub="users"]').exists()).toBe(true);
-  });
-
-  it('shows administration sections to a system admin', () => {
-    const wrapper = mountView('users', { isSystemAdmin: true });
-
-    expect(wrapper.find('[data-settings-row="users"]').exists()).toBe(true);
     expect(wrapper.find('[data-settings-row="platform-audit"]').exists()).toBe(true);
     expect(wrapper.find('[data-stub="users"]').exists()).toBe(true);
   });
 
-  it.each([
-    { isRoot: true },
-    { isSystemAdmin: true },
-  ])('renders Trash for a global admin direct route', (flags) => {
-    const wrapper = mountView('trash', flags);
+  it('renders Trash for a global admin direct route', () => {
+    const wrapper = mountView('trash', { admin: true });
 
     expect(wrapper.find('[data-settings-row="trash"]').exists()).toBe(true);
     expect(wrapper.find('[data-stub="trash"]').exists()).toBe(true);
@@ -187,8 +189,8 @@ describe('SettingsView routing', () => {
     expect(wrapper.find('[data-settings-row="audit"]').exists()).toBe(true);
   });
 
-  it('shows the security log to a system admin with no membership here', () => {
-    const wrapper = mountView('account', { isSystemAdmin: true });
+  it('shows the security log to a global admin with no membership here', () => {
+    const wrapper = mountView('account', { admin: true });
 
     expect(wrapper.find('[data-settings-row="audit"]').exists()).toBe(true);
   });

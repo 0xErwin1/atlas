@@ -7,6 +7,7 @@ import { errorHint } from '@/lib/apiError';
 import { collectPaged } from '@/lib/pagination';
 import { disposeWorkspaceLiveUpdates } from '@/lib/workspaceLiveUpdates';
 import { useAuthStore } from '@/stores/auth';
+import { useDiscoveryStore } from '@/stores/discovery';
 import { useLastViewedStore } from '@/stores/lastViewed';
 
 type ProjectDto = components['schemas']['Page_ProjectDto']['items'][number];
@@ -122,6 +123,47 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     const role = self?.role;
     if (role === 'owner' || role === 'admin' || role === 'member') return role;
     return null;
+  });
+
+  /**
+   * Workspace ids `discover`'s unioned `acta` scopes name for this principal
+   * (`acta::workspace::<id>`, D-S8-9's membership union plus D-S8-1's grants).
+   * Empty once discover has loaded and named no `acta` component at all —
+   * distinct from `discoverableWorkspaces` still returning the full
+   * membership list before the first fetch settles.
+   */
+  const discoverableWorkspaceIds = computed<Set<string>>(() => {
+    const discovery = useDiscoveryStore();
+    const ids = new Set<string>();
+    const actaComponent = discovery.discover?.components.find((c) => c.component === 'acta');
+    if (actaComponent === undefined) return ids;
+
+    for (const scope of actaComponent.scopes) {
+      const match = /^acta::workspace::(.+)$/.exec(scope);
+      const workspaceId = match?.[1];
+      if (workspaceId !== undefined) ids.add(workspaceId);
+    }
+
+    return ids;
+  });
+
+  /**
+   * `workspaces` (the caller's membership list from `/api/v2/acta/workspaces`)
+   * narrowed to the ones `discover` also confirms. This can only NARROW the
+   * membership list, never widen it: membership stays the source of truth for
+   * which workspaces exist for this principal, so a grant-only principal's
+   * workspace can never be added here (E11-S8 spec reconciliation F7 / design
+   * R3 — a full display of grant-only access is an epic-closeout decision,
+   * not this slice's). Returns the unfiltered list before discover has
+   * loaded, and unfiltered for an admin principal (`discover.admin`), whose
+   * empty scopes mean total reach, not zero reach (DTO invariant).
+   */
+  const discoverableWorkspaces = computed<WorkspaceDto[]>(() => {
+    const discovery = useDiscoveryStore();
+    if (discovery.discover === null || discovery.admin) return workspaces.value;
+
+    const ids = discoverableWorkspaceIds.value;
+    return workspaces.value.filter((w) => ids.has(w.id));
   });
 
   function setActiveWorkspace(slug: string | null) {
@@ -708,6 +750,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     members,
     assignableUsers,
     myWorkspaceRole,
+    discoverableWorkspaces,
     error,
     projectsError,
     setActiveWorkspace,

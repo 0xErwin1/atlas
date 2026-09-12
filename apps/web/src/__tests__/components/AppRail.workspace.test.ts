@@ -18,6 +18,7 @@ import { configureResourceCacheForTest, setResourceCachePrincipal } from '@/cach
 import { ResourceCache } from '@/cache/resourceCache';
 import AppRail from '@/components/shell/AppRail.vue';
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
+import { useDiscoveryStore } from '@/stores/discovery';
 import { useUiStore } from '@/stores/ui';
 import { useWorkspaceStore } from '@/stores/workspace';
 
@@ -33,6 +34,19 @@ function seed() {
       updated_at: 'x',
     },
   ];
+
+  // Seeded so the Acta rail entry these hard-refresh assertions click through
+  // keeps composing (E11-S8 PR4) — unrelated to the composer logic itself.
+  const discovery = useDiscoveryStore();
+  discovery.metaComponents = [
+    { stable_id: 'acta', kind: 'product', contract_version: 1, navigation_providers: ['acta.workspace'] },
+  ];
+  discovery.discover = {
+    admin: false,
+    truncated: false,
+    components: [{ component: 'acta', scopes: ['acta::workspace::w1'] }],
+  };
+
   return workspace;
 }
 
