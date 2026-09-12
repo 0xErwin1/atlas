@@ -334,7 +334,7 @@ fn login_and_health_are_the_only_methods_with_no_home_namespace() {
 /// population with no method uncounted by either.
 #[test]
 fn method_namespace_map_size_reconciles_with_pr1s_extracted_call_count() {
-    const PR1_EXTRACTED_CALL_COUNT: usize = 194;
+    const PR1_EXTRACTED_CALL_COUNT: usize = 195;
 
     let derived = derive_method_namespace_map();
     assert_eq!(
@@ -683,6 +683,7 @@ const ATLAS_CLI_PINS: &[(&str, usize)] = &[
     ("commands/common.rs", 0),
     ("commands/completions.rs", 0),
     ("commands/config.rs", 0),
+    ("commands/discover.rs", 0),
     ("commands/docs.rs", 0),
     ("commands/doctor.rs", 0),
     ("commands/export/mod.rs", 0),
@@ -771,6 +772,7 @@ const ATLAS_SERVER_TEST_PINS: &[(&str, usize)] = &[
     ("api_copy.rs", 0),
     ("api_create_workspace.rs", 0),
     ("api_csrf_ratelimit.rs", 0),
+    ("api_custos_discover.rs", 0),
     ("api_custos_router_parity.rs", 0),
     ("api_doctor.rs", 0),
     ("api_document_comments.rs", 0),
@@ -1148,8 +1150,8 @@ fn atlas_cli_namespaced_sites_match_their_declared_home() {
 
     assert_eq!(
         sites.len(),
-        149,
-        "expected 149 namespaced sites in crates/atlas_cli/src (PR6), found: {sites:?}"
+        150,
+        "expected 150 namespaced sites in crates/atlas_cli/src (PR6), found: {sites:?}"
     );
 
     let mismatches = reverse_check_mismatches(&sites, &derived.map);
@@ -1165,8 +1167,8 @@ fn atlas_mcp_namespaced_sites_match_their_declared_home() {
 
     assert_eq!(
         sites.len(),
-        128,
-        "expected 128 namespaced sites in crates/atlas_mcp/src/lib.rs (PR7), found: {sites:?}"
+        129,
+        "expected 129 namespaced sites in crates/atlas_mcp/src/lib.rs (PR7), found: {sites:?}"
     );
 
     let mismatches = reverse_check_mismatches(&sites, &derived.map);

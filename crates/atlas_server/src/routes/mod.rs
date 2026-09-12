@@ -9,6 +9,7 @@ pub(crate) mod boards;
 pub(crate) mod comments;
 pub(crate) mod custos;
 pub(crate) mod diagnostics;
+pub(crate) mod discover;
 pub(crate) mod documents;
 pub(crate) mod events;
 pub(crate) mod folders;

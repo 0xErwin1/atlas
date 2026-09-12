@@ -124,6 +124,9 @@ pub(crate) enum Commands {
     /// the findings. The HTTP call always succeeds with 200; this command's
     /// own exit code is 1 when any finding is `Critical`, 0 otherwise.
     Doctor(DoctorArgs),
+    /// Discover what the current principal can reach: per-component scopes
+    /// and the admin flag (`GET /api/v2/custos/discover`).
+    Discover,
 }
 
 /// Arguments for the `search` subcommand.

@@ -983,6 +983,13 @@ pub struct ListWorkspacesParams {}
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GetAgentIdentityParams {}
 
+/// Parameters accepted by the `discover` tool.
+///
+/// No parameters required — reports what the calling principal can
+/// discover (E11-S8 design D5).
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetDiscoveryParams {}
+
 /// Parameters accepted by the `list_projects` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ListProjectsParams {
@@ -3138,6 +3145,10 @@ impl AtlasMcp {
                 self.get_agent_identity(catalog::decode("identity", "agent", call.params)?, ctx)
                     .await
             }
+            "discovery" => {
+                self.get_discovery(catalog::decode("identity", "discovery", call.params)?, ctx)
+                    .await
+            }
             other => Err(catalog::unknown_resource("identity", other)),
         }
     }
@@ -3654,6 +3665,22 @@ impl AtlasMcp {
         };
 
         serde_json::to_string(&result).map_err(|e| e.to_string())
+    }
+
+    async fn get_discovery(
+        &self,
+        Parameters(_params): Parameters<GetDiscoveryParams>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<String, String> {
+        let client = self.resolve_client(&ctx)?;
+
+        let discovery = client
+            .custos()
+            .discover()
+            .await
+            .map_err(|e| enrich_client_error(e, "discover"))?;
+
+        serde_json::to_string(&discovery).map_err(|e| e.to_string())
     }
 
     async fn list_projects(
@@ -7093,7 +7120,7 @@ mod tests {
             .map(|entry| entry.as_str().unwrap_or_default())
             .collect();
 
-        assert_eq!(resources.len(), 3, "{resources:?}");
+        assert_eq!(resources.len(), 4, "{resources:?}");
 
         let components = result
             .pointer("/components")

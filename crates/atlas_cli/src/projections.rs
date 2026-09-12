@@ -14,6 +14,7 @@ use atlas_api::dtos::boards_tasks::{
     PromotionDto, ReferenceDto, TaskAttachmentDto, TaskBacklinkDto, TaskDto, TaskSummaryDto,
     UnifiedReferenceDto,
 };
+use atlas_api::dtos::discovery::{DiscoverResponseDto, DiscoveredComponentDto};
 use atlas_api::dtos::documents::{
     ActorDto, AttachmentDto, BacklinkDto, DocumentDto, DocumentSummaryDto, RevisionContentDto,
     RevisionMetaDto,
@@ -2210,6 +2211,58 @@ impl TableRow for DoctorFindingProjection {
             self.component.clone(),
             self.finding.clone(),
             self.action.clone(),
+        ]
+    }
+}
+
+/// One component's discoverable scopes (`custos discover`), **human-table
+/// rendering only** (E11-S8 design D5) — `commands/discover.rs` emits Json
+/// mode straight from the server's own `DiscoverResponseDto`, unchanged, so
+/// an empty `components` list still carries `admin`/`truncated` at the top
+/// level. `admin` and `truncated` are response-level flags, repeated on
+/// every row here only so a human reading one page of the *table* sees them
+/// without scrolling back to the top.
+#[derive(Debug, Serialize)]
+pub(crate) struct DiscoverProjection {
+    pub(crate) component: String,
+    pub(crate) scopes: Vec<String>,
+    pub(crate) admin: bool,
+    pub(crate) truncated: bool,
+}
+
+/// Flattens the discover response into one row per component, for the
+/// human table only (see [`DiscoverProjection`]). A principal with nothing
+/// discoverable renders as an empty list (INV-ABSENT-NOT-EMPTY) — never a
+/// synthetic empty-scopes row.
+pub(crate) fn discover_projections(response: DiscoverResponseDto) -> Vec<DiscoverProjection> {
+    let DiscoverResponseDto {
+        components,
+        admin,
+        truncated,
+    } = response;
+
+    components
+        .into_iter()
+        .map(|c: DiscoveredComponentDto| DiscoverProjection {
+            component: c.component,
+            scopes: c.scopes,
+            admin,
+            truncated,
+        })
+        .collect()
+}
+
+impl TableRow for DiscoverProjection {
+    fn headers() -> &'static [&'static str] {
+        &["Component", "Scopes", "Admin", "Truncated"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.component.clone(),
+            self.scopes.join(", "),
+            self.admin.to_string(),
+            self.truncated.to_string(),
         ]
     }
 }

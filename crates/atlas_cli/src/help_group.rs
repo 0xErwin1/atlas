@@ -225,8 +225,8 @@ mod tests {
 
         assert_eq!(
             rendered.len(),
-            29,
-            "rendered help must list the 28 declared commands plus clap's help pseudo-subcommand"
+            30,
+            "rendered help must list the 29 declared commands plus clap's help pseudo-subcommand"
         );
         assert_eq!(
             rendered, expected,

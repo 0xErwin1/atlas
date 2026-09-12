@@ -111,6 +111,10 @@ const EXPECTED_IDEMPOTENT: &[(HttpMethod, &str, bool)] = &[
         false,
     ),
     (HttpMethod::Get, "/workspaces/{ws}/audit", false),
+    // E11-S8 PR3, spec reconciliation F5: `idempotent` here is the
+    // Idempotency-Key replay flag, not HTTP semantics — a bare `GET` is
+    // mechanically `false` like every other non-`POST` entry.
+    (HttpMethod::Get, "/discover", false),
     (HttpMethod::Post, "/auth/login", false),
     (HttpMethod::Get, "/activate/{token}", false),
     (HttpMethod::Post, "/activate/{token}", false),
@@ -811,13 +815,13 @@ fn table_is_exhaustive_over_reg5() {
     let live = all_declared_routes();
     assert_eq!(
         live.len(),
-        217,
-        "reg5.rs must declare exactly 217 routes; the classification table below assumes this"
+        218,
+        "reg5.rs must declare exactly 218 routes; the classification table below assumes this"
     );
     assert_eq!(
         EXPECTED_IDEMPOTENT.len(),
-        217,
-        "EXPECTED_IDEMPOTENT must cover all 217 reg5.rs entries, not a sample"
+        218,
+        "EXPECTED_IDEMPOTENT must cover all 218 reg5.rs entries, not a sample"
     );
 
     let live_keys: std::collections::HashSet<(HttpMethod, &str)> = live
@@ -915,10 +919,12 @@ fn true_and_false_counts_match_the_pr4_grounding() {
     // (`/openapi.json`, `/scalar`), so the pre-S4 176 grew to 178, and
     // E11-S3a added custos's and acta's own `/health` and `/ready`, so 178
     // grew to 182. E11-S3b PR3 added `POST /doctor` (`idempotent: false`),
-    // growing it to 183; the `true` count (34) is unaffected.
+    // growing it to 183. E11-S8 PR3 added `GET /discover`
+    // (`idempotent: false`), growing it to 184; the `true` count (34) is
+    // unaffected.
     assert_eq!(true_count, 34, "expected exactly 34 idempotent:true routes");
     assert_eq!(
-        false_count, 183,
-        "expected exactly 183 idempotent:false routes"
+        false_count, 184,
+        "expected exactly 184 idempotent:false routes"
     );
 }

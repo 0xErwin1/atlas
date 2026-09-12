@@ -7,6 +7,7 @@ pub(crate) mod columns;
 pub(crate) mod common;
 pub(crate) mod completions;
 pub(crate) mod config;
+pub(crate) mod discover;
 pub(crate) mod docs;
 pub(crate) mod doctor;
 pub(crate) mod export;
@@ -68,5 +69,6 @@ pub(crate) async fn dispatch(ctx: &Ctx, cmd: Commands) -> Result<(), CliError> {
         Commands::Import(args) => import::run(ctx, args.command).await,
         Commands::Export(args) => export::run(ctx, args.command).await,
         Commands::Doctor(args) => doctor::run(ctx, args).await,
+        Commands::Discover => discover::run(ctx).await,
     }
 }

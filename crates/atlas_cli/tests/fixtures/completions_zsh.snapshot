@@ -3637,6 +3637,16 @@ _arguments "${_arguments_options[@]}" : \
 '--help[Print help]' \
 && ret=0
 ;;
+(discover)
+_arguments "${_arguments_options[@]}" : \
+'--base-url=[Override the Atlas server URL]:BASE_URL:_default' \
+'--token=[Bearer token for authentication]:TOKEN:_default' \
+'--workspace=[Default workspace slug used when \`--workspace\` is not given per-command]:WORKSPACE:_default' \
+'--json[Emit JSON output (implied when stdout is not a TTY)]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
 (help)
 _arguments "${_arguments_options[@]}" : \
 ":: :_atlas__subcmd__help_commands" \
@@ -4657,6 +4667,10 @@ esac
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(discover)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
 (help)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
@@ -4701,6 +4715,7 @@ _atlas_commands() {
 'import:Import content from an external source (e.g. an Obsidian vault)' \
 'export:Export an Atlas project to an external format (e.g. an Obsidian vault)' \
 'doctor:Runs every present component'\''s server-side doctor check and renders the findings. The HTTP call always succeeds with 200; this command'\''s own exit code is 1 when any finding is \`Critical\`, 0 otherwise' \
+'discover:Discover what the current principal can reach\: per-component scopes and the admin flag (\`GET /api/v2/custos/discover\`)' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'atlas commands' commands "$@"
@@ -5027,6 +5042,11 @@ _atlas__subcmd__config__subcmd__set-url_commands() {
 _atlas__subcmd__config__subcmd__show_commands() {
     local commands; commands=()
     _describe -t commands 'atlas config show commands' commands "$@"
+}
+(( $+functions[_atlas__subcmd__discover_commands] )) ||
+_atlas__subcmd__discover_commands() {
+    local commands; commands=()
+    _describe -t commands 'atlas discover commands' commands "$@"
 }
 (( $+functions[_atlas__subcmd__docs_commands] )) ||
 _atlas__subcmd__docs_commands() {
@@ -5660,6 +5680,7 @@ _atlas__subcmd__help_commands() {
 'import:Import content from an external source (e.g. an Obsidian vault)' \
 'export:Export an Atlas project to an external format (e.g. an Obsidian vault)' \
 'doctor:Runs every present component'\''s server-side doctor check and renders the findings. The HTTP call always succeeds with 200; this command'\''s own exit code is 1 when any finding is \`Critical\`, 0 otherwise' \
+'discover:Discover what the current principal can reach\: per-component scopes and the admin flag (\`GET /api/v2/custos/discover\`)' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'atlas help commands' commands "$@"
@@ -5806,6 +5827,11 @@ _atlas__subcmd__help__subcmd__config__subcmd__set-url_commands() {
 _atlas__subcmd__help__subcmd__config__subcmd__show_commands() {
     local commands; commands=()
     _describe -t commands 'atlas help config show commands' commands "$@"
+}
+(( $+functions[_atlas__subcmd__help__subcmd__discover_commands] )) ||
+_atlas__subcmd__help__subcmd__discover_commands() {
+    local commands; commands=()
+    _describe -t commands 'atlas help discover commands' commands "$@"
 }
 (( $+functions[_atlas__subcmd__help__subcmd__docs_commands] )) ||
 _atlas__subcmd__help__subcmd__docs_commands() {

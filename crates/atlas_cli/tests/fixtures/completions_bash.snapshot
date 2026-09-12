@@ -37,6 +37,9 @@ _atlas() {
             atlas,config)
                 cmd="atlas__subcmd__config"
                 ;;
+            atlas,discover)
+                cmd="atlas__subcmd__discover"
+                ;;
             atlas,docs)
                 cmd="atlas__subcmd__docs"
                 ;;
@@ -537,6 +540,9 @@ _atlas() {
                 ;;
             atlas__subcmd__help,config)
                 cmd="atlas__subcmd__help__subcmd__config"
+                ;;
+            atlas__subcmd__help,discover)
+                cmd="atlas__subcmd__help__subcmd__discover"
                 ;;
             atlas__subcmd__help,docs)
                 cmd="atlas__subcmd__help__subcmd__docs"
@@ -1616,7 +1622,7 @@ _atlas() {
 
     case "${cmd}" in
         atlas)
-            opts="-h --base-url --token --json --workspace --help version search tasks trash docs workspaces projects boards columns tags members folders activity users api-keys groups status-templates platform-status-templates saved-searches task-views property-definitions grants audit completions config import export doctor help"
+            opts="-h --base-url --token --json --workspace --help version search tasks trash docs workspaces projects boards columns tags members folders activity users api-keys groups status-templates platform-status-templates saved-searches task-views property-definitions grants audit completions config import export doctor discover help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2780,6 +2786,32 @@ _atlas() {
         atlas__subcmd__config__subcmd__show)
             opts="-h --base-url --token --json --workspace --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --base-url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --workspace)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        atlas__subcmd__discover)
+            opts="-h --base-url --token --json --workspace --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
@@ -4848,7 +4880,7 @@ _atlas() {
             return 0
             ;;
         atlas__subcmd__help)
-            opts="version search tasks trash docs workspaces projects boards columns tags members folders activity users api-keys groups status-templates platform-status-templates saved-searches task-views property-definitions grants audit completions config import export doctor help"
+            opts="version search tasks trash docs workspaces projects boards columns tags members folders activity users api-keys groups status-templates platform-status-templates saved-searches task-views property-definitions grants audit completions config import export doctor discover help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -5186,6 +5218,20 @@ _atlas() {
         atlas__subcmd__help__subcmd__config__subcmd__show)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        atlas__subcmd__help__subcmd__discover)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi

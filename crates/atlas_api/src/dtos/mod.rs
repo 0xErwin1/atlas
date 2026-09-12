@@ -1,6 +1,7 @@
 pub mod audit;
 pub mod automation_rules;
 pub mod boards_tasks;
+pub mod discovery;
 pub mod documents;
 pub mod folders;
 pub mod groups;

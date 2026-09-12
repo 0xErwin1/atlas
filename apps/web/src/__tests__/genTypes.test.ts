@@ -82,7 +82,7 @@ describe('splitByComponent', () => {
 
     expect(Object.keys(split).sort()).toEqual(['acta', 'custos', 'platform']);
     expect(countOperations(required(split.acta, 'acta in split'))).toBe(171);
-    expect(countOperations(required(split.custos, 'custos in split'))).toBe(37);
+    expect(countOperations(required(split.custos, 'custos in split'))).toBe(38);
     expect(countOperations(required(split.platform, 'platform in split'))).toBe(7);
   });
 

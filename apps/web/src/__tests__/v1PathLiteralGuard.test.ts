@@ -216,10 +216,10 @@ describe('v1PathLiteralGuard — flat-client closure (D5.5)', () => {
 });
 
 describe('v1PathLiteralGuard — document owners (D5.3)', () => {
-  it('maps every path key to its x-atlas-component, with 142 entries and known owners', () => {
+  it('maps every path key to its x-atlas-component, with 143 entries and known owners', () => {
     const owners = loadDocumentOwners();
 
-    expect(owners.size).toBe(142);
+    expect(owners.size).toBe(143);
     expect(owners.get('/health')).toBe('platform');
     expect(owners.get('/api/v2/acta/admin/status-templates')).toBe('acta');
     expect(owners.get('/api/v2/custos/activate/{}')).toBe('custos');
