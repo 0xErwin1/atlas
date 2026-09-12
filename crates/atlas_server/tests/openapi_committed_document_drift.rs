@@ -98,7 +98,7 @@ fn operations(
 }
 
 /// A probe against the worst-case "reads nothing" implementation (§0.1's
-/// measured baseline): 142 path keys, 215 operations, every one of them
+/// measured baseline): 143 path keys, 216 operations, every one of them
 /// carrying `x-atlas-component`. A drift check that silently compared an
 /// empty or truncated document to itself would still pass the byte
 /// comparison above; these counts catch that.
@@ -108,7 +108,7 @@ fn document_counts_match_the_measured_baseline() {
 
     assert_eq!(
         document.paths.paths.len(),
-        142,
+        143,
         "committed document's path key count drifted from the measured baseline (design §0.1)"
     );
 
@@ -130,11 +130,11 @@ fn document_counts_match_the_measured_baseline() {
     }
 
     assert_eq!(
-        operation_count, 215,
+        operation_count, 216,
         "committed document's operation count drifted from the measured baseline (design §0.1)"
     );
     assert_eq!(
-        stamped_count, 215,
+        stamped_count, 216,
         "every operation must carry x-atlas-component (design §0.1)"
     );
 }

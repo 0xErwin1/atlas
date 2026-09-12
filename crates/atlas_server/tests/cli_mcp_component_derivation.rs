@@ -356,12 +356,12 @@ fn a_masked_comment_mentioning_a_namespace_is_never_counted() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn declared_components_table_has_28_rows() {
+fn declared_components_table_has_29_rows() {
     let declared = parse_declared_components();
     assert_eq!(
         declared.len(),
-        28,
-        "parsed COMMAND_COMPONENTS must have 28 rows"
+        29,
+        "parsed COMMAND_COMPONENTS must have 29 rows"
     );
 }
 
@@ -375,7 +375,7 @@ fn no_call_site_is_closed_to_version_config_completions() {
 #[test]
 fn dispatch_arms_are_total_over_declared_components() {
     let arms = parse_dispatch_arms();
-    assert_eq!(arms.len(), 28, "dispatch must have exactly 28 match arms");
+    assert_eq!(arms.len(), 29, "dispatch must have exactly 29 match arms");
 
     let declared = parse_declared_components();
     let declared_names: BTreeSet<&str> = declared.iter().map(|(name, _)| name.as_str()).collect();
@@ -432,8 +432,8 @@ fn every_declared_command_matches_its_derived_call_site() {
     }
 
     assert_eq!(
-        resolved_count, 28,
-        "anti-vacuity: expected to resolve all 28 commands"
+        resolved_count, 29,
+        "anti-vacuity: expected to resolve all 29 commands"
     );
     assert!(
         failures.is_empty(),
@@ -780,12 +780,12 @@ fn main_rs_custos_me_call_is_excluded_by_a_written_scope_rule_not_a_regex_miss()
 // ---------------------------------------------------------------------------
 
 #[test]
-fn operations_table_has_112_rows_split_108_3_1() {
+fn operations_table_has_113_rows_split_108_4_1() {
     let operations = parse_operations();
     assert_eq!(
         operations.len(),
-        112,
-        "parsed OPERATIONS must have 112 rows"
+        113,
+        "parsed OPERATIONS must have 113 rows"
     );
 
     let acta = operations
@@ -802,8 +802,8 @@ fn operations_table_has_112_rows_split_108_3_1() {
         .count();
     assert_eq!(
         (acta, custos, platform),
-        (108, 3, 1),
-        "measured split (design §0.4): 108 acta, 3 custos, 1 platform"
+        (108, 4, 1),
+        "measured split (design §0.4): 108 acta, 4 custos, 1 platform"
     );
 }
 
@@ -876,8 +876,8 @@ fn every_mcp_operation_matches_its_dispatcher_handler_component() {
         failures.join("\n")
     );
     assert_eq!(
-        resolved_count, 112,
-        "anti-vacuity: expected to resolve all 112 operations to a dispatcher handler"
+        resolved_count, 113,
+        "anti-vacuity: expected to resolve all 113 operations to a dispatcher handler"
     );
 }
 

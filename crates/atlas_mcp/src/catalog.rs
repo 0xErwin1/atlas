@@ -1012,6 +1012,14 @@ pub(crate) const OPERATIONS: &[Operation] = &[
         summary: "Report the calling API key's own identity: its id, name, and the capability scopes it holds. Read-only self-inspection; returns a note when the caller is a human, not an agent key.",
         schema: schema_of::<GetAgentIdentityParams>,
     },
+    Operation {
+        verb: "identity",
+        resource: "discovery",
+        legacy_name: "discover",
+        component: Component::Custos,
+        summary: "Report what the calling principal can discover: per-component resource scopes reached through a direct or group grant, unioned with Acta workspace membership, plus the admin flag (true only for root/system-admin). For a non-admin principal, a component absent from the result means nothing is discoverable there; when admin is true, every present component is listed with empty scopes because admin reach is total, not scoped.",
+        schema: no_params_schema,
+    },
 ];
 
 /// The verbs, in the order they are advertised.
@@ -1263,6 +1271,15 @@ mod tests {
         "delete_webhook",
     ];
 
+    /// Capabilities added to the catalog after the pre-consolidation
+    /// migration (E11-S8 PR3 `discover` is the first). `LEGACY_TOOL_NAMES`
+    /// above stays a closed historical record — a genuinely new capability
+    /// is named here instead of folded into that list, so the two lists
+    /// keep answering two different questions: "did we lose anything
+    /// during consolidation" (no) and "what has the catalog gained since"
+    /// (this list).
+    const NEW_CAPABILITIES: &[&str] = &["discover"];
+
     #[test]
     fn every_capability_of_the_old_catalog_is_still_reachable() {
         for name in LEGACY_TOOL_NAMES {
@@ -1274,18 +1291,23 @@ mod tests {
     }
 
     #[test]
-    fn the_catalog_adds_no_capability_the_old_one_did_not_have() {
+    fn the_catalog_adds_no_capability_the_old_one_did_not_have_or_is_not_named_new() {
         for op in OPERATIONS {
             assert!(
-                LEGACY_TOOL_NAMES.contains(&op.legacy_name),
-                "`{}/{}` maps to `{}`, which was never an advertised tool",
+                LEGACY_TOOL_NAMES.contains(&op.legacy_name)
+                    || NEW_CAPABILITIES.contains(&op.legacy_name),
+                "`{}/{}` maps to `{}`, which was never an advertised tool and is not named in \
+                 NEW_CAPABILITIES",
                 op.verb,
                 op.resource,
                 op.legacy_name
             );
         }
 
-        assert_eq!(OPERATIONS.len(), LEGACY_TOOL_NAMES.len());
+        assert_eq!(
+            OPERATIONS.len(),
+            LEGACY_TOOL_NAMES.len() + NEW_CAPABILITIES.len()
+        );
     }
 
     #[test]
@@ -1420,7 +1442,7 @@ mod tests {
 
     #[test]
     fn every_operation_has_a_component_and_the_measured_split_is_pinned() {
-        assert_eq!(OPERATIONS.len(), 112);
+        assert_eq!(OPERATIONS.len(), 113);
         assert_eq!(VERBS.len(), 11);
 
         let acta = OPERATIONS
@@ -1437,13 +1459,13 @@ mod tests {
             .count();
 
         assert_eq!(acta, 108, "acta operation count drifted");
-        assert_eq!(custos, 3, "custos operation count drifted");
+        assert_eq!(custos, 4, "custos operation count drifted");
         assert_eq!(platform, 1, "platform operation count drifted");
         assert_eq!(acta + custos + platform, OPERATIONS.len());
     }
 
     #[test]
-    fn the_three_custos_operations_and_the_one_platform_operation_are_named() {
+    fn the_four_custos_operations_and_the_one_platform_operation_are_named() {
         let custos_names: std::collections::BTreeSet<(&str, &str)> = OPERATIONS
             .iter()
             .filter(|op| op.component == Component::Custos)
@@ -1455,6 +1477,7 @@ mod tests {
                 ("activity", "workspace_audit"),
                 ("activity", "platform_audit"),
                 ("identity", "agent"),
+                ("identity", "discovery"),
             ])
         );
 

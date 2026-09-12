@@ -7,7 +7,7 @@
 //! "A coverage test compares the composed OpenAPI document against CLI and
 //! MCP"; SHELL-REG-4, design D7):
 //!
-//! 1. `support::route_matrix::route_matrix()` — the 217 live REG-5 routes,
+//! 1. `support::route_matrix::route_matrix()` — the 218 live REG-5 routes,
 //!    each carrying its own `(component, method, path_template)`.
 //! 2. `support::client_routes::client_routes()` — `AtlasClient` method name
 //!    ⇒ `(component, method, path_template)`, cross-checked by cardinality
@@ -18,7 +18,7 @@
 //!    (PR1/PR5) carries privately until PR6b, extended to resolve the
 //!    *method name* following `.acta()/.custos()/.platform()` rather than
 //!    only the namespace token. Both walks are pinned to PR1/PR5's own
-//!    cardinalities (28 commands, 112 operations) before any coverage
+//!    cardinalities (29 commands, 113 operations) before any coverage
 //!    assertion, so a dropped command or operation fails loudly instead of
 //!    silently shrinking coverage.
 //!
@@ -180,7 +180,7 @@ type UncoveredRoute = (
 // real gap). The spec's own three-per-surface categories
 // (comments/attachments/webhooks; users/grants/api-keys) turned out to cover
 // only a fraction of the real gap: the CLI and the MCP catalog are each
-// materially thinner than the full 217-route registry — most resources
+// materially thinner than the full 218-route registry — most resources
 // expose only list/get/create through either surface, with moves, copies,
 // archive/unarchive, presence, drafts, integrations/automation, admin
 // operations, and most custos self-service/lifecycle endpoints reachable
@@ -1706,7 +1706,7 @@ fn resolve_client_methods_in_source(masked_code: &str) -> BTreeSet<String> {
 
 /// `cli_mcp_component_derivation.rs::declared_components_table_has_28_rows`
 /// (PR1), copied because the two test binaries cannot share a constant.
-const CLI_COMMAND_COUNT: usize = 28;
+const CLI_COMMAND_COUNT: usize = 29;
 
 struct DispatchArm {
     variant: String,
@@ -1775,12 +1775,12 @@ fn cli_command_methods() -> BTreeMap<String, BTreeSet<String>> {
 }
 
 // ---------------------------------------------------------------------------
-// MCP walk: 112 operations -> dispatcher handler -> set of client methods.
+// MCP walk: 113 operations -> dispatcher handler -> set of client methods.
 // ---------------------------------------------------------------------------
 
-/// `cli_mcp_component_derivation.rs::operations_table_has_112_rows_split_108_3_1`
+/// `cli_mcp_component_derivation.rs::operations_table_has_113_rows_split_108_4_1`
 /// (PR5), copied because the two test binaries cannot share a constant.
-const MCP_OPERATION_COUNT: usize = 112;
+const MCP_OPERATION_COUNT: usize = 113;
 
 fn mcp_lib_source() -> String {
     read_production_source(&mcp_src_root().join("lib.rs"))
@@ -1984,8 +1984,8 @@ fn registry_client_and_surface_walks_are_not_vacuous() {
     let entries = route_matrix();
     assert_eq!(
         entries.len(),
-        217,
-        "the live registry must declare 217 routes"
+        218,
+        "the live registry must declare 218 routes"
     );
 
     let cli_methods: BTreeSet<String> = cli_command_methods().into_values().flatten().collect();
@@ -2202,12 +2202,12 @@ fn no_real_exclusion_list_category_is_dead() {
 
 // ---------------------------------------------------------------------------
 // Per-surface reached/excluded pins — measured at apply time against the
-// 217-route registry; both pairs must sum to it.
+// 218-route registry; both pairs must sum to it.
 // ---------------------------------------------------------------------------
 
-const CLI_REACHED_ROUTE_COUNT: usize = 113;
+const CLI_REACHED_ROUTE_COUNT: usize = 114;
 const CLI_EXCLUDED_ROUTE_COUNT: usize = 104;
-const MCP_REACHED_ROUTE_COUNT: usize = 112;
+const MCP_REACHED_ROUTE_COUNT: usize = 113;
 const MCP_EXCLUDED_ROUTE_COUNT: usize = 105;
 
 fn reached_route_count(entries: &[RouteMatrixEntry], covered: &BTreeSet<RouteKey>) -> usize {

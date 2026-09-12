@@ -4,6 +4,7 @@ use atlas_api::{
         ChangePasswordRequest, CreateGrantRequest, CreateUserApiKeyRequest, CreateUserRequest,
         CreateUserResponse, GrantDto, MeResponse, ResetPasswordRequest, UpdateMeRequest, UserDto,
         UserMembershipDto,
+        discovery::DiscoverResponseDto,
         groups::{AddGroupMemberRequest, CreateGroupRequest, GroupDto, GroupMemberDto},
     },
     pagination::Page,
@@ -48,6 +49,13 @@ impl Custos<'_> {
     pub async fn me(&self) -> Result<MeResponse, ClientError> {
         let response = self.get(Component::Custos, "/auth/me").send().await?;
         self.decode_response(response, "me").await
+    }
+
+    /// `GET /api/v2/custos/discover` (E11-S8 design D5): what the current
+    /// principal can discover — per-component scopes and the admin flag.
+    pub async fn discover(&self) -> Result<DiscoverResponseDto, ClientError> {
+        let response = self.get(Component::Custos, "/discover").send().await?;
+        self.decode_response(response, "discover").await
     }
 
     /// `POST /api/v2/custos/auth/change-password`

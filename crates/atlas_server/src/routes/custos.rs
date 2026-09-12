@@ -181,11 +181,12 @@ mod diagnostics {
 /// `list_project_grants`, `list_workspace_grants`, both
 /// `custos::grants::read`).
 mod protected {
-    use crate::routes::{api_keys, audit, auth, grants, groups, users};
+    use crate::routes::{api_keys, audit, auth, discover, grants, groups, users};
     use crate::state::AppState;
 
     crate::component_routes! {
         state: AppState;
+        "/discover" => [ get(discover::discover, exempt) ];
         "/auth/logout" => [ post(auth::logout, exempt) ];
         "/auth/me" => [ get(auth::me, exempt) ];
         "/auth/change-password" => [ post(auth::change_password, exempt) ];
@@ -298,6 +299,7 @@ pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
         crate::routes::diagnostics::custos_ready,
         crate::routes::activate::get_activation_info,
         crate::routes::activate::post_activate,
+        crate::routes::discover::discover,
         crate::routes::auth::login,
         crate::routes::auth::logout,
         crate::routes::auth::me,
@@ -335,6 +337,8 @@ pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
     components(schemas(
         atlas_api::dtos::ComponentProbeDto,
         atlas_api::dtos::audit::AuditEntryDto,
+        atlas_api::dtos::discovery::DiscoverResponseDto,
+        atlas_api::dtos::discovery::DiscoveredComponentDto,
         atlas_api::dtos::groups::AddGroupMemberRequest,
         atlas_api::dtos::groups::CreateGroupRequest,
         atlas_api::dtos::groups::GroupDto,
@@ -368,6 +372,7 @@ pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
     )),
     tags(
         (name = "audit", description = "Security audit log"),
+        (name = "discover", description = "Self-service reverse-grant and membership discovery"),
         (name = "auth", description = "Authentication and session management"),
         (name = "users", description = "User management (root-only)"),
         (name = "api-keys", description = "Workspace API key management"),
@@ -447,8 +452,9 @@ mod tests {
         );
         assert_eq!(
             router_set.len(),
-            37,
-            "custos owns exactly 35 docs/registry-route-ownership.md routes plus the 2 \
+            38,
+            "custos owns exactly 36 docs/registry-route-ownership.md routes (E11-S8 added \
+             discover) plus the 2 \
              health/ready probes E11-S3a design D2 added"
         );
     }

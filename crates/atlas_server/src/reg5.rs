@@ -514,6 +514,20 @@ fn custos_entry() -> ComponentEntry {
                     idempotent: false,
                     is_public: false,
                 },
+                // E11-S8 design D5: self-service discovery — any
+                // authenticated principal, no capability action (same shape
+                // as `/auth/me`). `idempotent: false` is the
+                // Idempotency-Key replay flag, not HTTP semantics (spec
+                // reconciliation F5) — this is still a pure, side-effect-free
+                // GET (INV-DISCOVER-PURE).
+                RouteDeclaration {
+                    method: HttpMethod::Get,
+                    path: route_path("/discover"),
+                    operation_id: "discover".to_string(),
+                    action: None,
+                    idempotent: false,
+                    is_public: false,
+                },
                 RouteDeclaration {
                     method: HttpMethod::Post,
                     path: route_path("/auth/login"),

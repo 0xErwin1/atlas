@@ -120,7 +120,8 @@ fn declared_route_count_matches_the_live_router_enumeration() {
     // for the full table. E11-S3a design D2 added 4 more: `custos`'s and
     // `acta`'s own namespaced `/health`/`/ready` probes, raising the total
     // to 216. E11-S3b PR3 added one more: `POST /api/v2/platform/doctor`,
-    // raising the total to 217.
+    // raising the total to 217. E11-S8 PR3 added one more:
+    // `GET /api/v2/custos/discover`, raising the total to 218.
     //
     // This assertion compares totals only, which is deliberately weak: a
     // dropped declaration paired with an equally undercounted expectation
@@ -130,8 +131,8 @@ fn declared_route_count_matches_the_live_router_enumeration() {
     // against the live router's set element by element; this count is only a
     // cheap tripwire until that lands.
     assert_eq!(
-        declared_route_count, 217,
-        "platform + custos + acta declared routes must equal the live router's 217 representable (method, path) pairs"
+        declared_route_count, 218,
+        "platform + custos + acta declared routes must equal the live router's 218 representable (method, path) pairs"
     );
 }
 

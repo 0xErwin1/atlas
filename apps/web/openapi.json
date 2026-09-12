@@ -14212,6 +14212,36 @@
         "x-atlas-component": "custos"
       }
     },
+    "/api/v2/custos/discover": {
+      "get": {
+        "tags": [
+          "discover",
+          "custos"
+        ],
+        "operationId": "discover",
+        "responses": {
+          "200": {
+            "description": "Per-component discoverable scopes and the admin flag",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoverResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
     "/api/v2/custos/health": {
       "get": {
         "tags": [
@@ -18091,6 +18121,48 @@
         "properties": {
           "name": {
             "type": "string"
+          }
+        }
+      },
+      "DiscoverResponseDto": {
+        "type": "object",
+        "description": "Response from `GET /api/v2/custos/discover`.\n\nFor a non-admin principal, a component absent from `components` means\nnothing is discoverable there (INV-ABSENT-NOT-EMPTY) — never an empty\n`scopes` entry as a substitute. For `admin: true`, every present\nregistry component is listed with an empty `scopes` array: admin reach\nis total, not scoped, so there is nothing to enumerate per component,\nand the component is still present rather than absent. `admin` is\n`is_root || is_system_admin` (INV-ADMIN-FROM-FLAGS), never derived from\ngrant volume. `truncated` surfaces `atlas_custos`'s `GrantedScopes`\n500-scope cap (`false` on the admin short-circuit, which reads zero\ngrant rows).",
+        "required": [
+          "components",
+          "admin",
+          "truncated"
+        ],
+        "properties": {
+          "admin": {
+            "type": "boolean"
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscoveredComponentDto"
+            }
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        }
+      },
+      "DiscoveredComponentDto": {
+        "type": "object",
+        "description": "One component's discoverable scopes for the calling principal.\n\n`scopes` holds flat `ResourceRef` strings (e.g. `acta::workspace::<id>`,\n`acta::project::<id>`), never slash-composed paths (design spec\nreconciliation F1) — a grant on a parent resource already covers\neverything beneath it through the existing chain-walk (D-S8-2), so\ndiscover returns the granted refs themselves, not their descendants.",
+        "required": [
+          "component",
+          "scopes"
+        ],
+        "properties": {
+          "component": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -22917,6 +22989,10 @@
     {
       "name": "audit",
       "description": "Security audit log"
+    },
+    {
+      "name": "discover",
+      "description": "Self-service reverse-grant and membership discovery"
     },
     {
       "name": "auth",

@@ -57,7 +57,7 @@ use super::source_walk::{
 /// `atlas_client_route_contract.rs::extracted_call_count_is_pinned`), copied
 /// here because the two test binaries cannot share a constant. See this
 /// module's own doc comment for why equal cardinality is the cross-check.
-pub(crate) const CROSS_CHECK_EXTRACTED_CALL_COUNT: usize = 194;
+pub(crate) const CROSS_CHECK_EXTRACTED_CALL_COUNT: usize = 195;
 
 /// The number of delegating wrappers (public methods with no verb call of
 /// their own that reach a route through another method of the same file)

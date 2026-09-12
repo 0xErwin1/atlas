@@ -1,4 +1,4 @@
-//! One component table, total over all 28 [`crate::cli::Commands`] variants
+//! One component table, total over all 29 [`crate::cli::Commands`] variants
 //! (design D3).
 //!
 //! Declared here; audited against each command module's own
@@ -62,6 +62,7 @@ pub(crate) const COMMAND_COMPONENTS: &[(&str, Component)] = &[
     ("groups", Component::Custos),
     ("grants", Component::Custos),
     ("audit", Component::Custos),
+    ("discover", Component::Custos),
     ("doctor", Component::Platform),
     ("version", Component::Platform),
     ("config", Component::Platform),
@@ -105,11 +106,11 @@ mod tests {
     }
 
     #[test]
-    fn declared_components_table_has_28_rows() {
+    fn declared_components_table_has_29_rows() {
         assert_eq!(
             COMMAND_COMPONENTS.len(),
-            28,
-            "COMMAND_COMPONENTS must be total over all 28 Commands variants"
+            29,
+            "COMMAND_COMPONENTS must be total over all 29 Commands variants"
         );
     }
 
