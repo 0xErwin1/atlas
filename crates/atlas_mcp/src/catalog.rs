@@ -5,10 +5,10 @@
 //! name into the parameters it accepts, and what a caller gets back when it
 //! names one that does not exist.
 //!
-//! Keeping the per-resource detail here rather than in the tool descriptions is
-//! the point of the consolidation: a client pays for twelve schemas up front and
-//! looks the rest up on demand, instead of carrying every schema in its context
-//! before it asks a single question.
+//! A client pays for twelve schemas up front: each verb advertises its resource
+//! names and their required parameters, and everything optional stays here,
+//! looked up on demand, instead of carrying every schema in its context before
+//! it asks a single question.
 
 use rmcp::handler::server::wrapper::Parameters;
 use schemars::JsonSchema;
@@ -1065,18 +1065,7 @@ pub(crate) fn resource_names(verb: &str) -> String {
 /// drift from what the call actually takes.
 pub(crate) fn accepted_parameters(op: &Operation) -> String {
     let schema = (op.schema)();
-
-    let required = schema
-        .get("required")
-        .and_then(Value::as_array)
-        .map(|values| {
-            values
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::to_owned)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+    let required = required_of(&schema);
 
     let Some(properties) = schema.get("properties").and_then(Value::as_object) else {
         return "none".to_owned();
@@ -1088,7 +1077,7 @@ pub(crate) fn accepted_parameters(op: &Operation) -> String {
     properties
         .keys()
         .map(|name| {
-            if required.iter().any(|r| r == name) {
+            if required.contains(name) {
                 format!("{name} (required)")
             } else {
                 name.clone()
@@ -1096,6 +1085,40 @@ pub(crate) fn accepted_parameters(op: &Operation) -> String {
         })
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// The names a schema lists as required, in the schema's own order.
+fn required_of(schema: &Value) -> Vec<String> {
+    schema
+        .get("required")
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Every resource a verb accepts with its required parameters, for the verb's
+/// tool description. Optional ones stay one `help` call away.
+pub(crate) fn verb_catalog(verb: &str) -> String {
+    let resources = operations_for(verb)
+        .map(|op| {
+            format!(
+                "{}({})",
+                op.resource,
+                required_of(&(op.schema)()).join(", ")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" | ");
+
+    format!(
+        "Resources with their required params (call `help` with the verb and resource for optional ones): {resources}"
+    )
 }
 
 /// Normalizes the two shapes a client sends that are not the object the schema
@@ -1115,29 +1138,118 @@ fn normalize_params(params: Value) -> Value {
 
 /// Deserializes a call's `params` into the resource's own parameter type.
 ///
-/// A failure answers with the accepted parameter set rather than a bare serde
-/// message, so a caller can correct itself in one round trip instead of
-/// guessing at the shape.
+/// The params are checked against the resource's schema first, and a failure
+/// answers with every problem and the accepted parameter set, so a caller can
+/// correct itself in one round trip instead of guessing at the shape.
 pub(crate) fn decode<T: DeserializeOwned + JsonSchema>(
     verb: &str,
     resource: &str,
     params: Value,
 ) -> Result<Parameters<T>, String> {
-    serde_json::from_value(normalize_params(params)).map(Parameters).map_err(|error| {
-        let accepted = find_operation(verb, resource)
+    let op = find_operation(verb, resource);
+    let invalid = |problem: &str| {
+        let accepted = op
             .map(accepted_parameters)
             .unwrap_or_else(|| "unknown".to_owned());
 
         format!(
-            "invalid params for {verb} resource `{resource}`: {error}. Accepted parameters: {accepted}.              Call `help` with this verb and resource for the full schema."
+            "invalid params for {verb} resource `{resource}`: {problem}. Accepted parameters: {accepted}. \
+             Call `help` with this verb and resource for the full schema."
         )
-    })
+    };
+
+    let mut params = normalize_params(params);
+    if let (Some(op), Value::Object(map)) = (op, &mut params)
+        && let Some(problem) = check_params(&(op.schema)(), map)
+    {
+        return Err(invalid(&problem));
+    }
+
+    serde_json::from_value(params)
+        .map(Parameters)
+        .map_err(|error| invalid(&error.to_string()))
+}
+
+/// The identifier fields a caller commonly names `id`.
+const ID_ALIASES: &[&str] = &["readable_id", "slug"];
+
+/// Checks params against a resource schema, repairing an `id` that plainly
+/// names the resource's identifier. Answers every unknown and missing
+/// parameter at once; a schema without top-level `properties` is left to serde.
+fn check_params(schema: &Value, params: &mut serde_json::Map<String, Value>) -> Option<String> {
+    let properties = schema.get("properties").and_then(Value::as_object)?;
+
+    if !properties.contains_key("id") {
+        let mut targets = ID_ALIASES
+            .iter()
+            .filter(|name| properties.contains_key(**name) && !params.contains_key(**name));
+        if let (Some(target), None) = (targets.next(), targets.next())
+            && let Some(value) = params.remove("id")
+        {
+            params.insert((*target).to_owned(), value);
+        }
+    }
+
+    let missing = required_of(schema)
+        .into_iter()
+        .filter(|name| !params.contains_key(name))
+        .map(|name| format!("`{name}`"))
+        .collect::<Vec<_>>();
+    let unknown = params
+        .keys()
+        .filter(|name| !properties.contains_key(*name))
+        .map(|name| match closest(name, properties.keys()) {
+            Some(suggestion) => format!("`{name}` (did you mean `{suggestion}`?)"),
+            None => format!("`{name}`"),
+        })
+        .collect::<Vec<_>>();
+
+    let mut problems = Vec::new();
+    if !missing.is_empty() {
+        problems.push(format!("missing required {}", missing.join(", ")));
+    }
+    if !unknown.is_empty() {
+        problems.push(format!("unknown {}", unknown.join(", ")));
+    }
+
+    (!problems.is_empty()).then(|| problems.join("; "))
+}
+
+/// The declared parameter a misspelled or shortened name most likely meant.
+fn closest<'a>(name: &str, candidates: impl Iterator<Item = &'a String>) -> Option<&'a str> {
+    candidates
+        .map(|candidate| (edit_distance(name, candidate), candidate))
+        .filter(|(distance, candidate)| {
+            *distance <= 2 || candidate.contains(name) || name.contains(candidate.as_str())
+        })
+        .min_by_key(|(distance, _)| *distance)
+        .map(|(_, candidate)| candidate.as_str())
+}
+
+/// Levenshtein distance between two names.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut previous: Vec<usize> = (0..=b.len()).collect();
+
+    for (i, left) in a.chars().enumerate() {
+        let mut current = Vec::with_capacity(previous.len());
+        current.push(i + 1);
+        for ((right, diagonal), above) in b.iter().zip(&previous).zip(previous.iter().skip(1)) {
+            let before = current.last().copied().unwrap_or_default();
+            let substitution = diagonal + usize::from(left != *right);
+            current.push(substitution.min(above + 1).min(before + 1));
+        }
+        previous = current;
+    }
+
+    previous.last().copied().unwrap_or_default()
 }
 
 /// The answer to a resource name this verb does not have.
 pub(crate) fn unknown_resource(verb: &str, resource: &str) -> String {
     format!(
-        "unknown resource `{resource}` for `{verb}`. Accepted resources: {}.          Call `help` with no arguments to see every verb.",
+        "unknown resource `{resource}` for `{verb}`. Accepted resources: {}. \
+         Call `help` with no arguments to see every verb.",
         resource_names(verb)
     )
 }
@@ -1145,7 +1257,8 @@ pub(crate) fn unknown_resource(verb: &str, resource: &str) -> String {
 /// The answer to a `help` component filter value the catalog does not have.
 pub(crate) fn unknown_component(value: &str) -> String {
     format!(
-        "unknown component `{value}`. Accepted components: acta | custos | platform.          Call `help` with no arguments to see every operation."
+        "unknown component `{value}`. Accepted components: acta | custos | platform. \
+         Call `help` with no arguments to see every operation."
     )
 }
 
@@ -1421,6 +1534,103 @@ mod tests {
 
         assert_eq!(params.workspace, "atlas");
         assert_eq!(params.readable_id, "ATL-42");
+    }
+
+    #[test]
+    fn id_is_read_as_the_resource_identifier_it_stands_for() {
+        let Parameters(task) = decode::<crate::GetTaskParams>(
+            "get",
+            "task",
+            serde_json::json!({ "workspace": "atlas", "id": "ATL-42" }),
+        )
+        .unwrap_or_else(|error| unreachable!("{error}"));
+        assert_eq!(task.readable_id, "ATL-42");
+
+        let Parameters(document) = decode::<crate::GetDocumentParams>(
+            "get",
+            "document",
+            serde_json::json!({ "workspace": "atlas", "id": "roadmap" }),
+        )
+        .unwrap_or_else(|error| unreachable!("{error}"));
+        assert_eq!(document.slug, "roadmap");
+    }
+
+    #[test]
+    fn a_resource_that_declares_id_keeps_it() {
+        let Parameters(params) = decode::<crate::DeleteSavedSearchParams>(
+            "delete",
+            "saved_search",
+            serde_json::json!({ "workspace": "atlas", "id": "0197f3f5" }),
+        )
+        .unwrap_or_else(|error| unreachable!("{error}"));
+
+        assert_eq!(params.id, "0197f3f5");
+    }
+
+    #[test]
+    fn an_unknown_parameter_is_rejected_with_the_closest_real_one() {
+        let error = decode::<crate::GetTaskParams>(
+            "get",
+            "task",
+            serde_json::json!({ "workspace": "atlas", "readable_id": "ATL-42", "detial": "full" }),
+        )
+        .err()
+        .unwrap_or_default();
+
+        assert!(error.contains("unknown `detial`"), "{error}");
+        assert!(error.contains("did you mean `detail`"), "{error}");
+    }
+
+    #[test]
+    fn every_missing_required_parameter_is_named_at_once() {
+        let error = decode::<crate::GetTaskParams>("get", "task", serde_json::json!({}))
+            .err()
+            .unwrap_or_default();
+
+        assert!(
+            error.contains("missing required `workspace`, `readable_id`"),
+            "{error}"
+        );
+        assert!(error.contains("Accepted parameters"), "{error}");
+    }
+
+    #[test]
+    fn an_aliased_id_is_not_reported_as_missing() {
+        let error =
+            decode::<crate::GetTaskParams>("get", "task", serde_json::json!({ "id": "DBF-158" }))
+                .err()
+                .unwrap_or_default();
+
+        assert!(error.contains("missing required `workspace`."), "{error}");
+        assert!(!error.contains("unknown"), "{error}");
+    }
+
+    #[test]
+    fn error_messages_carry_no_runs_of_spaces() {
+        let invalid = decode::<crate::GetTaskParams>("get", "task", serde_json::json!({}))
+            .err()
+            .unwrap_or_default();
+
+        for message in [
+            invalid,
+            unknown_resource("get", "taskk"),
+            unknown_component("nope"),
+        ] {
+            assert!(!message.contains("  "), "{message}");
+        }
+    }
+
+    #[test]
+    fn a_verb_catalog_lists_each_resource_with_its_required_parameters() {
+        let catalog = verb_catalog("get");
+
+        assert!(
+            catalog.contains("task(workspace, readable_id)"),
+            "{catalog}"
+        );
+        assert!(catalog.contains("document(workspace, slug)"), "{catalog}");
+        assert!(catalog.contains("help"), "{catalog}");
+        assert!(verb_catalog("identity").contains("ping()"));
     }
 
     #[test]

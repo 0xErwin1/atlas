@@ -2339,10 +2339,9 @@ pub struct CallParams {
     pub resource: String,
     /// The resource's own arguments. `help` returns the accepted set, and an
     /// invalid call names it in the error.
-    ///
-    /// The schema is written out as an object rather than left untyped: a
-    /// client that sees no `type` here serializes the argument as a JSON string
-    /// and every call fails to deserialize.
+    // The schema is written out as an object rather than left untyped: a
+    // client that sees no `type` here serializes the argument as a JSON string
+    // and every call fails to deserialize.
     #[serde(default)]
     #[schemars(
         with = "serde_json::Map<String, serde_json::Value>",
@@ -6246,7 +6245,54 @@ impl AtlasMcp {
     }
 }
 
-#[tool_handler]
+impl AtlasMcp {
+    /// The tool router as advertised: each verb carries its resource names as
+    /// an enum and its required parameters in its description.
+    ///
+    /// Both are derived from the catalog, so a caller can make a correct first
+    /// call without a `help` round trip and the advertised surface cannot drift
+    /// from what `decode` accepts. Built once: the handler consults it on
+    /// every call, and rendering the catalog walks every operation schema.
+    fn advertised_router() -> &'static rmcp::handler::server::router::tool::ToolRouter<Self> {
+        static ROUTER: std::sync::LazyLock<
+            rmcp::handler::server::router::tool::ToolRouter<AtlasMcp>,
+        > = std::sync::LazyLock::new(AtlasMcp::build_advertised_router);
+
+        &ROUTER
+    }
+
+    fn build_advertised_router() -> rmcp::handler::server::router::tool::ToolRouter<Self> {
+        let mut router = Self::tool_router();
+
+        for route in router.map.values_mut() {
+            let verb = route.attr.name.to_string();
+            if !catalog::VERBS.contains(&verb.as_str()) {
+                continue;
+            }
+
+            let description = route.attr.description.as_deref().unwrap_or_default();
+            route.attr.description =
+                Some(format!("{description} {}", catalog::verb_catalog(&verb)).into());
+
+            let resources = catalog::operations_for(&verb)
+                .map(|op| op.resource)
+                .collect::<Vec<_>>();
+            let mut schema = (*route.attr.input_schema).clone();
+            if let Some(resource) = schema
+                .get_mut("properties")
+                .and_then(|properties| properties.get_mut("resource"))
+                .and_then(serde_json::Value::as_object_mut)
+            {
+                resource.insert("enum".to_owned(), json!(resources));
+            }
+            route.attr.input_schema = std::sync::Arc::new(schema);
+        }
+
+        router
+    }
+}
+
+#[tool_handler(router = Self::advertised_router())]
 impl ServerHandler for AtlasMcp {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(
@@ -6966,6 +7012,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_call_naming_id_for_a_task_is_told_only_what_is_really_missing() {
+        let (base_url, _requests) = serve_recording_atlas(vec![]);
+        let client =
+            start_mcp_client(AtlasMcp::new(base_url, "atlas_test").expect("server config")).await;
+
+        let result = client
+            .call_tool(call_resource_params(
+                "get",
+                "task",
+                serde_json::json!({ "id": "DBF-158" }),
+            ))
+            .await
+            .expect("the call itself succeeds");
+
+        let text = tool_text(&result);
+        assert!(result.is_error.unwrap_or(false), "{text}");
+        assert!(text.contains("missing required `workspace`."), "{text}");
+        assert!(!text.contains("unknown"), "{text}");
+    }
+
+    #[tokio::test]
     async fn help_answers_at_every_level_of_detail() {
         let (base_url, _requests) = serve_recording_atlas(vec![]);
         let client =
@@ -7329,6 +7396,64 @@ mod tests {
                 "verb `{verb}` advertises a default that its own type rejects"
             );
         }
+    }
+
+    #[test]
+    fn every_verb_advertises_its_resources_as_an_enum() {
+        let tools = AtlasMcp::advertised_router().list_all();
+
+        for verb in catalog::VERBS {
+            let tool = tools
+                .iter()
+                .find(|tool| tool.name == *verb)
+                .unwrap_or_else(|| unreachable!("verb `{verb}` is not advertised"));
+
+            let advertised = tool
+                .input_schema
+                .get("properties")
+                .and_then(|properties| properties.get("resource"))
+                .and_then(|resource| resource.get("enum"))
+                .cloned()
+                .unwrap_or_default();
+            let expected = catalog::operations_for(verb)
+                .map(|op| op.resource)
+                .collect::<Vec<_>>();
+
+            assert_eq!(advertised, serde_json::json!(expected), "verb `{verb}`");
+        }
+    }
+
+    #[test]
+    fn every_verb_description_lists_its_required_parameters() {
+        let tools = AtlasMcp::advertised_router().list_all();
+
+        for verb in catalog::VERBS {
+            let description = tools
+                .iter()
+                .find(|tool| tool.name == *verb)
+                .and_then(|tool| tool.description.as_deref())
+                .unwrap_or_default();
+
+            assert!(
+                description.ends_with(&catalog::verb_catalog(verb)),
+                "verb `{verb}`: {description}"
+            );
+        }
+    }
+
+    #[test]
+    fn params_schema_carries_no_implementation_notes() {
+        let tools = AtlasMcp::advertised_router().list_all();
+        let description = tools
+            .iter()
+            .find(|tool| tool.name == "get")
+            .and_then(|tool| tool.input_schema.get("properties"))
+            .and_then(|properties| properties.get("params"))
+            .and_then(|params| params.get("description"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+
+        assert!(!description.contains("deserialize"), "{description}");
     }
 
     #[test]
