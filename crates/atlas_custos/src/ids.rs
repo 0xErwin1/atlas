@@ -8,3 +8,12 @@ pub use atlas_core::principal::{ApiKeyId, GroupId, UserId};
 define_id!(SessionId);
 define_id!(ActivationTokenId);
 define_id!(SecurityAuditId);
+define_id!(PrincipalId);
+
+/// A user's principal identity is the user row itself: the back-fill (and
+/// every later user creation) uses `users.id` as the principal id.
+impl From<UserId> for PrincipalId {
+    fn from(id: UserId) -> Self {
+        Self(id.0)
+    }
+}

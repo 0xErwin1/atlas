@@ -29,6 +29,7 @@ pub mod user {
         pub activated_at: Option<DateTime<Utc>>,
         pub created_at: DateTime<Utc>,
         pub updated_at: DateTime<Utc>,
+        pub principal_id: Option<Uuid>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -100,6 +101,7 @@ pub mod api_key {
         pub created_at: DateTime<Utc>,
         pub is_global: bool,
         pub scopes: Vec<String>,
+        pub principal_id: Option<Uuid>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
