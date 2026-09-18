@@ -195,3 +195,43 @@ pub(crate) fn capabilities_from_stored(raw: &[String]) -> Vec<Capability> {
 pub(crate) fn capabilities_to_stored(scopes: &[Capability]) -> Vec<String> {
     scopes.iter().map(|c| c.as_str().to_string()).collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::capabilities_from_stored;
+    use atlas_custos::capability::{CapabilityAction, CapabilityFamily};
+
+    /// The stored-string reader accepts both wire spellings (canonical
+    /// `<product>::<kind>::<action>` and legacy `<family>:<action>`, since
+    /// pre-canonicalization rows keep their stored strings) and stays
+    /// fail-closed: any unparseable entry is DROPPED, never coerced into a
+    /// granted capability. This pins the property so a future permissive
+    /// `Capability::from_str` cannot silently turn a typo into a permission.
+    #[test]
+    fn stored_reader_accepts_both_spellings_and_drops_garbage_fail_closed() {
+        let parsed = capabilities_from_stored(&[
+            "acta::tasks::read".to_owned(),
+            "docs:read".to_owned(),
+            "custos::grants::read".to_owned(),
+            "grants:read".to_owned(),
+            "acta::tasks::manage".to_owned(),
+            "tasks:manage".to_owned(),
+            "nonsense".to_owned(),
+            "".to_owned(),
+            "acta::tasks::read::extra".to_owned(),
+        ]);
+
+        let got: Vec<(CapabilityFamily, CapabilityAction)> =
+            parsed.iter().map(|cap| (cap.family, cap.action)).collect();
+        assert_eq!(
+            got,
+            vec![
+                (CapabilityFamily::Tasks, CapabilityAction::Read),
+                (CapabilityFamily::Docs, CapabilityAction::Read),
+                (CapabilityFamily::Grants, CapabilityAction::Read),
+                (CapabilityFamily::Grants, CapabilityAction::Read),
+            ],
+            "both spellings must parse; every garbage entry must be dropped"
+        );
+    }
+}

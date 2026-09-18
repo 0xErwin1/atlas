@@ -72,21 +72,21 @@ describe('useApiKeysStore — setKeyScopes', () => {
 
   it('PATCHes the scope set and reflects the server value on success', async () => {
     PATCH.mockResolvedValueOnce({
-      data: key({ scopes: ['tasks:read', 'tasks:create'] }),
+      data: key({ scopes: ['acta::tasks::read', 'acta::tasks::create'] }),
       error: undefined,
     });
 
     const store = useApiKeysStore();
     store.keys = [key({ scopes: [] })];
 
-    const ok = await store.setKeyScopes('k1', ['tasks:read', 'tasks:create']);
+    const ok = await store.setKeyScopes('k1', ['acta::tasks::read', 'acta::tasks::create']);
 
     expect(ok).toBe(true);
     expect(PATCH).toHaveBeenCalledWith('/api/v2/custos/api-keys/{key_id}', {
       params: { path: { key_id: 'k1' } },
-      body: { scopes: ['tasks:read', 'tasks:create'] },
+      body: { scopes: ['acta::tasks::read', 'acta::tasks::create'] },
     });
-    expect(store.keys[0]?.scopes).toEqual(['tasks:read', 'tasks:create']);
+    expect(store.keys[0]?.scopes).toEqual(['acta::tasks::read', 'acta::tasks::create']);
     expect(store.error).toBeNull();
   });
 
@@ -97,13 +97,13 @@ describe('useApiKeysStore — setKeyScopes', () => {
     });
 
     const store = useApiKeysStore();
-    store.keys = [key({ scopes: ['tasks:read'] })];
+    store.keys = [key({ scopes: ['acta::tasks::read'] })];
 
-    const ok = await store.setKeyScopes('k1', ['docs:delete']);
+    const ok = await store.setKeyScopes('k1', ['acta::docs::delete']);
 
     expect(ok).toBe(false);
     expect(store.error).toBe('Not allowed');
-    expect(store.keys[0]?.scopes).toEqual(['tasks:read']);
+    expect(store.keys[0]?.scopes).toEqual(['acta::tasks::read']);
   });
 });
 

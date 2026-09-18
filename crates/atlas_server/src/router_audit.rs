@@ -200,18 +200,19 @@ pub fn mounted_path(namespace: &str, path: &str) -> String {
     }
 }
 
-/// Translates a registry-declared `ActionId` (`<component>::<family>::<action>`)
-/// into the `Capability` its wire form (`family:action`) denotes, so the
+/// Translates a registry-declared `ActionId` (`<product>::<kind>::<action>`)
+/// into the `Capability` its canonical wire form denotes, so the
 /// declare-and-verify audit compares the registry's declared action against
 /// the handler's enforced `S::CAPABILITY` as the SAME `Capability` type on
-/// both sides, per D5's "one fact read twice." The `<component>` segment is
-/// discarded: `ActionId` carries it for the registry's own uniqueness check
-/// (`validate_unique_ids`'s `DuplicateAction`), but `Capability` has no
-/// per-component axis — `tasks:read` means the same capability regardless of
-/// which registry entry declared it.
+/// both sides, per D5's "one fact read twice." The `ActionId` spelling IS the
+/// capability's canonical wire form for every registry action, so the full
+/// string is parsed back as-is: routing through a lossy `<kind>:<action>`
+/// re-spelling would only keep passing while `Capability::from_str`
+/// dual-accepts the legacy dialect, and would panic the day that legacy
+/// spelling is retired.
 ///
 /// # Panics
-/// Panics if the `<family>::<action>` segment does not name a known
+/// Panics if the `ActionId` does not name a known
 /// `Capability` — this is a registry-authoring bug (a typo'd action), not a
 /// runtime condition callers should recover from, and every current caller
 /// only invokes this on `ActionId`s already vetted by `reg5.rs`'s own
@@ -231,7 +232,7 @@ pub fn mounted_path(namespace: &str, path: &str) -> String {
               reg5.rs's own reg5_registry_build.rs workspace test"
 )]
 pub fn capability_from_action_id(action: &ActionId) -> Capability {
-    let wire = format!("{}:{}", action.kind(), action.action());
+    let wire = action.to_string();
     wire.parse().unwrap_or_else(|_| {
         panic!("registry action `{action}` has no matching Capability (wire form `{wire}`)")
     })
@@ -792,6 +793,25 @@ mod tests {
     use axum::body::Body;
     use axum::http::{Method, Request, StatusCode};
     use tower::ServiceExt;
+
+    /// The translation must round-trip the FULL canonical `ActionId` spelling
+    /// (`<product>::<kind>::<action>`) — not a lossy `<kind>:<action>`
+    /// re-spelling that only still parses because `Capability::from_str`
+    /// dual-accepts the legacy form. When the legacy dialect is eventually
+    /// retired, a lossy bridge would panic instead of failing loudly here.
+    #[test]
+    fn capability_from_action_id_round_trips_the_full_canonical_spelling() {
+        for wire in [
+            "acta::tasks::read",
+            "acta::docs::update",
+            "acta::saved_searches::create",
+            "custos::grants::read",
+        ] {
+            let action: ActionId = wire.parse().expect("registry-shaped action id");
+            let cap = capability_from_action_id(&action);
+            assert_eq!(cap.as_str(), action.to_string(), "canonical round trip");
+        }
+    }
 
     #[test]
     fn v2_namespace_builds_directly_from_v2_prefix() {

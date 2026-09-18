@@ -487,10 +487,10 @@ fn capability_all_has_expected_entries() {
 #[test]
 fn task_views_capabilities_round_trip_underscored() {
     for name in [
-        "task_views:read",
-        "task_views:create",
-        "task_views:update",
-        "task_views:delete",
+        "acta::task_views::read",
+        "acta::task_views::create",
+        "acta::task_views::update",
+        "acta::task_views::delete",
     ] {
         let cap: Capability = name.parse().expect("task_views capability must parse");
         assert_eq!(cap.family, CapabilityFamily::TaskViews);
@@ -505,10 +505,10 @@ fn task_views_capabilities_round_trip_underscored() {
 #[test]
 fn saved_searches_capabilities_round_trip_underscored() {
     for name in [
-        "saved_searches:read",
-        "saved_searches:create",
-        "saved_searches:update",
-        "saved_searches:delete",
+        "acta::saved_searches::read",
+        "acta::saved_searches::create",
+        "acta::saved_searches::update",
+        "acta::saved_searches::delete",
     ] {
         let cap: Capability = name.parse().expect("saved_searches capability must parse");
         assert_eq!(cap.family, CapabilityFamily::SavedSearches);
@@ -530,16 +530,18 @@ fn grants_family_is_read_only_in_catalog() {
 
     assert_eq!(
         grant_scopes,
-        vec!["grants:read"],
+        vec!["custos::grants::read"],
         "grants exposes only a read capability; writes stay domain-blocked"
     );
 }
 
 #[test]
 fn grants_read_round_trips_but_grant_writes_are_rejected() {
-    let cap: Capability = "grants:read".parse().expect("grants:read must parse");
+    let cap: Capability = "custos::grants::read"
+        .parse()
+        .expect("grants:read must parse");
     assert_eq!(cap.family, CapabilityFamily::Grants);
-    assert_eq!(cap.as_str(), "grants:read");
+    assert_eq!(cap.as_str(), "custos::grants::read");
 
     for write in ["grants:create", "grants:update", "grants:delete"] {
         assert!(
@@ -558,10 +560,10 @@ fn capability_all_contains_every_config_action() {
         .collect();
 
     let expected: std::collections::HashSet<&'static str> = [
-        "config:read",
-        "config:create",
-        "config:update",
-        "config:delete",
+        "acta::config::read",
+        "acta::config::create",
+        "acta::config::update",
+        "acta::config::delete",
     ]
     .into_iter()
     .collect();
@@ -572,10 +574,10 @@ fn capability_all_contains_every_config_action() {
 #[test]
 fn config_capabilities_round_trip_through_string() {
     for name in [
-        "config:read",
-        "config:create",
-        "config:update",
-        "config:delete",
+        "acta::config::read",
+        "acta::config::create",
+        "acta::config::update",
+        "acta::config::delete",
     ] {
         let cap: Capability = name.parse().expect("config capability must parse");
         assert_eq!(cap.family, CapabilityFamily::Config);
@@ -592,10 +594,10 @@ fn capability_all_contains_every_webhooks_action() {
         .collect();
 
     let expected: std::collections::HashSet<&'static str> = [
-        "webhooks:read",
-        "webhooks:create",
-        "webhooks:update",
-        "webhooks:delete",
+        "acta::webhooks::read",
+        "acta::webhooks::create",
+        "acta::webhooks::update",
+        "acta::webhooks::delete",
     ]
     .into_iter()
     .collect();
@@ -606,10 +608,10 @@ fn capability_all_contains_every_webhooks_action() {
 #[test]
 fn webhooks_capabilities_round_trip_through_string() {
     for name in [
-        "webhooks:read",
-        "webhooks:create",
-        "webhooks:update",
-        "webhooks:delete",
+        "acta::webhooks::read",
+        "acta::webhooks::create",
+        "acta::webhooks::update",
+        "acta::webhooks::delete",
     ] {
         let cap: Capability = name.parse().expect("webhooks capability must parse");
         assert_eq!(cap.family, CapabilityFamily::Webhooks);
@@ -645,13 +647,13 @@ fn capability_as_str_matches_family_action_format() {
         family: CapabilityFamily::Tasks,
         action: CapabilityAction::Read,
     };
-    assert_eq!(cap.as_str(), "tasks:read");
+    assert_eq!(cap.as_str(), "acta::tasks::read");
 
     let cap = Capability {
         family: CapabilityFamily::Projects,
         action: CapabilityAction::Delete,
     };
-    assert_eq!(cap.as_str(), "projects:delete");
+    assert_eq!(cap.as_str(), "acta::projects::delete");
 }
 
 #[test]

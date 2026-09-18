@@ -303,90 +303,105 @@ pub struct ActivatePasswordRequest {
     pub password: String,
 }
 
-/// The closed catalog of API key capability scopes: resource families crossed
-/// with the four CRUD actions (`read`, `create`, `update`, `delete`), except
-/// `grants`, which is read-only and contributes only `grants:read`.
+/// The closed catalog of API key capability scopes, canonically spelled
+/// `<product>::<kind>::<action>` (e.g. `acta::tasks::read`), crossed with the
+/// four CRUD actions (`read`, `create`, `update`, `delete`), except `grants`,
+/// which is read-only and contributes only `custos::grants::read`.
 ///
-/// This is the wire mirror of `atlas_domain::permissions::Capability`; the
+/// Deserialization additionally accepts the legacy `<family>:<action>`
+/// spelling (e.g. `tasks:read`) via serde aliases, so stored rows and old
+/// clients keep working without a data migration; serialization emits only
+/// the canonical form.
+///
+/// This is the wire mirror of `atlas_custos::capability::Capability`; the
 /// server maps between the two at the route boundary. Being a closed serde
 /// enum, an unrecognized wire value (e.g. `"tasks:manage"`) is rejected during
 /// deserialization with a 422, before any handler runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub enum ApiKeyScope {
-    #[serde(rename = "tasks:read")]
+    #[serde(rename = "acta::tasks::read", alias = "tasks:read")]
     TasksRead,
-    #[serde(rename = "tasks:create")]
+    #[serde(rename = "acta::tasks::create", alias = "tasks:create")]
     TasksCreate,
-    #[serde(rename = "tasks:update")]
+    #[serde(rename = "acta::tasks::update", alias = "tasks:update")]
     TasksUpdate,
-    #[serde(rename = "tasks:delete")]
+    #[serde(rename = "acta::tasks::delete", alias = "tasks:delete")]
     TasksDelete,
-    #[serde(rename = "docs:read")]
+    #[serde(rename = "acta::docs::read", alias = "docs:read")]
     DocsRead,
-    #[serde(rename = "docs:create")]
+    #[serde(rename = "acta::docs::create", alias = "docs:create")]
     DocsCreate,
-    #[serde(rename = "docs:update")]
+    #[serde(rename = "acta::docs::update", alias = "docs:update")]
     DocsUpdate,
-    #[serde(rename = "docs:delete")]
+    #[serde(rename = "acta::docs::delete", alias = "docs:delete")]
     DocsDelete,
-    #[serde(rename = "boards:read")]
+    #[serde(rename = "acta::boards::read", alias = "boards:read")]
     BoardsRead,
-    #[serde(rename = "boards:create")]
+    #[serde(rename = "acta::boards::create", alias = "boards:create")]
     BoardsCreate,
-    #[serde(rename = "boards:update")]
+    #[serde(rename = "acta::boards::update", alias = "boards:update")]
     BoardsUpdate,
-    #[serde(rename = "boards:delete")]
+    #[serde(rename = "acta::boards::delete", alias = "boards:delete")]
     BoardsDelete,
-    #[serde(rename = "folders:read")]
+    #[serde(rename = "acta::folders::read", alias = "folders:read")]
     FoldersRead,
-    #[serde(rename = "folders:create")]
+    #[serde(rename = "acta::folders::create", alias = "folders:create")]
     FoldersCreate,
-    #[serde(rename = "folders:update")]
+    #[serde(rename = "acta::folders::update", alias = "folders:update")]
     FoldersUpdate,
-    #[serde(rename = "folders:delete")]
+    #[serde(rename = "acta::folders::delete", alias = "folders:delete")]
     FoldersDelete,
-    #[serde(rename = "projects:read")]
+    #[serde(rename = "acta::projects::read", alias = "projects:read")]
     ProjectsRead,
-    #[serde(rename = "projects:create")]
+    #[serde(rename = "acta::projects::create", alias = "projects:create")]
     ProjectsCreate,
-    #[serde(rename = "projects:update")]
+    #[serde(rename = "acta::projects::update", alias = "projects:update")]
     ProjectsUpdate,
-    #[serde(rename = "projects:delete")]
+    #[serde(rename = "acta::projects::delete", alias = "projects:delete")]
     ProjectsDelete,
-    #[serde(rename = "webhooks:read")]
+    #[serde(rename = "acta::webhooks::read", alias = "webhooks:read")]
     WebhooksRead,
-    #[serde(rename = "webhooks:create")]
+    #[serde(rename = "acta::webhooks::create", alias = "webhooks:create")]
     WebhooksCreate,
-    #[serde(rename = "webhooks:update")]
+    #[serde(rename = "acta::webhooks::update", alias = "webhooks:update")]
     WebhooksUpdate,
-    #[serde(rename = "webhooks:delete")]
+    #[serde(rename = "acta::webhooks::delete", alias = "webhooks:delete")]
     WebhooksDelete,
-    #[serde(rename = "config:read")]
+    #[serde(rename = "acta::config::read", alias = "config:read")]
     ConfigRead,
-    #[serde(rename = "config:create")]
+    #[serde(rename = "acta::config::create", alias = "config:create")]
     ConfigCreate,
-    #[serde(rename = "config:update")]
+    #[serde(rename = "acta::config::update", alias = "config:update")]
     ConfigUpdate,
-    #[serde(rename = "config:delete")]
+    #[serde(rename = "acta::config::delete", alias = "config:delete")]
     ConfigDelete,
-    #[serde(rename = "grants:read")]
+    #[serde(rename = "custos::grants::read", alias = "grants:read")]
     GrantsRead,
-    #[serde(rename = "saved_searches:read")]
+    #[serde(rename = "acta::saved_searches::read", alias = "saved_searches:read")]
     SavedSearchesRead,
-    #[serde(rename = "saved_searches:create")]
+    #[serde(
+        rename = "acta::saved_searches::create",
+        alias = "saved_searches:create"
+    )]
     SavedSearchesCreate,
-    #[serde(rename = "saved_searches:update")]
+    #[serde(
+        rename = "acta::saved_searches::update",
+        alias = "saved_searches:update"
+    )]
     SavedSearchesUpdate,
-    #[serde(rename = "saved_searches:delete")]
+    #[serde(
+        rename = "acta::saved_searches::delete",
+        alias = "saved_searches:delete"
+    )]
     SavedSearchesDelete,
-    #[serde(rename = "task_views:read")]
+    #[serde(rename = "acta::task_views::read", alias = "task_views:read")]
     TaskViewsRead,
-    #[serde(rename = "task_views:create")]
+    #[serde(rename = "acta::task_views::create", alias = "task_views:create")]
     TaskViewsCreate,
-    #[serde(rename = "task_views:update")]
+    #[serde(rename = "acta::task_views::update", alias = "task_views:update")]
     TaskViewsUpdate,
-    #[serde(rename = "task_views:delete")]
+    #[serde(rename = "acta::task_views::delete", alias = "task_views:delete")]
     TaskViewsDelete,
 }
 
@@ -855,10 +870,10 @@ mod tests {
     #[test]
     fn webhooks_scopes_round_trip_through_serde_rename() {
         let cases = [
-            (ApiKeyScope::WebhooksRead, "webhooks:read"),
-            (ApiKeyScope::WebhooksCreate, "webhooks:create"),
-            (ApiKeyScope::WebhooksUpdate, "webhooks:update"),
-            (ApiKeyScope::WebhooksDelete, "webhooks:delete"),
+            (ApiKeyScope::WebhooksRead, "acta::webhooks::read"),
+            (ApiKeyScope::WebhooksCreate, "acta::webhooks::create"),
+            (ApiKeyScope::WebhooksUpdate, "acta::webhooks::update"),
+            (ApiKeyScope::WebhooksDelete, "acta::webhooks::delete"),
         ];
 
         for (scope, wire) in cases {
@@ -883,10 +898,10 @@ mod tests {
     #[test]
     fn config_scopes_round_trip_through_serde_rename() {
         let cases = [
-            (ApiKeyScope::ConfigRead, "config:read"),
-            (ApiKeyScope::ConfigCreate, "config:create"),
-            (ApiKeyScope::ConfigUpdate, "config:update"),
-            (ApiKeyScope::ConfigDelete, "config:delete"),
+            (ApiKeyScope::ConfigRead, "acta::config::read"),
+            (ApiKeyScope::ConfigCreate, "acta::config::create"),
+            (ApiKeyScope::ConfigUpdate, "acta::config::update"),
+            (ApiKeyScope::ConfigDelete, "acta::config::delete"),
         ];
 
         for (scope, wire) in cases {
@@ -902,7 +917,10 @@ mod tests {
     #[test]
     fn grants_read_round_trips_and_grant_writes_are_rejected() {
         let json = serde_json::to_value(ApiKeyScope::GrantsRead).expect("scope must serialize");
-        assert_eq!(json, serde_json::Value::String("grants:read".to_string()));
+        assert_eq!(
+            json,
+            serde_json::Value::String("custos::grants::read".to_string())
+        );
 
         let parsed: ApiKeyScope =
             serde_json::from_value(json).expect("wire value must deserialize");
@@ -924,10 +942,19 @@ mod tests {
     #[test]
     fn saved_searches_scopes_round_trip_with_underscored_wire_form() {
         let cases = [
-            (ApiKeyScope::SavedSearchesRead, "saved_searches:read"),
-            (ApiKeyScope::SavedSearchesCreate, "saved_searches:create"),
-            (ApiKeyScope::SavedSearchesUpdate, "saved_searches:update"),
-            (ApiKeyScope::SavedSearchesDelete, "saved_searches:delete"),
+            (ApiKeyScope::SavedSearchesRead, "acta::saved_searches::read"),
+            (
+                ApiKeyScope::SavedSearchesCreate,
+                "acta::saved_searches::create",
+            ),
+            (
+                ApiKeyScope::SavedSearchesUpdate,
+                "acta::saved_searches::update",
+            ),
+            (
+                ApiKeyScope::SavedSearchesDelete,
+                "acta::saved_searches::delete",
+            ),
         ];
 
         for (scope, wire) in cases {
@@ -943,10 +970,10 @@ mod tests {
     #[test]
     fn task_views_scopes_round_trip_with_underscored_wire_form() {
         let cases = [
-            (ApiKeyScope::TaskViewsRead, "task_views:read"),
-            (ApiKeyScope::TaskViewsCreate, "task_views:create"),
-            (ApiKeyScope::TaskViewsUpdate, "task_views:update"),
-            (ApiKeyScope::TaskViewsDelete, "task_views:delete"),
+            (ApiKeyScope::TaskViewsRead, "acta::task_views::read"),
+            (ApiKeyScope::TaskViewsCreate, "acta::task_views::create"),
+            (ApiKeyScope::TaskViewsUpdate, "acta::task_views::update"),
+            (ApiKeyScope::TaskViewsDelete, "acta::task_views::delete"),
         ];
 
         for (scope, wire) in cases {
@@ -956,6 +983,222 @@ mod tests {
             let parsed: ApiKeyScope =
                 serde_json::from_value(json).expect("wire value must deserialize");
             assert_eq!(parsed, scope);
+        }
+    }
+
+    /// The canonical wire form is `<product>::<kind>::<action>`; the legacy
+    /// `<family>:<action>` spelling must still DESERIALIZE (stored rows and
+    /// old clients keep working) while serialization emits only the canonical
+    /// string. The alias direction is the load-bearing half of the rename.
+    #[test]
+    fn scopes_deserialize_legacy_and_serialize_canonical_for_all_37_entries() {
+        let cases = [
+            (
+                ApiKeyScope::TasksRead,
+                "acta::tasks::read",
+                "acta::tasks::read",
+            ),
+            (
+                ApiKeyScope::TasksCreate,
+                "acta::tasks::create",
+                "acta::tasks::create",
+            ),
+            (
+                ApiKeyScope::TasksUpdate,
+                "acta::tasks::update",
+                "acta::tasks::update",
+            ),
+            (
+                ApiKeyScope::TasksDelete,
+                "acta::tasks::delete",
+                "acta::tasks::delete",
+            ),
+            (
+                ApiKeyScope::DocsRead,
+                "acta::docs::read",
+                "acta::docs::read",
+            ),
+            (
+                ApiKeyScope::DocsCreate,
+                "acta::docs::create",
+                "acta::docs::create",
+            ),
+            (
+                ApiKeyScope::DocsUpdate,
+                "acta::docs::update",
+                "acta::docs::update",
+            ),
+            (
+                ApiKeyScope::DocsDelete,
+                "acta::docs::delete",
+                "acta::docs::delete",
+            ),
+            (
+                ApiKeyScope::BoardsRead,
+                "acta::boards::read",
+                "acta::boards::read",
+            ),
+            (
+                ApiKeyScope::BoardsCreate,
+                "acta::boards::create",
+                "acta::boards::create",
+            ),
+            (
+                ApiKeyScope::BoardsUpdate,
+                "acta::boards::update",
+                "acta::boards::update",
+            ),
+            (
+                ApiKeyScope::BoardsDelete,
+                "acta::boards::delete",
+                "acta::boards::delete",
+            ),
+            (
+                ApiKeyScope::FoldersRead,
+                "acta::folders::read",
+                "acta::folders::read",
+            ),
+            (
+                ApiKeyScope::FoldersCreate,
+                "acta::folders::create",
+                "acta::folders::create",
+            ),
+            (
+                ApiKeyScope::FoldersUpdate,
+                "acta::folders::update",
+                "acta::folders::update",
+            ),
+            (
+                ApiKeyScope::FoldersDelete,
+                "acta::folders::delete",
+                "acta::folders::delete",
+            ),
+            (
+                ApiKeyScope::ProjectsRead,
+                "acta::projects::read",
+                "acta::projects::read",
+            ),
+            (
+                ApiKeyScope::ProjectsCreate,
+                "acta::projects::create",
+                "acta::projects::create",
+            ),
+            (
+                ApiKeyScope::ProjectsUpdate,
+                "acta::projects::update",
+                "acta::projects::update",
+            ),
+            (
+                ApiKeyScope::ProjectsDelete,
+                "acta::projects::delete",
+                "acta::projects::delete",
+            ),
+            (
+                ApiKeyScope::WebhooksRead,
+                "acta::webhooks::read",
+                "acta::webhooks::read",
+            ),
+            (
+                ApiKeyScope::WebhooksCreate,
+                "acta::webhooks::create",
+                "acta::webhooks::create",
+            ),
+            (
+                ApiKeyScope::WebhooksUpdate,
+                "acta::webhooks::update",
+                "acta::webhooks::update",
+            ),
+            (
+                ApiKeyScope::WebhooksDelete,
+                "acta::webhooks::delete",
+                "acta::webhooks::delete",
+            ),
+            (
+                ApiKeyScope::ConfigRead,
+                "acta::config::read",
+                "acta::config::read",
+            ),
+            (
+                ApiKeyScope::ConfigCreate,
+                "acta::config::create",
+                "acta::config::create",
+            ),
+            (
+                ApiKeyScope::ConfigUpdate,
+                "acta::config::update",
+                "acta::config::update",
+            ),
+            (
+                ApiKeyScope::ConfigDelete,
+                "acta::config::delete",
+                "acta::config::delete",
+            ),
+            (
+                ApiKeyScope::GrantsRead,
+                "custos::grants::read",
+                "custos::grants::read",
+            ),
+            (
+                ApiKeyScope::SavedSearchesRead,
+                "acta::saved_searches::read",
+                "acta::saved_searches::read",
+            ),
+            (
+                ApiKeyScope::SavedSearchesCreate,
+                "acta::saved_searches::create",
+                "acta::saved_searches::create",
+            ),
+            (
+                ApiKeyScope::SavedSearchesUpdate,
+                "acta::saved_searches::update",
+                "acta::saved_searches::update",
+            ),
+            (
+                ApiKeyScope::SavedSearchesDelete,
+                "acta::saved_searches::delete",
+                "acta::saved_searches::delete",
+            ),
+            (
+                ApiKeyScope::TaskViewsRead,
+                "acta::task_views::read",
+                "acta::task_views::read",
+            ),
+            (
+                ApiKeyScope::TaskViewsCreate,
+                "acta::task_views::create",
+                "acta::task_views::create",
+            ),
+            (
+                ApiKeyScope::TaskViewsUpdate,
+                "acta::task_views::update",
+                "acta::task_views::update",
+            ),
+            (
+                ApiKeyScope::TaskViewsDelete,
+                "acta::task_views::delete",
+                "acta::task_views::delete",
+            ),
+        ];
+
+        assert_eq!(cases.len(), 37, "the catalog holds 37 wire scopes");
+
+        for (scope, canonical, legacy) in cases {
+            let serialized = serde_json::to_value(scope).expect("scope must serialize");
+            assert_eq!(
+                serialized,
+                serde_json::Value::String(canonical.to_string()),
+                "serialization must emit the canonical form"
+            );
+
+            let from_canonical: ApiKeyScope =
+                serde_json::from_value(serde_json::Value::String(canonical.to_string()))
+                    .expect("canonical form must deserialize");
+            assert_eq!(from_canonical, scope);
+
+            let from_legacy: ApiKeyScope =
+                serde_json::from_value(serde_json::Value::String(legacy.to_string()))
+                    .unwrap_or_else(|err| panic!("legacy form {legacy} must deserialize: {err}"));
+            assert_eq!(from_legacy, scope, "{legacy} must alias {canonical}");
         }
     }
 }
