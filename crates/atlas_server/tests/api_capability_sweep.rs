@@ -608,151 +608,151 @@ impl Case {
     /// silently drift from it.
     fn registry_key(self) -> (&'static str, &'static str) {
         match self {
-            Case::CreateTask => ("POST", "tasks:create"),
-            Case::ListTasks => ("GET", "tasks:read"),
-            Case::ListWorkspaceTasks => ("GET", "tasks:read"),
-            Case::GetTask => ("GET", "tasks:read"),
-            Case::UpdateTask => ("PATCH", "tasks:update"),
-            Case::DeleteTask => ("DELETE", "tasks:delete"),
-            Case::MoveTask => ("POST", "tasks:update"),
-            Case::ListAssignees => ("GET", "tasks:read"),
-            Case::AddAssignee => ("POST", "tasks:update"),
-            Case::RemoveAssignee => ("DELETE", "tasks:update"),
-            Case::ListReferences => ("GET", "tasks:read"),
-            Case::CreateReference => ("POST", "tasks:update"),
-            Case::CreateReferencesBatch => ("POST", "tasks:update"),
-            Case::DeleteReference => ("DELETE", "tasks:update"),
-            Case::UploadTaskAttachment => ("POST", "tasks:update"),
-            Case::ListTaskAttachments => ("GET", "tasks:read"),
-            Case::DownloadTaskAttachment => ("GET", "tasks:read"),
-            Case::RenameTaskAttachment => ("PATCH", "tasks:update"),
-            Case::DeleteTaskAttachment => ("DELETE", "tasks:update"),
-            Case::ListTaskBacklinks => ("GET", "tasks:read"),
-            Case::GetTaskGraph => ("GET", "tasks:read"),
-            Case::ListChecklist => ("GET", "tasks:read"),
-            Case::CreateChecklistItem => ("POST", "tasks:update"),
-            Case::UpdateChecklistItem => ("PATCH", "tasks:update"),
-            Case::DeleteChecklistItem => ("DELETE", "tasks:update"),
-            Case::PromoteChecklistItem => ("POST", "tasks:create"),
-            Case::ListSubtasks => ("GET", "tasks:read"),
-            Case::CreateSubtask => ("POST", "tasks:create"),
-            Case::PromoteSubtask => ("POST", "tasks:update"),
-            Case::SetTaskParent => ("POST", "tasks:update"),
-            Case::ListActivity => ("GET", "tasks:read"),
-            Case::ListTaskComments => ("GET", "tasks:read"),
-            Case::AddTaskComment => ("POST", "tasks:update"),
-            Case::UpdateTaskComment => ("PATCH", "tasks:update"),
-            Case::DeleteTaskComment => ("DELETE", "tasks:update"),
-            Case::CreateTaskCommentDraft => ("POST", "tasks:update"),
-            Case::CancelTaskCommentDraft => ("DELETE", "tasks:update"),
-            Case::UploadTaskCommentDraftAttachment => ("POST", "tasks:update"),
-            Case::UploadTaskCommentAttachment => ("POST", "tasks:update"),
-            Case::ListTaskCommentAttachments => ("GET", "tasks:read"),
-            Case::DownloadTaskCommentAttachment => ("GET", "tasks:read"),
-            Case::DeleteTaskCommentAttachment => ("DELETE", "tasks:update"),
+            Case::CreateTask => ("POST", "acta::tasks::create"),
+            Case::ListTasks => ("GET", "acta::tasks::read"),
+            Case::ListWorkspaceTasks => ("GET", "acta::tasks::read"),
+            Case::GetTask => ("GET", "acta::tasks::read"),
+            Case::UpdateTask => ("PATCH", "acta::tasks::update"),
+            Case::DeleteTask => ("DELETE", "acta::tasks::delete"),
+            Case::MoveTask => ("POST", "acta::tasks::update"),
+            Case::ListAssignees => ("GET", "acta::tasks::read"),
+            Case::AddAssignee => ("POST", "acta::tasks::update"),
+            Case::RemoveAssignee => ("DELETE", "acta::tasks::update"),
+            Case::ListReferences => ("GET", "acta::tasks::read"),
+            Case::CreateReference => ("POST", "acta::tasks::update"),
+            Case::CreateReferencesBatch => ("POST", "acta::tasks::update"),
+            Case::DeleteReference => ("DELETE", "acta::tasks::update"),
+            Case::UploadTaskAttachment => ("POST", "acta::tasks::update"),
+            Case::ListTaskAttachments => ("GET", "acta::tasks::read"),
+            Case::DownloadTaskAttachment => ("GET", "acta::tasks::read"),
+            Case::RenameTaskAttachment => ("PATCH", "acta::tasks::update"),
+            Case::DeleteTaskAttachment => ("DELETE", "acta::tasks::update"),
+            Case::ListTaskBacklinks => ("GET", "acta::tasks::read"),
+            Case::GetTaskGraph => ("GET", "acta::tasks::read"),
+            Case::ListChecklist => ("GET", "acta::tasks::read"),
+            Case::CreateChecklistItem => ("POST", "acta::tasks::update"),
+            Case::UpdateChecklistItem => ("PATCH", "acta::tasks::update"),
+            Case::DeleteChecklistItem => ("DELETE", "acta::tasks::update"),
+            Case::PromoteChecklistItem => ("POST", "acta::tasks::create"),
+            Case::ListSubtasks => ("GET", "acta::tasks::read"),
+            Case::CreateSubtask => ("POST", "acta::tasks::create"),
+            Case::PromoteSubtask => ("POST", "acta::tasks::update"),
+            Case::SetTaskParent => ("POST", "acta::tasks::update"),
+            Case::ListActivity => ("GET", "acta::tasks::read"),
+            Case::ListTaskComments => ("GET", "acta::tasks::read"),
+            Case::AddTaskComment => ("POST", "acta::tasks::update"),
+            Case::UpdateTaskComment => ("PATCH", "acta::tasks::update"),
+            Case::DeleteTaskComment => ("DELETE", "acta::tasks::update"),
+            Case::CreateTaskCommentDraft => ("POST", "acta::tasks::update"),
+            Case::CancelTaskCommentDraft => ("DELETE", "acta::tasks::update"),
+            Case::UploadTaskCommentDraftAttachment => ("POST", "acta::tasks::update"),
+            Case::UploadTaskCommentAttachment => ("POST", "acta::tasks::update"),
+            Case::ListTaskCommentAttachments => ("GET", "acta::tasks::read"),
+            Case::DownloadTaskCommentAttachment => ("GET", "acta::tasks::read"),
+            Case::DeleteTaskCommentAttachment => ("DELETE", "acta::tasks::update"),
 
-            Case::CreateDocument => ("POST", "docs:create"),
-            Case::ListDocuments => ("GET", "docs:read"),
-            Case::GetDocument => ("GET", "docs:read"),
-            Case::GetDocumentCompact => ("GET", "docs:read"),
-            Case::GetDocumentRange => ("GET", "docs:read"),
-            Case::SearchDocumentContent => ("POST", "docs:read"),
-            Case::UpdateDocument => ("PATCH", "docs:update"),
-            Case::EditDocumentContent => ("PATCH", "docs:update"),
-            Case::DeleteDocument => ("DELETE", "docs:delete"),
-            Case::UpdateContent => ("PUT", "docs:update"),
-            Case::ListDocumentHistory => ("GET", "docs:read"),
-            Case::GetRevisionContent => ("GET", "docs:read"),
-            Case::ListDocBacklinks => ("GET", "docs:read"),
-            Case::GetFrontmatter => ("GET", "docs:read"),
-            Case::UploadDocAttachment => ("POST", "docs:update"),
-            Case::ListDocAttachments => ("GET", "docs:read"),
-            Case::DownloadDocAttachment => ("GET", "docs:read"),
-            Case::DeleteDocAttachment => ("DELETE", "docs:update"),
-            Case::MoveDocument => ("PATCH", "docs:update"),
-            Case::CopyDocument => ("POST", "docs:create"),
-            Case::ListDocComments => ("GET", "docs:read"),
-            Case::AddDocComment => ("POST", "docs:update"),
-            Case::UpdateDocComment => ("PATCH", "docs:update"),
-            Case::DeleteDocComment => ("DELETE", "docs:update"),
-            Case::CreateDocumentCommentDraft => ("POST", "docs:update"),
-            Case::CancelDocumentCommentDraft => ("DELETE", "docs:update"),
-            Case::UploadDocumentCommentAttachment => ("POST", "docs:update"),
-            Case::UploadDocumentCommentDraftAttachment => ("POST", "docs:update"),
-            Case::ListDocumentCommentAttachments => ("GET", "docs:read"),
-            Case::DownloadDocumentCommentAttachment => ("GET", "docs:read"),
-            Case::DeleteDocumentCommentAttachment => ("DELETE", "docs:update"),
-            Case::DocumentHeartbeat => ("POST", "docs:read"),
-            Case::DocumentLeave => ("DELETE", "docs:read"),
-            Case::MoveDocumentsBatch => ("POST", "docs:update"),
+            Case::CreateDocument => ("POST", "acta::docs::create"),
+            Case::ListDocuments => ("GET", "acta::docs::read"),
+            Case::GetDocument => ("GET", "acta::docs::read"),
+            Case::GetDocumentCompact => ("GET", "acta::docs::read"),
+            Case::GetDocumentRange => ("GET", "acta::docs::read"),
+            Case::SearchDocumentContent => ("POST", "acta::docs::read"),
+            Case::UpdateDocument => ("PATCH", "acta::docs::update"),
+            Case::EditDocumentContent => ("PATCH", "acta::docs::update"),
+            Case::DeleteDocument => ("DELETE", "acta::docs::delete"),
+            Case::UpdateContent => ("PUT", "acta::docs::update"),
+            Case::ListDocumentHistory => ("GET", "acta::docs::read"),
+            Case::GetRevisionContent => ("GET", "acta::docs::read"),
+            Case::ListDocBacklinks => ("GET", "acta::docs::read"),
+            Case::GetFrontmatter => ("GET", "acta::docs::read"),
+            Case::UploadDocAttachment => ("POST", "acta::docs::update"),
+            Case::ListDocAttachments => ("GET", "acta::docs::read"),
+            Case::DownloadDocAttachment => ("GET", "acta::docs::read"),
+            Case::DeleteDocAttachment => ("DELETE", "acta::docs::update"),
+            Case::MoveDocument => ("PATCH", "acta::docs::update"),
+            Case::CopyDocument => ("POST", "acta::docs::create"),
+            Case::ListDocComments => ("GET", "acta::docs::read"),
+            Case::AddDocComment => ("POST", "acta::docs::update"),
+            Case::UpdateDocComment => ("PATCH", "acta::docs::update"),
+            Case::DeleteDocComment => ("DELETE", "acta::docs::update"),
+            Case::CreateDocumentCommentDraft => ("POST", "acta::docs::update"),
+            Case::CancelDocumentCommentDraft => ("DELETE", "acta::docs::update"),
+            Case::UploadDocumentCommentAttachment => ("POST", "acta::docs::update"),
+            Case::UploadDocumentCommentDraftAttachment => ("POST", "acta::docs::update"),
+            Case::ListDocumentCommentAttachments => ("GET", "acta::docs::read"),
+            Case::DownloadDocumentCommentAttachment => ("GET", "acta::docs::read"),
+            Case::DeleteDocumentCommentAttachment => ("DELETE", "acta::docs::update"),
+            Case::DocumentHeartbeat => ("POST", "acta::docs::read"),
+            Case::DocumentLeave => ("DELETE", "acta::docs::read"),
+            Case::MoveDocumentsBatch => ("POST", "acta::docs::update"),
 
-            Case::CreateBoard => ("POST", "boards:create"),
-            Case::ListBoards => ("GET", "boards:read"),
-            Case::GetBoard => ("GET", "boards:read"),
-            Case::UpdateBoard => ("PATCH", "boards:update"),
-            Case::MoveBoard => ("PATCH", "boards:update"),
-            Case::ArchiveBoard => ("POST", "boards:update"),
-            Case::UnarchiveBoard => ("POST", "boards:update"),
-            Case::DeleteBoard => ("DELETE", "boards:delete"),
-            Case::CreateColumn => ("POST", "boards:update"),
-            Case::ListColumns => ("GET", "boards:read"),
-            Case::UpdateColumn => ("PATCH", "boards:update"),
-            Case::DeleteColumn => ("DELETE", "boards:update"),
-            Case::ApplyStatusTemplates => ("POST", "boards:update"),
-            Case::BoardHeartbeat => ("POST", "boards:read"),
-            Case::BoardLeave => ("DELETE", "boards:read"),
-            Case::ListStatusTemplates => ("GET", "boards:read"),
-            Case::CreateStatusTemplate => ("POST", "boards:create"),
-            Case::UpdateStatusTemplate => ("PATCH", "boards:update"),
-            Case::DeleteStatusTemplate => ("DELETE", "boards:delete"),
+            Case::CreateBoard => ("POST", "acta::boards::create"),
+            Case::ListBoards => ("GET", "acta::boards::read"),
+            Case::GetBoard => ("GET", "acta::boards::read"),
+            Case::UpdateBoard => ("PATCH", "acta::boards::update"),
+            Case::MoveBoard => ("PATCH", "acta::boards::update"),
+            Case::ArchiveBoard => ("POST", "acta::boards::update"),
+            Case::UnarchiveBoard => ("POST", "acta::boards::update"),
+            Case::DeleteBoard => ("DELETE", "acta::boards::delete"),
+            Case::CreateColumn => ("POST", "acta::boards::update"),
+            Case::ListColumns => ("GET", "acta::boards::read"),
+            Case::UpdateColumn => ("PATCH", "acta::boards::update"),
+            Case::DeleteColumn => ("DELETE", "acta::boards::update"),
+            Case::ApplyStatusTemplates => ("POST", "acta::boards::update"),
+            Case::BoardHeartbeat => ("POST", "acta::boards::read"),
+            Case::BoardLeave => ("DELETE", "acta::boards::read"),
+            Case::ListStatusTemplates => ("GET", "acta::boards::read"),
+            Case::CreateStatusTemplate => ("POST", "acta::boards::create"),
+            Case::UpdateStatusTemplate => ("PATCH", "acta::boards::update"),
+            Case::DeleteStatusTemplate => ("DELETE", "acta::boards::delete"),
 
-            Case::CreateFolder => ("POST", "folders:create"),
-            Case::ListFolders => ("GET", "folders:read"),
-            Case::GetFolder => ("GET", "folders:read"),
-            Case::RenameFolder => ("PATCH", "folders:update"),
-            Case::MoveFolder => ("PATCH", "folders:update"),
-            Case::CopyFolder => ("POST", "folders:create"),
-            Case::DeleteFolder => ("DELETE", "folders:delete"),
+            Case::CreateFolder => ("POST", "acta::folders::create"),
+            Case::ListFolders => ("GET", "acta::folders::read"),
+            Case::GetFolder => ("GET", "acta::folders::read"),
+            Case::RenameFolder => ("PATCH", "acta::folders::update"),
+            Case::MoveFolder => ("PATCH", "acta::folders::update"),
+            Case::CopyFolder => ("POST", "acta::folders::create"),
+            Case::DeleteFolder => ("DELETE", "acta::folders::delete"),
 
-            Case::CreateProject => ("POST", "projects:create"),
-            Case::ListProjects => ("GET", "projects:read"),
-            Case::GetProject => ("GET", "projects:read"),
-            Case::UpdateProject => ("PATCH", "projects:update"),
-            Case::DeleteProject => ("DELETE", "projects:delete"),
+            Case::CreateProject => ("POST", "acta::projects::create"),
+            Case::ListProjects => ("GET", "acta::projects::read"),
+            Case::GetProject => ("GET", "acta::projects::read"),
+            Case::UpdateProject => ("PATCH", "acta::projects::update"),
+            Case::DeleteProject => ("DELETE", "acta::projects::delete"),
 
-            Case::CreateWebhook => ("POST", "webhooks:create"),
-            Case::ListWebhooks => ("GET", "webhooks:read"),
-            Case::GetWebhook => ("GET", "webhooks:read"),
-            Case::UpdateWebhook => ("PATCH", "webhooks:update"),
-            Case::DeleteWebhook => ("DELETE", "webhooks:delete"),
-            Case::ListWebhookDeliveries => ("GET", "webhooks:read"),
+            Case::CreateWebhook => ("POST", "acta::webhooks::create"),
+            Case::ListWebhooks => ("GET", "acta::webhooks::read"),
+            Case::GetWebhook => ("GET", "acta::webhooks::read"),
+            Case::UpdateWebhook => ("PATCH", "acta::webhooks::update"),
+            Case::DeleteWebhook => ("DELETE", "acta::webhooks::delete"),
+            Case::ListWebhookDeliveries => ("GET", "acta::webhooks::read"),
 
-            Case::ListTags => ("GET", "config:read"),
-            Case::CreateTag => ("POST", "config:create"),
-            Case::ListUsedLabels => ("GET", "config:read"),
-            Case::UpdateTag => ("PATCH", "config:update"),
-            Case::DeleteTag => ("DELETE", "config:delete"),
-            Case::ListPropertyDefinitions => ("GET", "config:read"),
-            Case::CreatePropertyDefinition => ("POST", "config:create"),
-            Case::DeletePropertyDefinition => ("DELETE", "config:delete"),
+            Case::ListTags => ("GET", "acta::config::read"),
+            Case::CreateTag => ("POST", "acta::config::create"),
+            Case::ListUsedLabels => ("GET", "acta::config::read"),
+            Case::UpdateTag => ("PATCH", "acta::config::update"),
+            Case::DeleteTag => ("DELETE", "acta::config::delete"),
+            Case::ListPropertyDefinitions => ("GET", "acta::config::read"),
+            Case::CreatePropertyDefinition => ("POST", "acta::config::create"),
+            Case::DeletePropertyDefinition => ("DELETE", "acta::config::delete"),
 
-            Case::RenameWorkspace => ("PATCH", "config:update"),
-            Case::SemanticReindexPlan => ("GET", "config:read"),
-            Case::SemanticReindexStart => ("POST", "config:update"),
+            Case::RenameWorkspace => ("PATCH", "acta::config::update"),
+            Case::SemanticReindexPlan => ("GET", "acta::config::read"),
+            Case::SemanticReindexStart => ("POST", "acta::config::update"),
 
-            Case::ListProjectGrants => ("GET", "grants:read"),
-            Case::ListWorkspaceGrants => ("GET", "grants:read"),
+            Case::ListProjectGrants => ("GET", "custos::grants::read"),
+            Case::ListWorkspaceGrants => ("GET", "custos::grants::read"),
 
-            Case::ListSavedSearches => ("GET", "saved_searches:read"),
-            Case::CreateSavedSearch => ("POST", "saved_searches:create"),
-            Case::RenameSavedSearch => ("PATCH", "saved_searches:update"),
-            Case::DeleteSavedSearch => ("DELETE", "saved_searches:delete"),
+            Case::ListSavedSearches => ("GET", "acta::saved_searches::read"),
+            Case::CreateSavedSearch => ("POST", "acta::saved_searches::create"),
+            Case::RenameSavedSearch => ("PATCH", "acta::saved_searches::update"),
+            Case::DeleteSavedSearch => ("DELETE", "acta::saved_searches::delete"),
 
-            Case::ListTaskViews => ("GET", "task_views:read"),
-            Case::CreateTaskView => ("POST", "task_views:create"),
-            Case::GetTaskView => ("GET", "task_views:read"),
-            Case::UpdateTaskView => ("PATCH", "task_views:update"),
-            Case::DeleteTaskView => ("DELETE", "task_views:delete"),
+            Case::ListTaskViews => ("GET", "acta::task_views::read"),
+            Case::CreateTaskView => ("POST", "acta::task_views::create"),
+            Case::GetTaskView => ("GET", "acta::task_views::read"),
+            Case::UpdateTaskView => ("PATCH", "acta::task_views::update"),
+            Case::DeleteTaskView => ("DELETE", "acta::task_views::delete"),
         }
     }
 }
@@ -2262,7 +2262,7 @@ async fn partial_document_edit_requires_docs_update_capability() {
         vec![
             Capability::ALL
                 .into_iter()
-                .find(|capability| capability.as_str() == "docs:update")
+                .find(|capability| capability.as_str() == "acta::docs::update")
                 .expect("docs:update capability"),
         ],
     )
@@ -2292,7 +2292,7 @@ async fn partial_document_edit_requires_docs_update_capability() {
         vec![
             Capability::ALL
                 .into_iter()
-                .find(|capability| capability.as_str() == "docs:read")
+                .find(|capability| capability.as_str() == "acta::docs::read")
                 .expect("docs:read capability"),
         ],
     )
@@ -2317,7 +2317,7 @@ async fn partial_document_edit_requires_docs_update_capability() {
         problem
             .detail
             .as_deref()
-            .is_some_and(|detail| detail.contains("lacks required scope: docs:update"))
+            .is_some_and(|detail| detail.contains("lacks required scope: acta::docs::update"))
     );
 
     db.teardown().await;
@@ -2346,7 +2346,7 @@ async fn document_move_batch_requires_docs_update_capability() {
         vec![
             Capability::ALL
                 .into_iter()
-                .find(|capability| capability.as_str() == "docs:update")
+                .find(|capability| capability.as_str() == "acta::docs::update")
                 .expect("docs:update capability"),
         ],
     )
@@ -2377,7 +2377,7 @@ async fn document_move_batch_requires_docs_update_capability() {
         vec![
             Capability::ALL
                 .into_iter()
-                .find(|capability| capability.as_str() == "docs:read")
+                .find(|capability| capability.as_str() == "acta::docs::read")
                 .expect("docs:read capability"),
         ],
     )
@@ -2402,7 +2402,7 @@ async fn document_move_batch_requires_docs_update_capability() {
         problem
             .detail
             .as_deref()
-            .is_some_and(|detail| detail.contains("lacks required scope: docs:update"))
+            .is_some_and(|detail| detail.contains("lacks required scope: acta::docs::update"))
     );
 
     db.teardown().await;
@@ -2432,7 +2432,7 @@ async fn reference_batch_requires_tasks_update_capability() {
         vec![
             Capability::ALL
                 .into_iter()
-                .find(|capability| capability.as_str() == "tasks:update")
+                .find(|capability| capability.as_str() == "acta::tasks::update")
                 .expect("tasks:update capability"),
         ],
     )
@@ -2468,7 +2468,7 @@ async fn reference_batch_requires_tasks_update_capability() {
         vec![
             Capability::ALL
                 .into_iter()
-                .find(|capability| capability.as_str() == "tasks:read")
+                .find(|capability| capability.as_str() == "acta::tasks::read")
                 .expect("tasks:read capability"),
         ],
     )
@@ -2496,7 +2496,7 @@ async fn reference_batch_requires_tasks_update_capability() {
         problem
             .detail
             .as_deref()
-            .is_some_and(|detail| detail.contains("lacks required scope: tasks:update"))
+            .is_some_and(|detail| detail.contains("lacks required scope: acta::tasks::update"))
     );
 
     db.teardown().await;

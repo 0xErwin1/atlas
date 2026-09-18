@@ -270,8 +270,8 @@ describe('ApiKeysPanel — capability scope grid', () => {
     await wrapper.find('input[placeholder="ci-deploy"]').setValue('ci-bot');
 
     // Toggle out of canonical order to prove the grid emits a sorted set.
-    await wrapper.find('[data-scope="projects:delete"]').setValue(true);
-    await wrapper.find('[data-scope="tasks:read"]').setValue(true);
+    await wrapper.find('[data-scope="acta::projects::delete"]').setValue(true);
+    await wrapper.find('[data-scope="acta::tasks::read"]').setValue(true);
 
     const createBtn = wrapper.findAll('button').find((b) => b.text().includes('Create key'));
     if (createBtn === undefined) throw new Error('expected a Create key button');
@@ -279,25 +279,33 @@ describe('ApiKeysPanel — capability scope grid', () => {
     await flushPromises();
 
     expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({ scopes: ['tasks:read', 'projects:delete'] }),
+      expect.objectContaining({ scopes: ['acta::tasks::read', 'acta::projects::delete'] }),
     );
   });
 
   it('pre-populates the edit grid from the key scopes and saves the full replacement set', async () => {
-    const store = setup([key({ scopes: ['tasks:read', 'docs:update'] })]);
+    const store = setup([key({ scopes: ['acta::tasks::read', 'acta::docs::update'] })]);
     const save = vi.spyOn(store, 'setKeyScopes').mockResolvedValue(true);
 
     const wrapper = await mountExpanded();
 
-    expect((wrapper.find('[data-scope="tasks:read"]').element as HTMLInputElement).checked).toBe(true);
-    expect((wrapper.find('[data-scope="docs:update"]').element as HTMLInputElement).checked).toBe(true);
-    expect((wrapper.find('[data-scope="boards:create"]').element as HTMLInputElement).checked).toBe(false);
+    expect((wrapper.find('[data-scope="acta::tasks::read"]').element as HTMLInputElement).checked).toBe(true);
+    expect((wrapper.find('[data-scope="acta::docs::update"]').element as HTMLInputElement).checked).toBe(
+      true,
+    );
+    expect((wrapper.find('[data-scope="acta::boards::create"]').element as HTMLInputElement).checked).toBe(
+      false,
+    );
 
-    await wrapper.find('[data-scope="boards:create"]').setValue(true);
+    await wrapper.find('[data-scope="acta::boards::create"]').setValue(true);
     await wrapper.find('[data-action="save-scopes"]').trigger('click');
     await flushPromises();
 
-    expect(save).toHaveBeenCalledWith('k1', ['tasks:read', 'docs:update', 'boards:create']);
+    expect(save).toHaveBeenCalledWith('k1', [
+      'acta::tasks::read',
+      'acta::docs::update',
+      'acta::boards::create',
+    ]);
   });
 
   it('renders the four new capability families and offers grants as read-only', async () => {
@@ -313,20 +321,20 @@ describe('ApiKeysPanel — capability scope grid', () => {
     await nextTick();
 
     // Each new family exposes a read cell.
-    expect(wrapper.find('[data-scope="config:read"]').exists()).toBe(true);
-    expect(wrapper.find('[data-scope="grants:read"]').exists()).toBe(true);
-    expect(wrapper.find('[data-scope="saved_searches:read"]').exists()).toBe(true);
-    expect(wrapper.find('[data-scope="task_views:read"]').exists()).toBe(true);
+    expect(wrapper.find('[data-scope="acta::config::read"]').exists()).toBe(true);
+    expect(wrapper.find('[data-scope="custos::grants::read"]').exists()).toBe(true);
+    expect(wrapper.find('[data-scope="acta::saved_searches::read"]').exists()).toBe(true);
+    expect(wrapper.find('[data-scope="acta::task_views::read"]').exists()).toBe(true);
 
     // config / saved_searches / task_views keep the full CRUD row.
-    expect(wrapper.find('[data-scope="config:delete"]').exists()).toBe(true);
-    expect(wrapper.find('[data-scope="saved_searches:update"]').exists()).toBe(true);
-    expect(wrapper.find('[data-scope="task_views:create"]').exists()).toBe(true);
+    expect(wrapper.find('[data-scope="acta::config::delete"]').exists()).toBe(true);
+    expect(wrapper.find('[data-scope="acta::saved_searches::update"]').exists()).toBe(true);
+    expect(wrapper.find('[data-scope="acta::task_views::create"]').exists()).toBe(true);
 
     // grants is read-only: the write cells are inert, never interactive checkboxes.
-    expect(wrapper.find('[data-scope="grants:create"]').exists()).toBe(false);
-    expect(wrapper.find('[data-scope="grants:update"]').exists()).toBe(false);
-    expect(wrapper.find('[data-scope="grants:delete"]').exists()).toBe(false);
+    expect(wrapper.find('[data-scope="custos::grants::create"]').exists()).toBe(false);
+    expect(wrapper.find('[data-scope="custos::grants::update"]').exists()).toBe(false);
+    expect(wrapper.find('[data-scope="custos::grants::delete"]').exists()).toBe(false);
   });
 
   it('emits new-family scopes in canonical order and never a grants write scope', async () => {
@@ -354,9 +362,9 @@ describe('ApiKeysPanel — capability scope grid', () => {
 
     // Toggle out of canonical order to prove the grid emits a sorted set that
     // includes only grants:read from the read-only grants family.
-    await wrapper.find('[data-scope="task_views:read"]').setValue(true);
-    await wrapper.find('[data-scope="grants:read"]').setValue(true);
-    await wrapper.find('[data-scope="config:create"]').setValue(true);
+    await wrapper.find('[data-scope="acta::task_views::read"]').setValue(true);
+    await wrapper.find('[data-scope="custos::grants::read"]').setValue(true);
+    await wrapper.find('[data-scope="acta::config::create"]').setValue(true);
 
     const createBtn = wrapper.findAll('button').find((b) => b.text().includes('Create key'));
     if (createBtn === undefined) throw new Error('expected a Create key button');
@@ -364,7 +372,9 @@ describe('ApiKeysPanel — capability scope grid', () => {
     await flushPromises();
 
     expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({ scopes: ['config:create', 'grants:read', 'task_views:read'] }),
+      expect.objectContaining({
+        scopes: ['acta::config::create', 'custos::grants::read', 'acta::task_views::read'],
+      }),
     );
   });
 });

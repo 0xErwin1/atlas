@@ -12,7 +12,7 @@ type Action = (typeof ACTIONS)[number];
  * catalog is asymmetric: most families cover all four CRUD actions, but
  * `grants` is read-only. Every value in `cells` is typed as `ApiKeyScope`, so
  * the compiler rejects any token absent from the generated union (e.g.
- * `grants:create`) — the grid can only ever emit valid scopes.
+ * `custos::grants::create`) — the grid can only ever emit valid scopes.
  */
 type ScopeRow = {
   family: string;
@@ -23,69 +23,89 @@ type ScopeRow = {
 const SCOPE_GRID: readonly ScopeRow[] = [
   {
     family: 'tasks',
-    cells: { read: 'tasks:read', create: 'tasks:create', update: 'tasks:update', delete: 'tasks:delete' },
+    cells: {
+      read: 'acta::tasks::read',
+      create: 'acta::tasks::create',
+      update: 'acta::tasks::update',
+      delete: 'acta::tasks::delete',
+    },
   },
   {
     family: 'docs',
-    cells: { read: 'docs:read', create: 'docs:create', update: 'docs:update', delete: 'docs:delete' },
+    cells: {
+      read: 'acta::docs::read',
+      create: 'acta::docs::create',
+      update: 'acta::docs::update',
+      delete: 'acta::docs::delete',
+    },
   },
   {
     family: 'boards',
-    cells: { read: 'boards:read', create: 'boards:create', update: 'boards:update', delete: 'boards:delete' },
+    cells: {
+      read: 'acta::boards::read',
+      create: 'acta::boards::create',
+      update: 'acta::boards::update',
+      delete: 'acta::boards::delete',
+    },
   },
   {
     family: 'folders',
     cells: {
-      read: 'folders:read',
-      create: 'folders:create',
-      update: 'folders:update',
-      delete: 'folders:delete',
+      read: 'acta::folders::read',
+      create: 'acta::folders::create',
+      update: 'acta::folders::update',
+      delete: 'acta::folders::delete',
     },
   },
   {
     family: 'projects',
     cells: {
-      read: 'projects:read',
-      create: 'projects:create',
-      update: 'projects:update',
-      delete: 'projects:delete',
+      read: 'acta::projects::read',
+      create: 'acta::projects::create',
+      update: 'acta::projects::update',
+      delete: 'acta::projects::delete',
     },
   },
   {
     family: 'webhooks',
     cells: {
-      read: 'webhooks:read',
-      create: 'webhooks:create',
-      update: 'webhooks:update',
-      delete: 'webhooks:delete',
+      read: 'acta::webhooks::read',
+      create: 'acta::webhooks::create',
+      update: 'acta::webhooks::update',
+      delete: 'acta::webhooks::delete',
     },
   },
   {
     family: 'config',
-    cells: { read: 'config:read', create: 'config:create', update: 'config:update', delete: 'config:delete' },
+    cells: {
+      read: 'acta::config::read',
+      create: 'acta::config::create',
+      update: 'acta::config::update',
+      delete: 'acta::config::delete',
+    },
   },
   {
     family: 'grants',
-    cells: { read: 'grants:read' },
+    cells: { read: 'custos::grants::read' },
   },
   {
     family: 'saved_searches',
     label: 'saved searches',
     cells: {
-      read: 'saved_searches:read',
-      create: 'saved_searches:create',
-      update: 'saved_searches:update',
-      delete: 'saved_searches:delete',
+      read: 'acta::saved_searches::read',
+      create: 'acta::saved_searches::create',
+      update: 'acta::saved_searches::update',
+      delete: 'acta::saved_searches::delete',
     },
   },
   {
     family: 'task_views',
     label: 'task views',
     cells: {
-      read: 'task_views:read',
-      create: 'task_views:create',
-      update: 'task_views:update',
-      delete: 'task_views:delete',
+      read: 'acta::task_views::read',
+      create: 'acta::task_views::create',
+      update: 'acta::task_views::update',
+      delete: 'acta::task_views::delete',
     },
   },
 ];

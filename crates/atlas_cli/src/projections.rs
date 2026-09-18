@@ -3587,11 +3587,14 @@ mod tests {
         dto.scopes = vec![ApiKeyScope::TasksRead, ApiKeyScope::ProjectsDelete];
         let proj = ApiKeyProjection::from(dto);
 
-        assert_eq!(proj.scopes, vec!["tasks:read", "projects:delete"]);
+        assert_eq!(
+            proj.scopes,
+            vec!["acta::tasks::read", "acta::projects::delete"]
+        );
 
         let value = serde_json::to_value(&proj).unwrap();
-        assert_eq!(value["scopes"][0], "tasks:read");
-        assert_eq!(value["scopes"][1], "projects:delete");
+        assert_eq!(value["scopes"][0], "acta::tasks::read");
+        assert_eq!(value["scopes"][1], "acta::projects::delete");
     }
 
     #[test]
