@@ -105,6 +105,7 @@ async fn api_key_principal_is_forbidden_on_both_endpoints() {
     let created_key = owner
         .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
+            key_kind: None,
             name: "agent-key".to_string(),
             r#type: None,
             expires_at: None,

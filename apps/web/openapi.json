@@ -16360,6 +16360,7 @@
           "id",
           "name",
           "type",
+          "key_kind",
           "created_at",
           "is_global",
           "scopes"
@@ -16384,6 +16385,10 @@
             "type": "boolean",
             "description": "When true, the key reaches every workspace its creator can reach (capped at\neditor), instead of only workspaces where it holds an explicit grant."
           },
+          "key_kind": {
+            "type": "string",
+            "description": "Authoritative credential kind: `\"personal\"` (linked to the owner's\nuser principal) or `\"agent\"` (fresh agent principal, editor cap)."
+          },
           "last_used_at": {
             "type": [
               "string",
@@ -16406,11 +16411,11 @@
             "items": {
               "$ref": "#/components/schemas/ApiKeyScope"
             },
-            "description": "The key's capability scopes, in canonical `family:action` order."
+            "description": "The key's capability scopes, in the catalog's canonical order (wire\nspelling `acta::<family>::<action>`)."
           },
           "type": {
             "type": "string",
-            "description": "Key purpose: `\"agent\"` | `\"cli\"` | `\"bot\"` | `\"integration\"`."
+            "description": "Key purpose: `\"agent\"` | `\"cli\"` | `\"bot\"` | `\"integration\"`. This is\nV1 attribution only and does not vary the key's authority; a personal\nkey still carries `type = \"agent\"`. `key_kind` is the authoritative\ncredential kind."
           }
         }
       },
@@ -18001,6 +18006,13 @@
               }
             ]
           },
+          "key_kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Credential kind: `\"personal\"` links the key to the creator's user\nprincipal (the key acts as the user); `\"agent\"` keeps the agent editor\ncap. Defaults to `\"agent\"` — never widening authority by omission. The\nminted token prefix mirrors this choice: `atlas_pk_…` personal,\n`atlas_ak_…` agent."
+          },
           "name": {
             "type": "string"
           },
@@ -18012,14 +18024,14 @@
             "items": {
               "$ref": "#/components/schemas/ApiKeyScope"
             },
-            "description": "Capability scopes to grant the new key. Omitted or empty defaults to\nread-only access to every family (`{family}:read` for all five families)."
+            "description": "Capability scopes to grant the new key. Omitted or empty defaults to\nread-only access to the five default families (`acta::<family>::read`\nfor tasks, docs, boards, folders, projects)."
           },
           "type": {
             "type": [
               "string",
               "null"
             ],
-            "description": "Key purpose: `\"agent\"` | `\"cli\"` | `\"bot\"` | `\"integration\"`. Defaults to `\"agent\"`."
+            "description": "Key purpose: `\"agent\"` | `\"cli\"` | `\"bot\"` | `\"integration\"`. Defaults to `\"agent\"`.\n\nThis is V1 attribution only (a personal key still carries `type =\n\"agent\"`); it does not vary the key's authority. `key_kind` is the\nauthoritative credential kind."
           }
         }
       },
@@ -19412,6 +19424,7 @@
                 "id",
                 "name",
                 "type",
+                "key_kind",
                 "created_at",
                 "is_global",
                 "scopes"
@@ -19436,6 +19449,10 @@
                   "type": "boolean",
                   "description": "When true, the key reaches every workspace its creator can reach (capped at\neditor), instead of only workspaces where it holds an explicit grant."
                 },
+                "key_kind": {
+                  "type": "string",
+                  "description": "Authoritative credential kind: `\"personal\"` (linked to the owner's\nuser principal) or `\"agent\"` (fresh agent principal, editor cap)."
+                },
                 "last_used_at": {
                   "type": [
                     "string",
@@ -19458,11 +19475,11 @@
                   "items": {
                     "$ref": "#/components/schemas/ApiKeyScope"
                   },
-                  "description": "The key's capability scopes, in canonical `family:action` order."
+                  "description": "The key's capability scopes, in the catalog's canonical order (wire\nspelling `acta::<family>::<action>`)."
                 },
                 "type": {
                   "type": "string",
-                  "description": "Key purpose: `\"agent\"` | `\"cli\"` | `\"bot\"` | `\"integration\"`."
+                  "description": "Key purpose: `\"agent\"` | `\"cli\"` | `\"bot\"` | `\"integration\"`. This is\nV1 attribution only and does not vary the key's authority; a personal\nkey still carries `type = \"agent\"`. `key_kind` is the authoritative\ncredential kind."
                 }
               }
             }

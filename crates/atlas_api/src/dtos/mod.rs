@@ -424,14 +424,26 @@ pub struct InitialGrantRequest {
 pub struct CreateUserApiKeyRequest {
     pub name: String,
     /// Key purpose: `"agent"` | `"cli"` | `"bot"` | `"integration"`. Defaults to `"agent"`.
+    ///
+    /// This is V1 attribution only (a personal key still carries `type =
+    /// "agent"`); it does not vary the key's authority. `key_kind` is the
+    /// authoritative credential kind.
     #[serde(default)]
     pub r#type: Option<String>,
+    /// Credential kind: `"personal"` links the key to the creator's user
+    /// principal (the key acts as the user); `"agent"` keeps the agent editor
+    /// cap. Defaults to `"agent"` — never widening authority by omission. The
+    /// minted token prefix mirrors this choice: `atlas_pk_…` personal,
+    /// `atlas_ak_…` agent.
+    #[serde(default)]
+    pub key_kind: Option<String>,
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
     /// Optional initial grant so the key is immediately usable in one workspace.
     #[serde(default)]
     pub initial_grant: Option<InitialGrantRequest>,
     /// Capability scopes to grant the new key. Omitted or empty defaults to
-    /// read-only access to every family (`{family}:read` for all five families).
+    /// read-only access to the five default families (`acta::<family>::read`
+    /// for tasks, docs, boards, folders, projects).
     #[serde(default)]
     pub scopes: Option<Vec<ApiKeyScope>>,
 }
@@ -458,8 +470,14 @@ pub struct ApiKeyCreated {
 pub struct ApiKeyDto {
     pub id: uuid::Uuid,
     pub name: String,
-    /// Key purpose: `"agent"` | `"cli"` | `"bot"` | `"integration"`.
+    /// Key purpose: `"agent"` | `"cli"` | `"bot"` | `"integration"`. This is
+    /// V1 attribution only and does not vary the key's authority; a personal
+    /// key still carries `type = "agent"`. `key_kind` is the authoritative
+    /// credential kind.
     pub r#type: String,
+    /// Authoritative credential kind: `"personal"` (linked to the owner's
+    /// user principal) or `"agent"` (fresh agent principal, editor cap).
+    pub key_kind: String,
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
     pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,
     pub revoked_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -467,7 +485,8 @@ pub struct ApiKeyDto {
     /// When true, the key reaches every workspace its creator can reach (capped at
     /// editor), instead of only workspaces where it holds an explicit grant.
     pub is_global: bool,
-    /// The key's capability scopes, in canonical `family:action` order.
+    /// The key's capability scopes, in the catalog's canonical order (wire
+    /// spelling `acta::<family>::<action>`).
     pub scopes: Vec<ApiKeyScope>,
 }
 

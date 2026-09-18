@@ -151,6 +151,7 @@ async fn sh7_platform_admin_authorization_matrix_with_a_seeded_finding() {
     let api_key = plain
         .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
+            key_kind: None,
             name: "doctor-agent".to_string(),
             r#type: None,
             expires_at: None,

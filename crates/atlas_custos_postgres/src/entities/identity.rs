@@ -1,3 +1,4 @@
+use atlas_core::error::DomainError;
 use atlas_core::principal::ApiKeyId;
 use atlas_core::principal::UserId;
 use atlas_custos::capability::Capability;
@@ -6,6 +7,7 @@ use atlas_custos::entities::identity::ApiKey;
 use atlas_custos::entities::identity::ApiKeyType;
 use atlas_custos::entities::identity::Session;
 use atlas_custos::entities::identity::User;
+use atlas_custos::entities::principals::PrincipalKind;
 use atlas_custos::ids::ActivationTokenId;
 use atlas_custos::ids::SessionId;
 use chrono::{DateTime, Utc};
@@ -105,7 +107,20 @@ pub mod api_key {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub enum Relation {
+        #[sea_orm(
+            belongs_to = "super::super::principals::principal::Entity",
+            from = "Column::PrincipalId",
+            to = "super::super::principals::principal::Column::Id"
+        )]
+        Principal,
+    }
+
+    impl Related<super::super::principals::principal::Entity> for Entity {
+        fn to() -> RelationDef {
+            Relation::Principal.def()
+        }
+    }
 
     impl ActiveModelBehavior for ActiveModel {}
 }
@@ -149,7 +164,7 @@ pub fn session_from(m: session::Model) -> Session {
     }
 }
 
-pub fn api_key_from(m: api_key::Model) -> ApiKey {
+pub fn api_key_from(m: api_key::Model, principal_kind: PrincipalKind) -> ApiKey {
     ApiKey {
         id: ApiKeyId(m.id),
         workspace_id: m.workspace_id.map(atlas_custos::WorkspaceScope),
@@ -163,7 +178,26 @@ pub fn api_key_from(m: api_key::Model) -> ApiKey {
         created_at: m.created_at,
         is_global: m.is_global,
         scopes: capabilities_from_stored(&m.scopes),
+        principal_kind,
     }
+}
+
+/// Resolves the credential-kind discriminator from the joined principal row.
+/// An unknown stored kind is a data-integrity fault and surfaces as an error.
+/// `None` is structurally impossible (`api_keys.principal_id` is NOT NULL with
+/// an FK to `custos.principals`); a missing row defaults to `Agent`, which is
+/// fail-closed: a personal-prefix token then fails the middleware's
+/// prefix/kind agreement check instead of widening to user authority.
+pub(crate) fn principal_kind_from(
+    principal: &Option<crate::entities::principals::principal::Model>,
+) -> Result<PrincipalKind, DomainError> {
+    principal
+        .as_ref()
+        .map(|p| p.kind.parse::<PrincipalKind>())
+        .unwrap_or(Ok(PrincipalKind::Agent))
+        .map_err(|e| DomainError::InvalidInput {
+            message: format!("stored principal kind is invalid: {e}"),
+        })
 }
 
 /// Parses stored scope strings into `Capability`s, fail-closed: any entry that

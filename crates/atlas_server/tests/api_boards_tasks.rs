@@ -8471,6 +8471,7 @@ async fn revoked_api_key_assignee_is_hidden_after_revoke() {
     let api_key = client
         .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
+            key_kind: None,
             name: "agent-to-revoke".to_string(),
             r#type: None,
             expires_at: None,

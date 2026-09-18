@@ -1565,6 +1565,7 @@ async fn audit_api_key_created_happy_path_writes_one_row() {
     let created = user_client
         .custos()
         .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
+            key_kind: None,
             name: "audit-akc-key".to_string(),
             r#type: Some("agent".to_string()),
             expires_at: None,
@@ -1612,6 +1613,7 @@ async fn audit_api_key_created_by_api_key_principal_writes_zero_rows() {
     let key = user_client
         .custos()
         .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
+            key_kind: None,
             name: "audit-akc-reject-key".to_string(),
             r#type: Some("agent".to_string()),
             expires_at: None,
@@ -1629,6 +1631,7 @@ async fn audit_api_key_created_by_api_key_principal_writes_zero_rows() {
     let result = key_client
         .custos()
         .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
+            key_kind: None,
             name: "should-fail".to_string(),
             r#type: Some("agent".to_string()),
             expires_at: None,
@@ -1666,6 +1669,7 @@ async fn audit_api_key_revoked_happy_path_writes_one_row() {
     let key = user_client
         .custos()
         .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
+            key_kind: None,
             name: "audit-akr-key".to_string(),
             r#type: Some("agent".to_string()),
             expires_at: None,

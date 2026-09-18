@@ -234,6 +234,7 @@ async fn create_saved_search_allows_same_name_for_different_owners() {
     let key_created = user_client
         .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
+            key_kind: None,
             name: "test-key".to_string(),
             r#type: None,
             expires_at: None,
@@ -296,6 +297,7 @@ async fn list_saved_searches_is_owner_scoped_sorted_and_excludes_deleted() {
     let key_created = client
         .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
+            key_kind: None,
             name: "other-owner-key".to_string(),
             r#type: None,
             expires_at: None,
@@ -472,6 +474,7 @@ async fn rename_saved_search_returns_404_for_non_owned_id() {
     let key_created = client_a
         .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
+            key_kind: None,
             name: "intruder-key".to_string(),
             r#type: None,
             expires_at: None,
@@ -614,6 +617,7 @@ async fn delete_saved_search_returns_404_for_non_owned_id() {
     let key_created = client_a
         .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
+            key_kind: None,
             name: "intruder-key".to_string(),
             r#type: None,
             expires_at: None,

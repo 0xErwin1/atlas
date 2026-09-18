@@ -124,6 +124,7 @@ async fn agent_cannot_share_project() {
     let key_created = owner
         .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
+            key_kind: None,
             name: "test-agent-key".to_string(),
             r#type: None,
             expires_at: None,
@@ -457,6 +458,7 @@ async fn agent_with_grant_sees_private_project_in_list() {
     let key_created = owner
         .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
+            key_kind: None,
             name: "agent-visibility-key".to_string(),
             r#type: None,
             expires_at: None,
@@ -537,6 +539,7 @@ async fn agent_without_grant_cannot_see_workspace_visibility_project() {
     let key_created = owner
         .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
+            key_kind: None,
             name: "no-grant-agent-key".to_string(),
             r#type: None,
             expires_at: None,
@@ -690,6 +693,7 @@ async fn share_denied_403_does_not_leak_variant_name() {
     let key_created = owner
         .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
+            key_kind: None,
             name: "sharedeny-key".to_string(),
             r#type: None,
             expires_at: None,

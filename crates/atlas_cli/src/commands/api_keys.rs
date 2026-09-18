@@ -155,6 +155,7 @@ async fn run_create(ctx: &Ctx, args: ApiKeysCreateArgs) -> Result<(), CliError> 
     let scopes = collect_scopes(&args.scopes)?;
 
     let body = CreateUserApiKeyRequest {
+        key_kind: None,
         name: args.name,
         r#type: args.r#type,
         expires_at,

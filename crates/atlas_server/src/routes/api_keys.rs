@@ -45,7 +45,7 @@ use sea_orm::TransactionTrait;
 use crate::{
     auth::{
         middleware::Principal as AuthPrincipal,
-        tokens::{generate_api_key, hash_token},
+        tokens::{generate_api_key_of_kind, hash_token},
     },
     authz::policy::{NewPermissionGrant, PermissionGrant, PermissionGrantId},
     error::ApiError,
@@ -56,6 +56,7 @@ use crate::{
 };
 use atlas_acta_postgres::repos::boards_tasks::PgTaskAssigneeRepo;
 use atlas_acta_postgres::repos::identity::{PgWorkspaceRepo, WorkspaceRepo};
+use atlas_custos::entities::identity::ApiKeyKind;
 use atlas_custos_postgres::repos::identity::{PgApiKeyRepo, PgUserRepo};
 use atlas_custos_postgres::repos::permissions::PgPermissionGrantRepo;
 use atlas_custos_postgres::repos::security_audit::PgSecurityAuditRepo;
@@ -76,6 +77,16 @@ fn parse_key_type(s: Option<&str>) -> Result<ApiKeyType, ApiError> {
             message: format!(
                 "invalid key type: {other}; expected 'agent', 'cli', 'bot', or 'integration'"
             ),
+        }),
+    }
+}
+
+fn parse_key_kind(s: Option<&str>) -> Result<ApiKeyKind, ApiError> {
+    match s.unwrap_or("agent") {
+        "personal" => Ok(ApiKeyKind::Personal),
+        "agent" => Ok(ApiKeyKind::Agent),
+        other => Err(ApiError::InvalidInput {
+            message: format!("invalid key kind: {other}; expected 'personal' or 'agent'"),
         }),
     }
 }
@@ -221,6 +232,7 @@ fn key_to_dto(k: &atlas_custos::entities::identity::ApiKey) -> ApiKeyDto {
         id: k.id.0,
         name: k.name.clone(),
         r#type: k.type_.as_str().to_string(),
+        key_kind: k.key_kind().as_str().to_string(),
         expires_at: k.expires_at,
         last_used_at: k.last_used_at,
         revoked_at: k.revoked_at,
@@ -263,7 +275,11 @@ pub(crate) async fn create_user_api_key(
     };
 
     let key_type = parse_key_type(body.r#type.as_deref())?;
-    let secret = generate_api_key();
+    let key_kind = parse_key_kind(body.key_kind.as_deref())?;
+    // The token prefix and the linked principal come from this single decision,
+    // so a freshly minted key can never carry a prefix that disagrees with its
+    // principal kind.
+    let secret = generate_api_key_of_kind(key_kind);
     let token_hash = hash_token(&secret);
 
     // Omitted or empty scopes fall back to `Capability::DEFAULT_READ_ONLY`: read
@@ -287,7 +303,7 @@ pub(crate) async fn create_user_api_key(
         message: e.to_string(),
     })?;
 
-    let key = PgApiKeyRepo::create_for_user_in(&txn, user_id, new_key)
+    let key = PgApiKeyRepo::create_for_user_in_with_kind(&txn, user_id, key_kind, new_key)
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),

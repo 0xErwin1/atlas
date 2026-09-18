@@ -12,6 +12,7 @@ use support::{TestDb, TestServer, login_user, login_user_with_workspace};
 
 fn key_req(name: &str) -> CreateUserApiKeyRequest {
     CreateUserApiKeyRequest {
+        key_kind: None,
         name: name.to_string(),
         r#type: None,
         expires_at: None,
@@ -22,6 +23,7 @@ fn key_req(name: &str) -> CreateUserApiKeyRequest {
 
 fn user_key_req(name: &str) -> CreateUserApiKeyRequest {
     CreateUserApiKeyRequest {
+        key_kind: None,
         name: name.to_string(),
         r#type: None,
         expires_at: None,
@@ -66,6 +68,7 @@ async fn create_user_api_key_respects_explicit_type() {
     let (user, _) = login_user(&server, &db, "cuk-user2").await;
 
     let req = CreateUserApiKeyRequest {
+        key_kind: None,
         name: "cli-key".to_string(),
         r#type: Some("cli".to_string()),
         expires_at: None,
@@ -92,6 +95,7 @@ async fn create_user_api_key_rejects_invalid_type() {
     let (user, _) = login_user(&server, &db, "cuk-user3").await;
 
     let req = CreateUserApiKeyRequest {
+        key_kind: None,
         name: "bad-type-key".to_string(),
         r#type: Some("superuser".to_string()),
         expires_at: None,
@@ -102,6 +106,111 @@ async fn create_user_api_key_rejects_invalid_type() {
     let err = user.custos().create_user_api_key(req).await;
 
     assert!(err.is_err(), "invalid type must be rejected");
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn create_user_api_key_personal_mints_an_atlas_pk_token_and_reports_the_kind() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (user, _) = login_user(&server, &db, "cuk-personal1").await;
+
+    let req = CreateUserApiKeyRequest {
+        name: "my-personal-key".to_string(),
+        r#type: None,
+        key_kind: Some("personal".to_string()),
+        expires_at: None,
+        initial_grant: None,
+        scopes: None,
+    };
+
+    let created = user
+        .custos()
+        .create_user_api_key(req)
+        .await
+        .expect("create personal api key");
+
+    assert!(
+        created.secret.starts_with("atlas_pk_"),
+        "personal key must use the atlas_pk_ prefix, got {}",
+        created.secret
+    );
+
+    let page = user
+        .custos()
+        .list_user_api_keys(None, None)
+        .await
+        .expect("list user api keys");
+    let dto = page
+        .items
+        .iter()
+        .find(|k| k.id == created.id)
+        .expect("created key must be listed");
+    assert_eq!(dto.key_kind, "personal");
+    // V1 attribution stays untouched: a personal key still carries type
+    // "agent" because its DB CHECK only allows agent|cli|bot|integration.
+    assert_eq!(dto.r#type, "agent");
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn create_user_api_key_rejects_invalid_key_kind() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (user, _) = login_user(&server, &db, "cuk-kind3").await;
+
+    let req = CreateUserApiKeyRequest {
+        name: "bad-kind-key".to_string(),
+        r#type: None,
+        key_kind: Some("superuser".to_string()),
+        expires_at: None,
+        initial_grant: None,
+        scopes: None,
+    };
+
+    let err = user.custos().create_user_api_key(req).await;
+
+    assert!(err.is_err(), "invalid key_kind must be rejected");
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn create_user_api_key_without_key_kind_defaults_to_agent() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (user, _) = login_user(&server, &db, "cuk-default-agent").await;
+
+    // No key_kind sent at all: the pre-slice behaviour (agent principal,
+    // editor cap) must be preserved, and the token must be self-describing.
+    let created = user
+        .custos()
+        .create_user_api_key(key_req("default-kind-key"))
+        .await
+        .expect("create default api key");
+
+    assert!(
+        created.secret.starts_with("atlas_ak_"),
+        "default key must use the atlas_ak_ prefix, got {}",
+        created.secret
+    );
+
+    let page = user
+        .custos()
+        .list_user_api_keys(None, None)
+        .await
+        .expect("list user api keys");
+    let dto = page
+        .items
+        .iter()
+        .find(|k| k.id == created.id)
+        .expect("created key must be listed");
+    assert_eq!(dto.key_kind, "agent");
 
     db.teardown().await;
 }
@@ -139,6 +248,7 @@ async fn create_user_api_key_with_initial_grant() {
     let (owner, ws, _) = login_user_with_workspace(&server, &db, "cuk-user5").await;
 
     let req = CreateUserApiKeyRequest {
+        key_kind: None,
         name: "granted-key".to_string(),
         r#type: None,
         expires_at: None,
@@ -183,6 +293,7 @@ async fn initial_grant_rejects_admin_role() {
     let (owner, ws, _) = login_user_with_workspace(&server, &db, "cuk-user6").await;
 
     let req = CreateUserApiKeyRequest {
+        key_kind: None,
         name: "admin-grant-key".to_string(),
         r#type: None,
         expires_at: None,
@@ -250,6 +361,7 @@ async fn list_user_api_keys_includes_type_field() {
 
     user.custos()
         .create_user_api_key(CreateUserApiKeyRequest {
+            key_kind: None,
             name: "typed-key".to_string(),
             r#type: Some("bot".to_string()),
             expires_at: None,
@@ -707,6 +819,7 @@ async fn api_key_member_dto_includes_key_type() {
     let (owner, ws, _) = login_user_with_workspace(&server, &db, "attr-user1").await;
 
     let req = CreateUserApiKeyRequest {
+        key_kind: None,
         name: "attr-bot".to_string(),
         r#type: Some("bot".to_string()),
         expires_at: None,
@@ -763,6 +876,7 @@ async fn create_user_api_key_default_scopes_grant_read_but_not_write() {
     let (owner, ws, _) = login_user_with_workspace(&server, &db, "cuk-default-scopes").await;
 
     let req = CreateUserApiKeyRequest {
+        key_kind: None,
         name: "default-scope-agent".to_string(),
         r#type: None,
         expires_at: None,
@@ -849,6 +963,7 @@ async fn create_user_api_key_explicit_scopes_round_trip() {
     let (owner, _) = login_user(&server, &db, "cuk-explicit-scopes").await;
 
     let req = CreateUserApiKeyRequest {
+        key_kind: None,
         name: "explicit-scope-agent".to_string(),
         r#type: None,
         expires_at: None,

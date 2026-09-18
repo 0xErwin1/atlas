@@ -843,6 +843,7 @@ async fn create_comment_as_api_key_reports_api_key_author() {
     let api_key = client
         .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
+            key_kind: None,
             name: "comment-bot".to_string(),
             r#type: None,
             expires_at: None,
@@ -1174,6 +1175,7 @@ async fn full_feeds_redact_deleted_targets_for_human_and_api_key_viewers() {
     let api_key = owner
         .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
+            key_kind: None,
             name: "feed-reader".into(),
             r#type: None,
             expires_at: None,
@@ -1782,6 +1784,7 @@ async fn disabled_or_revoked_principals_are_rejected_before_full_feed_projection
     let api_key = owner
         .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
+            key_kind: None,
             name: "revoked-feed-reader".into(),
             r#type: None,
             expires_at: None,
@@ -1811,6 +1814,7 @@ async fn disabled_or_revoked_principals_are_rejected_before_full_feed_projection
     let creator_disabled_key = owner
         .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
+            key_kind: None,
             name: "disabled-creator-feed-reader".into(),
             r#type: None,
             expires_at: None,
@@ -2320,6 +2324,7 @@ async fn list_comments_preserves_global_api_key_author_name() {
     let api_key = client
         .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
+            key_kind: None,
             name: "global-bot".to_string(),
             r#type: None,
             expires_at: None,

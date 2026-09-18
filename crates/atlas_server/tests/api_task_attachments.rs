@@ -392,6 +392,7 @@ async fn task_attachment_upload_list_download_delete_roundtrip() {
     let read_only_key = client
         .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
+            key_kind: None,
             name: "task-attachment-read-only".to_string(),
             r#type: None,
             expires_at: None,

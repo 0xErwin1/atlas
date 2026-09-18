@@ -635,6 +635,7 @@ async fn semantic_search_api_key_scope_filters_hit_families() {
     let key = owner
         .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
+            key_kind: None,
             name: "docs-only-semantic".to_owned(),
             r#type: None,
             expires_at: None,

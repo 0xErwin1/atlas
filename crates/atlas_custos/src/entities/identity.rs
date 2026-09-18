@@ -1,5 +1,6 @@
 use crate::WorkspaceScope;
 use crate::capability::Capability;
+use crate::entities::principals::PrincipalKind;
 use crate::ids::{ActivationTokenId, ApiKeyId, SessionId, UserId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -108,6 +109,41 @@ impl std::str::FromStr for ApiKeyType {
     }
 }
 
+/// The credential kind of an API key. A `Personal` key links to its owning
+/// user's principal (`custos.principals`, kind `user`) and acts as the user;
+/// an `Agent` key links to a fresh agent principal and stays capped at editor.
+/// The at-rest discriminator is the linked principal's kind (no new column);
+/// the token prefix (`atlas_pk_` / `atlas_ak_`) mirrors the same mint-time
+/// decision so the two can never disagree on a freshly created key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ApiKeyKind {
+    Personal,
+    #[default]
+    Agent,
+}
+
+impl ApiKeyKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ApiKeyKind::Personal => "personal",
+            ApiKeyKind::Agent => "agent",
+        }
+    }
+}
+
+impl std::str::FromStr for ApiKeyKind {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "personal" => Ok(ApiKeyKind::Personal),
+            "agent" => Ok(ApiKeyKind::Agent),
+            other => Err(format!("unknown api key kind: {other}")),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiKey {
     pub id: ApiKeyId,
@@ -131,6 +167,24 @@ pub struct ApiKey {
     /// The capabilities this key may exercise, gated on top of (never above)
     /// its resolved role. Empty means the key can read and write nothing.
     pub scopes: Vec<Capability>,
+    /// The kind of the `custos.principals` row this key links to: `User` for
+    /// personal keys (the principal is the owning user row itself), `Agent`
+    /// for agent keys (a fresh agent principal). This is the authoritative
+    /// credential-kind discriminator — there is no dedicated column, and the
+    /// middleware enforces that a presented token's prefix agrees with it.
+    pub principal_kind: PrincipalKind,
+}
+
+impl ApiKey {
+    /// The credential kind this key was minted as, derived from its linked
+    /// principal's kind: a `user` principal means a personal key, anything
+    /// else is an agent key.
+    pub fn key_kind(&self) -> ApiKeyKind {
+        match self.principal_kind {
+            PrincipalKind::User => ApiKeyKind::Personal,
+            PrincipalKind::Agent => ApiKeyKind::Agent,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
