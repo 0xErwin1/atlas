@@ -317,7 +317,7 @@ async fn down_restores_target_columns_and_survives_a_forward_only_orphan() {
         .await
         .expect("seed post-migration grant rows, including one orphaned by a never-live target");
 
-    // Reverts ten steps, not one: S3d appended `m20260830_000051_custos_set_schema`,
+    // Reverts twelve steps, not one: S3d appended `m20260830_000051_custos_set_schema`,
     // E11-S8 PR1 appended `m20260906_000052_grant_principal_idx` to `custos_new()`,
     // S4 PR9 appended `m20260831_000052_acta_platform_ui_state`, S4 PR11
     // appended `m20260901_000053_acta_identity_workspaces_set_schema`, S4
@@ -327,10 +327,13 @@ async fn down_restores_target_columns_and_survives_a_forward_only_orphan() {
     // S4 PR15 appended
     // `m20260905_000057_acta_search_attachments_lifecycle_set_schema`, and
     // E3-S3 PR3 appended `m20260906_000058_acta_platform_idempotency_keys`
-    // after this migration in `custos_new()`/`acta_new()`, so "the last
-    // applied migration" is now the E4-S1 custos principals migration rather
-    // than the O1 migration under test here. Reverting eleven steps first
-    // undoes the principals migration (dropping the `principal_id` columns
+    // after this migration in `custos_new()`/`acta_new()`, and E4-S1 PR2
+    // appended `m20260918_000054_custos_principals_not_null`, so "the last
+    // applied migration" is now the principals not-null migration rather
+    // than the O1 migration under test here. Reverting twelve steps first
+    // undoes the principals not-null migration (dropping the `NOT NULL`
+    // constraints on `users`/`api_keys.principal_id`), then undoes the
+    // principals migration (dropping the `principal_id` columns
     // and `custos.principals`), then drops the
     // idempotency-keys table, then undoes the
     // search/attachments/lifecycle-group move (moving
@@ -345,7 +348,7 @@ async fn down_restores_target_columns_and_survives_a_forward_only_orphan() {
     // the eight tables back to `public`), then O1's own
     // down(), landing on the same pre-O1, unqualified-table-name state this
     // test asserted before S3d/S4 existed.
-    ComposedMigrator::down(db.conn(), Some(11))
+    ComposedMigrator::down(db.conn(), Some(12))
         .await
         .expect("down survives an orphaned grant");
 

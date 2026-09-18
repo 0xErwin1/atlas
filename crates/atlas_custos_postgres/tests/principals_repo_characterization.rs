@@ -7,6 +7,9 @@
 //! `custos.api_keys` rows against a migration prefix that stops right
 //! before the principals migration, then applies the remaining migrations
 //! and asserts the back-filled principals mirror their source rows.
+//! PR2's not-null migration (`m20260918_000054`) is covered by a separate
+//! window test that stops right after the principals migration, where
+//! `principal_id` exists but is still nullable.
 
 #![allow(
     clippy::unwrap_used,
@@ -21,14 +24,30 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
 use sea_orm_migration::MigratorTrait;
 use uuid::Uuid;
 
-/// Migration prefix that stops immediately before the `custos.principals`
-/// migration (the last Custos-owned migration), so a test can seed rows in
-/// their pre-migration shape and then apply the remaining migrations to
-/// exercise the back-fill.
-fn steps_before_principals_migration() -> u32 {
+/// Number of migrations to apply so that the named Custos migration is the
+/// last one applied (counted inclusively, after the frozen historical block).
+/// Pinned by name so appending further Custos migrations cannot silently
+/// shift these prefixes.
+fn steps_through(migration_name: &str) -> u32 {
     let historical = migration::Migrator::migrations().len();
-    let custos = atlas_custos_postgres::migrations::custos_new().len();
-    (historical + custos - 1) as u32
+    let custos = atlas_custos_postgres::migrations::custos_new();
+    let mut steps = historical as u32;
+    for m in &custos {
+        steps += 1;
+        if m.name() == migration_name {
+            return steps;
+        }
+    }
+    panic!("custos migration {migration_name} not found in custos_new()");
+}
+
+const PRINCIPALS_MIGRATION: &str = "m20260917_000053_custos_principals";
+
+/// Migration prefix that stops immediately before the `custos.principals`
+/// migration, so a test can seed rows in their pre-migration shape and then
+/// apply the remaining migrations to exercise the back-fill.
+fn steps_before_principals_migration() -> u32 {
+    steps_through(PRINCIPALS_MIGRATION) - 1
 }
 
 async fn db_before_principals_migration() -> TestDb {
@@ -47,8 +66,10 @@ async fn exec(db: &TestDb, sql: &str) {
         .expect("execute seed statement");
 }
 
-/// Inserts a `custos.users` row in its pre-migration shape (no
-/// `principal_id` column yet).
+/// Inserts a `custos.users` row with no `principal_id` value: that is the
+/// pre-migration shape (the column does not exist yet) and, after the
+/// principals migration, the nullable-window shape a writer unaware of the
+/// mirror produces.
 async fn seed_premigration_user(
     db: &TestDb,
     username: &str,
@@ -73,8 +94,10 @@ async fn seed_premigration_user(
     id
 }
 
-/// Inserts a `custos.api_keys` row in its pre-migration shape (no
-/// `principal_id` column yet).
+/// Inserts a `custos.api_keys` row with no `principal_id` value: that is
+/// the pre-migration shape (the column does not exist yet) and, after the
+/// principals migration, the nullable-window shape a writer unaware of the
+/// mirror produces.
 async fn seed_premigration_api_key(
     db: &TestDb,
     user_id: Uuid,
@@ -178,27 +201,9 @@ async fn user_backfill_links_users_principal_id_to_its_principal() {
         .await
         .expect("apply principals migration");
 
-    #[derive(FromQueryResult)]
-    struct LinkRow {
-        principal_id: Uuid,
-    }
-    let conn = db.conn();
-    let rows = conn
-        .query_all_raw(Statement::from_string(
-            DatabaseBackend::Postgres,
-            format!("SELECT principal_id FROM custos.users WHERE id = '{user_id}'"),
-        ))
-        .await
-        .expect("query user link");
-    let link = rows
-        .iter()
-        .map(|row| LinkRow::from_query_result(row, "").expect("link row"))
-        .collect::<Vec<_>>();
+    let link = user_principal_links(&db, user_id).await;
     assert_eq!(link.len(), 1);
-    assert_eq!(
-        link[0].principal_id, user_id,
-        "users.principal_id = users.id"
-    );
+    assert_eq!(link[0], user_id, "users.principal_id = users.id");
 
     db.teardown().await.expect("teardown");
 }
@@ -240,31 +245,165 @@ async fn api_key_backfill_creates_one_agent_principal_per_key_with_a_fresh_v7_id
         "principal deactivated_at mirrors api_keys.revoked_at"
     );
 
-    #[derive(FromQueryResult)]
-    struct LinkRow {
-        principal_id: Uuid,
-    }
-    let conn = db.conn();
     for (key_id, principal_id) in [
         (live_key, live_principals[0].id),
         (revoked_key, revoked_principals[0].id),
     ] {
-        let rows = conn
-            .query_all_raw(Statement::from_string(
-                DatabaseBackend::Postgres,
-                format!("SELECT principal_id FROM custos.api_keys WHERE id = '{key_id}'"),
-            ))
-            .await
-            .expect("query api key link");
-        let link = rows
-            .iter()
-            .map(|row| LinkRow::from_query_result(row, "").expect("link row"))
-            .collect::<Vec<_>>();
+        let link = api_key_principal_links(&db, key_id).await;
         assert_eq!(link.len(), 1, "api key {key_id} is linked");
-        assert_eq!(link[0].principal_id, principal_id);
+        assert_eq!(link[0], principal_id);
     }
 
     db.teardown().await.expect("teardown");
+}
+
+// ---------------------------------------------------------------------------
+// PR2 — NOT NULL constraint on principal_id + nullable-window back-fill
+// ---------------------------------------------------------------------------
+
+/// PR2 applies `NOT NULL` on `custos.users.principal_id` and
+/// `custos.api_keys.principal_id`; PR1 deliberately left both nullable, so
+/// this assertion only becomes true once `m20260918_000054` is registered.
+#[tokio::test]
+async fn the_principal_id_columns_are_not_null_after_the_full_migration_set() {
+    let db = TestDb::create().await.expect("TestDb::create");
+
+    for table in ["users", "api_keys"] {
+        let columns = principal_id_nullability(&db, table).await;
+        assert_eq!(
+            columns.len(),
+            1,
+            "one principal_id column on custos.{table}"
+        );
+        assert_eq!(
+            columns[0].is_nullable, "NO",
+            "custos.{table}.principal_id must be NOT NULL after the full migration set"
+        );
+    }
+
+    db.teardown().await.expect("teardown");
+}
+
+#[derive(FromQueryResult)]
+struct ColumnNullability {
+    is_nullable: String,
+}
+
+async fn principal_id_nullability(db: &TestDb, table: &str) -> Vec<ColumnNullability> {
+    ColumnNullability::find_by_statement(Statement::from_string(
+        DatabaseBackend::Postgres,
+        format!(
+            "SELECT is_nullable FROM information_schema.columns \
+             WHERE table_schema = 'custos' AND table_name = '{table}' \
+               AND column_name = 'principal_id'"
+        ),
+    ))
+    .all(db.conn())
+    .await
+    .expect("query column nullability")
+}
+
+/// Between the principals migration (which added `principal_id` nullable and
+/// back-filled existing rows) and PR2's not-null migration, the app could
+/// still create users and api keys whose `principal_id` stayed NULL, because
+/// no writer populated the mirror yet. This test reproduces exactly that
+/// state (prefix stops right after the principals migration), seeds both
+/// shapes of orphan row, applies PR2's migration, and asserts the back-fill
+/// repairs them before the `NOT NULL` constraint lands. A bare `SET NOT
+/// NULL` on these rows fails with "column contains null values", which is
+/// why the back-fill and the constraint share one migration.
+#[tokio::test]
+async fn the_not_null_migration_backfills_rows_created_during_the_nullable_window() {
+    let db = TestDb::create_with_migration_steps(Some(steps_through(PRINCIPALS_MIGRATION)))
+        .await
+        .expect("TestDb::create_with_migration_steps");
+
+    // Rows created between the two migrations: the column exists but no
+    // writer populated it, so both rows carry a NULL `principal_id`.
+    let window_user = seed_premigration_user(&db, "window-user", "Window User", None).await;
+    let window_key = seed_premigration_api_key(&db, window_user, "window-key", None).await;
+
+    db.run_remaining_migrations()
+        .await
+        .expect("apply the not-null migration");
+
+    // The user's principal was already its own id; the back-fill only had
+    // to re-point the NULL column.
+    let user_links = user_principal_links(&db, window_user).await;
+    assert_eq!(user_links.len(), 1, "window user is linked");
+    assert_eq!(
+        user_links[0], window_user,
+        "window user's principal_id is back-filled to users.id"
+    );
+
+    // The window key gets a fresh `agent` principal mirroring its name.
+    let key_principals = principals(&db, "WHERE display_name = 'window-key'").await;
+    assert_eq!(
+        key_principals.len(),
+        1,
+        "one agent principal per window key"
+    );
+    assert_eq!(key_principals[0].kind, "agent");
+    assert_ne!(
+        key_principals[0].id, window_key,
+        "agent principal id is fresh, not the key id"
+    );
+    assert_eq!(
+        key_principals[0].id.get_version_num(),
+        7,
+        "window agent principal id is a UUIDv7"
+    );
+    assert_eq!(key_principals[0].deactivated_at, None);
+
+    let key_links = api_key_principal_links(&db, window_key).await;
+    assert_eq!(key_links.len(), 1, "window api key is linked");
+    assert_eq!(
+        key_links[0], key_principals[0].id,
+        "window api key's principal_id points at the agent principal created for it"
+    );
+
+    for table in ["users", "api_keys"] {
+        let columns = principal_id_nullability(&db, table).await;
+        assert_eq!(
+            columns[0].is_nullable, "NO",
+            "custos.{table}.principal_id must be NOT NULL once the window rows are back-filled"
+        );
+    }
+
+    db.teardown().await.expect("teardown");
+}
+
+async fn user_principal_links(db: &TestDb, user_id: Uuid) -> Vec<Uuid> {
+    query_single_uuid_column(
+        db,
+        &format!("SELECT principal_id FROM custos.users WHERE id = '{user_id}'"),
+    )
+    .await
+}
+
+async fn api_key_principal_links(db: &TestDb, key_id: Uuid) -> Vec<Uuid> {
+    query_single_uuid_column(
+        db,
+        &format!("SELECT principal_id FROM custos.api_keys WHERE id = '{key_id}'"),
+    )
+    .await
+}
+
+async fn query_single_uuid_column(db: &TestDb, sql: &str) -> Vec<Uuid> {
+    #[derive(FromQueryResult)]
+    struct Row {
+        principal_id: Uuid,
+    }
+    Row::find_by_statement(Statement::from_string(
+        DatabaseBackend::Postgres,
+        sql.to_owned(),
+    ))
+    .all(db.conn())
+    .await
+    .expect("query principal_id column")
+    .into_iter()
+    .map(|row| row.principal_id)
+    .collect()
 }
 
 // ---------------------------------------------------------------------------

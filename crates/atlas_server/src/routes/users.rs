@@ -680,13 +680,23 @@ async fn create_pending_user_txn(
         message: e.to_string(),
     })?;
 
-    let user_insert = txn
-        .execute_raw(Statement::from_sql_and_values(
+    // The user principal is the user row itself (`principal_id = users.id`),
+    // created in this same transaction per the E4-S1 sync discipline.
+    let user_insert = async {
+        txn.execute_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "INSERT INTO custos.principals \
+                (id, kind, display_name, deactivated_at) \
+             VALUES ($1, 'user', $2, NULL)",
+            [user_id.0.into(), new.display_name.clone().into()],
+        ))
+        .await?;
+        txn.execute_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "INSERT INTO custos.users \
                 (id, username, display_name, email, password_hash, is_root, is_system_admin, \
-                 disabled_at, activated_at, created_at, updated_at) \
-             VALUES ($1, $2, $3, $4, NULL, $5, $6, NULL, NULL, $7, $8)",
+                 disabled_at, activated_at, created_at, updated_at, principal_id) \
+             VALUES ($1, $2, $3, $4, NULL, $5, $6, NULL, NULL, $7, $8, $1)",
             [
                 user_id.0.into(),
                 new.username.into(),
@@ -698,7 +708,9 @@ async fn create_pending_user_txn(
                 now.into(),
             ],
         ))
-        .await;
+        .await
+    }
+    .await;
 
     if let Err(err) = user_insert {
         if let Err(rollback_err) = txn.rollback().await {
