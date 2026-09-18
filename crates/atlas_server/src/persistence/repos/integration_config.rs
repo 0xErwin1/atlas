@@ -2,10 +2,11 @@ use atlas_core::error::DomainError;
 use atlas_core::principal::UserId;
 use atlas_custos::entities::identity::ApiKeyType;
 use atlas_custos::entities::identity::NewApiKey;
+use atlas_custos::ids::ApiKeyId;
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait,
-    IntoActiveModel, QueryFilter, QueryOrder, Statement,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel,
+    QueryFilter, QueryOrder,
 };
 use uuid::Uuid;
 
@@ -168,13 +169,11 @@ impl PgIntegrationConfigRepo {
         active.updated_at = Set(Utc::now());
         active.update(conn).await.map_err(db_err)?;
 
-        conn.execute_raw(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "UPDATE custos.api_keys SET revoked_at = $1 WHERE id = $2 AND revoked_at IS NULL",
-            [Utc::now().into(), api_key_id.into()],
-        ))
-        .await
-        .map_err(db_err)?;
+        // The revoke goes through the Custos adapter so the agent principal's
+        // `deactivated_at` moves in this same transaction (E4-S1 sync
+        // discipline); a raw `UPDATE custos.api_keys` here would strand the
+        // mirror. Idempotent on an already-revoked or missing key.
+        PgApiKeyRepo::revoke_by_id_in(conn, ApiKeyId(api_key_id)).await?;
 
         Ok(())
     }

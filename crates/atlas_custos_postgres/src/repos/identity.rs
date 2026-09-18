@@ -5,18 +5,23 @@ use atlas_core::principal::ApiKeyId;
 use atlas_core::principal::UserId;
 use atlas_custos::capability::Capability;
 use atlas_custos::entities::identity::ApiKeyType;
+use atlas_custos::entities::principals::NewPrincipal;
+use atlas_custos::entities::principals::PrincipalKind;
 use atlas_custos::ids::ActivationTokenId;
+use atlas_custos::ids::PrincipalId;
 use atlas_custos::ids::SessionId;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    EntityTrait, FromQueryResult, QueryFilter, Statement,
+    EntityTrait, FromQueryResult, QueryFilter, Statement, TransactionTrait,
 };
 
 use crate::entities::identity::{
     activation_token, activation_token_from, api_key, api_key_from, capabilities_from_stored,
     capabilities_to_stored, session, session_from, user, user_from,
 };
+use crate::entities::principals::principal;
+use crate::repos::principals::PgPrincipalRepo;
 use atlas_postgres::db_err;
 
 pub use atlas_custos::entities::identity::ActivationToken;
@@ -37,29 +42,73 @@ pub struct PgUserRepo {
     pub conn: DatabaseConnection,
 }
 
+/// Inserts the `user` principal backing a new user row on the caller's
+/// connection: a user's principal identity is the user row itself
+/// (`principals.id = users.id`), so both rows commit or roll back together.
+async fn create_user_principal_in<C: ConnectionTrait>(
+    conn: &C,
+    user_id: UserId,
+    display_name: &str,
+) -> Result<(), DomainError> {
+    PgPrincipalRepo::create_in(
+        conn,
+        NewPrincipal {
+            id: PrincipalId::from(user_id),
+            kind: PrincipalKind::User,
+            display_name: display_name.to_string(),
+            deactivated_at: None,
+        },
+    )
+    .await
+    .map(|_| ())
+}
+
+/// Moves the principal mirror onto the user row's current `display_name` /
+/// `disabled_at` values on the caller's connection. `deactivated_at` is
+/// written unconditionally so the mirror stays exactly equal to
+/// `users.disabled_at` after every path that touches either column.
+async fn sync_user_principal_in<C: ConnectionTrait>(
+    conn: &C,
+    principal_id: uuid::Uuid,
+    display_name: Option<String>,
+    deactivated_at: Option<chrono::DateTime<Utc>>,
+) -> Result<(), DomainError> {
+    let mut active = principal::ActiveModel {
+        id: Set(principal_id),
+        ..std::default::Default::default()
+    };
+    if let Some(name) = display_name {
+        active.display_name = Set(name);
+    }
+    active.deactivated_at = Set(deactivated_at);
+    active.updated_at = Set(Utc::now());
+    active.update(conn).await.map_err(db_err)?;
+    Ok(())
+}
+
 #[async_trait]
 impl UserRepo for PgUserRepo {
     async fn create(&self, new: NewUser) -> Result<User, DomainError> {
-        let uid = atlas_core::principal::UserId::new();
+        let uid = UserId::new();
         let model = user::ActiveModel {
             id: Set(uid.0),
             username: Set(new.username),
-            display_name: Set(new.display_name),
+            display_name: Set(new.display_name.clone()),
             email: Set(new.email),
             password_hash: Set(new.password_hash),
             is_root: Set(new.is_root),
             is_system_admin: Set(new.is_system_admin),
             disabled_at: Set(None),
             activated_at: Set(None),
-            principal_id: Set(None),
             created_at: Set(Utc::now()),
             updated_at: Set(Utc::now()),
+            principal_id: Set(uid.0),
         };
-        model
-            .insert(&self.conn)
-            .await
-            .map(user_from)
-            .map_err(db_err)
+        let txn = self.conn.begin().await.map_err(db_err)?;
+        create_user_principal_in(&txn, uid, &new.display_name).await?;
+        let user = model.insert(&txn).await.map(user_from).map_err(db_err)?;
+        txn.commit().await.map_err(db_err)?;
+        Ok(user)
     }
 
     async fn find_by_username(&self, username: &str) -> Result<Option<User>, DomainError> {
@@ -157,10 +206,15 @@ impl UserRepo for PgUserRepo {
                 entity: "user",
                 id: id.0,
             })?;
+        let principal_id = row.principal_id;
+        let now = Utc::now();
         let mut active = row.into_active_model();
-        active.disabled_at = Set(Some(Utc::now()));
-        active.updated_at = Set(Utc::now());
-        active.update(&self.conn).await.map_err(db_err)?;
+        active.disabled_at = Set(Some(now));
+        active.updated_at = Set(now);
+        let txn = self.conn.begin().await.map_err(db_err)?;
+        active.update(&txn).await.map_err(db_err)?;
+        sync_user_principal_in(&txn, principal_id, None, Some(now)).await?;
+        txn.commit().await.map_err(db_err)?;
         Ok(())
     }
 
@@ -174,10 +228,15 @@ impl UserRepo for PgUserRepo {
                 entity: "user",
                 id: id.0,
             })?;
+        let principal_id = row.principal_id;
+        let now = Utc::now();
         let mut active = row.into_active_model();
         active.disabled_at = Set(None);
-        active.updated_at = Set(Utc::now());
-        active.update(&self.conn).await.map_err(db_err)?;
+        active.updated_at = Set(now);
+        let txn = self.conn.begin().await.map_err(db_err)?;
+        active.update(&txn).await.map_err(db_err)?;
+        sync_user_principal_in(&txn, principal_id, None, None).await?;
+        txn.commit().await.map_err(db_err)?;
         Ok(())
     }
 
@@ -235,21 +294,26 @@ impl UserRepo for PgUserRepo {
                 id: id.0,
             })?;
 
+        let principal_id = row.principal_id;
+        let current_disabled_at = row.disabled_at;
         let mut active = row.into_active_model();
 
         if let Some(email) = email {
             active.email = Set(Some(email));
         }
+        let renamed = display_name.clone();
         if let Some(display_name) = display_name {
             active.display_name = Set(display_name);
         }
         active.updated_at = Set(Utc::now());
 
-        active
-            .update(&self.conn)
-            .await
-            .map(user_from)
-            .map_err(db_err)
+        let txn = self.conn.begin().await.map_err(db_err)?;
+        let user = active.update(&txn).await.map(user_from).map_err(db_err)?;
+        if let Some(name) = renamed {
+            sync_user_principal_in(&txn, principal_id, Some(name), current_disabled_at).await?;
+        }
+        txn.commit().await.map_err(db_err)?;
+        Ok(user)
     }
 
     async fn set_system_admin(
@@ -294,11 +358,13 @@ impl PgUserRepo {
                 entity: "user",
                 id: id.0,
             })?;
+        let principal_id = row.principal_id;
+        let now = Utc::now();
         let mut active = row.into_active_model();
-        active.disabled_at = Set(Some(Utc::now()));
-        active.updated_at = Set(Utc::now());
+        active.disabled_at = Set(Some(now));
+        active.updated_at = Set(now);
         active.update(conn).await.map_err(db_err)?;
-        Ok(())
+        sync_user_principal_in(conn, principal_id, None, Some(now)).await
     }
 
     /// Enables the given user using the provided connection or transaction.
@@ -312,11 +378,13 @@ impl PgUserRepo {
                 entity: "user",
                 id: id.0,
             })?;
+        let principal_id = row.principal_id;
+        let now = Utc::now();
         let mut active = row.into_active_model();
         active.disabled_at = Set(None);
-        active.updated_at = Set(Utc::now());
+        active.updated_at = Set(now);
         active.update(conn).await.map_err(db_err)?;
-        Ok(())
+        sync_user_principal_in(conn, principal_id, None, None).await
     }
 
     /// Updates `password_hash` using the provided connection or transaction.
@@ -472,6 +540,37 @@ impl SessionRepo for PgSessionRepo {
     }
 }
 
+/// Shared tail of the api-key revoke paths: stamps `revoked_at` on the key
+/// row and deactivates its agent principal on the caller's connection, so both
+/// rows move in one transaction. The caller has already applied its own
+/// authorization/ownership filter to `row`.
+async fn revoke_api_key_row_in<C: ConnectionTrait>(
+    conn: &C,
+    row: api_key::Model,
+) -> Result<ApiKey, DomainError> {
+    use sea_orm::IntoActiveModel;
+
+    let key_snapshot = api_key_from(row.clone());
+    let principal_id = row.principal_id;
+    let now = Utc::now();
+
+    let mut active = row.into_active_model();
+    active.revoked_at = Set(Some(now));
+    active.update(conn).await.map_err(db_err)?;
+
+    // The agent principal mirrors the key's lifetime: revoking the key
+    // deactivates the principal, in the same caller transaction.
+    let principal_active = principal::ActiveModel {
+        id: Set(principal_id),
+        deactivated_at: Set(Some(now)),
+        updated_at: Set(now),
+        ..std::default::Default::default()
+    };
+    principal_active.update(conn).await.map_err(db_err)?;
+
+    Ok(key_snapshot)
+}
+
 pub struct PgApiKeyRepo {
     pub conn: DatabaseConnection,
 }
@@ -492,12 +591,12 @@ impl ApiKeyRepo for PgApiKeyRepo {
                 });
             }
         };
+        let principal_id = PrincipalId::new();
         let model = api_key::ActiveModel {
             id: Set(ApiKeyId::new().0),
             workspace_id: Set(Some(scope.0)),
             created_by_user_id: Set(created_by_user_id),
-            principal_id: Set(None),
-            name: Set(new.name),
+            name: Set(new.name.clone()),
             token_hash: Set(new.token_hash),
             type_: Set(new.type_.as_str().to_string()),
             expires_at: Set(new.expires_at),
@@ -506,12 +605,13 @@ impl ApiKeyRepo for PgApiKeyRepo {
             created_at: Set(Utc::now()),
             is_global: Set(false),
             scopes: Set(capabilities_to_stored(&new.scopes)),
+            principal_id: Set(principal_id.0),
         };
-        model
-            .insert(&self.conn)
-            .await
-            .map(api_key_from)
-            .map_err(db_err)
+        let txn = self.conn.begin().await.map_err(db_err)?;
+        PgApiKeyRepo::create_agent_principal_in(&txn, principal_id, &new.name).await?;
+        let key = model.insert(&txn).await.map(api_key_from).map_err(db_err)?;
+        txn.commit().await.map_err(db_err)?;
+        Ok(key)
     }
 
     async fn create_for_user(
@@ -519,12 +619,12 @@ impl ApiKeyRepo for PgApiKeyRepo {
         user_id: UserId,
         new: NewApiKey,
     ) -> Result<ApiKey, DomainError> {
+        let principal_id = PrincipalId::new();
         let model = api_key::ActiveModel {
             id: Set(ApiKeyId::new().0),
             workspace_id: Set(None),
             created_by_user_id: Set(user_id.0),
-            principal_id: Set(None),
-            name: Set(new.name),
+            name: Set(new.name.clone()),
             token_hash: Set(new.token_hash),
             type_: Set(new.type_.as_str().to_string()),
             expires_at: Set(new.expires_at),
@@ -533,12 +633,13 @@ impl ApiKeyRepo for PgApiKeyRepo {
             created_at: Set(Utc::now()),
             is_global: Set(false),
             scopes: Set(capabilities_to_stored(&new.scopes)),
+            principal_id: Set(principal_id.0),
         };
-        model
-            .insert(&self.conn)
-            .await
-            .map(api_key_from)
-            .map_err(db_err)
+        let txn = self.conn.begin().await.map_err(db_err)?;
+        PgApiKeyRepo::create_agent_principal_in(&txn, principal_id, &new.name).await?;
+        let key = model.insert(&txn).await.map(api_key_from).map_err(db_err)?;
+        txn.commit().await.map_err(db_err)?;
+        Ok(key)
     }
 
     async fn find_active_by_token_hash(
@@ -695,6 +796,28 @@ impl ApiKeyRepo for PgApiKeyRepo {
 }
 
 impl PgApiKeyRepo {
+    /// Inserts the `agent` principal backing a new api key row on the caller's
+    /// connection, so the principal and its key commit or roll back together.
+    /// Agent principals get a fresh id (unlike users, whose principal is the
+    /// user row itself); the key row links to it via `api_keys.principal_id`.
+    async fn create_agent_principal_in<C: ConnectionTrait>(
+        conn: &C,
+        principal_id: PrincipalId,
+        name: &str,
+    ) -> Result<(), DomainError> {
+        PgPrincipalRepo::create_in(
+            conn,
+            NewPrincipal {
+                id: principal_id,
+                kind: PrincipalKind::Agent,
+                display_name: name.to_string(),
+                deactivated_at: None,
+            },
+        )
+        .await
+        .map(|_| ())
+    }
+
     /// Creates a user-owned API key using the provided connection or transaction.
     ///
     /// Used when the insert must be atomic with an audit-log append inside an
@@ -704,12 +827,12 @@ impl PgApiKeyRepo {
         user_id: UserId,
         new: NewApiKey,
     ) -> Result<ApiKey, DomainError> {
+        let principal_id = PrincipalId::new();
         let model = api_key::ActiveModel {
             id: Set(ApiKeyId::new().0),
             workspace_id: Set(None),
             created_by_user_id: Set(user_id.0),
-            principal_id: Set(None),
-            name: Set(new.name),
+            name: Set(new.name.clone()),
             token_hash: Set(new.token_hash),
             type_: Set(new.type_.as_str().to_string()),
             expires_at: Set(new.expires_at),
@@ -718,7 +841,9 @@ impl PgApiKeyRepo {
             created_at: Set(Utc::now()),
             is_global: Set(false),
             scopes: Set(capabilities_to_stored(&new.scopes)),
+            principal_id: Set(principal_id.0),
         };
+        PgApiKeyRepo::create_agent_principal_in(conn, principal_id, &new.name).await?;
         model.insert(conn).await.map(api_key_from).map_err(db_err)
     }
 
@@ -796,8 +921,6 @@ impl PgApiKeyRepo {
         user_id: UserId,
         id: ApiKeyId,
     ) -> Result<ApiKey, DomainError> {
-        use sea_orm::IntoActiveModel;
-
         let row = api_key::Entity::find_by_id(id.0)
             .filter(api_key::Column::RevokedAt.is_null())
             .one(conn)
@@ -814,13 +937,33 @@ impl PgApiKeyRepo {
             });
         }
 
-        let key_snapshot = api_key_from(row.clone());
+        revoke_api_key_row_in(conn, row).await
+    }
 
-        let mut active = row.into_active_model();
-        active.revoked_at = Set(Some(Utc::now()));
-        active.update(conn).await.map_err(db_err)?;
+    /// Revokes an api key by id, regardless of owner, using the provided
+    /// connection or transaction. This is the composition-layer path for
+    /// callers that hold a key reference without its owner's attribution —
+    /// e.g. an integration config revoking its provisioned key — so every
+    /// revoke shares the adapter's principal-mirror discipline instead of
+    /// raw-updating `custos.api_keys` directly.
+    ///
+    /// Returns the key as it existed before the revoke, or `Ok(None)` when the
+    /// key is missing or already revoked: the idempotent-update semantics of
+    /// the raw statement this method replaced.
+    pub async fn revoke_by_id_in<C: ConnectionTrait>(
+        conn: &C,
+        id: ApiKeyId,
+    ) -> Result<Option<ApiKey>, DomainError> {
+        let row = api_key::Entity::find_by_id(id.0)
+            .filter(api_key::Column::RevokedAt.is_null())
+            .one(conn)
+            .await
+            .map_err(db_err)?;
 
-        Ok(key_snapshot)
+        match row {
+            Some(row) => revoke_api_key_row_in(conn, row).await.map(Some),
+            None => Ok(None),
+        }
     }
 
     /// Updates `last_used_at = now()` for the given api key, throttled to at most

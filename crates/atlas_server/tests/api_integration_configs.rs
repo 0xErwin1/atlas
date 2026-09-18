@@ -384,6 +384,83 @@ async fn admin_delete_soft_deletes_and_revokes_key() {
     db.teardown().await;
 }
 
+/// E4-S1 sync discipline: revoking the integration key (config soft-delete)
+/// must also deactivate the key's agent principal in the same transaction, so
+/// `principals.deactivated_at` tracks `api_keys.revoked_at` with zero
+/// divergence — the drift the Custos doctor flags.
+#[tokio::test]
+async fn integration_config_delete_deactivates_the_agent_principal_in_step_with_the_key() {
+    use sea_orm::{DatabaseBackend, FromQueryResult, Statement};
+
+    #[derive(Debug, FromQueryResult)]
+    struct MirrorRow {
+        revoked_at: Option<chrono::DateTime<chrono::Utc>>,
+        principal_deactivated_at: Option<chrono::DateTime<chrono::Utc>>,
+    }
+
+    let db = support::TestDb::create().await.expect("TestDb");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, ws, _user) =
+        support::login_user_with_workspace(&server, &db, "ic-principal").await;
+
+    let token = client.token().expect("token");
+    let base_url = server.base_url();
+    let ws_slug = &ws.slug;
+
+    let create_resp = http()
+        .post(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integration-configs"),
+        ))
+        .bearer_auth(token)
+        .json(&serde_json::json!({ "integration": "github" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(create_resp.status(), 201);
+    let created: Value = create_resp.json().await.unwrap();
+    let config_id = created["id"].as_str().unwrap();
+    let api_key_id: Uuid =
+        Uuid::parse_str(created["integration_api_key_id"].as_str().unwrap()).unwrap();
+
+    let delete_resp = http()
+        .delete(support::path::api_url(
+            base_url,
+            "acta",
+            &format!("/workspaces/{ws_slug}/integration-configs/{config_id}"),
+        ))
+        .bearer_auth(token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(delete_resp.status(), 204, "delete must return 204");
+
+    let rows = MirrorRow::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "SELECT k.revoked_at, p.deactivated_at AS principal_deactivated_at \
+         FROM custos.api_keys k \
+         JOIN custos.principals p ON p.id = k.principal_id \
+         WHERE k.id = $1",
+        [api_key_id.into()],
+    ))
+    .one(db.conn())
+    .await
+    .expect("query key/principal mirror")
+    .expect("the provisioned key must have its agent principal linked");
+
+    assert!(
+        rows.revoked_at.is_some(),
+        "integration api key must be revoked on config delete"
+    );
+    assert_eq!(
+        rows.principal_deactivated_at, rows.revoked_at,
+        "the agent principal must be deactivated in step with the revoked key"
+    );
+
+    db.teardown().await;
+}
+
 // ---------------------------------------------------------------------------
 // [I] PATCH is_active toggles the config and gates the inbound ingest
 // ---------------------------------------------------------------------------

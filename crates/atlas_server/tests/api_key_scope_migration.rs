@@ -110,13 +110,23 @@ async fn post_migration_insert_without_scopes_defaults_to_empty() {
         .expect("create db with all migrations");
     let (_ws, user) = seed_workspace(&db, "post-scopes-migration").await;
 
+    let principal_id = uuid::Uuid::now_v7();
+    db.conn()
+        .execute_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "INSERT INTO custos.principals (id, kind, display_name, deactivated_at) \
+             VALUES ($1, 'agent', 'post-migration-key', NULL)",
+            [principal_id.into()],
+        ))
+        .await
+        .expect("seed agent principal");
     let key_id = uuid::Uuid::now_v7();
     db.conn()
         .execute_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "INSERT INTO custos.api_keys (id, workspace_id, created_by_user_id, name, token_hash, type, created_at, is_global) \
-             VALUES ($1, NULL, $2, 'post-migration-key', 'post-migration-hash', 'agent', now(), false)",
-            [key_id.into(), user.id.0.into()],
+            "INSERT INTO custos.api_keys (id, workspace_id, created_by_user_id, name, token_hash, type, created_at, is_global, principal_id) \
+             VALUES ($1, NULL, $2, 'post-migration-key', 'post-migration-hash', 'agent', now(), false, $3)",
+            [key_id.into(), user.id.0.into(), principal_id.into()],
         ))
         .await
         .expect("insert row omitting scopes");

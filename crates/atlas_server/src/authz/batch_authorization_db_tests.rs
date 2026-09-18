@@ -340,10 +340,13 @@ async fn query_b_reloads_key_creator_and_live_group_grant_facts() {
     let group_id = Uuid::now_v7();
 
     seed_workspace_user(&db.conn, workspace_id, creator_id, true).await;
+    let principal_id = Uuid::now_v7();
     db.conn
         .execute_unprepared(&format!(
-            "INSERT INTO custos.api_keys (id, workspace_id, created_by_user_id, name, token_hash, type, created_at, is_global, scopes) \
-             VALUES ('{key_id}', NULL, '{creator_id}', 'key', 'hash', 'agent', now(), false, ARRAY['docs:read'])"
+            "INSERT INTO custos.principals (id, kind, display_name, deactivated_at) \
+             VALUES ('{principal_id}', 'agent', 'key', NULL); \
+             INSERT INTO custos.api_keys (id, workspace_id, created_by_user_id, name, token_hash, type, created_at, is_global, scopes, principal_id) \
+             VALUES ('{key_id}', NULL, '{creator_id}', 'key', 'hash', 'agent', now(), false, ARRAY['docs:read'], '{principal_id}')",
         ))
         .await
         .expect("insert key");
@@ -433,10 +436,13 @@ async fn query_b_rejects_unknown_scopes_and_propagates_sql_failures() {
     let key_id = Uuid::now_v7();
 
     seed_workspace_user(&db.conn, workspace_id, creator_id, true).await;
+    let principal_id = Uuid::now_v7();
     db.conn
         .execute_unprepared(&format!(
-            "INSERT INTO custos.api_keys (id, workspace_id, created_by_user_id, name, token_hash, type, created_at, is_global, scopes) \
-             VALUES ('{key_id}', NULL, '{creator_id}', 'key', 'hash', 'agent', now(), false, ARRAY['unknown:read'])"
+            "INSERT INTO custos.principals (id, kind, display_name, deactivated_at) \
+             VALUES ('{principal_id}', 'agent', 'key', NULL); \
+             INSERT INTO custos.api_keys (id, workspace_id, created_by_user_id, name, token_hash, type, created_at, is_global, scopes, principal_id) \
+             VALUES ('{key_id}', NULL, '{creator_id}', 'key', 'hash', 'agent', now(), false, ARRAY['unknown:read'], '{principal_id}')",
         ))
         .await
         .expect("insert key with unknown scope");
@@ -1259,9 +1265,12 @@ async fn seed_api_key(
         .map(|scope| format!("'{scope}'"))
         .collect::<Vec<_>>()
         .join(", ");
+    let principal_id = Uuid::now_v7();
     conn.execute_unprepared(&format!(
-        "INSERT INTO custos.api_keys (id, workspace_id, created_by_user_id, name, token_hash, type, created_at, is_global, scopes) \
-         VALUES ('{key_id}', NULL, '{creator_id}', 'key', 'hash', 'agent', now(), {is_global}, ARRAY[{scopes_sql}])"
+        "INSERT INTO custos.principals (id, kind, display_name, deactivated_at) \
+         VALUES ('{principal_id}', 'agent', 'key', NULL); \
+         INSERT INTO custos.api_keys (id, workspace_id, created_by_user_id, name, token_hash, type, created_at, is_global, scopes, principal_id) \
+         VALUES ('{key_id}', NULL, '{creator_id}', 'key', 'hash', 'agent', now(), {is_global}, ARRAY[{scopes_sql}], '{principal_id}')",
     ))
     .await
     .expect("seed api key");
@@ -1269,8 +1278,10 @@ async fn seed_api_key(
 
 async fn seed_user(conn: &DatabaseConnection, user_id: Uuid, is_root: bool, is_system_admin: bool) {
     conn.execute_unprepared(&format!(
-        "INSERT INTO custos.users (id, username, display_name, is_root, is_system_admin, created_at, updated_at) \
-         VALUES ('{user_id}', 'user-{user_id}', 'User', {is_root}, {is_system_admin}, now(), now())"
+        "INSERT INTO custos.principals (id, kind, display_name, deactivated_at) \
+         VALUES ('{user_id}', 'user', 'User', NULL); \
+         INSERT INTO custos.users (id, username, display_name, is_root, is_system_admin, created_at, updated_at, principal_id) \
+         VALUES ('{user_id}', 'user-{user_id}', 'User', {is_root}, {is_system_admin}, now(), now(), '{user_id}')"
     ))
     .await
     .expect("seed user");
@@ -1357,8 +1368,10 @@ async fn seed_workspace_user(
     member: bool,
 ) {
     conn.execute_unprepared(&format!(
-        "INSERT INTO custos.users (id, username, display_name, is_root, is_system_admin, created_at, updated_at) \
-         VALUES ('{user_id}', 'user-{user_id}', 'User', false, false, now(), now()); \
+        "INSERT INTO custos.principals (id, kind, display_name, deactivated_at) \
+         VALUES ('{user_id}', 'user', 'User', NULL); \
+         INSERT INTO custos.users (id, username, display_name, is_root, is_system_admin, created_at, updated_at, principal_id) \
+         VALUES ('{user_id}', 'user-{user_id}', 'User', false, false, now(), now(), '{user_id}'); \
          INSERT INTO acta.workspaces (id, name, slug, created_at, updated_at) \
          VALUES ('{workspace_id}', 'Workspace', 'workspace-{workspace_id}', now(), now())"
     ))

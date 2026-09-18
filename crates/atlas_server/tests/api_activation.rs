@@ -28,8 +28,14 @@ async fn password_hash_is_nullable_after_migration() {
     // column is NOT NULL.
     db.conn()
         .execute_unprepared(
-            "INSERT INTO custos.users (id, username, display_name, email, password_hash, is_root, is_system_admin, disabled_at, activated_at, created_at, updated_at)
-             VALUES (gen_random_uuid(), 'null-pw-test', 'Null PW', NULL, NULL, false, false, NULL, NULL, now(), now())"
+            "WITH ids AS (SELECT gen_random_uuid() AS id),
+              new_user AS (
+              INSERT INTO custos.users (id, username, display_name, email, password_hash, is_root, is_system_admin, disabled_at, activated_at, created_at, updated_at, principal_id)
+              SELECT id, 'null-pw-test', 'Null PW', NULL, NULL, false, false, NULL, NULL, now(), now(), id FROM ids
+              RETURNING id, display_name, disabled_at
+             )
+              INSERT INTO custos.principals (id, kind, display_name, deactivated_at)
+              SELECT id, 'user', display_name, disabled_at FROM new_user"
         )
         .await
         .expect("password_hash column must be nullable after migration");
@@ -64,8 +70,14 @@ async fn existing_users_have_activated_at_set_after_migration() {
     // inserting a row with an explicit activated_at and reading it back.
     db.conn()
         .execute_unprepared(
-            "INSERT INTO custos.users (id, username, display_name, email, password_hash, is_root, is_system_admin, disabled_at, activated_at, created_at, updated_at)
-             VALUES (gen_random_uuid(), 'backfill-test', 'Backfill', NULL, '$argon2id$v=19$m=19456,t=2,p=1$test$hash', false, false, NULL, now(), now(), now())"
+            "WITH ids AS (SELECT gen_random_uuid() AS id),
+              new_user AS (
+              INSERT INTO custos.users (id, username, display_name, email, password_hash, is_root, is_system_admin, disabled_at, activated_at, created_at, updated_at, principal_id)
+              SELECT id, 'backfill-test', 'Backfill', NULL, '$argon2id$v=19$m=19456,t=2,p=1$test$hash', false, false, NULL, now(), now(), now(), id FROM ids
+              RETURNING id, display_name, disabled_at
+             )
+              INSERT INTO custos.principals (id, kind, display_name, deactivated_at)
+              SELECT id, 'user', display_name, disabled_at FROM new_user"
         )
         .await
         .expect("insert user with activated_at");
@@ -303,8 +315,14 @@ async fn find_by_username_roundtrips_some_password_hash_and_activated_at() {
     // (simulates an activated account).
     db.conn()
         .execute_unprepared(
-            "INSERT INTO custos.users (id, username, display_name, email, password_hash, is_root, is_system_admin, disabled_at, activated_at, created_at, updated_at)
-             VALUES (gen_random_uuid(), 'roundtrip-some', 'RT Some', NULL, '$argon2id$v=19$m=19456,t=2,p=1$test$hash', false, false, NULL, now(), now(), now())"
+            "WITH ids AS (SELECT gen_random_uuid() AS id),
+              new_user AS (
+              INSERT INTO custos.users (id, username, display_name, email, password_hash, is_root, is_system_admin, disabled_at, activated_at, created_at, updated_at, principal_id)
+              SELECT id, 'roundtrip-some', 'RT Some', NULL, '$argon2id$v=19$m=19456,t=2,p=1$test$hash', false, false, NULL, now(), now(), now(), id FROM ids
+              RETURNING id, display_name, disabled_at
+             )
+              INSERT INTO custos.principals (id, kind, display_name, deactivated_at)
+              SELECT id, 'user', display_name, disabled_at FROM new_user"
         )
         .await
         .expect("insert");
@@ -333,8 +351,14 @@ async fn find_by_username_roundtrips_none_password_hash_for_pending_user() {
     // Insert a pending user with NULL password_hash and NULL activated_at.
     db.conn()
         .execute_unprepared(
-            "INSERT INTO custos.users (id, username, display_name, email, password_hash, is_root, is_system_admin, disabled_at, activated_at, created_at, updated_at)
-             VALUES (gen_random_uuid(), 'roundtrip-none', 'RT None', NULL, NULL, false, false, NULL, NULL, now(), now())"
+            "WITH ids AS (SELECT gen_random_uuid() AS id),
+              new_user AS (
+              INSERT INTO custos.users (id, username, display_name, email, password_hash, is_root, is_system_admin, disabled_at, activated_at, created_at, updated_at, principal_id)
+              SELECT id, 'roundtrip-none', 'RT None', NULL, NULL, false, false, NULL, NULL, now(), now(), id FROM ids
+              RETURNING id, display_name, disabled_at
+             )
+              INSERT INTO custos.principals (id, kind, display_name, deactivated_at)
+              SELECT id, 'user', display_name, disabled_at FROM new_user"
         )
         .await
         .expect("insert pending user");
@@ -367,8 +391,14 @@ async fn login_pending_user_returns_401_not_an_oracle() {
     // Insert a pending user: NULL password_hash, NULL activated_at.
     db.conn()
         .execute_unprepared(
-            "INSERT INTO custos.users (id, username, display_name, email, password_hash, is_root, is_system_admin, disabled_at, activated_at, created_at, updated_at)
-             VALUES (gen_random_uuid(), 'pending-login', 'Pending', NULL, NULL, false, false, NULL, NULL, now(), now())"
+            "WITH ids AS (SELECT gen_random_uuid() AS id),
+              new_user AS (
+              INSERT INTO custos.users (id, username, display_name, email, password_hash, is_root, is_system_admin, disabled_at, activated_at, created_at, updated_at, principal_id)
+              SELECT id, 'pending-login', 'Pending', NULL, NULL, false, false, NULL, NULL, now(), now(), id FROM ids
+              RETURNING id, display_name, disabled_at
+             )
+              INSERT INTO custos.principals (id, kind, display_name, deactivated_at)
+              SELECT id, 'user', display_name, disabled_at FROM new_user"
         )
         .await
         .expect("insert pending user");
