@@ -266,8 +266,10 @@ pub(crate) async fn create_user_api_key(
     let secret = generate_api_key();
     let token_hash = hash_token(&secret);
 
-    // Omitted or empty scopes default to read-only access to every family; an
-    // explicit non-empty selection is deduplicated and canonically ordered.
+    // Omitted or empty scopes fall back to `Capability::DEFAULT_READ_ONLY`: read
+    // access to the five default families (tasks, docs, boards, folders,
+    // projects), never an empty set. An explicit non-empty selection is
+    // deduplicated and canonically ordered.
     let scopes = match body.scopes {
         Some(scopes) if !scopes.is_empty() => capabilities_from_wire(scopes),
         _ => Capability::DEFAULT_READ_ONLY.to_vec(),
