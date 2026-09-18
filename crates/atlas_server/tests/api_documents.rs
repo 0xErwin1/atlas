@@ -3777,6 +3777,7 @@ async fn api_key_actor_write_sets_actor_type_api_key() {
     let key_created = owner
         .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
+            key_kind: None,
             name: "test-key".to_string(),
             r#type: None,
             expires_at: None,

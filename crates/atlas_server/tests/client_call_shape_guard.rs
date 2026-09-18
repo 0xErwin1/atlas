@@ -1311,8 +1311,8 @@ fn api_user_api_keys_namespaced_sites_match_their_declared_home() {
 
     assert_eq!(
         sites.len(),
-        56,
-        "expected 56 namespaced sites in crates/atlas_server/tests/api_user_api_keys.rs (PR10), \
+        61,
+        "expected 61 namespaced sites in crates/atlas_server/tests/api_user_api_keys.rs (PR10), \
          found: {sites:?}"
     );
 
@@ -1689,8 +1689,8 @@ fn api_auth_namespaced_sites_match_their_declared_home() {
 
     assert_eq!(
         sites.len(),
-        8,
-        "expected 8 namespaced sites in crates/atlas_server/tests/api_auth.rs (PR11c), \
+        10,
+        "expected 10 namespaced sites in crates/atlas_server/tests/api_auth.rs (PR11c), \
          found: {sites:?}"
     );
 

@@ -103,6 +103,12 @@ async fn key_mirror(db: &support::TestDb, key_id: ApiKeyId) -> Option<KeyMirrorR
     .expect("query api key/principal mirror")
 }
 
+#[derive(FromQueryResult, Debug)]
+struct KeyPrincipalLinkRow {
+    principal_kind: String,
+    links_owner_principal: bool,
+}
+
 fn assert_user_mirror_matches(row: &UserMirrorRow) {
     assert_eq!(row.principal_kind, "user");
     assert_eq!(
@@ -113,6 +119,21 @@ fn assert_user_mirror_matches(row: &UserMirrorRow) {
         row.principal_deactivated_at, row.disabled_at,
         "principals.deactivated_at must equal users.disabled_at"
     );
+}
+
+async fn key_principal_link(db: &support::TestDb, key_id: ApiKeyId) -> Option<KeyPrincipalLinkRow> {
+    KeyPrincipalLinkRow::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "SELECT p.kind AS principal_kind, (p.id = u.principal_id) AS links_owner_principal \
+         FROM custos.api_keys k \
+         JOIN custos.principals p ON p.id = k.principal_id \
+         JOIN custos.users u ON u.id = k.created_by_user_id \
+         WHERE k.id = $1",
+        [key_id.0.into()],
+    ))
+    .one(db.conn())
+    .await
+    .expect("query api key principal link")
 }
 
 fn assert_key_mirror_matches(row: &KeyMirrorRow) {
@@ -239,6 +260,92 @@ async fn user_update_profile_mirrors_the_new_display_name() -> StdResult<()> {
         .expect("user principal must exist after update_profile");
     assert_eq!(row.display_name, "Renamed Person");
     assert_user_mirror_matches(&row);
+
+    db.teardown().await;
+    Ok(())
+}
+
+// ── credential kind (E4-S2C) ────────────────────────────────────────────────
+
+#[tokio::test]
+async fn personal_key_links_to_the_owners_user_principal() -> StdResult<()> {
+    let db = support::TestDb::create().await?;
+    let user = db
+        .user_repo()
+        .create(new_user("personal-key-owner"))
+        .await?;
+
+    let txn = db.conn().begin().await?;
+    let key = atlas_custos_postgres::repos::identity::PgApiKeyRepo::create_for_user_in_with_kind(
+        &txn,
+        user.id,
+        atlas_custos::entities::identity::ApiKeyKind::Personal,
+        new_key("personal-key"),
+    )
+    .await?;
+    txn.commit().await?;
+
+    let row = key_principal_link(&db, key.id)
+        .await
+        .expect("principal row must exist for a personal key");
+    assert_eq!(row.principal_kind, "user");
+    assert!(
+        row.links_owner_principal,
+        "a personal key must link to the owner's user principal, not a fresh agent principal"
+    );
+
+    db.teardown().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn agent_key_keeps_a_fresh_agent_principal() -> StdResult<()> {
+    let db = support::TestDb::create().await?;
+    let user = db.user_repo().create(new_user("agent-key-owner")).await?;
+
+    let txn = db.conn().begin().await?;
+    let key = atlas_custos_postgres::repos::identity::PgApiKeyRepo::create_for_user_in_with_kind(
+        &txn,
+        user.id,
+        atlas_custos::entities::identity::ApiKeyKind::Agent,
+        new_key("agent-key"),
+    )
+    .await?;
+    txn.commit().await?;
+
+    let row = key_principal_link(&db, key.id)
+        .await
+        .expect("principal row must exist for an agent key");
+    assert_eq!(row.principal_kind, "agent");
+    assert!(
+        !row.links_owner_principal,
+        "an agent key must link to a fresh agent principal, not the owner's user principal"
+    );
+
+    db.teardown().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn personal_key_creation_rejects_a_missing_owner_principal() -> StdResult<()> {
+    let db = support::TestDb::create().await?;
+    // A user id whose principal row does not exist: personal creation must be
+    // fail-closed instead of dangling the FK or silently minting an agent
+    // principal.
+    let ghost = UserId::new();
+
+    let txn = db.conn().begin().await?;
+    let result =
+        atlas_custos_postgres::repos::identity::PgApiKeyRepo::create_for_user_in_with_kind(
+            &txn,
+            ghost,
+            atlas_custos::entities::identity::ApiKeyKind::Personal,
+            new_key("ghost-owner-key"),
+        )
+        .await;
+    txn.rollback().await?;
+
+    assert!(result.is_err(), "missing owner principal must be rejected");
 
     db.teardown().await;
     Ok(())

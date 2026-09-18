@@ -4,6 +4,7 @@ use atlas_core::error::DomainError;
 use atlas_core::principal::ApiKeyId;
 use atlas_core::principal::UserId;
 use atlas_custos::capability::Capability;
+use atlas_custos::entities::identity::ApiKeyKind;
 use atlas_custos::entities::identity::ApiKeyType;
 use atlas_custos::entities::principals::NewPrincipal;
 use atlas_custos::entities::principals::PrincipalKind;
@@ -18,7 +19,7 @@ use sea_orm::{
 
 use crate::entities::identity::{
     activation_token, activation_token_from, api_key, api_key_from, capabilities_from_stored,
-    capabilities_to_stored, session, session_from, user, user_from,
+    capabilities_to_stored, principal_kind_from, session, session_from, user, user_from,
 };
 use crate::entities::principals::principal;
 use crate::repos::principals::PgPrincipalRepo;
@@ -547,10 +548,11 @@ impl SessionRepo for PgSessionRepo {
 async fn revoke_api_key_row_in<C: ConnectionTrait>(
     conn: &C,
     row: api_key::Model,
+    principal_kind: PrincipalKind,
 ) -> Result<ApiKey, DomainError> {
     use sea_orm::IntoActiveModel;
 
-    let key_snapshot = api_key_from(row.clone());
+    let key_snapshot = api_key_from(row.clone(), principal_kind);
     let principal_id = row.principal_id;
     let now = Utc::now();
 
@@ -609,7 +611,11 @@ impl ApiKeyRepo for PgApiKeyRepo {
         };
         let txn = self.conn.begin().await.map_err(db_err)?;
         PgApiKeyRepo::create_agent_principal_in(&txn, principal_id, &new.name).await?;
-        let key = model.insert(&txn).await.map(api_key_from).map_err(db_err)?;
+        let key = model
+            .insert(&txn)
+            .await
+            .map(|m| api_key_from(m, PrincipalKind::Agent))
+            .map_err(db_err)?;
         txn.commit().await.map_err(db_err)?;
         Ok(key)
     }
@@ -637,7 +643,11 @@ impl ApiKeyRepo for PgApiKeyRepo {
         };
         let txn = self.conn.begin().await.map_err(db_err)?;
         PgApiKeyRepo::create_agent_principal_in(&txn, principal_id, &new.name).await?;
-        let key = model.insert(&txn).await.map(api_key_from).map_err(db_err)?;
+        let key = model
+            .insert(&txn)
+            .await
+            .map(|m| api_key_from(m, PrincipalKind::Agent))
+            .map_err(db_err)?;
         txn.commit().await.map_err(db_err)?;
         Ok(key)
     }
@@ -660,15 +670,17 @@ impl ApiKeyRepo for PgApiKeyRepo {
             created_at: chrono::DateTime<Utc>,
             is_global: bool,
             scopes: Vec<String>,
+            principal_kind: String,
         }
 
         let rows = Row::find_by_statement(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT k.id, k.workspace_id, k.created_by_user_id, k.name, k.token_hash,
                     k.type AS type_, k.expires_at, k.last_used_at, k.revoked_at, k.created_at,
-                    k.is_global, k.scopes
+                    k.is_global, k.scopes, p.kind AS principal_kind
              FROM custos.api_keys k
              JOIN custos.users u ON u.id = k.created_by_user_id
+             JOIN custos.principals p ON p.id = k.principal_id
              WHERE k.token_hash = $1
                AND k.revoked_at IS NULL
                AND (k.expires_at IS NULL OR k.expires_at > now())
@@ -680,48 +692,66 @@ impl ApiKeyRepo for PgApiKeyRepo {
         .await
         .map_err(db_err)?;
 
-        Ok(rows.into_iter().next().map(|r| ApiKey {
-            id: ApiKeyId(r.id),
-            workspace_id: r.workspace_id.map(atlas_custos::WorkspaceScope),
-            created_by_user_id: UserId(r.created_by_user_id),
-            name: r.name,
-            token_hash: r.token_hash,
-            type_: r.type_.parse::<ApiKeyType>().unwrap_or_default(),
-            expires_at: r.expires_at,
-            last_used_at: r.last_used_at,
-            revoked_at: r.revoked_at,
-            created_at: r.created_at,
-            is_global: r.is_global,
-            scopes: capabilities_from_stored(&r.scopes),
-        }))
+        rows.into_iter()
+            .next()
+            .map(|r| {
+                Ok(ApiKey {
+                    id: ApiKeyId(r.id),
+                    workspace_id: r.workspace_id.map(atlas_custos::WorkspaceScope),
+                    created_by_user_id: UserId(r.created_by_user_id),
+                    name: r.name,
+                    token_hash: r.token_hash,
+                    type_: r.type_.parse::<ApiKeyType>().unwrap_or_default(),
+                    expires_at: r.expires_at,
+                    last_used_at: r.last_used_at,
+                    revoked_at: r.revoked_at,
+                    created_at: r.created_at,
+                    is_global: r.is_global,
+                    scopes: capabilities_from_stored(&r.scopes),
+                    principal_kind: r.principal_kind.parse::<PrincipalKind>().map_err(|e| {
+                        DomainError::InvalidInput {
+                            message: format!("stored principal kind is invalid: {e}"),
+                        }
+                    })?,
+                })
+            })
+            .transpose()
     }
 
     async fn list(&self, scope: atlas_custos::WorkspaceScope) -> Result<Vec<ApiKey>, DomainError> {
         api_key::Entity::find()
             .filter(api_key::Column::WorkspaceId.eq(scope.0))
             .filter(api_key::Column::RevokedAt.is_null())
+            .find_also_related(principal::Entity)
             .all(&self.conn)
             .await
-            .map(|rows| rows.into_iter().map(api_key_from).collect())
-            .map_err(db_err)
+            .map_err(db_err)?
+            .into_iter()
+            .map(|(k, p)| Ok(api_key_from(k, principal_kind_from(&p)?)))
+            .collect()
     }
 
     async fn list_for_user(&self, user_id: UserId) -> Result<Vec<ApiKey>, DomainError> {
         api_key::Entity::find()
             .filter(api_key::Column::CreatedByUserId.eq(user_id.0))
             .filter(api_key::Column::RevokedAt.is_null())
+            .find_also_related(principal::Entity)
             .all(&self.conn)
             .await
-            .map(|rows| rows.into_iter().map(api_key_from).collect())
-            .map_err(db_err)
+            .map_err(db_err)?
+            .into_iter()
+            .map(|(k, p)| Ok(api_key_from(k, principal_kind_from(&p)?)))
+            .collect()
     }
 
     async fn get_by_id(&self, id: ApiKeyId) -> Result<Option<ApiKey>, DomainError> {
         api_key::Entity::find_by_id(id.0)
+            .find_also_related(principal::Entity)
             .one(&self.conn)
             .await
-            .map(|opt| opt.map(api_key_from))
-            .map_err(db_err)
+            .map_err(db_err)?
+            .map(|(k, p)| Ok(api_key_from(k, principal_kind_from(&p)?)))
+            .transpose()
     }
 
     async fn list_by_ids(&self, ids: &[ApiKeyId]) -> Result<Vec<ApiKey>, DomainError> {
@@ -733,10 +763,13 @@ impl ApiKeyRepo for PgApiKeyRepo {
 
         api_key::Entity::find()
             .filter(api_key::Column::Id.is_in(raw))
+            .find_also_related(principal::Entity)
             .all(&self.conn)
             .await
-            .map(|rows| rows.into_iter().map(api_key_from).collect())
-            .map_err(db_err)
+            .map_err(db_err)?
+            .into_iter()
+            .map(|(k, p)| Ok(api_key_from(k, principal_kind_from(&p)?)))
+            .collect()
     }
 
     async fn list_granted_in_workspace(
@@ -757,14 +790,16 @@ impl ApiKeyRepo for PgApiKeyRepo {
             created_at: chrono::DateTime<Utc>,
             is_global: bool,
             scopes: Vec<String>,
+            principal_kind: String,
         }
 
         let rows = Row::find_by_statement(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT DISTINCT k.id, k.workspace_id, k.created_by_user_id, k.name, k.token_hash,
                     k.type AS type_, k.expires_at, k.last_used_at, k.revoked_at, k.created_at,
-                    k.is_global, k.scopes
+                    k.is_global, k.scopes, p.kind AS principal_kind
              FROM custos.api_keys k
+             JOIN custos.principals p ON p.id = k.principal_id
              JOIN custos.permission_grants g ON g.api_key_id = k.id
              WHERE g.workspace_id = $1
                AND k.revoked_at IS NULL
@@ -775,23 +810,29 @@ impl ApiKeyRepo for PgApiKeyRepo {
         .await
         .map_err(db_err)?;
 
-        Ok(rows
-            .into_iter()
-            .map(|r| ApiKey {
-                id: ApiKeyId(r.id),
-                workspace_id: r.workspace_id.map(atlas_custos::WorkspaceScope),
-                created_by_user_id: UserId(r.created_by_user_id),
-                name: r.name,
-                token_hash: r.token_hash,
-                type_: r.type_.parse::<ApiKeyType>().unwrap_or_default(),
-                expires_at: r.expires_at,
-                last_used_at: r.last_used_at,
-                revoked_at: r.revoked_at,
-                created_at: r.created_at,
-                is_global: r.is_global,
-                scopes: capabilities_from_stored(&r.scopes),
+        rows.into_iter()
+            .map(|r| {
+                Ok(ApiKey {
+                    id: ApiKeyId(r.id),
+                    workspace_id: r.workspace_id.map(atlas_custos::WorkspaceScope),
+                    created_by_user_id: UserId(r.created_by_user_id),
+                    name: r.name,
+                    token_hash: r.token_hash,
+                    type_: r.type_.parse::<ApiKeyType>().unwrap_or_default(),
+                    expires_at: r.expires_at,
+                    last_used_at: r.last_used_at,
+                    revoked_at: r.revoked_at,
+                    created_at: r.created_at,
+                    is_global: r.is_global,
+                    scopes: capabilities_from_stored(&r.scopes),
+                    principal_kind: r.principal_kind.parse::<PrincipalKind>().map_err(|e| {
+                        DomainError::InvalidInput {
+                            message: format!("stored principal kind is invalid: {e}"),
+                        }
+                    })?,
+                })
             })
-            .collect())
+            .collect()
     }
 }
 
@@ -819,6 +860,7 @@ impl PgApiKeyRepo {
     }
 
     /// Creates a user-owned API key using the provided connection or transaction.
+    /// Agent is the default credential kind: a fresh agent principal is minted.
     ///
     /// Used when the insert must be atomic with an audit-log append inside an
     /// existing transaction.
@@ -827,7 +869,51 @@ impl PgApiKeyRepo {
         user_id: UserId,
         new: NewApiKey,
     ) -> Result<ApiKey, DomainError> {
-        let principal_id = PrincipalId::new();
+        Self::create_for_user_in_with_kind(conn, user_id, ApiKeyKind::Agent, new).await
+    }
+
+    /// Creates a user-owned API key of the given credential kind using the
+    /// provided connection or transaction.
+    ///
+    /// A `Personal` key links to the owner's existing user principal
+    /// (`custos.principals`, kind `user`) — no new principal row is written —
+    /// while an `Agent` key keeps today's fresh-agent-principal behaviour. The
+    /// caller derives the token prefix from the same `key_kind` value, so the
+    /// prefix and the principal linkage cannot disagree.
+    pub async fn create_for_user_in_with_kind<C: ConnectionTrait>(
+        conn: &C,
+        user_id: UserId,
+        key_kind: ApiKeyKind,
+        new: NewApiKey,
+    ) -> Result<ApiKey, DomainError> {
+        let (principal_id, principal_kind) = match key_kind {
+            ApiKeyKind::Personal => {
+                let principal = principal::Entity::find_by_id(user_id.0)
+                    .one(conn)
+                    .await
+                    .map_err(db_err)?
+                    .ok_or(DomainError::NotFound {
+                        entity: "principal",
+                        id: user_id.0,
+                    })?;
+                let kind = principal.kind.parse::<PrincipalKind>().map_err(|e| {
+                    DomainError::InvalidInput {
+                        message: format!("stored principal kind is invalid: {e}"),
+                    }
+                })?;
+                if kind != PrincipalKind::User {
+                    return Err(DomainError::InvalidInput {
+                        message: "personal keys require the owner's user principal".into(),
+                    });
+                }
+                (principal.id, PrincipalKind::User)
+            }
+            ApiKeyKind::Agent => {
+                let principal_id = PrincipalId::new();
+                PgApiKeyRepo::create_agent_principal_in(conn, principal_id, &new.name).await?;
+                (principal_id.0, PrincipalKind::Agent)
+            }
+        };
         let model = api_key::ActiveModel {
             id: Set(ApiKeyId::new().0),
             workspace_id: Set(None),
@@ -841,10 +927,13 @@ impl PgApiKeyRepo {
             created_at: Set(Utc::now()),
             is_global: Set(false),
             scopes: Set(capabilities_to_stored(&new.scopes)),
-            principal_id: Set(principal_id.0),
+            principal_id: Set(principal_id),
         };
-        PgApiKeyRepo::create_agent_principal_in(conn, principal_id, &new.name).await?;
-        model.insert(conn).await.map(api_key_from).map_err(db_err)
+        model
+            .insert(conn)
+            .await
+            .map(|m| api_key_from(m, principal_kind))
+            .map_err(db_err)
     }
 
     /// Replaces the full scope set on a user-owned key using the provided
@@ -861,8 +950,9 @@ impl PgApiKeyRepo {
     ) -> Result<ApiKey, DomainError> {
         use sea_orm::IntoActiveModel;
 
-        let key = api_key::Entity::find_by_id(id.0)
+        let (key, principal) = api_key::Entity::find_by_id(id.0)
             .filter(api_key::Column::CreatedByUserId.eq(user_id.0))
+            .find_also_related(principal::Entity)
             .one(conn)
             .await
             .map_err(db_err)?
@@ -870,11 +960,16 @@ impl PgApiKeyRepo {
                 entity: "api_key",
                 id: id.0,
             })?;
+        let principal_kind = principal_kind_from(&principal)?;
 
         let mut active = key.into_active_model();
         active.scopes = Set(capabilities_to_stored(&scopes));
 
-        active.update(conn).await.map(api_key_from).map_err(db_err)
+        active
+            .update(conn)
+            .await
+            .map(|m| api_key_from(m, principal_kind))
+            .map_err(db_err)
     }
 
     /// Sets the `is_global` flag on a user-owned key using the provided connection
@@ -890,8 +985,9 @@ impl PgApiKeyRepo {
     ) -> Result<ApiKey, DomainError> {
         use sea_orm::IntoActiveModel;
 
-        let key = api_key::Entity::find_by_id(id.0)
+        let (key, principal) = api_key::Entity::find_by_id(id.0)
             .filter(api_key::Column::CreatedByUserId.eq(user_id.0))
+            .find_also_related(principal::Entity)
             .one(conn)
             .await
             .map_err(db_err)?
@@ -899,11 +995,16 @@ impl PgApiKeyRepo {
                 entity: "api_key",
                 id: id.0,
             })?;
+        let principal_kind = principal_kind_from(&principal)?;
 
         let mut active = key.into_active_model();
         active.is_global = Set(is_global);
 
-        active.update(conn).await.map(api_key_from).map_err(db_err)
+        active
+            .update(conn)
+            .await
+            .map(|m| api_key_from(m, principal_kind))
+            .map_err(db_err)
     }
 
     /// Marks a user-owned API key revoked using the provided connection or
@@ -921,15 +1022,18 @@ impl PgApiKeyRepo {
         user_id: UserId,
         id: ApiKeyId,
     ) -> Result<ApiKey, DomainError> {
-        let row = api_key::Entity::find_by_id(id.0)
+        let Some((row, principal)) = api_key::Entity::find_by_id(id.0)
             .filter(api_key::Column::RevokedAt.is_null())
+            .find_also_related(principal::Entity)
             .one(conn)
             .await
             .map_err(db_err)?
-            .ok_or(DomainError::NotFound {
+        else {
+            return Err(DomainError::NotFound {
                 entity: "api_key",
                 id: id.0,
-            })?;
+            });
+        };
 
         if row.created_by_user_id != user_id.0 {
             return Err(DomainError::Forbidden {
@@ -937,7 +1041,7 @@ impl PgApiKeyRepo {
             });
         }
 
-        revoke_api_key_row_in(conn, row).await
+        revoke_api_key_row_in(conn, row, principal_kind_from(&principal)?).await
     }
 
     /// Revokes an api key by id, regardless of owner, using the provided
@@ -954,16 +1058,20 @@ impl PgApiKeyRepo {
         conn: &C,
         id: ApiKeyId,
     ) -> Result<Option<ApiKey>, DomainError> {
-        let row = api_key::Entity::find_by_id(id.0)
+        let Some((row, principal)) = api_key::Entity::find_by_id(id.0)
             .filter(api_key::Column::RevokedAt.is_null())
+            .find_also_related(principal::Entity)
             .one(conn)
             .await
-            .map_err(db_err)?;
+            .map_err(db_err)?
+        else {
+            return Ok(None);
+        };
 
-        match row {
-            Some(row) => revoke_api_key_row_in(conn, row).await.map(Some),
-            None => Ok(None),
-        }
+        let principal_kind = principal_kind_from(&principal)?;
+        revoke_api_key_row_in(conn, row, principal_kind)
+            .await
+            .map(Some)
     }
 
     /// Updates `last_used_at = now()` for the given api key, throttled to at most

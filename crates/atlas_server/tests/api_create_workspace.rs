@@ -50,6 +50,7 @@ async fn api_key_principal_cannot_create_workspace() {
     let created_key = owner
         .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
+            key_kind: None,
             name: "agent-key".to_string(),
             r#type: None,
             expires_at: None,

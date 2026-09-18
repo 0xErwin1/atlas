@@ -646,6 +646,7 @@ async fn api_key_resolution_unaffected_by_groups() {
     let key = owner
         .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
+            key_kind: None,
             name: "gg-apikey-key".to_string(),
             r#type: None,
             expires_at: None,

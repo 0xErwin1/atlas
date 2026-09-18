@@ -229,6 +229,7 @@ async fn an_api_key_cannot_list_platform_defaults() {
     let api_key = owner
         .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
+            key_kind: None,
             name: "platform-defaults-agent".to_string(),
             r#type: None,
             expires_at: None,

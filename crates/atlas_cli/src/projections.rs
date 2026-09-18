@@ -3561,6 +3561,7 @@ mod tests {
             id: Uuid::now_v7(),
             name: "test-key".to_owned(),
             r#type: "agent".to_owned(),
+            key_kind: "agent".to_owned(),
             expires_at: None,
             last_used_at: None,
             revoked_at: None,

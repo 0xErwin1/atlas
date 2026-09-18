@@ -57,6 +57,7 @@ async fn seed_workspace(
     let key_created = user_client
         .custos()
         .create_user_api_key(CreateUserApiKeyRequest {
+            key_kind: None,
             name: "test-agent".to_string(),
             r#type: None,
             expires_at: None,

@@ -468,6 +468,7 @@ async fn create_workspace_grant_editor_to_agent_succeeds() {
 
 fn toplevel_key_req(name: &str) -> CreateUserApiKeyRequest {
     CreateUserApiKeyRequest {
+        key_kind: None,
         name: name.to_string(),
         r#type: None,
         expires_at: None,
