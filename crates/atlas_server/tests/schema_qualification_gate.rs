@@ -57,16 +57,26 @@
 //! explicit `// schema-gate:off` / `// schema-gate:on` marker pair (renamed
 //! from `// custos-schema-gate:off` / `:on` in this PR) so the exception is
 //! visible in the diff rather than silently carved out by file path.
+//!
+//! Since E4-S2b the map is deliberately broader than "tables a `SET SCHEMA`
+//! migration has moved": it also lists tables born directly inside their
+//! owning schema (as of E4-S1, `custos.principals`). For those the same rule
+//! applies — the sanctioned form is schema-qualified SQL, and an unqualified
+//! `FROM principals` would be exactly the bug class this gate exists to
+//! catch, one neither this gate's original boundary nor the R8
+//! classification gate covered.
 
 use std::collections::VecDeque;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Every table a `SET SCHEMA` migration has moved so far, paired with its
-/// owning schema. A table absent from this map has not moved yet and is not
-/// checked here — the R8 classification gate
-/// (`atlas_acta_postgres/tests/r8_classification_gate.rs`) tracks the full
-/// D1 inventory independently of when each batch's `SET SCHEMA` lands.
+/// Every table that must never be referenced unqualified, paired with its
+/// owning schema: every table a `SET SCHEMA` migration has moved so far,
+/// plus tables born directly inside their owning schema (E4-S1's
+/// `custos.principals` — see the module doc for the broadened contract).
+/// A table absent from this map is not checked here — the R8 classification
+/// gate (`atlas_acta_postgres/tests/r8_classification_gate.rs`) tracks the
+/// full D1 inventory independently of when each batch's `SET SCHEMA` lands.
 const TABLE_SCHEMA: &[(&str, &str)] = &[
     ("users", "custos"),
     ("sessions", "custos"),
@@ -76,6 +86,7 @@ const TABLE_SCHEMA: &[(&str, &str)] = &[
     ("group_members", "custos"),
     ("permission_grants", "custos"),
     ("security_audit_log", "custos"),
+    ("principals", "custos"),
     ("workspaces", "acta"),
     ("workspace_memberships", "acta"),
     ("property_definitions", "acta"),

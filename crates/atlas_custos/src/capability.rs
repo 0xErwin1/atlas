@@ -39,11 +39,13 @@ pub struct Capability {
 }
 
 impl Capability {
-    /// The closed catalog of every valid capability, in `family:action` order
-    /// with families ordered `tasks, docs, boards, folders, projects, webhooks,
-    /// config` and actions ordered `read, create, update, delete`. This is the
-    /// single source of truth other derived sets (defaults, wire enums) are
-    /// built from.
+    /// The closed catalog of every valid capability, with families ordered
+    /// `tasks, docs, boards, folders, projects, webhooks, config, grants,
+    /// saved_searches, task_views` and actions ordered `read, create, update,
+    /// delete`. Every entry's wire/storage spelling is the canonical
+    /// `<product>::<kind>::<action>` form (e.g. `acta::tasks::read`,
+    /// `custos::grants::read`). This is the single source of truth other
+    /// derived sets (defaults, wire enums) are built from.
     pub const ALL: [Capability; 37] = [
         Capability {
             family: CapabilityFamily::Tasks,
@@ -199,7 +201,8 @@ impl Capability {
     ];
 
     /// The scope set a newly created API key receives when the caller selects
-    /// no scopes: read access to every family, write access to none.
+    /// no scopes: read access to the five default families (`tasks`, `docs`,
+    /// `boards`, `folders`, `projects`), write access to none.
     pub const DEFAULT_READ_ONLY: [Capability; 5] = [
         Capability {
             family: CapabilityFamily::Tasks,

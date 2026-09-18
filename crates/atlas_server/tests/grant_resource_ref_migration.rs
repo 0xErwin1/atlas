@@ -270,6 +270,22 @@ async fn purge_operations_no_longer_fk_references_security_audit_log() {
     db.teardown().await;
 }
 
+/// Number of composed migrations to revert so the O1 migration under test's
+/// own `down()` runs last: everything from O1 inclusive to the end of the
+/// composed list. Derived from the migrator's list length rather than pinned
+/// as a literal, so appending a migration can never silently shift the target.
+fn steps_through_the_o1_migration() -> u32 {
+    let names: Vec<String> = ComposedMigrator::migrations()
+        .iter()
+        .map(|migration| migration.name().to_owned())
+        .collect();
+    let o1_index = names
+        .iter()
+        .position(|name| name == "m20260830_000050_grant_resource_ref")
+        .expect("the O1 migration is part of the composed migrator");
+    (names.len() - o1_index) as u32
+}
+
 /// Down-path roundtrip (T5.13): asserts down() restores the pre-migration
 /// shape (columns, unique index, nine FKs), drops an orphaned grant instead
 /// of aborting the FK re-add, and re-applying up() leaves zero pending.
@@ -317,38 +333,26 @@ async fn down_restores_target_columns_and_survives_a_forward_only_orphan() {
         .await
         .expect("seed post-migration grant rows, including one orphaned by a never-live target");
 
-    // Reverts twelve steps, not one: S3d appended `m20260830_000051_custos_set_schema`,
-    // E11-S8 PR1 appended `m20260906_000052_grant_principal_idx` to `custos_new()`,
-    // S4 PR9 appended `m20260831_000052_acta_platform_ui_state`, S4 PR11
-    // appended `m20260901_000053_acta_identity_workspaces_set_schema`, S4
-    // PR12 appended `m20260902_000054_acta_documents_set_schema`, S4 PR13
-    // appended `m20260903_000055_acta_boards_tasks_set_schema`, S4 PR14
-    // appended `m20260904_000056_acta_comments_events_tags_set_schema`, and
-    // S4 PR15 appended
-    // `m20260905_000057_acta_search_attachments_lifecycle_set_schema`, and
-    // E3-S3 PR3 appended `m20260906_000058_acta_platform_idempotency_keys`
-    // after this migration in `custos_new()`/`acta_new()`, and E4-S1 PR2
-    // appended `m20260918_000054_custos_principals_not_null`, so "the last
-    // applied migration" is now the principals not-null migration rather
-    // than the O1 migration under test here. Reverting twelve steps first
-    // undoes the principals not-null migration (dropping the `NOT NULL`
-    // constraints on `users`/`api_keys.principal_id`), then undoes the
-    // principals migration (dropping the `principal_id` columns
-    // and `custos.principals`), then drops the
-    // idempotency-keys table, then undoes the
-    // search/attachments/lifecycle-group move (moving
-    // `search_embeddings`/`purge_operations`/etc. back to `public`), then the
-    // comments/events/tags-group move (moving `comments`/`tags`/etc. back to
-    // `public`), then the boards/tasks-group move (moving `boards`/`tasks`/etc.
-    // back to `public`), then the documents-group move (moving `projects`/
-    // `folders`/`documents`/etc. back to `public`), then the
-    // identity/workspaces move (moving `workspaces`/`workspace_memberships`
-    // back to `public`), then the `platform.ui_state` move, then the Custos
-    // principal-column index migration, then the Custos schema move (moving
-    // the eight tables back to `public`), then O1's own
-    // down(), landing on the same pre-O1, unqualified-table-name state this
-    // test asserted before S3d/S4 existed.
-    ComposedMigrator::down(db.conn(), Some(12))
+    // Reverts every migration applied after the O1 migration under test, so
+    // O1's own down() runs last. The step count is derived from the composed
+    // migrator's list (`steps_through_the_o1_migration`) rather than pinned as a
+    // literal: this test's literal had to be bumped once per appended migration
+    // across S3d, S4 PR9–PR15, E3-S3 PR3 and E4-S1 PR1/PR2, and E4-S2b's
+    // `m20260918_000055_custos_scope_wire_form` would have been another bump.
+    // Concretely, reverting the derived count undoes the scope wire-form
+    // rewrite (restoring the legacy scope spelling), then the principals
+    // not-null migration (dropping the `NOT NULL` constraints on
+    // `users`/`api_keys.principal_id`), then the principals migration (dropping
+    // the `principal_id` columns and `custos.principals`), then drops the
+    // idempotency-keys table, then undoes the search/attachments/lifecycle-group
+    // move, the comments/events/tags-group move, the boards/tasks-group move,
+    // the documents-group move, and the identity/workspaces move (moving those
+    // tables back to `public`), then the `platform.ui_state` move, then the
+    // Custos principal-column index migration, then the Custos schema move
+    // (moving the eight tables back to `public`), then O1's own down(),
+    // landing on the same pre-O1, unqualified-table-name state this test
+    // asserted before S3d/S4 existed.
+    ComposedMigrator::down(db.conn(), Some(steps_through_the_o1_migration()))
         .await
         .expect("down survives an orphaned grant");
 
@@ -361,7 +365,7 @@ async fn down_restores_target_columns_and_survives_a_forward_only_orphan() {
         board_id: Option<Uuid>,
     }
 
-    // schema-gate:off — after the ten-step down() above, SET SCHEMA has
+    // schema-gate:off — after the down() above, SET SCHEMA has
     // been reverted, so `permission_grants` is back in `public` at this point.
     let rows = TargetRow::find_by_statement(Statement::from_string(
         sea_orm::DatabaseBackend::Postgres,

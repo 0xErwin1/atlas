@@ -150,6 +150,33 @@ impl Doctor for CustosDoctor {
             }
         }
 
+        // The ceiling is mandatory at the create path (an omitted or empty
+        // selection falls back to `Capability::DEFAULT_READ_ONLY`), so a stored
+        // empty scope set can only be pre-existing data or a broken writer.
+        // Those credentials silently access nothing; surfacing them keeps the
+        // loss visible without retroactively widening any stored set (R1).
+        match self.empty_scope_key_count().await {
+            Ok(count) if count > 0 => {
+                findings.push(DoctorFinding {
+                    component: component.clone(),
+                    severity: Severity::Warning,
+                    finding: format!(
+                        "{count} api keys have an empty scope set and can access nothing"
+                    ),
+                    action: "re-create or update the key with an explicit scope set".to_string(),
+                });
+            }
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!(
+                    target: "ops.custos",
+                    event = "doctor_failed",
+                    error_kind = db_error_kind(&error),
+                    "custos doctor could not probe empty api key scope sets"
+                );
+            }
+        }
+
         findings
     }
 }
@@ -172,6 +199,25 @@ impl CustosDoctor {
             ))
             .await?
             .ok_or_else(|| sea_orm::DbErr::Custom("divergence probe returned no row".to_owned()))?;
+
+        let counted = DivergenceCount::from_query_result(&row, "")?;
+        Ok(counted.count)
+    }
+
+    /// Counts api keys whose stored `scopes` array is empty. An empty set is
+    /// the deny-all credential, so these keys are alive but can do nothing.
+    async fn empty_scope_key_count(&self) -> Result<i64, sea_orm::DbErr> {
+        let row = self
+            .db
+            .query_one_raw(Statement::from_string(
+                DatabaseBackend::Postgres,
+                "SELECT count(*) AS count FROM custos.api_keys WHERE cardinality(scopes) = 0"
+                    .to_owned(),
+            ))
+            .await?
+            .ok_or_else(|| {
+                sea_orm::DbErr::Custom("empty-scope probe returned no row".to_owned())
+            })?;
 
         let counted = DivergenceCount::from_query_result(&row, "")?;
         Ok(counted.count)
@@ -253,6 +299,99 @@ mod tests {
         assert!(
             !findings.iter().any(|f| f.finding.contains("principals")),
             "in-sync rows must not raise a principals finding, got: {findings:?}"
+        );
+
+        db.teardown().await.expect("teardown");
+    }
+
+    /// Seeds one agent principal plus one `custos.api_keys` row. `empty`
+    /// controls the stored scope set: the deny-all credential this doctor
+    /// check exists to surface.
+    async fn seed_api_key(
+        db: &atlas_test_db::TestDb,
+        owner_id: uuid::Uuid,
+        name: &str,
+        empty: bool,
+    ) {
+        use sea_orm::ConnectionTrait;
+
+        let principal_id = uuid::Uuid::now_v7();
+        db.conn()
+            .execute_unprepared(&format!(
+                "INSERT INTO custos.principals (id, kind, display_name, deactivated_at) \
+                 VALUES ('{principal_id}', 'agent', '{name}', NULL)"
+            ))
+            .await
+            .expect("seed agent principal");
+        let scopes = if empty {
+            "'{}'"
+        } else {
+            "ARRAY['acta::tasks::read']"
+        };
+        db.conn()
+            .execute_unprepared(&format!(
+                "INSERT INTO custos.api_keys \
+                    (id, workspace_id, created_by_user_id, name, token_hash, type, created_at, \
+                     is_global, principal_id, scopes) \
+                 VALUES ('{}', NULL, '{owner_id}', '{name}', 'hash-{name}', 'agent', now(), \
+                     false, '{principal_id}', {scopes})",
+                uuid::Uuid::now_v7()
+            ))
+            .await
+            .expect("seed api key");
+    }
+
+    #[tokio::test]
+    async fn doctor_reports_a_warning_when_an_api_key_has_an_empty_scope_set() {
+        let db = atlas_test_db::TestDb::create()
+            .await
+            .expect("TestDb::create");
+        seed_user_and_principal(&db, false).await;
+        seed_api_key(
+            &db,
+            uuid::Uuid::from_u128(0x1111_1111_1111_1111_1111_1111_1111_1111),
+            "dead-key",
+            true,
+        )
+        .await;
+
+        let doctor = CustosDoctor::new(Arc::new(db.conn().clone()));
+        let findings = doctor.doctor().await;
+
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.severity == Severity::Warning && f.finding.contains("empty scope set")),
+            "an api key with an empty stored scope set must be visible to an operator, \
+             got: {findings:?}"
+        );
+
+        db.teardown().await.expect("teardown");
+    }
+
+    #[tokio::test]
+    async fn doctor_reports_no_scope_warning_when_every_api_key_has_scopes() {
+        let db = atlas_test_db::TestDb::create()
+            .await
+            .expect("TestDb::create");
+        seed_user_and_principal(&db, false).await;
+        seed_api_key(
+            &db,
+            uuid::Uuid::from_u128(0x1111_1111_1111_1111_1111_1111_1111_1111),
+            "live-key",
+            false,
+        )
+        .await;
+
+        let doctor = CustosDoctor::new(Arc::new(db.conn().clone()));
+        let findings = doctor.doctor().await;
+
+        assert!(
+            !findings
+                .iter()
+                .any(|f| f.finding.contains("empty scope set")),
+            "a key with a non-empty scope set must not raise the empty-scope finding, \
+             got: {findings:?}"
         );
 
         db.teardown().await.expect("teardown");

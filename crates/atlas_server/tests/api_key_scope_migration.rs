@@ -34,10 +34,26 @@ const ALL_TWENTY: &[&str] = &[
 ];
 
 /// Reproduces a key row exactly as it existed before the `scopes` column
-/// migration, then applies that migration, and asserts the row is
+/// migration, then applies the remaining migrations, and asserts the row is
 /// grandfathered to the full 20-entry catalog — i.e. its effective access is
 /// identical to what it was pre-migration (unrestricted), not silently
 /// downgraded to read-only or empty.
+///
+/// The frozen `m20260705_000038_apikey_scopes` back-fill writes the raw legacy
+/// `<family>:<action>` bytes in `ALL_TWENTY` below; E4-S2b's
+/// `m20260918_000055_custos_scope_wire_form` then rewrites every stored entry
+/// to the canonical `<product>::<kind>::<action>` form, so the final stored
+/// bytes this test observes are the canonical spellings. The spelling
+/// changes; the effective capability set (and therefore access) does not.
+/// Inverts the canonical spelling the scope wire-form migration stores: the
+/// 20 legacy catalog strings above map 1:1 onto `acta::<family>::<action>`.
+fn legacy_to_canonical(legacy: &str) -> String {
+    let (family, action) = legacy
+        .split_once(':')
+        .expect("catalog legacy strings are well-formed <family>:<action>");
+    format!("acta::{family}::{action}")
+}
+
 #[tokio::test]
 async fn pre_migration_key_is_grandfathered_to_all_twenty_scopes_after_backfill() {
     // Stop one migration short of the scopes migration, so `api_keys` has no
@@ -89,12 +105,16 @@ async fn pre_migration_key_is_grandfathered_to_all_twenty_scopes_after_backfill(
 
     let mut got = row.scopes.clone();
     got.sort();
-    let mut want: Vec<String> = ALL_TWENTY.iter().map(|s| s.to_string()).collect();
+    let mut want: Vec<String> = ALL_TWENTY
+        .iter()
+        .map(|legacy| legacy_to_canonical(legacy))
+        .collect();
     want.sort();
 
     assert_eq!(
         got, want,
-        "a key that existed before the scopes migration must be grandfathered to all 20 capabilities"
+        "a key that existed before the scopes migration must be grandfathered to all 20 \
+         capabilities, stored in the canonical wire form"
     );
 
     db.teardown().await;
