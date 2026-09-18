@@ -174,18 +174,18 @@ async fn backfill_encodes_every_target_kind_exactly_like_the_codec() {
     db.teardown().await;
 }
 
-/// Zero-outbound-FK test (T5.10): after the O1 migration, none of the eight
-/// Custos-owned tables (§D1/§S3d list) may hold a foreign key pointing at a
-/// table outside that set — the nine D1 constraints (five on
-/// `permission_grants`, plus `groups`, `api_keys`, `security_audit_log`, and
-/// `purge_operations.commit_audit_id`) are exactly what step 7 of the O1
-/// migration drops.
+/// Zero-outbound-FK test (T5.10): after the O1 migration, none of the
+/// Custos-owned tables (§D1/§S3d list, plus E4-S1's additive `principals`
+/// table) may hold a foreign key pointing at a table outside that set. E4-S1
+/// deliberately adds the intra-Custos `users.principal_id` / `api_keys
+/// .principal_id` FKs into `custos.principals`, so `principals` joins the
+/// trusted set rather than weakening the gate.
 #[tokio::test]
 async fn no_custos_table_has_an_outbound_foreign_key_after_the_migration() {
     let db = support::TestDb::create().await.expect("TestDb::create");
 
     const CUSTOS_TABLES: &str = "'users','sessions','user_activation_tokens','api_keys',\
-        'groups','group_members','permission_grants','security_audit_log'";
+        'groups','group_members','permission_grants','security_audit_log','principals'";
 
     #[derive(Debug, FromQueryResult)]
     struct Row {
@@ -289,7 +289,8 @@ async fn down_restores_target_columns_and_survives_a_forward_only_orphan() {
 
     db.conn()
         .execute_unprepared(&format!(
-            "INSERT INTO custos.users (id, username, display_name, is_root, is_system_admin, created_at, updated_at) VALUES ('{user_id}', 'user-{user_id}', 'User', false, false, now(), now()); \
+            "INSERT INTO custos.principals (id, kind, display_name, deactivated_at) VALUES ('{user_id}', 'user', 'User', NULL); \
+             INSERT INTO custos.users (id, username, display_name, is_root, is_system_admin, created_at, updated_at, principal_id) VALUES ('{user_id}', 'user-{user_id}', 'User', false, false, now(), now(), '{user_id}'); \
              INSERT INTO acta.workspaces (id, name, slug, created_at, updated_at) VALUES ('{workspace_id}', 'Workspace', 'workspace-{workspace_id}', now(), now()); \
              INSERT INTO acta.projects (id, workspace_id, name, slug, task_prefix, next_task_number, visibility, created_by_user_id, created_at, updated_at) VALUES ('{project_id}', '{workspace_id}', 'Project', 'project-{project_id}', 'PRJ', 1, 'workspace', '{user_id}', now(), now()); \
              INSERT INTO acta.folders (id, workspace_id, project_id, name, created_by_user_id, created_at, updated_at) VALUES ('{folder_id}', '{workspace_id}', '{project_id}', 'Folder', '{user_id}', now(), now()); \
@@ -327,8 +328,10 @@ async fn down_restores_target_columns_and_survives_a_forward_only_orphan() {
     // `m20260905_000057_acta_search_attachments_lifecycle_set_schema`, and
     // E3-S3 PR3 appended `m20260906_000058_acta_platform_idempotency_keys`
     // after this migration in `custos_new()`/`acta_new()`, so "the last
-    // applied migration" is now the platform idempotency-keys table rather
-    // than the O1 migration under test here. Reverting ten steps drops the
+    // applied migration" is now the E4-S1 custos principals migration rather
+    // than the O1 migration under test here. Reverting eleven steps first
+    // undoes the principals migration (dropping the `principal_id` columns
+    // and `custos.principals`), then drops the
     // idempotency-keys table, then undoes the
     // search/attachments/lifecycle-group move (moving
     // `search_embeddings`/`purge_operations`/etc. back to `public`), then the
@@ -342,7 +345,7 @@ async fn down_restores_target_columns_and_survives_a_forward_only_orphan() {
     // the eight tables back to `public`), then O1's own
     // down(), landing on the same pre-O1, unqualified-table-name state this
     // test asserted before S3d/S4 existed.
-    ComposedMigrator::down(db.conn(), Some(10))
+    ComposedMigrator::down(db.conn(), Some(11))
         .await
         .expect("down survives an orphaned grant");
 

@@ -12,6 +12,7 @@
 mod m20260830_000050_grant_resource_ref;
 mod m20260830_000051_custos_set_schema;
 mod m20260906_000052_grant_principal_idx;
+mod m20260917_000053_custos_principals;
 
 use sea_orm_migration::prelude::MigrationTrait;
 
@@ -21,5 +22,6 @@ pub fn custos_new() -> Vec<Box<dyn MigrationTrait>> {
         Box::new(m20260830_000050_grant_resource_ref::Migration),
         Box::new(m20260830_000051_custos_set_schema::Migration),
         Box::new(m20260906_000052_grant_principal_idx::Migration),
+        Box::new(m20260917_000053_custos_principals::Migration),
     ]
 }
