@@ -105,8 +105,9 @@ const CLASSIFIED_ACTA_TABLES: &[&str] = &[
     "purge_operation_digests",
 ];
 
-/// The eight Custos-owned tables, moved to `custos` by S3
-/// (`m20260830_000051_custos_set_schema`).
+/// The nine Custos-owned tables, moved to `custos` by S3
+/// (`m20260830_000051_custos_set_schema`). `principals` was added by E4-S1
+/// (`m20260917_000053_custos_principals`).
 const CLASSIFIED_CUSTOS_TABLES: &[&str] = &[
     "users",
     "sessions",
@@ -116,6 +117,7 @@ const CLASSIFIED_CUSTOS_TABLES: &[&str] = &[
     "group_members",
     "permission_grants",
     "security_audit_log",
+    "principals",
 ];
 
 /// Platform-owned tables. `user_ui_state` was moved and renamed to
