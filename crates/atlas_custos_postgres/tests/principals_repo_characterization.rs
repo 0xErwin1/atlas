@@ -510,6 +510,42 @@ fn new_principal(kind: PrincipalKind, display_name: &str) -> NewPrincipal {
     }
 }
 
+/// Inserts the `custos.users` mirror row for an existing user principal (the
+/// mirror every writer maintains: `users.id = principals.id`), so the
+/// principal can serve as an agent's `owner_user_id` FK target.
+async fn seed_user_mirror_row(db: &TestDb, principal_id: Uuid, username: &str) {
+    exec(
+        db,
+        &format!(
+            "INSERT INTO custos.users \
+                (id, username, display_name, email, password_hash, is_root, is_system_admin, \
+                 disabled_at, activated_at, created_at, updated_at, principal_id) \
+             VALUES ('{principal_id}', '{username}', '{username}', NULL, NULL, false, false, \
+                 NULL, now(), now(), now(), '{principal_id}')"
+        ),
+    )
+    .await;
+}
+
+/// Inserts an `agent` principal owned by `owner_user_id`. Since the
+/// kind/owner CHECK (`m20260919_000056`), an agent principal can only be
+/// written together with its owning human user in the same row; the shared
+/// `NewPrincipal` repo path is user-principal-only (owner NULL), so agents
+/// are seeded here directly, the way `create_agent_principal_in` writes them.
+async fn seed_agent_principal(db: &TestDb, owner_user_id: Uuid, display_name: &str) -> Uuid {
+    let id = Uuid::now_v7();
+    exec(
+        db,
+        &format!(
+            "INSERT INTO custos.principals \
+                (id, kind, display_name, deactivated_at, owner_user_id, created_at, updated_at) \
+             VALUES ('{id}', 'agent', '{display_name}', NULL, '{owner_user_id}', now(), now())"
+        ),
+    )
+    .await;
+    id
+}
+
 #[tokio::test]
 async fn principal_repo_creates_and_finds_a_principal_by_id() {
     let db = TestDb::create().await.expect("TestDb::create");
@@ -547,14 +583,14 @@ async fn principal_repo_finds_principals_by_kind() {
     let db = TestDb::create().await.expect("TestDb::create");
     let principal_repo = repo(&db);
 
-    principal_repo
+    let ada = principal_repo
         .create(new_principal(PrincipalKind::User, "Ada"))
         .await
         .expect("create user principal");
-    principal_repo
-        .create(new_principal(PrincipalKind::Agent, "ci-bot"))
-        .await
-        .expect("create agent principal");
+    seed_user_mirror_row(&db, ada.id.0, "ada").await;
+    // The agent's owner is the user principal this fixture already created —
+    // never a freshly invented user.
+    seed_agent_principal(&db, ada.id.0, "ci-bot").await;
 
     let users = principal_repo
         .find_by_kind(PrincipalKind::User)
@@ -584,7 +620,11 @@ async fn principal_repo_rejects_a_duplicate_principal_id() {
         .expect("create principal");
     let duplicate = NewPrincipal {
         id: first.id,
-        ..new_principal(PrincipalKind::Agent, "imposter")
+        // The imposter must be a user principal: since the kind/owner CHECK,
+        // an agent-kind insert without an owner fails the CHECK before the
+        // unique index is ever consulted, which would mask the duplicate-id
+        // contract under test.
+        ..new_principal(PrincipalKind::User, "imposter")
     };
 
     let err = principal_repo

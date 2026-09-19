@@ -12,7 +12,7 @@
 //!
 //! Data-driven off `reg5.rs` via the registry (never a hand list): the set
 //! of routes exercised is `declared_routes()` filtered to `idempotent ==
-//! true` (34 routes today), sorted by `(method, path)` for a reproducible
+//! true` (35 routes today), sorted by `(method, path)` for a reproducible
 //! failure name. `body_for`'s match FAILS, naming the route, for any
 //! declared-true route it has no provisioning arm for (INV-DATA-DRIVEN,
 //! mirrors `api_page_conformance.rs`'s own `unregistered` check) — a new
@@ -51,7 +51,7 @@ use atlas_api::dtos::boards_tasks::{
     CreateSubtaskRequest, CreateTaskRequest,
 };
 use atlas_api::dtos::{
-    CreateGrantRequest, CreateProjectRequest, CreateUserRequest, GrantPrincipal,
+    CreateAgentRequest, CreateGrantRequest, CreateProjectRequest, CreateUserRequest, GrantPrincipal,
 };
 use atlas_client::AtlasClient;
 use atlas_core::registry::{HttpMethod, build};
@@ -378,15 +378,15 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
     let true_routes = declared_true_routes();
     assert_eq!(
         true_routes.len(),
-        34,
-        "expected exactly 34 declared idempotent:true routes"
+        35,
+        "expected exactly 35 declared idempotent:true routes"
     );
 
     let mut covered: HashSet<Route> = HashSet::new();
 
     // Every arm logs in at least once against custos's login governor
-    // (burst 5, one token per second, keyed by peer IP). Thirty-six logins
-    // need at least 31 seconds of wall time; a fast runner finished the
+    // (burst 5, one token per second, keyed by peer IP). Thirty-seven logins
+    // need at least 32 seconds of wall time; a fast runner finished the
     // arms in under 30 and got a plain-text 429 that the client reports as
     // an unknown problem. Pacing the arms to the refill keeps admitted
     // logins ahead of the budget on any runner.
@@ -460,6 +460,24 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                 let (client, _ws, _user) =
                     login_user_with_workspace(&server, &db, "sweep-apikeys").await;
                 let body = ReqBody::Json(serde_json::json!({ "name": "Sweep Key" }));
+                assert_idempotent_true(
+                    &client,
+                    &support::path::api_path("custos", route.path.as_str()),
+                    &[],
+                    body,
+                )
+                .await;
+            }
+
+            "/agents" => {
+                let (client, _ws, _user) =
+                    login_user_with_workspace(&server, &db, "sweep-agent").await;
+                let body = ReqBody::Json(
+                    serde_json::to_value(CreateAgentRequest {
+                        display_name: "Sweep Agent".to_string(),
+                    })
+                    .expect("serialize CreateAgentRequest"),
+                );
                 assert_idempotent_true(
                     &client,
                     &support::path::api_path("custos", route.path.as_str()),

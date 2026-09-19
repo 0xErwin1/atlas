@@ -1673,8 +1673,8 @@ fn api_agents_namespaced_sites_match_their_declared_home() {
 
     assert_eq!(
         sites.len(),
-        18,
-        "expected 18 namespaced sites in crates/atlas_server/tests/api_agents.rs \
+        19,
+        "expected 19 namespaced sites in crates/atlas_server/tests/api_agents.rs \
          (v2-e4-s3a-agents), found: {sites:?}"
     );
 
