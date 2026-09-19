@@ -46,6 +46,14 @@ const EXPECTED_IDEMPOTENT: &[(HttpMethod, &str, bool)] = &[
     (HttpMethod::Post, "/auth/logout", false),
     (HttpMethod::Get, "/auth/me", false),
     (HttpMethod::Post, "/auth/change-password", false),
+    // v2-e4-s3a-sessions: self-service session management for the
+    // authenticated user. `idempotent` is the Idempotency-Key replay flag,
+    // not HTTP semantics — every non-`POST` entry is mechanically `false`
+    // (T4.10), so both DELETE routes stay `false` here even though replaying
+    // them is handler-level idempotent.
+    (HttpMethod::Get, "/sessions", false),
+    (HttpMethod::Delete, "/sessions/{session_id}", false),
+    (HttpMethod::Delete, "/sessions", false),
     (HttpMethod::Patch, "/users/me", false),
     (HttpMethod::Post, "/users", false),
     (HttpMethod::Get, "/users", false),
@@ -815,13 +823,13 @@ fn table_is_exhaustive_over_reg5() {
     let live = all_declared_routes();
     assert_eq!(
         live.len(),
-        218,
-        "reg5.rs must declare exactly 218 routes; the classification table below assumes this"
+        221,
+        "reg5.rs must declare exactly 221 routes; the classification table below assumes this"
     );
     assert_eq!(
         EXPECTED_IDEMPOTENT.len(),
-        218,
-        "EXPECTED_IDEMPOTENT must cover all 218 reg5.rs entries, not a sample"
+        221,
+        "EXPECTED_IDEMPOTENT must cover all 221 reg5.rs entries, not a sample"
     );
 
     let live_keys: std::collections::HashSet<(HttpMethod, &str)> = live
@@ -920,11 +928,12 @@ fn true_and_false_counts_match_the_pr4_grounding() {
     // E11-S3a added custos's and acta's own `/health` and `/ready`, so 178
     // grew to 182. E11-S3b PR3 added `POST /doctor` (`idempotent: false`),
     // growing it to 183. E11-S8 PR3 added `GET /discover`
-    // (`idempotent: false`), growing it to 184; the `true` count (34) is
-    // unaffected.
+    // (`idempotent: false`), growing it to 184; v2-e4-s3a-sessions added
+    // custos's three self-service session routes (all `idempotent: false`),
+    // growing it to 187; the `true` count (34) is unaffected.
     assert_eq!(true_count, 34, "expected exactly 34 idempotent:true routes");
     assert_eq!(
-        false_count, 184,
-        "expected exactly 184 idempotent:false routes"
+        false_count, 187,
+        "expected exactly 187 idempotent:false routes"
     );
 }

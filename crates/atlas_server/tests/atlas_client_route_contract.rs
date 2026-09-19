@@ -857,7 +857,7 @@ fn extracted_call_count_is_pinned() {
     let total: usize = per_file.iter().map(|(_, calls)| calls.len()).sum();
 
     assert_eq!(
-        total, 195,
+        total, 198,
         "the total number of self.<verb>(..)/self.root_get(..) call sites across every mapped \
          atlas_client/src file changed without this pin moving — a pure move between mapped \
          files must leave this total unchanged"
@@ -865,12 +865,13 @@ fn extracted_call_count_is_pinned() {
 }
 
 /// D4.6, per-file — `custos.rs` split out exactly the 35 custos-owned call
-/// sites in PR3, `acta.rs` split out exactly the 154 acta-owned call sites
-/// in PR4, and `platform.rs` split out exactly the 4 platform-owned call
-/// sites in PR5, leaving `lib.rs` with the rest (2: the one `login` custos
-/// call and `health`'s `root_get`). Catches a call silently dropped or
-/// duplicated during the move that the total-count pin above cannot
-/// distinguish from a compensating change elsewhere.
+/// sites in PR3, then grew by 3 in v2-e4-s3a-sessions (list_sessions,
+/// revoke_session, revoke_other_sessions), `acta.rs` split out exactly the
+/// 154 acta-owned call sites in PR4, and `platform.rs` split out exactly the
+/// 4 platform-owned call sites in PR5, leaving `lib.rs` with the rest (2: the
+/// one `login` custos call and `health`'s `root_get`). Catches a call
+/// silently dropped or duplicated during the move that the total-count pin
+/// above cannot distinguish from a compensating change elsewhere.
 #[test]
 fn extracted_call_count_is_pinned_per_file() {
     let per_file = all_mapped_calls();
@@ -887,7 +888,7 @@ fn extracted_call_count_is_pinned_per_file() {
     );
     assert_eq!(
         counts.get("custos.rs").copied(),
-        Some(35),
+        Some(38),
         "custos.rs's own call count moved"
     );
     assert_eq!(

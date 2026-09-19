@@ -334,7 +334,7 @@ fn login_and_health_are_the_only_methods_with_no_home_namespace() {
 /// population with no method uncounted by either.
 #[test]
 fn method_namespace_map_size_reconciles_with_pr1s_extracted_call_count() {
-    const PR1_EXTRACTED_CALL_COUNT: usize = 195;
+    const PR1_EXTRACTED_CALL_COUNT: usize = 198;
 
     let derived = derive_method_namespace_map();
     assert_eq!(
@@ -814,6 +814,7 @@ const ATLAS_SERVER_TEST_PINS: &[(&str, usize)] = &[
     ("api_search_pagination.rs", 0),
     ("api_search_permissions.rs", 0),
     ("api_self_protection.rs", 0),
+    ("api_sessions.rs", 0),
     ("api_semantic_search.rs", 0),
     ("api_settings.rs", 0),
     ("api_status_templates.rs", 0),

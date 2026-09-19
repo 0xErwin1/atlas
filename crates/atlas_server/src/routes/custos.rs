@@ -181,7 +181,7 @@ mod diagnostics {
 /// `list_project_grants`, `list_workspace_grants`, both
 /// `custos::grants::read`).
 mod protected {
-    use crate::routes::{api_keys, audit, auth, discover, grants, groups, users};
+    use crate::routes::{api_keys, audit, auth, discover, grants, groups, sessions, users};
     use crate::state::AppState;
 
     crate::component_routes! {
@@ -190,6 +190,11 @@ mod protected {
         "/auth/logout" => [ post(auth::logout, exempt) ];
         "/auth/me" => [ get(auth::me, exempt) ];
         "/auth/change-password" => [ post(auth::change_password, exempt) ];
+        "/sessions" => [
+            get(sessions::list_sessions, exempt),
+            delete(sessions::revoke_other_sessions, exempt)
+        ];
+        "/sessions/{session_id}" => [ delete(sessions::revoke_session, exempt) ];
         "/users/me" => [ patch(auth::update_me, exempt) ];
         "/users" => [
             post(users::create_user, exempt),
@@ -305,6 +310,9 @@ pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
         crate::routes::auth::me,
         crate::routes::auth::change_password,
         crate::routes::auth::update_me,
+        crate::routes::sessions::list_sessions,
+        crate::routes::sessions::revoke_session,
+        crate::routes::sessions::revoke_other_sessions,
         crate::routes::users::list_users,
         crate::routes::users::create_user,
         crate::routes::users::disable_user,
@@ -364,6 +372,7 @@ pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
         atlas_api::dtos::LoginResponse,
         atlas_api::dtos::MeResponse,
         atlas_api::dtos::ResetPasswordRequest,
+        atlas_api::dtos::SessionDto,
         atlas_api::dtos::SetSystemAdminRequest,
         atlas_api::dtos::UpdateApiKeyRequest,
         atlas_api::dtos::UpdateMeRequest,
@@ -452,9 +461,9 @@ mod tests {
         );
         assert_eq!(
             router_set.len(),
-            38,
-            "custos owns exactly 36 docs/registry-route-ownership.md routes (E11-S8 added \
-             discover) plus the 2 \
+            41,
+            "custos owns exactly 39 docs/registry-route-ownership.md routes (E11-S8 added \
+             discover, v2-e4-s3a-sessions added the three self-service session routes) plus the 2 \
              health/ready probes E11-S3a design D2 added"
         );
     }

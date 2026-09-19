@@ -469,6 +469,17 @@ impl SessionRepo for PgSessionRepo {
             .map_err(db_err)
     }
 
+    async fn list_for_user(&self, user_id: UserId) -> Result<Vec<Session>, DomainError> {
+        use sea_orm::QueryOrder;
+        session::Entity::find()
+            .filter(session::Column::UserId.eq(user_id.0))
+            .order_by_desc(session::Column::CreatedAt)
+            .all(&self.conn)
+            .await
+            .map(|rows| rows.into_iter().map(session_from).collect())
+            .map_err(db_err)
+    }
+
     async fn revoke(&self, id: SessionId) -> Result<(), DomainError> {
         use sea_orm::IntoActiveModel;
         let row = session::Entity::find_by_id(id.0)

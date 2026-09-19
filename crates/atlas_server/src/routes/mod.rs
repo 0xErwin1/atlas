@@ -30,6 +30,7 @@ pub(crate) mod protection;
 pub(crate) mod saved_searches;
 pub(crate) mod search;
 pub(crate) mod semantic_search;
+pub(crate) mod sessions;
 pub(crate) mod status_templates;
 pub(crate) mod tags;
 pub(crate) mod task_views;

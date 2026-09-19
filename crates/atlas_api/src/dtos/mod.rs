@@ -464,6 +464,21 @@ pub struct ApiKeyCreated {
     pub scopes: Vec<ApiKeyScope>,
 }
 
+/// One of the authenticated user's login sessions (self-service listing and
+/// revocation). Deliberately carries no credential material: the session
+/// token hash never leaves the database.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct SessionDto {
+    pub id: uuid::Uuid,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+    pub revoked_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// `true` while `revoked_at IS NULL AND expires_at > now()`.
+    pub active: bool,
+}
+
 /// Summary representation of an API key (no secret).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]

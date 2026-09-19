@@ -2,8 +2,8 @@ use atlas_api::{
     dtos::{
         ActivationLinkResponse, ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, ApiKeyScope,
         ChangePasswordRequest, CreateGrantRequest, CreateUserApiKeyRequest, CreateUserRequest,
-        CreateUserResponse, GrantDto, MeResponse, ResetPasswordRequest, UpdateMeRequest, UserDto,
-        UserMembershipDto,
+        CreateUserResponse, GrantDto, MeResponse, ResetPasswordRequest, SessionDto,
+        UpdateMeRequest, UserDto, UserMembershipDto,
         discovery::DiscoverResponseDto,
         groups::{AddGroupMemberRequest, CreateGroupRequest, GroupDto, GroupMemberDto},
     },
@@ -64,6 +64,47 @@ impl Custos<'_> {
             .post(Component::Custos, "/auth/change-password")
             .header("x-atlas-csrf", "1")
             .json(&body)
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
+    /// `GET /api/v2/custos/sessions`
+    pub async fn list_sessions(&self) -> Result<Vec<SessionDto>, ClientError> {
+        let response = self.get(Component::Custos, "/sessions").send().await?;
+        self.decode_response(response, "list_sessions").await
+    }
+
+    /// `DELETE /api/v2/custos/sessions/{session_id}`
+    pub async fn revoke_session(&self, session_id: uuid::Uuid) -> Result<(), ClientError> {
+        let response = self
+            .delete(Component::Custos, &format!("/sessions/{session_id}"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
+    /// `DELETE /api/v2/custos/sessions` — revokes every active session
+    /// except the one the client is authenticated with.
+    pub async fn revoke_other_sessions(&self) -> Result<(), ClientError> {
+        let response = self
+            .delete(Component::Custos, "/sessions")
+            .header("x-atlas-csrf", "1")
             .send()
             .await?;
         if response.status().is_success() {

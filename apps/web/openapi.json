@@ -14306,6 +14306,107 @@
         "x-atlas-component": "custos"
       }
     },
+    "/api/v2/custos/sessions": {
+      "get": {
+        "tags": [
+          "auth",
+          "custos"
+        ],
+        "operationId": "list_sessions",
+        "responses": {
+          "200": {
+            "description": "The caller's own sessions, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SessionDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "API keys cannot list user sessions"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      },
+      "delete": {
+        "tags": [
+          "auth",
+          "custos"
+        ],
+        "operationId": "revoke_other_sessions",
+        "responses": {
+          "204": {
+            "description": "Every other active session revoked; the current session stays alive"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "API keys cannot revoke user sessions"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/sessions/{session_id}": {
+      "delete": {
+        "tags": [
+          "auth",
+          "custos"
+        ],
+        "operationId": "revoke_session",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "description": "Session ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Session revoked (a repeat revoke is the same 204 no-op)"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "API keys cannot revoke user sessions"
+          },
+          "404": {
+            "description": "No session with this id belongs to the caller — non-disclosure, not a permission error"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
     "/api/v2/custos/users": {
       "get": {
         "tags": [
@@ -21483,6 +21584,48 @@
           },
           "version": {
             "type": "string"
+          }
+        }
+      },
+      "SessionDto": {
+        "type": "object",
+        "description": "One of the authenticated user's login sessions (self-service listing and\nrevocation). Deliberately carries no credential material: the session\ntoken hash never leaves the database.",
+        "required": [
+          "id",
+          "created_at",
+          "expires_at",
+          "active"
+        ],
+        "properties": {
+          "active": {
+            "type": "boolean",
+            "description": "`true` while `revoked_at IS NULL AND expires_at > now()`."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "last_used_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "revoked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
           }
         }
       },

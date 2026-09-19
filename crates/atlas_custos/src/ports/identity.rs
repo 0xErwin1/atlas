@@ -69,6 +69,10 @@ pub trait SessionRepo: Send + Sync {
         &self,
         token_hash: &str,
     ) -> Result<Option<Session>, DomainError>;
+    /// Lists every session row belonging to `user_id`, newest first. The
+    /// query is scoped by `user_id` at the persistence layer so a forgotten
+    /// filter cannot be written at a call site.
+    async fn list_for_user(&self, user_id: UserId) -> Result<Vec<Session>, DomainError>;
     async fn revoke(&self, id: SessionId) -> Result<(), DomainError>;
     /// Revoke all active sessions for a user (used when disabling a user).
     async fn revoke_all_for_user(&self, user_id: UserId) -> Result<(), DomainError>;

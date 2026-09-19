@@ -282,6 +282,34 @@ fn custos_entry() -> ComponentEntry {
                     idempotent: false,
                     is_public: false,
                 },
+                // v2-e4-s3a-sessions: self-service session management for the
+                // authenticated user. `idempotent` stays false on all three:
+                // the flag is the Idempotency-Key replay bit (every non-POST
+                // entry is mechanically false, T4.10), not HTTP semantics.
+                RouteDeclaration {
+                    method: HttpMethod::Get,
+                    path: route_path("/sessions"),
+                    operation_id: "list_sessions".to_string(),
+                    action: None,
+                    idempotent: false,
+                    is_public: false,
+                },
+                RouteDeclaration {
+                    method: HttpMethod::Delete,
+                    path: route_path("/sessions/{session_id}"),
+                    operation_id: "revoke_session".to_string(),
+                    action: None,
+                    idempotent: false,
+                    is_public: false,
+                },
+                RouteDeclaration {
+                    method: HttpMethod::Delete,
+                    path: route_path("/sessions"),
+                    operation_id: "revoke_other_sessions".to_string(),
+                    action: None,
+                    idempotent: false,
+                    is_public: false,
+                },
                 RouteDeclaration {
                     method: HttpMethod::Patch,
                     path: route_path("/users/me"),
