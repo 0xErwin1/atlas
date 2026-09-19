@@ -1,9 +1,4 @@
-use axum::{
-    Json,
-    extract::{Extension, Path, Query, State},
-    http::StatusCode,
-    response::IntoResponse,
-};
+use axum::{Json, http::StatusCode, response::IntoResponse};
 use serde::Deserialize;
 use std::collections::HashMap;
 
@@ -26,8 +21,8 @@ use atlas_acta::ids::ProjectId;
 use atlas_acta::ids::WorkspaceId;
 use atlas_api::{
     dtos::{
-        ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, ApiKeyScope, CreateUserApiKeyRequest,
-        GrantedByDto, InitialGrantRequest, UpdateApiKeyRequest,
+        ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, ApiKeyScope, CreateAgentApiKeyRequest,
+        CreatePersonalApiKeyRequest, GrantedByDto, InitialGrantRequest, UpdateApiKeyRequest,
     },
     pagination::{Cursor, Page},
 };
@@ -40,6 +35,7 @@ use atlas_custos::capability::CapabilityFamily;
 use atlas_custos::entities::identity::ApiKeyType;
 use atlas_custos::entities::security_audit::NewSecurityAuditEvent;
 use atlas_custos::entities::security_audit::SecurityAction;
+use atlas_custos::ids::PrincipalId;
 use sea_orm::TransactionTrait;
 
 use crate::{
@@ -77,16 +73,6 @@ fn parse_key_type(s: Option<&str>) -> Result<ApiKeyType, ApiError> {
             message: format!(
                 "invalid key type: {other}; expected 'agent', 'cli', 'bot', or 'integration'"
             ),
-        }),
-    }
-}
-
-fn parse_key_kind(s: Option<&str>) -> Result<ApiKeyKind, ApiError> {
-    match s.unwrap_or("agent") {
-        "personal" => Ok(ApiKeyKind::Personal),
-        "agent" => Ok(ApiKeyKind::Agent),
-        other => Err(ApiError::InvalidInput {
-            message: format!("invalid key kind: {other}; expected 'personal' or 'agent'"),
         }),
     }
 }
@@ -243,59 +229,93 @@ fn key_to_dto(k: &atlas_custos::entities::identity::ApiKey) -> ApiKeyDto {
 }
 
 // ---------------------------------------------------------------------------
-// Top-level user-owned key routes (`/api/api-keys`)
+// Shared key-family handlers (v2-e4-s3b)
+//
+// Every operation below is kind-parameterized: the two route families
+// (`/personal-api-keys`, `/agent-api-keys`) are thin utoipa-annotated
+// wrappers passing their expected `ApiKeyKind`. A key addressed through the
+// wrong family is invisible (404), never a 403 that would confirm it exists.
 // ---------------------------------------------------------------------------
 
-#[utoipa::path(
-    post,
-    path = "/api-keys",
-    tag = "api-keys",
-    security(("bearer_auth" = [])),
-    request_body = CreateUserApiKeyRequest,
-    responses(
-        (status = 201, description = "API key created (secret shown once)", body = ApiKeyCreated),
-        (status = 400, description = "Invalid key type or role"),
-        (status = 401, description = "Unauthenticated"),
-        (status = 403, description = "API keys cannot create keys"),
-        (status = 422, description = "Unknown scope value"),
-    )
-)]
-pub(crate) async fn create_user_api_key(
-    State(state): State<AppState>,
-    Extension(principal): Extension<AuthPrincipal>,
-    Json(body): Json<CreateUserApiKeyRequest>,
-) -> Result<impl IntoResponse, ApiError> {
-    let user_id = match principal {
-        AuthPrincipal::User(uid) => uid,
-        AuthPrincipal::ApiKey(_) => {
-            return Err(ApiError::Forbidden {
-                message: "API keys cannot create other API keys".into(),
-            });
-        }
-    };
+fn require_caller_user(principal: AuthPrincipal, action: &str) -> Result<UserId, ApiError> {
+    match principal {
+        AuthPrincipal::User(uid) => Ok(uid),
+        AuthPrincipal::ApiKey(_) => Err(ApiError::Forbidden {
+            message: format!("API keys cannot {action}"),
+        }),
+    }
+}
 
-    let key_type = parse_key_type(body.r#type.as_deref())?;
-    let key_kind = parse_key_kind(body.key_kind.as_deref())?;
-    // The token prefix and the linked principal come from this single decision,
-    // so a freshly minted key can never carry a prefix that disagrees with its
-    // principal kind.
-    let secret = generate_api_key_of_kind(key_kind);
+/// Resolves the target key inside the caller's own visible set for the
+/// expected family: the key must exist, be the caller's own, and carry the
+/// family's credential kind. Any miss answers the same 404 — a foreign key,
+/// a nonexistent id, and a wrong-family key are indistinguishable.
+async fn load_owned_key_of_kind(
+    state: &AppState,
+    key_id: ApiKeyId,
+    user_id: UserId,
+    expected: ApiKeyKind,
+) -> Result<atlas_custos::entities::identity::ApiKey, ApiError> {
+    PgApiKeyRepo {
+        conn: (*state.db).clone(),
+    }
+    .get_by_id(key_id)
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?
+    .filter(|k| k.created_by_user_id == user_id && k.key_kind() == expected)
+    .ok_or(ApiError::NotFound)
+}
+
+/// Shared creation core: mints the token of the family's kind, persists the
+/// key (linked to the caller's user principal or the given agent principal),
+/// appends the audit event, and applies the optional initial grant — all as
+/// one decision the two families only parameterize.
+/// The request fields both families share (everything but the kind and the
+/// agent binding).
+pub(crate) struct NewKeyFields {
+    pub(crate) name: String,
+    pub(crate) key_type: Option<String>,
+    pub(crate) expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) scopes: Option<Vec<ApiKeyScope>>,
+    pub(crate) initial_grant: Option<InitialGrantRequest>,
+}
+
+/// Shared creation core: mints the token of the family's kind, persists the
+/// key (linked to the caller's user principal or the given agent principal),
+/// appends the audit event, and applies the optional initial grant — all as
+/// one decision the two families only parameterize.
+pub(crate) async fn create_key_of_kind(
+    state: AppState,
+    principal: AuthPrincipal,
+    expected: ApiKeyKind,
+    agent: Option<atlas_custos::entities::principals::Agent>,
+    fields: NewKeyFields,
+) -> Result<impl IntoResponse, ApiError> {
+    let user_id = require_caller_user(principal, "create other API keys")?;
+
+    let key_type = parse_key_type(fields.key_type.as_deref())?;
+    // The token prefix and the linked principal come from this single kind
+    // decision, so a freshly minted key can never carry a prefix that
+    // disagrees with its principal kind.
+    let secret = generate_api_key_of_kind(expected);
     let token_hash = hash_token(&secret);
 
     // Omitted or empty scopes fall back to `Capability::DEFAULT_READ_ONLY`: read
     // access to the five default families (tasks, docs, boards, folders,
     // projects), never an empty set. An explicit non-empty selection is
     // deduplicated and canonically ordered.
-    let scopes = match body.scopes {
+    let scopes = match fields.scopes {
         Some(scopes) if !scopes.is_empty() => capabilities_from_wire(scopes),
         _ => Capability::DEFAULT_READ_ONLY.to_vec(),
     };
 
     let new_key = NewApiKey {
-        name: body.name,
+        name: fields.name,
         token_hash,
         type_: key_type,
-        expires_at: body.expires_at,
+        expires_at: fields.expires_at,
         scopes,
     };
 
@@ -303,11 +323,18 @@ pub(crate) async fn create_user_api_key(
         message: e.to_string(),
     })?;
 
-    let key = PgApiKeyRepo::create_for_user_in_with_kind(&txn, user_id, key_kind, new_key)
-        .await
-        .map_err(|e| ApiError::Internal {
-            message: e.to_string(),
-        })?;
+    let key = match agent {
+        Some(agent) => PgApiKeyRepo::create_for_agent_in(&txn, user_id, &agent, new_key)
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: e.to_string(),
+            })?,
+        None => PgApiKeyRepo::create_for_user_in_with_kind(&txn, user_id, expected, new_key)
+            .await
+            .map_err(|e| ApiError::Internal {
+                message: e.to_string(),
+            })?,
+    };
 
     PgSecurityAuditRepo::append_in(
         &txn,
@@ -332,7 +359,7 @@ pub(crate) async fn create_user_api_key(
         message: e.to_string(),
     })?;
 
-    if let Some(grant_req) = body.initial_grant {
+    if let Some(grant_req) = fields.initial_grant {
         create_initial_grant(&state, user_id, key.id, &grant_req).await?;
     }
 
@@ -348,6 +375,59 @@ pub(crate) async fn create_user_api_key(
             scopes: canonical_scopes(&key.scopes),
         }),
     ))
+}
+
+/// Family core for `POST /personal-api-keys`: no agent involved — the key
+/// links to the caller's own user principal.
+pub(crate) async fn create_personal_key(
+    state: AppState,
+    principal: AuthPrincipal,
+    body: CreatePersonalApiKeyRequest,
+) -> Result<impl IntoResponse, ApiError> {
+    create_key_of_kind(
+        state,
+        principal,
+        ApiKeyKind::Personal,
+        None,
+        NewKeyFields {
+            name: body.name,
+            key_type: body.r#type,
+            expires_at: body.expires_at,
+            scopes: body.scopes,
+            initial_grant: body.initial_grant,
+        },
+    )
+    .await
+}
+
+/// Family core for `POST /agent-api-keys`: the key binds to the existing
+/// agent principal named by the mandatory `agent_id`, resolved through the
+/// same visible-set rules `/agents` already enforces (owner match, or
+/// platform admin) — a foreign or nonexistent agent answers 404.
+pub(crate) async fn create_agent_key(
+    state: AppState,
+    principal: AuthPrincipal,
+    body: CreateAgentApiKeyRequest,
+) -> Result<impl IntoResponse, ApiError> {
+    let user_id = require_caller_user(principal, "create other API keys")?;
+    let caller = super::agents::caller_user_record(&state, user_id).await?;
+    let agent =
+        super::agents::resolve_visible_agent(&state, &caller, PrincipalId(body.agent_id)).await?;
+
+    create_key_of_kind(
+        state,
+        AuthPrincipal::User(user_id),
+        ApiKeyKind::Agent,
+        Some(agent),
+        NewKeyFields {
+            name: body.name,
+            key_type: body.r#type,
+            expires_at: body.expires_at,
+            scopes: body.scopes,
+            initial_grant: body.initial_grant,
+        },
+    )
+    .await
 }
 
 /// Resolves workspace name/slug and optional project name/slug for a set of grants.
@@ -602,51 +682,16 @@ fn grant_to_api_key_grant_dto(
     }
 }
 
-#[utoipa::path(
-    get,
-    path = "/api-keys/{key_id}/grants",
-    tag = "api-keys",
-    security(("bearer_auth" = [])),
-    params(("key_id" = uuid::Uuid, Path, description = "API key id")),
-    responses(
-        (status = 200, description = "Grants belonging to this API key", body = Vec<ApiKeyGrantDto>),
-        (status = 401, description = "Unauthenticated"),
-        (status = 403, description = "Not the key owner"),
-        (status = 404, description = "Key not found"),
-    )
-)]
-pub(crate) async fn list_api_key_grants(
-    State(state): State<AppState>,
-    Extension(principal): Extension<AuthPrincipal>,
-    Path(params): Path<TopLevelRevokeKeyPath>,
+pub(crate) async fn list_key_grants_core(
+    state: AppState,
+    principal: AuthPrincipal,
+    expected: ApiKeyKind,
+    params: TopLevelRevokeKeyPath,
 ) -> Result<Json<Vec<ApiKeyGrantDto>>, ApiError> {
-    let user_id = match principal {
-        AuthPrincipal::User(uid) => uid,
-        AuthPrincipal::ApiKey(_) => {
-            return Err(ApiError::Forbidden {
-                message: "API keys cannot list grants".into(),
-            });
-        }
-    };
+    let user_id = require_caller_user(principal, "list grants")?;
 
     let key_id = ApiKeyId(params.key_id);
-    let api_key_repo = PgApiKeyRepo {
-        conn: (*state.db).clone(),
-    };
-
-    let key = api_key_repo
-        .get_by_id(key_id)
-        .await
-        .map_err(|e| ApiError::Internal {
-            message: e.to_string(),
-        })?
-        .ok_or(ApiError::NotFound)?;
-
-    if key.created_by_user_id != user_id {
-        return Err(ApiError::Forbidden {
-            message: "you can only view grants for API keys you own".into(),
-        });
-    }
+    let _key = load_owned_key_of_kind(&state, key_id, user_id, expected).await?;
 
     let grant_repo = PgPermissionGrantRepo {
         conn: (*state.db).clone(),
@@ -670,54 +715,16 @@ pub(crate) async fn list_api_key_grants(
     Ok(Json(dtos))
 }
 
-#[utoipa::path(
-    delete,
-    path = "/api-keys/{key_id}/grants/{grant_id}",
-    tag = "api-keys",
-    security(("bearer_auth" = [])),
-    params(
-        ("key_id" = uuid::Uuid, Path, description = "API key id"),
-        ("grant_id" = uuid::Uuid, Path, description = "Grant id to revoke"),
-    ),
-    responses(
-        (status = 204, description = "Grant revoked"),
-        (status = 401, description = "Unauthenticated"),
-        (status = 403, description = "Not the key owner"),
-        (status = 404, description = "Key or grant not found"),
-    )
-)]
-pub(crate) async fn delete_api_key_grant(
-    State(state): State<AppState>,
-    Extension(principal): Extension<AuthPrincipal>,
-    Path(params): Path<ApiKeyGrantPath>,
+pub(crate) async fn delete_key_grant_core(
+    state: AppState,
+    principal: AuthPrincipal,
+    expected: ApiKeyKind,
+    params: ApiKeyGrantPath,
 ) -> Result<StatusCode, ApiError> {
-    let user_id = match principal {
-        AuthPrincipal::User(uid) => uid,
-        AuthPrincipal::ApiKey(_) => {
-            return Err(ApiError::Forbidden {
-                message: "API keys cannot revoke grants".into(),
-            });
-        }
-    };
+    let user_id = require_caller_user(principal, "revoke grants")?;
 
     let key_id = ApiKeyId(params.key_id);
-    let api_key_repo = PgApiKeyRepo {
-        conn: (*state.db).clone(),
-    };
-
-    let key = api_key_repo
-        .get_by_id(key_id)
-        .await
-        .map_err(|e| ApiError::Internal {
-            message: e.to_string(),
-        })?
-        .ok_or(ApiError::NotFound)?;
-
-    if key.created_by_user_id != user_id {
-        return Err(ApiError::Forbidden {
-            message: "you can only revoke grants for API keys you own".into(),
-        });
-    }
+    let _key = load_owned_key_of_kind(&state, key_id, user_id, expected).await?;
 
     let grant_id = PermissionGrantId(params.grant_id);
     let grant_repo = PgPermissionGrantRepo {
@@ -794,34 +801,13 @@ async fn create_initial_grant(
     Ok(())
 }
 
-#[utoipa::path(
-    get,
-    path = "/api-keys",
-    tag = "api-keys",
-    security(("bearer_auth" = [])),
-    params(
-        ("cursor" = Option<String>, Query, description = "Pagination cursor"),
-        ("limit" = Option<u32>, Query, description = "Page size (max 200)"),
-    ),
-    responses(
-        (status = 200, description = "Paginated list of the caller's API keys", body = Page<ApiKeyDto>),
-        (status = 401, description = "Unauthenticated"),
-        (status = 403, description = "API keys cannot list keys"),
-    )
-)]
-pub(crate) async fn list_user_api_keys(
-    State(state): State<AppState>,
-    Extension(principal): Extension<AuthPrincipal>,
-    Query(q): Query<PaginationQuery>,
+pub(crate) async fn list_keys_core(
+    state: AppState,
+    principal: AuthPrincipal,
+    expected: ApiKeyKind,
+    q: PaginationQuery,
 ) -> Result<Json<Page<ApiKeyDto>>, ApiError> {
-    let user_id = match principal {
-        AuthPrincipal::User(uid) => uid,
-        AuthPrincipal::ApiKey(_) => {
-            return Err(ApiError::Forbidden {
-                message: "API keys cannot list API keys".into(),
-            });
-        }
-    };
+    let user_id = require_caller_user(principal, "list API keys")?;
 
     let repo = PgApiKeyRepo {
         conn: (*state.db).clone(),
@@ -839,6 +825,7 @@ pub(crate) async fn list_user_api_keys(
 
     let mut filtered: Vec<_> = all_keys
         .into_iter()
+        .filter(|k| k.key_kind() == expected)
         .filter(|k| after_id.is_none_or(|cursor| k.id.0 > cursor))
         .collect();
 
@@ -857,34 +844,17 @@ pub(crate) async fn list_user_api_keys(
     Ok(Json(Page::new(dtos, next_cursor, has_more)))
 }
 
-#[utoipa::path(
-    delete,
-    path = "/api-keys/{key_id}",
-    tag = "api-keys",
-    security(("bearer_auth" = [])),
-    params(("key_id" = uuid::Uuid, Path, description = "API key id")),
-    responses(
-        (status = 204, description = "API key revoked"),
-        (status = 401, description = "Unauthenticated"),
-        (status = 403, description = "Cannot revoke another user's key"),
-        (status = 404, description = "Key not found or already revoked"),
-    )
-)]
-pub(crate) async fn revoke_user_api_key(
-    State(state): State<AppState>,
-    Extension(principal): Extension<AuthPrincipal>,
-    Path(params): Path<TopLevelRevokeKeyPath>,
+pub(crate) async fn revoke_key_core(
+    state: AppState,
+    principal: AuthPrincipal,
+    expected: ApiKeyKind,
+    params: TopLevelRevokeKeyPath,
 ) -> Result<StatusCode, ApiError> {
-    let user_id = match principal {
-        AuthPrincipal::User(uid) => uid,
-        AuthPrincipal::ApiKey(_) => {
-            return Err(ApiError::Forbidden {
-                message: "API keys cannot revoke API keys".into(),
-            });
-        }
-    };
+    let user_id = require_caller_user(principal, "revoke API keys")?;
 
     let key_id = ApiKeyId(params.key_id);
+
+    let _key = load_owned_key_of_kind(&state, key_id, user_id, expected).await?;
 
     let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
         message: e.to_string(),
@@ -934,44 +904,23 @@ pub(crate) async fn revoke_user_api_key(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Updates a user-owned API key. `is_global` and `scopes` are each PATCH-partial:
-/// omitting a field leaves it unchanged; both may be set in the same request.
+/// Updates a caller-owned key of the expected family. `is_global` and `scopes`
+/// are each PATCH-partial: omitting a field leaves it unchanged; both may be
+/// set in the same request.
 ///
 /// Any owner of the key may toggle global reach or replace its scope set; the
 /// agent never gains more than its creator can reach (and stays capped at
 /// editor) nor more capabilities than the closed catalog allows, so this is
 /// bounded by the owner's own permissions rather than being a privilege
 /// escalation.
-#[utoipa::path(
-    patch,
-    path = "/api-keys/{key_id}",
-    tag = "api-keys",
-    security(("bearer_auth" = [])),
-    params(("key_id" = uuid::Uuid, Path, description = "API key id")),
-    request_body = UpdateApiKeyRequest,
-    responses(
-        (status = 200, description = "API key updated", body = ApiKeyDto),
-        (status = 400, description = "Scopes present but empty; revoke the key instead"),
-        (status = 401, description = "Unauthenticated"),
-        (status = 403, description = "API keys cannot manage API keys"),
-        (status = 404, description = "Key not found or not owned by the caller"),
-        (status = 422, description = "Unknown scope value"),
-    )
-)]
-pub(crate) async fn update_user_api_key(
-    State(state): State<AppState>,
-    Extension(principal): Extension<AuthPrincipal>,
-    Path(params): Path<TopLevelRevokeKeyPath>,
-    Json(body): Json<UpdateApiKeyRequest>,
+pub(crate) async fn update_key_core(
+    state: AppState,
+    principal: AuthPrincipal,
+    expected: ApiKeyKind,
+    params: TopLevelRevokeKeyPath,
+    body: UpdateApiKeyRequest,
 ) -> Result<Json<ApiKeyDto>, ApiError> {
-    let user_id = match principal {
-        AuthPrincipal::User(uid) => uid,
-        AuthPrincipal::ApiKey(_) => {
-            return Err(ApiError::Forbidden {
-                message: "API keys cannot manage API keys".into(),
-            });
-        }
-    };
+    let user_id = require_caller_user(principal, "manage API keys")?;
 
     let key_id = ApiKeyId(params.key_id);
 
@@ -986,19 +935,15 @@ pub(crate) async fn update_user_api_key(
     };
 
     if body.is_global.is_none() && scopes.is_none() {
-        let key = PgApiKeyRepo {
-            conn: (*state.db).clone(),
-        }
-        .get_by_id(key_id)
-        .await
-        .map_err(|e| ApiError::Internal {
-            message: e.to_string(),
-        })?
-        .filter(|k| k.created_by_user_id == user_id)
-        .ok_or(ApiError::NotFound)?;
+        let key = load_owned_key_of_kind(&state, key_id, user_id, expected).await?;
 
         return Ok(Json(key_to_dto(&key)));
     }
+
+    // The family/ownership gate above already resolved the key inside the
+    // caller's visible set; the user-scoped repo writes below re-check the
+    // owner under the transaction's snapshot.
+    load_owned_key_of_kind(&state, key_id, user_id, expected).await?;
 
     let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
         message: e.to_string(),
@@ -1073,7 +1018,7 @@ pub(crate) async fn update_user_api_key(
     })?;
 
     let key = key.ok_or(ApiError::Internal {
-        message: "update_user_api_key: no field applied despite entering the update branch".into(),
+        message: "update_key_core: no field applied despite entering the update branch".into(),
     })?;
 
     Ok(Json(key_to_dto(&key)))

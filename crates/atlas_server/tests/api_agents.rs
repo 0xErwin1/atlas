@@ -19,7 +19,7 @@
 
 mod support;
 
-use atlas_api::dtos::{CreateAgentRequest, CreateUserApiKeyRequest};
+use atlas_api::dtos::{CreateAgentApiKeyRequest, CreateAgentRequest};
 use atlas_client::ClientError;
 use atlas_custos::entities::identity::ApiKeyType;
 use atlas_server::auth::tokens::hash_token;
@@ -371,12 +371,22 @@ async fn an_api_key_principal_cannot_manage_agents() {
     let server = support::TestServer::spawn(&db).await;
     let (client, _user) = support::login_user(&server, &db, "agents-key-caller").await;
 
+    // This test genuinely exercises an AGENT key (v2-e4-s3b): the key must
+    // bind to an existing agent principal, created through /agents first.
+    let agent = client
+        .custos()
+        .create_agent(CreateAgentRequest {
+            display_name: "agents-key-caller-agent".to_string(),
+        })
+        .await
+        .expect("create agent");
+
     let created = client
         .custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
+        .create_agent_api_key(CreateAgentApiKeyRequest {
+            agent_id: agent.id,
             name: "agents-key-caller-key".to_string(),
             r#type: Some("agent".to_string()),
-            key_kind: Some("agent".to_string()),
             expires_at: None,
             scopes: None,
             initial_grant: None,

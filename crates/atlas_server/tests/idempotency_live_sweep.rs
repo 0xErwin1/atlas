@@ -12,7 +12,7 @@
 //!
 //! Data-driven off `reg5.rs` via the registry (never a hand list): the set
 //! of routes exercised is `declared_routes()` filtered to `idempotent ==
-//! true` (35 routes today), sorted by `(method, path)` for a reproducible
+//! true` (37 routes today), sorted by `(method, path)` for a reproducible
 //! failure name. `body_for`'s match FAILS, naming the route, for any
 //! declared-true route it has no provisioning arm for (INV-DATA-DRIVEN,
 //! mirrors `api_page_conformance.rs`'s own `unregistered` check) — a new
@@ -378,8 +378,8 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
     let true_routes = declared_true_routes();
     assert_eq!(
         true_routes.len(),
-        35,
-        "expected exactly 35 declared idempotent:true routes"
+        37,
+        "expected exactly 37 declared idempotent:true routes"
     );
 
     let mut covered: HashSet<Route> = HashSet::new();
@@ -456,10 +456,33 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                 assert_idempotent_true(&root, &path, &[], ReqBody::Json(serde_json::json!({})))
                     .await;
             }
-            "/api-keys" => {
+            "/personal-api-keys" => {
                 let (client, _ws, _user) =
-                    login_user_with_workspace(&server, &db, "sweep-apikeys").await;
-                let body = ReqBody::Json(serde_json::json!({ "name": "Sweep Key" }));
+                    login_user_with_workspace(&server, &db, "sweep-personal-keys").await;
+                let body = ReqBody::Json(serde_json::json!({ "name": "Sweep Personal Key" }));
+                assert_idempotent_true(
+                    &client,
+                    &support::path::api_path("custos", route.path.as_str()),
+                    &[],
+                    body,
+                )
+                .await;
+            }
+
+            "/agent-api-keys" => {
+                let (client, _ws, _user) =
+                    login_user_with_workspace(&server, &db, "sweep-agent-keys").await;
+                let agent = client
+                    .custos()
+                    .create_agent(CreateAgentRequest {
+                        display_name: "Sweep Agent Key Owner".to_string(),
+                    })
+                    .await
+                    .expect("create agent for agent-key sweep");
+                let body = ReqBody::Json(serde_json::json!({
+                    "name": "Sweep Agent Key",
+                    "agent_id": agent.id,
+                }));
                 assert_idempotent_true(
                     &client,
                     &support::path::api_path("custos", route.path.as_str()),

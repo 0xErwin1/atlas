@@ -550,8 +550,7 @@ async fn workspace_activity_api_key_sees_granted_scope() {
 
     let key_created = owner_client
         .custos()
-        .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(atlas_api::dtos::CreatePersonalApiKeyRequest {
             name: "agent-ak1".to_string(),
             r#type: Some("agent".to_string()),
             expires_at: None,
@@ -603,8 +602,7 @@ async fn workspace_activity_actor_type_filter_works() {
 
     let key_created = owner_client
         .custos()
-        .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(atlas_api::dtos::CreatePersonalApiKeyRequest {
             name: "agent-af1".to_string(),
             r#type: Some("agent".to_string()),
             expires_at: None,
@@ -995,8 +993,7 @@ async fn workspace_activity_ungranted_api_key_cannot_see_workspace_visible_proje
 
     let key_created = owner_client
         .custos()
-        .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(atlas_api::dtos::CreatePersonalApiKeyRequest {
             name: "agent-ak13".to_string(),
             r#type: Some("agent".to_string()),
             expires_at: None,
@@ -1162,8 +1159,7 @@ async fn workspace_activity_api_key_without_tasks_read_is_forbidden() {
 
     let key_created = owner_client
         .custos()
-        .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(atlas_api::dtos::CreatePersonalApiKeyRequest {
             name: "agent-nodocs".to_string(),
             r#type: Some("agent".to_string()),
             expires_at: None,
@@ -1208,8 +1204,7 @@ async fn workspace_activity_api_key_with_tasks_read_sees_feed() {
 
     let key_created = owner_client
         .custos()
-        .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(atlas_api::dtos::CreatePersonalApiKeyRequest {
             name: "agent-tasksread".to_string(),
             r#type: Some("agent".to_string()),
             expires_at: None,

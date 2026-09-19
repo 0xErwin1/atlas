@@ -7,7 +7,7 @@
 
 mod support;
 
-use atlas_api::dtos::CreateUserApiKeyRequest;
+use atlas_api::dtos::CreatePersonalApiKeyRequest;
 use atlas_client::ClientError;
 use support::{TestDb, TestServer, login_user_with_workspace};
 
@@ -49,8 +49,7 @@ async fn api_key_principal_cannot_create_workspace() {
 
     let created_key = owner
         .custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(CreatePersonalApiKeyRequest {
             name: "agent-key".to_string(),
             r#type: None,
             expires_at: None,

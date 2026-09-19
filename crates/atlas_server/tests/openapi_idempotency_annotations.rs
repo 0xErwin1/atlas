@@ -2,7 +2,7 @@
 
 //! D8's `Idempotency-Key` annotation audit (`v2-e3-s4` PR6, T6.8–T6.14):
 //! bidirectional INV-SET between the registry's `idempotent: true` set (the
-//! final S3 split, now 35/191) and the composed document's annotated-operation
+//! final S3 split, now 37/195) and the composed document's annotated-operation
 //! set, the placement of the replay/degrade markers on every response and
 //! of the `Retry-After` header on the `409` alone, the explicit negative check on the 191
 //! non-idempotent routes (which fold in the 12 dedup-excluded ones), and the
@@ -41,7 +41,7 @@ const REPLAYED_BODY_NOTE: &str =
 /// keys carry as of `v2-e3-s6` D1.2 — `api_path`, keyed at each entry's
 /// own component, never a shared `/api` literal. This is the test that
 /// catches a half-moved mount (R1): if the document's re-key and this set's
-/// re-key do not land in the same commit, every one of the 35 annotations
+/// re-key do not land in the same commit, every one of the 37 annotations
 /// disappears silently.
 fn declared_routes(idempotent: bool) -> HashSet<(HttpMethod, String)> {
     let registry = atlas_core::registry::build(reg5_component_entries(StorageBackend::Filesystem))
@@ -59,7 +59,7 @@ fn declared_routes(idempotent: bool) -> HashSet<(HttpMethod, String)> {
     routes
 }
 
-/// The 35 routes T6.8 asserts carry the full annotation set.
+/// The 37 routes T6.8 asserts carry the full annotation set.
 fn declared_idempotent_routes() -> HashSet<(HttpMethod, String)> {
     declared_routes(true)
 }
@@ -154,21 +154,22 @@ fn idempotency_key_annotation_matches_the_declared_idempotent_set_exactly() {
     );
 }
 
-/// T6.9: confirmed against the merged split (34 routes before
-/// `v2-e4-s3a-agents` added `POST /custos/agents`, 35 after).
+/// T6.9: confirmed against the merged split (35 routes before
+/// `v2-e4-s3b-key-families` added `POST /personal-api-keys` and
+/// `POST /agent-api-keys`, 37 after).
 #[test]
-fn exactly_35_routes_are_declared_idempotent() {
+fn exactly_37_routes_are_declared_idempotent() {
     let declared = declared_idempotent_routes();
     assert_eq!(
         declared.len(),
-        35,
-        "expected exactly 35 idempotent: true routes, found {}: {:?}",
+        37,
+        "expected exactly 37 idempotent: true routes, found {}: {:?}",
         declared.len(),
         declared
     );
 }
 
-/// Placement audit over all 35 idempotent operations: every response entry,
+/// Placement audit over all 37 idempotent operations: every response entry,
 /// the `409` included, documents both the replayed and the degraded marker
 /// (the middleware replays any stored status, a stored domain `409` among
 /// them, and degrades onto the handler's own response, whatever its status);
@@ -275,7 +276,7 @@ fn the_bidirectional_audit_detects_a_drifted_route() {
         .iter()
         .next()
         .cloned()
-        .expect("the 35-route idempotent set must be non-empty");
+        .expect("the 37-route idempotent set must be non-empty");
     annotated.remove(&dropped);
 
     let diff = diff_route_sets(&declared, &annotated);
@@ -288,7 +289,7 @@ fn the_bidirectional_audit_detects_a_drifted_route() {
 }
 
 /// T6.13/T6.14: the replayed-body note's exact text is present, verbatim, on
-/// every one of the 35 operations' `409` idempotency-conflict response
+/// every one of the 37 operations' `409` idempotency-conflict response
 /// description — checked exhaustively, not on a sample.
 #[test]
 fn the_replayed_body_note_is_present_verbatim_on_every_idempotent_operation() {

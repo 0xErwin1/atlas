@@ -968,6 +968,43 @@ impl PgApiKeyRepo {
             .map_err(db_err)
     }
 
+    /// Creates an API key bound to an existing agent principal using the
+    /// provided connection or transaction (v2-e4-s3b).
+    ///
+    /// Unlike `create_for_user_in_with_kind`'s `Agent` arm — which mints a
+    /// fresh agent principal named after the key — this links the new key row
+    /// to the agent principal the caller already resolved (the `/agents`
+    /// ownership rules, applied by the route layer). `created_by_user_id` is
+    /// the calling user for attribution, not necessarily the agent's owner
+    /// (a platform admin may create a key for another user's agent).
+    pub async fn create_for_agent_in<C: ConnectionTrait>(
+        conn: &C,
+        user_id: UserId,
+        agent: &Agent,
+        new: NewApiKey,
+    ) -> Result<ApiKey, DomainError> {
+        let model = api_key::ActiveModel {
+            id: Set(ApiKeyId::new().0),
+            workspace_id: Set(None),
+            created_by_user_id: Set(user_id.0),
+            name: Set(new.name.clone()),
+            token_hash: Set(new.token_hash),
+            type_: Set(new.type_.as_str().to_string()),
+            expires_at: Set(new.expires_at),
+            last_used_at: Set(None),
+            revoked_at: Set(None),
+            created_at: Set(Utc::now()),
+            is_global: Set(false),
+            scopes: Set(capabilities_to_stored(&new.scopes)),
+            principal_id: Set(agent.id.0),
+        };
+        model
+            .insert(conn)
+            .await
+            .map(|m| api_key_from(m, PrincipalKind::Agent))
+            .map_err(db_err)
+    }
+
     /// Replaces the full scope set on a user-owned key using the provided
     /// connection or transaction, so the update and its audit append share one
     /// transaction. Mirrors `set_global_for_user_in`'s full-replacement semantics.

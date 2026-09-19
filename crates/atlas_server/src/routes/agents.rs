@@ -23,6 +23,7 @@ use axum::{
 use serde::Deserialize;
 
 use atlas_api::dtos::{AgentDto, CreateAgentRequest};
+use atlas_core::principal::UserId;
 use atlas_custos::entities::identity::User;
 use atlas_custos::entities::principals::Agent;
 use atlas_custos::ids::PrincipalId;
@@ -47,16 +48,14 @@ fn agent_to_dto(agent: &Agent) -> AgentDto {
 
 /// Resolves the calling principal to a non-disabled human user, mirroring
 /// `RequireUserAdmin`'s user resolution without its admin requirement.
-async fn caller_user(state: &AppState, principal: AuthPrincipal) -> Result<User, ApiError> {
-    let user_id = match principal {
-        AuthPrincipal::User(uid) => uid,
-        AuthPrincipal::ApiKey(_) => {
-            return Err(ApiError::Forbidden {
-                message: "API keys cannot manage agents".into(),
-            });
-        }
-    };
-
+/// Resolves a user id to a non-disabled human user, mirroring
+/// `RequireUserAdmin`'s user resolution without its admin requirement.
+/// Shared with the agent-key family (`/agent-api-keys`), which resolves the
+/// same caller record before applying `/agents`' visible-set agent rules.
+pub(crate) async fn caller_user_record(
+    state: &AppState,
+    user_id: UserId,
+) -> Result<User, ApiError> {
     let user = PgUserRepo {
         conn: (*state.db).clone(),
     }
@@ -74,6 +73,19 @@ async fn caller_user(state: &AppState, principal: AuthPrincipal) -> Result<User,
     Ok(user)
 }
 
+async fn caller_user(state: &AppState, principal: AuthPrincipal) -> Result<User, ApiError> {
+    let user_id = match principal {
+        AuthPrincipal::User(uid) => uid,
+        AuthPrincipal::ApiKey(_) => {
+            return Err(ApiError::Forbidden {
+                message: "API keys cannot manage agents".into(),
+            });
+        }
+    };
+
+    caller_user_record(state, user_id).await
+}
+
 fn is_platform_admin(user: &User) -> bool {
     user.is_root || user.is_system_admin
 }
@@ -81,7 +93,7 @@ fn is_platform_admin(user: &User) -> bool {
 /// Resolves the target agent inside the caller's visible set: the owner's own
 /// agents, or every agent for a platform admin. A foreign or nonexistent id
 /// answers the same 404 (structural non-disclosure).
-async fn resolve_visible_agent(
+pub(crate) async fn resolve_visible_agent(
     state: &AppState,
     caller: &User,
     agent_id: PrincipalId,

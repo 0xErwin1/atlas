@@ -7,12 +7,14 @@
 
 mod support;
 
-use atlas_api::dtos::{ApiKeyScope, CreateUserApiKeyRequest, InitialGrantRequest};
+use atlas_api::dtos::CreateAgentRequest;
+use atlas_api::dtos::{
+    ApiKeyScope, CreateAgentApiKeyRequest, CreatePersonalApiKeyRequest, InitialGrantRequest,
+};
 use support::{TestDb, TestServer, login_user, login_user_with_workspace};
 
-fn key_req(name: &str) -> CreateUserApiKeyRequest {
-    CreateUserApiKeyRequest {
-        key_kind: None,
+fn key_req(name: &str) -> CreatePersonalApiKeyRequest {
+    CreatePersonalApiKeyRequest {
         name: name.to_string(),
         r#type: None,
         expires_at: None,
@@ -21,9 +23,8 @@ fn key_req(name: &str) -> CreateUserApiKeyRequest {
     }
 }
 
-fn user_key_req(name: &str) -> CreateUserApiKeyRequest {
-    CreateUserApiKeyRequest {
-        key_kind: None,
+fn user_key_req(name: &str) -> CreatePersonalApiKeyRequest {
+    CreatePersonalApiKeyRequest {
         name: name.to_string(),
         r#type: None,
         expires_at: None,
@@ -45,7 +46,7 @@ async fn create_user_api_key_returns_secret_and_type() {
 
     let created = user
         .custos()
-        .create_user_api_key(user_key_req("my-agent-key"))
+        .create_personal_api_key(user_key_req("my-agent-key"))
         .await
         .expect("create user api key");
 
@@ -67,8 +68,7 @@ async fn create_user_api_key_respects_explicit_type() {
 
     let (user, _) = login_user(&server, &db, "cuk-user2").await;
 
-    let req = CreateUserApiKeyRequest {
-        key_kind: None,
+    let req = CreatePersonalApiKeyRequest {
         name: "cli-key".to_string(),
         r#type: Some("cli".to_string()),
         expires_at: None,
@@ -78,7 +78,7 @@ async fn create_user_api_key_respects_explicit_type() {
 
     let created = user
         .custos()
-        .create_user_api_key(req)
+        .create_personal_api_key(req)
         .await
         .expect("create cli api key");
 
@@ -94,8 +94,7 @@ async fn create_user_api_key_rejects_invalid_type() {
 
     let (user, _) = login_user(&server, &db, "cuk-user3").await;
 
-    let req = CreateUserApiKeyRequest {
-        key_kind: None,
+    let req = CreatePersonalApiKeyRequest {
         name: "bad-type-key".to_string(),
         r#type: Some("superuser".to_string()),
         expires_at: None,
@@ -103,7 +102,7 @@ async fn create_user_api_key_rejects_invalid_type() {
         scopes: None,
     };
 
-    let err = user.custos().create_user_api_key(req).await;
+    let err = user.custos().create_personal_api_key(req).await;
 
     assert!(err.is_err(), "invalid type must be rejected");
 
@@ -117,10 +116,9 @@ async fn create_user_api_key_personal_mints_an_atlas_pk_token_and_reports_the_ki
 
     let (user, _) = login_user(&server, &db, "cuk-personal1").await;
 
-    let req = CreateUserApiKeyRequest {
+    let req = CreatePersonalApiKeyRequest {
         name: "my-personal-key".to_string(),
         r#type: None,
-        key_kind: Some("personal".to_string()),
         expires_at: None,
         initial_grant: None,
         scopes: None,
@@ -128,7 +126,7 @@ async fn create_user_api_key_personal_mints_an_atlas_pk_token_and_reports_the_ki
 
     let created = user
         .custos()
-        .create_user_api_key(req)
+        .create_personal_api_key(req)
         .await
         .expect("create personal api key");
 
@@ -140,7 +138,7 @@ async fn create_user_api_key_personal_mints_an_atlas_pk_token_and_reports_the_ki
 
     let page = user
         .custos()
-        .list_user_api_keys(None, None)
+        .list_personal_api_keys(None, None)
         .await
         .expect("list user api keys");
     let dto = page
@@ -156,61 +154,325 @@ async fn create_user_api_key_personal_mints_an_atlas_pk_token_and_reports_the_ki
     db.teardown().await;
 }
 
+/// The retired `key_kind` request field is gone (v2-e4-s3b): the route
+/// family is the kind decision. Its rejection surface moved to
+/// `/agent-api-keys`, which requires `agent_id`.
 #[tokio::test]
-async fn create_user_api_key_rejects_invalid_key_kind() {
+async fn agent_api_key_without_agent_id_is_rejected() {
     let db = TestDb::create().await.expect("TestDb::create");
     let server = TestServer::spawn(&db).await;
 
-    let (user, _) = login_user(&server, &db, "cuk-kind3").await;
+    let (user, _) = login_user(&server, &db, "cuk-agent-no-id").await;
 
-    let req = CreateUserApiKeyRequest {
-        name: "bad-kind-key".to_string(),
-        r#type: None,
-        key_kind: Some("superuser".to_string()),
-        expires_at: None,
-        initial_grant: None,
-        scopes: None,
-    };
+    let response = user
+        .http_client()
+        .post(support::path::api_url(
+            server.base_url(),
+            "custos",
+            "/agent-api-keys",
+        ))
+        .header("x-atlas-csrf", "1")
+        .bearer_auth(user.token().expect("token"))
+        .json(&serde_json::json!({
+            "name": "no-agent-key",
+        }))
+        .send()
+        .await
+        .expect("send request");
 
-    let err = user.custos().create_user_api_key(req).await;
-
-    assert!(err.is_err(), "invalid key_kind must be rejected");
+    assert_eq!(
+        response.status().as_u16(),
+        422,
+        "an agent key request without agent_id must be rejected by the wire contract"
+    );
 
     db.teardown().await;
 }
 
 #[tokio::test]
-async fn create_user_api_key_without_key_kind_defaults_to_agent() {
+async fn agent_api_key_binds_to_a_visible_agent_and_mints_an_atlas_ak_token() {
     let db = TestDb::create().await.expect("TestDb::create");
     let server = TestServer::spawn(&db).await;
 
-    let (user, _) = login_user(&server, &db, "cuk-default-agent").await;
+    let (user, _) = login_user(&server, &db, "cuk-agent-key").await;
 
-    // No key_kind sent at all: the pre-slice behaviour (agent principal,
-    // editor cap) must be preserved, and the token must be self-describing.
+    let agent = user
+        .custos()
+        .create_agent(CreateAgentRequest {
+            display_name: "work-agent".to_string(),
+        })
+        .await
+        .expect("create agent");
+
     let created = user
         .custos()
-        .create_user_api_key(key_req("default-kind-key"))
+        .create_agent_api_key(CreateAgentApiKeyRequest {
+            agent_id: agent.id,
+            name: "agent-bound-key".to_string(),
+            r#type: None,
+            expires_at: None,
+            initial_grant: None,
+            scopes: None,
+        })
         .await
-        .expect("create default api key");
+        .expect("create agent api key");
 
     assert!(
         created.secret.starts_with("atlas_ak_"),
-        "default key must use the atlas_ak_ prefix, got {}",
+        "agent key must use the atlas_ak_ prefix, got {}",
         created.secret
     );
 
     let page = user
         .custos()
-        .list_user_api_keys(None, None)
+        .list_agent_api_keys(None, None)
         .await
-        .expect("list user api keys");
+        .expect("list agent api keys");
+    let dto = page
+        .items
+        .iter()
+        .find(|k| k.id == created.id)
+        .expect("created key must be listed under the agent family");
+    assert_eq!(dto.key_kind, "agent");
+
+    let personal_page = user
+        .custos()
+        .list_personal_api_keys(None, None)
+        .await
+        .expect("list personal api keys");
+    assert!(
+        !personal_page.items.iter().any(|k| k.id == created.id),
+        "an agent key must never appear in the personal family"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn agent_api_key_for_a_nonexistent_agent_returns_404() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (user, _) = login_user(&server, &db, "cuk-agent-missing").await;
+
+    let err = user
+        .custos()
+        .create_agent_api_key(CreateAgentApiKeyRequest {
+            agent_id: uuid::Uuid::now_v7(),
+            name: "missing-agent-key".to_string(),
+            r#type: None,
+            expires_at: None,
+            initial_grant: None,
+            scopes: None,
+        })
+        .await
+        .expect_err("nonexistent agent must not create a key");
+
+    assert!(
+        matches!(err, atlas_client::ClientError::Api(ref p) if p.status == 404),
+        "a nonexistent agent_id must answer 404, got {err:?}"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn agent_api_key_for_a_foreign_agent_returns_404() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (alice, _) = login_user(&server, &db, "cuk-agent-owner").await;
+    let (mallory, _) = login_user(&server, &db, "cuk-agent-foreign").await;
+
+    let agent = alice
+        .custos()
+        .create_agent(CreateAgentRequest {
+            display_name: "alice-agent".to_string(),
+        })
+        .await
+        .expect("create agent");
+
+    let err = mallory
+        .custos()
+        .create_agent_api_key(CreateAgentApiKeyRequest {
+            agent_id: agent.id,
+            name: "foreign-agent-key".to_string(),
+            r#type: None,
+            expires_at: None,
+            initial_grant: None,
+            scopes: None,
+        })
+        .await
+        .expect_err("foreign agent must not create a key");
+
+    assert!(
+        matches!(err, atlas_client::ClientError::Api(ref p) if p.status == 404),
+        "a foreign agent_id must answer 404, got {err:?}"
+    );
+
+    db.teardown().await;
+}
+
+/// A personal key needs no agent anywhere in its creation (v2-e4-s3b).
+#[tokio::test]
+async fn personal_api_key_needs_no_agent_and_reports_personal_kind() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (user, _) = login_user(&server, &db, "cuk-default-personal").await;
+
+    let created = user
+        .custos()
+        .create_personal_api_key(key_req("default-personal-key"))
+        .await
+        .expect("create default api key");
+
+    assert!(
+        created.secret.starts_with("atlas_pk_"),
+        "personal key must use the atlas_pk_ prefix, got {}",
+        created.secret
+    );
+
+    let page = user
+        .custos()
+        .list_personal_api_keys(None, None)
+        .await
+        .expect("list personal api keys");
     let dto = page
         .items
         .iter()
         .find(|k| k.id == created.id)
         .expect("created key must be listed");
-    assert_eq!(dto.key_kind, "agent");
+    assert_eq!(dto.key_kind, "personal");
+
+    db.teardown().await;
+}
+
+/// Cross-family non-disclosure (v2-e4-s3b): a key addressed through the
+/// wrong family answers 404, never a 403 that would confirm it exists.
+#[tokio::test]
+async fn a_key_addressed_through_the_wrong_family_answers_404() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (owner, _) = login_user(&server, &db, "cuk-cross-family").await;
+
+    let personal = owner
+        .custos()
+        .create_personal_api_key(key_req("cross-personal"))
+        .await
+        .expect("create personal key");
+
+    let agent = owner
+        .custos()
+        .create_agent(CreateAgentRequest {
+            display_name: "cross-agent".to_string(),
+        })
+        .await
+        .expect("create agent");
+    let agent_key = owner
+        .custos()
+        .create_agent_api_key(CreateAgentApiKeyRequest {
+            agent_id: agent.id,
+            name: "cross-agent-key".to_string(),
+            r#type: None,
+            expires_at: None,
+            initial_grant: None,
+            scopes: None,
+        })
+        .await
+        .expect("create agent key");
+
+    for err in [
+        owner
+            .custos()
+            .set_agent_api_key_global(personal.id, true)
+            .await
+            .expect_err("personal key through agent family must fail"),
+        owner
+            .custos()
+            .revoke_agent_api_key(personal.id)
+            .await
+            .expect_err("personal key through agent family must fail"),
+        owner
+            .custos()
+            .list_agent_api_key_grants(personal.id)
+            .await
+            .expect_err("personal key through agent family must fail"),
+    ] {
+        assert!(
+            matches!(err, atlas_client::ClientError::Api(ref p) if p.status == 404),
+            "wrong family must 404, got {err:?}"
+        );
+    }
+
+    for err in [
+        owner
+            .custos()
+            .set_personal_api_key_global(agent_key.id, true)
+            .await
+            .expect_err("agent key through personal family must fail"),
+        owner
+            .custos()
+            .revoke_personal_api_key(agent_key.id)
+            .await
+            .expect_err("agent key through personal family must fail"),
+        owner
+            .custos()
+            .list_personal_api_key_grants(agent_key.id)
+            .await
+            .expect_err("agent key through personal family must fail"),
+    ] {
+        assert!(
+            matches!(err, atlas_client::ClientError::Api(ref p) if p.status == 404),
+            "wrong family must 404, got {err:?}"
+        );
+    }
+
+    db.teardown().await;
+}
+
+/// The retired `/api-keys` family is deleted, not aliased: any method on it
+/// answers 404.
+#[tokio::test]
+async fn the_retired_api_keys_family_is_gone() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let server = TestServer::spawn(&db).await;
+
+    let (user, _) = login_user(&server, &db, "cuk-retired").await;
+    let token = user.token().expect("token");
+    let client = user.http_client();
+
+    for (method, label, with_body) in [
+        (reqwest::Method::GET, "GET", false),
+        (reqwest::Method::POST, "POST", true),
+    ] {
+        let request = client
+            .request(
+                method,
+                // The retired family is not in the registry, so the URL is
+                // composed directly instead of through the validating
+                // `support::path` helpers.
+                format!("{}/api/v2/custos/api-keys", server.base_url()),
+            )
+            .bearer_auth(token);
+        let request = if with_body {
+            request
+                .header("x-atlas-csrf", "1")
+                .json(&serde_json::json!({
+                    "name": "no-such-family",
+                }))
+        } else {
+            request
+        };
+
+        let response = request.send().await.expect("send request");
+        assert_eq!(
+            response.status().as_u16(),
+            404,
+            "{label} /api-keys must be gone after the family split"
+        );
+    }
 
     db.teardown().await;
 }
@@ -224,7 +486,7 @@ async fn api_key_principal_cannot_create_user_api_key() {
 
     let ws_key = owner
         .custos()
-        .create_user_api_key(key_req("agent-key"))
+        .create_personal_api_key(key_req("agent-key"))
         .await
         .expect("create agent key");
 
@@ -232,7 +494,7 @@ async fn api_key_principal_cannot_create_user_api_key() {
 
     let err = agent
         .custos()
-        .create_user_api_key(user_key_req("forbidden"))
+        .create_personal_api_key(user_key_req("forbidden"))
         .await;
 
     assert!(err.is_err(), "api key principal must get 403");
@@ -247,8 +509,7 @@ async fn create_user_api_key_with_initial_grant() {
 
     let (owner, ws, _) = login_user_with_workspace(&server, &db, "cuk-user5").await;
 
-    let req = CreateUserApiKeyRequest {
-        key_kind: None,
+    let req = CreatePersonalApiKeyRequest {
         name: "granted-key".to_string(),
         r#type: None,
         expires_at: None,
@@ -261,7 +522,7 @@ async fn create_user_api_key_with_initial_grant() {
 
     let created = owner
         .custos()
-        .create_user_api_key(req)
+        .create_personal_api_key(req)
         .await
         .expect("create key with initial grant");
 
@@ -292,8 +553,7 @@ async fn initial_grant_rejects_admin_role() {
 
     let (owner, ws, _) = login_user_with_workspace(&server, &db, "cuk-user6").await;
 
-    let req = CreateUserApiKeyRequest {
-        key_kind: None,
+    let req = CreatePersonalApiKeyRequest {
         name: "admin-grant-key".to_string(),
         r#type: None,
         expires_at: None,
@@ -304,7 +564,7 @@ async fn initial_grant_rejects_admin_role() {
         scopes: None,
     };
 
-    let err = owner.custos().create_user_api_key(req).await;
+    let err = owner.custos().create_personal_api_key(req).await;
 
     assert!(
         err.is_err(),
@@ -328,18 +588,18 @@ async fn list_user_api_keys_returns_own_keys_only() {
 
     alice
         .custos()
-        .create_user_api_key(user_key_req("alice-key"))
+        .create_personal_api_key(user_key_req("alice-key"))
         .await
         .expect("alice creates key");
 
     bob.custos()
-        .create_user_api_key(user_key_req("bob-key"))
+        .create_personal_api_key(user_key_req("bob-key"))
         .await
         .expect("bob creates key");
 
     let alice_page = alice
         .custos()
-        .list_user_api_keys(None, None)
+        .list_personal_api_keys(None, None)
         .await
         .expect("alice lists her keys");
 
@@ -360,8 +620,7 @@ async fn list_user_api_keys_includes_type_field() {
     let (user, _) = login_user(&server, &db, "list-type").await;
 
     user.custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(CreatePersonalApiKeyRequest {
             name: "typed-key".to_string(),
             r#type: Some("bot".to_string()),
             expires_at: None,
@@ -373,7 +632,7 @@ async fn list_user_api_keys_includes_type_field() {
 
     let page = user
         .custos()
-        .list_user_api_keys(None, None)
+        .list_personal_api_keys(None, None)
         .await
         .expect("list keys");
 
@@ -392,13 +651,13 @@ async fn api_key_principal_cannot_list_user_api_keys() {
 
     let ws_key = owner
         .custos()
-        .create_user_api_key(key_req("list-agent-key"))
+        .create_personal_api_key(key_req("list-agent-key"))
         .await
         .expect("create agent key");
 
     let agent = atlas_client::AtlasClient::new(server.base_url()).with_token(ws_key.secret);
 
-    let err = agent.custos().list_user_api_keys(None, None).await;
+    let err = agent.custos().list_personal_api_keys(None, None).await;
 
     assert!(err.is_err(), "api key principal must get 403");
 
@@ -418,13 +677,13 @@ async fn revoke_user_api_key_removes_from_list() {
 
     let created = user
         .custos()
-        .create_user_api_key(user_key_req("to-revoke"))
+        .create_personal_api_key(user_key_req("to-revoke"))
         .await
         .expect("create key");
 
     let page_before = user
         .custos()
-        .list_user_api_keys(None, None)
+        .list_personal_api_keys(None, None)
         .await
         .expect("list before revoke");
 
@@ -434,13 +693,13 @@ async fn revoke_user_api_key_removes_from_list() {
     );
 
     user.custos()
-        .revoke_user_api_key(created.id)
+        .revoke_personal_api_key(created.id)
         .await
         .expect("revoke key");
 
     let page_after = user
         .custos()
-        .list_user_api_keys(None, None)
+        .list_personal_api_keys(None, None)
         .await
         .expect("list after revoke");
 
@@ -462,17 +721,17 @@ async fn revoke_user_api_key_rejects_other_users_key() {
 
     let alice_key = alice
         .custos()
-        .create_user_api_key(user_key_req("alice-secret"))
+        .create_personal_api_key(user_key_req("alice-secret"))
         .await
         .expect("alice creates key");
 
-    let err = bob.custos().revoke_user_api_key(alice_key.id).await;
+    let err = bob.custos().revoke_personal_api_key(alice_key.id).await;
 
     assert!(err.is_err(), "bob must not be able to revoke alice's key");
 
     let page = alice
         .custos()
-        .list_user_api_keys(None, None)
+        .list_personal_api_keys(None, None)
         .await
         .expect("list alice's keys");
 
@@ -493,7 +752,7 @@ async fn revoke_user_api_key_nonexistent_returns_error() {
 
     let err = user
         .custos()
-        .revoke_user_api_key(uuid::Uuid::now_v7())
+        .revoke_personal_api_key(uuid::Uuid::now_v7())
         .await;
 
     assert!(err.is_err(), "revoking a nonexistent key must return error");
@@ -514,7 +773,7 @@ async fn list_api_key_grants_returns_workspace_and_project_grants() {
 
     let created = owner
         .custos()
-        .create_user_api_key(user_key_req("grants-agent"))
+        .create_personal_api_key(user_key_req("grants-agent"))
         .await
         .expect("create key");
 
@@ -566,7 +825,7 @@ async fn list_api_key_grants_returns_workspace_and_project_grants() {
 
     let grants = owner
         .custos()
-        .list_api_key_grants(created.id)
+        .list_personal_api_key_grants(created.id)
         .await
         .expect("list api key grants");
 
@@ -601,7 +860,7 @@ async fn list_api_key_grants_includes_granted_by_user() {
 
     let created = owner
         .custos()
-        .create_user_api_key(user_key_req("grants-grantedby-agent"))
+        .create_personal_api_key(user_key_req("grants-grantedby-agent"))
         .await
         .expect("create key");
 
@@ -622,7 +881,7 @@ async fn list_api_key_grants_includes_granted_by_user() {
 
     let grants = owner
         .custos()
-        .list_api_key_grants(created.id)
+        .list_personal_api_key_grants(created.id)
         .await
         .expect("list api key grants");
 
@@ -659,7 +918,7 @@ async fn list_api_key_grants_non_owner_returns_403() {
 
     let created = owner
         .custos()
-        .create_user_api_key(user_key_req("grants-agent-nonowner"))
+        .create_personal_api_key(user_key_req("grants-agent-nonowner"))
         .await
         .expect("create key");
 
@@ -680,7 +939,7 @@ async fn list_api_key_grants_non_owner_returns_403() {
 
     let err = other
         .custos()
-        .list_api_key_grants(created.id)
+        .list_personal_api_key_grants(created.id)
         .await
         .expect_err("non-owner must be rejected");
 
@@ -709,7 +968,7 @@ async fn delete_api_key_grant_removes_grant() {
 
     let created = owner
         .custos()
-        .create_user_api_key(user_key_req("grant-del-agent"))
+        .create_personal_api_key(user_key_req("grant-del-agent"))
         .await
         .expect("create key");
 
@@ -730,7 +989,7 @@ async fn delete_api_key_grant_removes_grant() {
 
     let grants_before = owner
         .custos()
-        .list_api_key_grants(created.id)
+        .list_personal_api_key_grants(created.id)
         .await
         .expect("list before delete");
     assert_eq!(grants_before.len(), 1);
@@ -739,13 +998,13 @@ async fn delete_api_key_grant_removes_grant() {
 
     owner
         .custos()
-        .delete_api_key_grant(created.id, grant_id)
+        .delete_personal_api_key_grant(created.id, grant_id)
         .await
         .expect("delete grant");
 
     let grants_after = owner
         .custos()
-        .list_api_key_grants(created.id)
+        .list_personal_api_key_grants(created.id)
         .await
         .expect("list after delete");
     assert!(grants_after.is_empty(), "grant must be gone after delete");
@@ -763,7 +1022,7 @@ async fn delete_api_key_grant_non_owner_returns_403() {
 
     let created = owner
         .custos()
-        .create_user_api_key(user_key_req("grant-del-nonown-agent"))
+        .create_personal_api_key(user_key_req("grant-del-nonown-agent"))
         .await
         .expect("create key");
 
@@ -784,14 +1043,14 @@ async fn delete_api_key_grant_non_owner_returns_403() {
 
     let grants = owner
         .custos()
-        .list_api_key_grants(created.id)
+        .list_personal_api_key_grants(created.id)
         .await
         .expect("list grants");
     let grant_id = grants[0].id;
 
     let err = other
         .custos()
-        .delete_api_key_grant(created.id, grant_id)
+        .delete_personal_api_key_grant(created.id, grant_id)
         .await
         .expect_err("non-owner must be rejected");
 
@@ -818,8 +1077,7 @@ async fn api_key_member_dto_includes_key_type() {
 
     let (owner, ws, _) = login_user_with_workspace(&server, &db, "attr-user1").await;
 
-    let req = CreateUserApiKeyRequest {
-        key_kind: None,
+    let req = CreatePersonalApiKeyRequest {
         name: "attr-bot".to_string(),
         r#type: Some("bot".to_string()),
         expires_at: None,
@@ -832,7 +1090,7 @@ async fn api_key_member_dto_includes_key_type() {
 
     let key_created = owner
         .custos()
-        .create_user_api_key(req)
+        .create_personal_api_key(req)
         .await
         .expect("create key with grant");
 
@@ -875,8 +1133,7 @@ async fn create_user_api_key_default_scopes_grant_read_but_not_write() {
 
     let (owner, ws, _) = login_user_with_workspace(&server, &db, "cuk-default-scopes").await;
 
-    let req = CreateUserApiKeyRequest {
-        key_kind: None,
+    let req = CreatePersonalApiKeyRequest {
         name: "default-scope-agent".to_string(),
         r#type: None,
         expires_at: None,
@@ -889,7 +1146,7 @@ async fn create_user_api_key_default_scopes_grant_read_but_not_write() {
 
     let created = owner
         .custos()
-        .create_user_api_key(req)
+        .create_personal_api_key(req)
         .await
         .expect("create default-scope key");
 
@@ -901,7 +1158,7 @@ async fn create_user_api_key_default_scopes_grant_read_but_not_write() {
 
     let page = owner
         .custos()
-        .list_user_api_keys(None, None)
+        .list_personal_api_keys(None, None)
         .await
         .expect("list keys");
     let listed = page
@@ -962,8 +1219,7 @@ async fn create_user_api_key_explicit_scopes_round_trip() {
 
     let (owner, _) = login_user(&server, &db, "cuk-explicit-scopes").await;
 
-    let req = CreateUserApiKeyRequest {
-        key_kind: None,
+    let req = CreatePersonalApiKeyRequest {
         name: "explicit-scope-agent".to_string(),
         r#type: None,
         expires_at: None,
@@ -977,7 +1233,7 @@ async fn create_user_api_key_explicit_scopes_round_trip() {
 
     let created = owner
         .custos()
-        .create_user_api_key(req)
+        .create_personal_api_key(req)
         .await
         .expect("create explicit-scope key");
 
@@ -999,10 +1255,9 @@ async fn create_user_api_key_rejects_unknown_scope_with_422() {
 
     let response = owner
         .http_client()
-        .post(support::path::api_url(
-            server.base_url(),
-            "custos",
-            "/api-keys",
+        .post(format!(
+            "{}/api/v2/custos/personal-api-keys",
+            server.base_url()
         ))
         .header("x-atlas-csrf", "1")
         .bearer_auth(owner.token().expect("token"))
@@ -1032,13 +1287,13 @@ async fn update_user_api_key_replaces_full_scope_set() {
 
     let created = owner
         .custos()
-        .create_user_api_key(user_key_req("update-scope-key"))
+        .create_personal_api_key(user_key_req("update-scope-key"))
         .await
         .expect("create key");
 
     let updated = owner
         .custos()
-        .set_api_key_scopes(
+        .set_personal_api_key_scopes(
             created.id,
             vec![ApiKeyScope::DocsCreate, ApiKeyScope::DocsRead],
         )
@@ -1063,13 +1318,13 @@ async fn update_user_api_key_empty_scopes_returns_400() {
 
     let created = owner
         .custos()
-        .create_user_api_key(user_key_req("empty-scope-key"))
+        .create_personal_api_key(user_key_req("empty-scope-key"))
         .await
         .expect("create key");
 
     let err = owner
         .custos()
-        .set_api_key_scopes(created.id, vec![])
+        .set_personal_api_key_scopes(created.id, vec![])
         .await
         .expect_err("empty scopes must be rejected");
 
@@ -1093,7 +1348,7 @@ async fn update_user_api_key_omitting_scopes_leaves_them_unchanged() {
 
     let created = owner
         .custos()
-        .create_user_api_key(user_key_req("omit-scope-key"))
+        .create_personal_api_key(user_key_req("omit-scope-key"))
         .await
         .expect("create key");
 
@@ -1101,7 +1356,7 @@ async fn update_user_api_key_omitting_scopes_leaves_them_unchanged() {
 
     let after_toggle = owner
         .custos()
-        .set_api_key_global(created.id, true)
+        .set_personal_api_key_global(created.id, true)
         .await
         .expect("toggle is_global without touching scopes");
 

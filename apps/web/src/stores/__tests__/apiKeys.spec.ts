@@ -1,10 +1,10 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { PATCH, POST } = vi.hoisted(() => ({ PATCH: vi.fn(), POST: vi.fn() }));
+const { GET, PATCH, POST } = vi.hoisted(() => ({ GET: vi.fn(), PATCH: vi.fn(), POST: vi.fn() }));
 
 vi.mock('@/api/wrapper', () => ({
-  wrappedClient: { PATCH, POST },
+  wrappedClient: { GET, PATCH, POST },
 }));
 
 import { type ApiKeyDto, useApiKeysStore } from '@/stores/apiKeys';
@@ -14,6 +14,7 @@ function key(over: Partial<ApiKeyDto> = {}): ApiKeyDto {
     id: 'k1',
     name: 'ci-bot',
     type: 'agent',
+    key_kind: 'personal',
     created_at: '2024-01-01T00:00:00Z',
     is_global: false,
     scopes: [],
@@ -39,7 +40,7 @@ describe('useApiKeysStore — setKeyGlobal', () => {
     const ok = await store.setKeyGlobal('k1', true);
 
     expect(ok).toBe(true);
-    expect(PATCH).toHaveBeenCalledWith('/api/v2/custos/api-keys/{key_id}', {
+    expect(PATCH).toHaveBeenCalledWith('/api/v2/custos/personal-api-keys/{key_id}', {
       params: { path: { key_id: 'k1' } },
       body: { is_global: true },
     });
@@ -82,7 +83,7 @@ describe('useApiKeysStore — setKeyScopes', () => {
     const ok = await store.setKeyScopes('k1', ['acta::tasks::read', 'acta::tasks::create']);
 
     expect(ok).toBe(true);
-    expect(PATCH).toHaveBeenCalledWith('/api/v2/custos/api-keys/{key_id}', {
+    expect(PATCH).toHaveBeenCalledWith('/api/v2/custos/personal-api-keys/{key_id}', {
       params: { path: { key_id: 'k1' } },
       body: { scopes: ['acta::tasks::read', 'acta::tasks::create'] },
     });
@@ -135,5 +136,78 @@ describe('useApiKeysStore — setKeyWorkspaceRole', () => {
 
     expect(ok).toBe(false);
     expect(store.error).toBe('Forbidden');
+  });
+});
+
+describe('useApiKeysStore — the two key families (v2-e4-s3b)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+  });
+
+  it('creates a personal key through the personal family path', async () => {
+    POST.mockResolvedValueOnce({ data: { id: 'k9', secret: 'atlas_pk_x' }, error: undefined });
+
+    const store = useApiKeysStore();
+    const created = await store.createKey({
+      name: 'mine',
+      type: null,
+      expires_at: null,
+      scopes: null,
+      initial_grant: null,
+    });
+
+    expect(created?.id).toBe('k9');
+    expect(POST).toHaveBeenCalledWith('/api/v2/custos/personal-api-keys', {
+      body: { name: 'mine', type: null, expires_at: null, scopes: null, initial_grant: null },
+    });
+  });
+
+  it('addresses an agent-kind key through the agent family path', async () => {
+    PATCH.mockResolvedValueOnce({ data: key({ key_kind: 'agent', is_global: true }), error: undefined });
+
+    const store = useApiKeysStore();
+    store.keys = [key({ key_kind: 'agent', is_global: false })];
+
+    const ok = await store.setKeyGlobal('k1', true);
+
+    expect(ok).toBe(true);
+    expect(PATCH).toHaveBeenCalledWith('/api/v2/custos/agent-api-keys/{key_id}', {
+      params: { path: { key_id: 'k1' } },
+      body: { is_global: true },
+    });
+  });
+
+  it('loads both families and merges the non-revoked keys', async () => {
+    GET.mockImplementation((path: string) => {
+      if (path === '/api/v2/custos/personal-api-keys') {
+        return Promise.resolve({
+          data: { items: [key({ id: 'p1', key_kind: 'personal' })], next_cursor: undefined, has_more: false },
+          error: undefined,
+        });
+      }
+      if (path === '/api/v2/custos/agent-api-keys') {
+        return Promise.resolve({
+          data: {
+            items: [
+              key({ id: 'a1', key_kind: 'agent' }),
+              key({ id: 'a2', key_kind: 'agent', revoked_at: '2024-02-01T00:00:00Z' }),
+            ],
+            next_cursor: undefined,
+            has_more: false,
+          },
+          error: undefined,
+        });
+      }
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    const store = useApiKeysStore();
+    await store.loadKeys();
+
+    expect(GET).toHaveBeenCalledWith('/api/v2/custos/personal-api-keys', expect.anything());
+    expect(GET).toHaveBeenCalledWith('/api/v2/custos/agent-api-keys', expect.anything());
+    expect(store.keys.map((k) => k.id).sort()).toEqual(['a1', 'p1']);
+    expect(store.error).toBeNull();
   });
 });

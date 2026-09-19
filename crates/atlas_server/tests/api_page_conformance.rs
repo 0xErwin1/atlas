@@ -222,9 +222,16 @@ const DSHAPE_EXCLUDED: &[(HttpMethod, &str, &str)] = &[
     ),
     (
         HttpMethod::Get,
-        "/api-keys/{key_id}/grants",
+        "/personal-api-keys/{key_id}/grants",
         "API-key grants return Vec<ApiKeyGrantDto> where workspace/project grants \
-         return Page<GrantDto> (api_keys.rs:600-604 vs grants.rs:198,473) — \
+         return Page<GrantDto> (personal_api_keys.rs / grants.rs:198,473) — \
+         recorded finding, deferred to S6/S7 per D-SHAPE, not fixed here.",
+    ),
+    (
+        HttpMethod::Get,
+        "/agent-api-keys/{key_id}/grants",
+        "API-key grants return Vec<ApiKeyGrantDto> where workspace/project grants \
+         return Page<GrantDto> (agent_api_keys.rs / grants.rs:198,473) — \
          recorded finding, deferred to S6/S7 per D-SHAPE, not fixed here.",
     ),
 ];
@@ -323,7 +330,7 @@ fn page_route_classification_is_exhaustive_and_self_checking() {
     // adjusting the number to make the test pass.
     assert_eq!(
         page_routes.len(),
-        24,
+        25,
         "Page<T>-classified route count changed — enumerate the new/removed \
          route(s) rather than only updating this number: {page_routes:?}"
     );
@@ -1029,10 +1036,17 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
                 admin_db.teardown().await;
             }
-            "/api-keys" => {
+            "/personal-api-keys" => {
                 let (client, _ws, _user) =
                     support::login_user_with_workspace(&server, &db, "pgconf-sweep-apikeys").await;
-                let body = fetch_page_json(&client, "/api-keys", &component).await;
+                let body = fetch_page_json(&client, "/personal-api-keys", &component).await;
+                assert_is_own_last_page(&body, route.path.as_str(), 0);
+            }
+            "/agent-api-keys" => {
+                let (client, _ws, _user) =
+                    support::login_user_with_workspace(&server, &db, "pgconf-sweep-agentkeys")
+                        .await;
+                let body = fetch_page_json(&client, "/agent-api-keys", &component).await;
                 assert_is_own_last_page(&body, route.path.as_str(), 0);
             }
             "/workspaces/{ws}/activity" => {

@@ -329,12 +329,12 @@ fn login_and_health_are_the_only_methods_with_no_home_namespace() {
 /// delegate-only methods — `list_documents`, `list_documents_with_unfiled_filter`,
 /// `create_task` — resolved transitively to their callee's home). The
 /// reconciliation below is the real cross-check: every method the map
-/// visits is either one of PR1's 203 call-bearing methods or one of these 3
-/// named delegates, and the two audits agree on the full 206-method
+/// visits is either one of PR1's 210 call-bearing methods or one of these 3
+/// named delegates, and the two audits agree on the full 213-method
 /// population with no method uncounted by either.
 #[test]
 fn method_namespace_map_size_reconciles_with_pr1s_extracted_call_count() {
-    const PR1_EXTRACTED_CALL_COUNT: usize = 203;
+    const PR1_EXTRACTED_CALL_COUNT: usize = 210;
 
     let derived = derive_method_namespace_map();
     assert_eq!(
@@ -1153,8 +1153,9 @@ fn atlas_cli_namespaced_sites_match_their_declared_home() {
 
     assert_eq!(
         sites.len(),
-        150,
-        "expected 150 namespaced sites in crates/atlas_cli/src (PR6), found: {sites:?}"
+        151,
+        "expected 151 namespaced sites in crates/atlas_cli/src (PR6, 151 after \
+         v2-e4-s3b-key-families gave `api-keys create` a second family call), found: {sites:?}"
     );
 
     let mismatches = reverse_check_mismatches(&sites, &derived.map);
@@ -1313,9 +1314,9 @@ fn api_user_api_keys_namespaced_sites_match_their_declared_home() {
 
     assert_eq!(
         sites.len(),
-        61,
-        "expected 61 namespaced sites in crates/atlas_server/tests/api_user_api_keys.rs (PR10), \
-         found: {sites:?}"
+        76,
+        "expected 76 namespaced sites in crates/atlas_server/tests/api_user_api_keys.rs \
+         (PR10, 76 after v2-e4-s3b-key-families split the key families), found: {sites:?}"
     );
 
     let mismatches = reverse_check_mismatches(&sites, &derived.map);
@@ -1547,9 +1548,9 @@ fn idempotency_live_sweep_namespaced_sites_match_their_declared_home() {
 
     assert_eq!(
         sites.len(),
-        34,
-        "expected 34 namespaced sites in crates/atlas_server/tests/idempotency_live_sweep.rs \
-         (PR11b), found: {sites:?}"
+        35,
+        "expected 35 namespaced sites in crates/atlas_server/tests/idempotency_live_sweep.rs \
+         (PR11b, 35 after v2-e4-s3b-key-families added the agent-key arm), found: {sites:?}"
     );
 
     let mismatches = reverse_check_mismatches(&sites, &derived.map);
@@ -1673,9 +1674,10 @@ fn api_agents_namespaced_sites_match_their_declared_home() {
 
     assert_eq!(
         sites.len(),
-        19,
-        "expected 19 namespaced sites in crates/atlas_server/tests/api_agents.rs \
-         (v2-e4-s3a-agents), found: {sites:?}"
+        20,
+        "expected 20 namespaced sites in crates/atlas_server/tests/api_agents.rs \
+         (v2-e4-s3a-agents, 20 after v2-e4-s3b-key-families added the agent-key creation), \
+         found: {sites:?}"
     );
 
     let mismatches = reverse_check_mismatches(&sites, &derived.map);

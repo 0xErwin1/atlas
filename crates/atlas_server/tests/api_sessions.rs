@@ -414,10 +414,9 @@ async fn api_key_principal_cannot_list_or_revoke_sessions() {
 
     let created = client
         .custos()
-        .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
+        .create_personal_api_key(atlas_api::dtos::CreatePersonalApiKeyRequest {
             name: "sessions-agent".to_string(),
             r#type: None,
-            key_kind: None,
             expires_at: None,
             initial_grant: None,
             scopes: None,

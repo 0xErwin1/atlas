@@ -2214,6 +2214,7 @@ _arguments "${_arguments_options[@]}" : \
 '--initial-grant-workspace=[Workspace slug for an initial grant (must be combined with --initial-grant-role)]:INITIAL_GRANT_WORKSPACE:_default' \
 '--initial-grant-role=[Role for the initial grant\: \`viewer\` or \`editor\`]:INITIAL_GRANT_ROLE:_default' \
 '*--scope=[Capability scope to grant, in \`family\:action\` form (repeatable)]:FAMILY:ACTION:_default' \
+'--agent-id=[Create the key for an existing agent principal (agent key family). Omit to create a personal key linked to your own user principal]:AGENT_ID:_default' \
 '--base-url=[Override the Atlas server URL]:BASE_URL:_default' \
 '--token=[Bearer token for authentication]:TOKEN:_default' \
 '--workspace=[Default workspace slug used when \`--workspace\` is not given per-command]:WORKSPACE:_default' \
