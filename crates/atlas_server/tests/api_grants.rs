@@ -12,7 +12,7 @@ use atlas_acta::actor::WorkspaceCtx;
 use atlas_acta::entities::identity::MemberRole;
 use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_api::dtos::{
-    CreateGrantRequest, CreateProjectRequest, CreateUserApiKeyRequest, GrantPrincipal,
+    CreateGrantRequest, CreatePersonalApiKeyRequest, CreateProjectRequest, GrantPrincipal,
 };
 use atlas_client::ClientError;
 use atlas_server::persistence::repos::{ApiKeyRepo, NewApiKey, NewUser, UserRepo};
@@ -466,9 +466,8 @@ async fn create_workspace_grant_editor_to_agent_succeeds() {
 // C2 workspace-independent (top-level) key grant tests
 // ---------------------------------------------------------------------------
 
-fn toplevel_key_req(name: &str) -> CreateUserApiKeyRequest {
-    CreateUserApiKeyRequest {
-        key_kind: None,
+fn toplevel_key_req(name: &str) -> CreatePersonalApiKeyRequest {
+    CreatePersonalApiKeyRequest {
         name: name.to_string(),
         r#type: None,
         expires_at: None,
@@ -486,7 +485,7 @@ async fn grant_toplevel_api_key_to_workspace_succeeds() {
 
     let created = owner
         .custos()
-        .create_user_api_key(toplevel_key_req("tl-agent-ws"))
+        .create_personal_api_key(toplevel_key_req("tl-agent-ws"))
         .await
         .expect("create top-level api key");
 
@@ -528,7 +527,7 @@ async fn grant_toplevel_api_key_to_project_succeeds() {
 
     let created = owner
         .custos()
-        .create_user_api_key(toplevel_key_req("tl-agent-proj"))
+        .create_personal_api_key(toplevel_key_req("tl-agent-proj"))
         .await
         .expect("create top-level api key");
 
@@ -558,7 +557,7 @@ async fn grant_api_key_not_owned_by_caller_is_rejected() {
 
     let other_key = other
         .custos()
-        .create_user_api_key(toplevel_key_req("other-tl-agent"))
+        .create_personal_api_key(toplevel_key_req("other-tl-agent"))
         .await
         .expect("create other user's top-level api key");
 
@@ -587,7 +586,7 @@ async fn grant_toplevel_api_key_admin_is_still_rejected() {
 
     let created = owner
         .custos()
-        .create_user_api_key(toplevel_key_req("tl-admin-cap-key"))
+        .create_personal_api_key(toplevel_key_req("tl-admin-cap-key"))
         .await
         .expect("create top-level api key");
 

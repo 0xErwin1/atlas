@@ -1776,7 +1776,7 @@ _atlas() {
             return 0
             ;;
         atlas__subcmd__api__subcmd__keys__subcmd__create)
-            opts="-h --name --type --expires-at --initial-grant-workspace --initial-grant-role --scope --base-url --token --json --workspace --help"
+            opts="-h --name --type --expires-at --initial-grant-workspace --initial-grant-role --scope --agent-id --base-url --token --json --workspace --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1803,6 +1803,10 @@ _atlas() {
                     return 0
                     ;;
                 --scope)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --agent-id)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;

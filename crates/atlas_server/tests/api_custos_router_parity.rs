@@ -43,12 +43,12 @@ async fn custos_routes_keep_pre_refactor_mount_and_auth_posture() {
     ];
 
     // One representative route per sub-family behind `require_authn` (D6):
-    // auth self-service, users admin, api-keys, grants (the two `Some(_)`
-    // capability routes), groups, and the security audit log.
+    // auth self-service, users admin, the API-key families, grants (the two
+    // `Some(_)` capability routes), groups, and the security audit log.
     const PROTECTED_ROUTES: [(reqwest::Method, &str); 8] = [
         (reqwest::Method::GET, "/auth/me"),
         (reqwest::Method::GET, "/users"),
-        (reqwest::Method::GET, "/api-keys"),
+        (reqwest::Method::GET, "/personal-api-keys"),
         (reqwest::Method::GET, "/workspaces/some-ws/grants"),
         (
             reqwest::Method::GET,

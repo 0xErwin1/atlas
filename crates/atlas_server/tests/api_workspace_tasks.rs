@@ -12,7 +12,7 @@ use atlas_api::dtos::boards_tasks::{
     CreateTaskRequest, WorkspaceTaskQueryParams,
 };
 use atlas_api::dtos::{
-    ApiKeyScope, CreateProjectRequest, CreateUserApiKeyRequest, InitialGrantRequest,
+    ApiKeyScope, CreatePersonalApiKeyRequest, CreateProjectRequest, InitialGrantRequest,
 };
 use atlas_client::ClientError;
 
@@ -56,8 +56,7 @@ async fn seed_workspace(
 
     let key_created = user_client
         .custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(CreatePersonalApiKeyRequest {
             name: "test-agent".to_string(),
             r#type: None,
             expires_at: None,

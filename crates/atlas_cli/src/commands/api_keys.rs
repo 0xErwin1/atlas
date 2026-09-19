@@ -83,7 +83,7 @@ async fn run_list(ctx: &Ctx, args: ApiKeysListArgs) -> Result<(), CliError> {
     let page = ctx
         .client
         .custos()
-        .list_user_api_keys(args.cursor.as_deref(), limit)
+        .list_personal_api_keys(args.cursor.as_deref(), limit)
         .await?;
 
     let items: Vec<ApiKeyProjection> = page.items.into_iter().map(ApiKeyProjection::from).collect();
@@ -127,10 +127,17 @@ pub(crate) struct ApiKeysCreateArgs {
     /// exists. Omit entirely to receive the server's read-only default.
     #[arg(long = "scope", value_name = "FAMILY:ACTION")]
     pub(crate) scopes: Vec<String>,
+
+    /// Create the key for an existing agent principal (agent key family).
+    /// Omit to create a personal key linked to your own user principal.
+    #[arg(long)]
+    pub(crate) agent_id: Option<Uuid>,
 }
 
 async fn run_create(ctx: &Ctx, args: ApiKeysCreateArgs) -> Result<(), CliError> {
-    use atlas_api::dtos::{CreateUserApiKeyRequest, InitialGrantRequest};
+    use atlas_api::dtos::{
+        CreateAgentApiKeyRequest, CreatePersonalApiKeyRequest, InitialGrantRequest,
+    };
 
     let expires_at = args
         .expires_at
@@ -154,22 +161,44 @@ async fn run_create(ctx: &Ctx, args: ApiKeysCreateArgs) -> Result<(), CliError> 
 
     let scopes = collect_scopes(&args.scopes)?;
 
-    let body = CreateUserApiKeyRequest {
-        key_kind: None,
-        name: args.name,
-        r#type: args.r#type,
-        expires_at,
-        initial_grant,
-        // Omitting `--scope` sends `None`, so the server applies its read-only
-        // default; any provided scopes are the exact set to grant.
-        scopes: if scopes.is_empty() {
-            None
-        } else {
-            Some(scopes)
-        },
+    // The two wire families replaced the retired `key_kind` field: an optional
+    // `--agent-id` targets `/agent-api-keys` (mandatory agent reference), its
+    // absence targets `/personal-api-keys` (no agent involved).
+    let created = match args.agent_id {
+        Some(agent_id) => {
+            ctx.client
+                .custos()
+                .create_agent_api_key(CreateAgentApiKeyRequest {
+                    agent_id,
+                    name: args.name,
+                    r#type: args.r#type,
+                    expires_at,
+                    initial_grant,
+                    scopes: if scopes.is_empty() {
+                        None
+                    } else {
+                        Some(scopes)
+                    },
+                })
+                .await?
+        }
+        None => {
+            ctx.client
+                .custos()
+                .create_personal_api_key(CreatePersonalApiKeyRequest {
+                    name: args.name,
+                    r#type: args.r#type,
+                    expires_at,
+                    initial_grant,
+                    scopes: if scopes.is_empty() {
+                        None
+                    } else {
+                        Some(scopes)
+                    },
+                })
+                .await?
+        }
     };
-
-    let created = ctx.client.custos().create_user_api_key(body).await?;
     let proj = ApiKeyCreatedProjection::from(created);
     output::emit(ctx.output, &proj)
 }
@@ -197,7 +226,10 @@ async fn run_revoke(ctx: &Ctx, args: ApiKeysRevokeArgs) -> Result<(), CliError> 
         ));
     }
 
-    ctx.client.custos().revoke_user_api_key(args.key_id).await?;
+    ctx.client
+        .custos()
+        .revoke_personal_api_key(args.key_id)
+        .await?;
 
     let proj = DeleteByIdProjection {
         deleted: true,
@@ -226,7 +258,7 @@ async fn run_set_global(ctx: &Ctx, args: ApiKeysSetGlobalArgs) -> Result<(), Cli
     let key = ctx
         .client
         .custos()
-        .set_api_key_global(args.key_id, args.global)
+        .set_personal_api_key_global(args.key_id, args.global)
         .await?;
     let proj = ApiKeyProjection::from(key);
     output::emit(ctx.output, &proj)
@@ -256,7 +288,7 @@ async fn run_set_scopes(ctx: &Ctx, args: ApiKeysSetScopesArgs) -> Result<(), Cli
     let key = ctx
         .client
         .custos()
-        .set_api_key_scopes(args.key_id, scopes)
+        .set_personal_api_key_scopes(args.key_id, scopes)
         .await?;
     let proj = ApiKeyProjection::from(key);
     output::emit(ctx.output, &proj)
@@ -300,7 +332,11 @@ pub(crate) struct ApiKeysGrantsArgs {
 }
 
 async fn run_grants(ctx: &Ctx, args: ApiKeysGrantsArgs) -> Result<(), CliError> {
-    let grants = ctx.client.custos().list_api_key_grants(args.key_id).await?;
+    let grants = ctx
+        .client
+        .custos()
+        .list_personal_api_key_grants(args.key_id)
+        .await?;
 
     let items: Vec<ApiKeyGrantProjection> = grants
         .into_iter()
@@ -339,7 +375,7 @@ async fn run_delete_grant(ctx: &Ctx, args: ApiKeysDeleteGrantArgs) -> Result<(),
 
     ctx.client
         .custos()
-        .delete_api_key_grant(args.key_id, args.grant_id)
+        .delete_personal_api_key_grant(args.key_id, args.grant_id)
         .await?;
 
     let proj = DeleteByIdProjection {

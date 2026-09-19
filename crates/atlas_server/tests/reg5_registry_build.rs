@@ -128,6 +128,9 @@ fn declared_route_count_matches_the_live_router_enumeration() {
     // agent-principal lifecycle routes (`POST /agents`, `GET /agents`,
     // `GET /agents/{agent_id}`, `POST /agents/{agent_id}/deactivate`,
     // `POST /agents/{agent_id}/reactivate`), raising the total to 226.
+    // v2-e4-s3b-key-families replaced the six `/api-keys` routes with the
+    // twelve `/personal-api-keys` + `/agent-api-keys` routes, raising the
+    // total to 232.
     //
     // This assertion compares totals only, which is deliberately weak: a
     // dropped declaration paired with an equally undercounted expectation
@@ -137,8 +140,8 @@ fn declared_route_count_matches_the_live_router_enumeration() {
     // against the live router's set element by element; this count is only a
     // cheap tripwire until that lands.
     assert_eq!(
-        declared_route_count, 226,
-        "platform + custos + acta declared routes must equal the live router's 226 representable (method, path) pairs"
+        declared_route_count, 232,
+        "platform + custos + acta declared routes must equal the live router's 232 representable (method, path) pairs"
     );
 }
 

@@ -55,7 +55,7 @@ describe('ShareDialog (REQ-W26/W27)', () => {
           ],
         });
       }
-      if (path === '/api/v2/custos/api-keys') {
+      if (path === '/api/v2/custos/personal-api-keys' || path === '/api/v2/custos/agent-api-keys') {
         return Promise.resolve({
           data: { items: [], has_more: false },
         });

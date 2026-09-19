@@ -12,7 +12,7 @@ use atlas_acta::actor::WorkspaceCtx;
 use atlas_acta::entities::identity::MemberRole;
 use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_api::dtos::{
-    ApiKeyScope, CreateProjectRequest, CreateUserApiKeyRequest, InitialGrantRequest,
+    ApiKeyScope, CreatePersonalApiKeyRequest, CreateProjectRequest, InitialGrantRequest,
     UpdateProjectRequest,
     boards_tasks::{
         CreateBoardRequest, CreateColumnRequest, CreateCommentRequest, CreateTaskRequest,
@@ -842,8 +842,7 @@ async fn create_comment_as_api_key_reports_api_key_author() {
 
     let api_key = client
         .custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(CreatePersonalApiKeyRequest {
             name: "comment-bot".to_string(),
             r#type: None,
             expires_at: None,
@@ -1174,8 +1173,7 @@ async fn full_feeds_redact_deleted_targets_for_human_and_api_key_viewers() {
 
     let api_key = owner
         .custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(CreatePersonalApiKeyRequest {
             name: "feed-reader".into(),
             r#type: None,
             expires_at: None,
@@ -1783,8 +1781,7 @@ async fn disabled_or_revoked_principals_are_rejected_before_full_feed_projection
         .expect("reenable owner");
     let api_key = owner
         .custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(CreatePersonalApiKeyRequest {
             name: "revoked-feed-reader".into(),
             r#type: None,
             expires_at: None,
@@ -1813,8 +1810,7 @@ async fn disabled_or_revoked_principals_are_rejected_before_full_feed_projection
 
     let creator_disabled_key = owner
         .custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(CreatePersonalApiKeyRequest {
             name: "disabled-creator-feed-reader".into(),
             r#type: None,
             expires_at: None,
@@ -2323,8 +2319,7 @@ async fn list_comments_preserves_global_api_key_author_name() {
 
     let api_key = client
         .custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(CreatePersonalApiKeyRequest {
             name: "global-bot".to_string(),
             r#type: None,
             expires_at: None,

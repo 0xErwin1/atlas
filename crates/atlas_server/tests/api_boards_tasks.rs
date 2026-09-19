@@ -13,7 +13,7 @@ use atlas_acta::entities::identity::MemberRole;
 use atlas_acta::ids::BoardId;
 use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_api::dtos::{
-    CreateProjectRequest, CreateUserApiKeyRequest, InitialGrantRequest,
+    CreatePersonalApiKeyRequest, CreateProjectRequest, InitialGrantRequest,
     boards_tasks::{
         AddAssigneeRequest, CreateBoardRequest, CreateChecklistItemRequest, CreateColumnRequest,
         CreateReferenceBatchResultDto, CreateReferenceRequest, CreateSubtaskRequest,
@@ -8470,8 +8470,7 @@ async fn revoked_api_key_assignee_is_hidden_after_revoke() {
 
     let api_key = client
         .custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(CreatePersonalApiKeyRequest {
             name: "agent-to-revoke".to_string(),
             r#type: None,
             expires_at: None,
@@ -8509,7 +8508,7 @@ async fn revoked_api_key_assignee_is_hidden_after_revoke() {
     // Revoke the key — this should atomically delete its task_assignees rows.
     client
         .custos()
-        .revoke_user_api_key(api_key.id)
+        .revoke_personal_api_key(api_key.id)
         .await
         .expect("revoke api key");
 

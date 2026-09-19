@@ -17,7 +17,7 @@ use atlas_acta_postgres::repos::documents::{DocumentRepo, PgDocumentRepo};
 use atlas_acta_postgres::repos::semantic_search::PgSemanticIndexWriter;
 use atlas_api::{
     dtos::{
-        ApiKeyScope, CreateProjectRequest, CreateUserApiKeyRequest,
+        ApiKeyScope, CreatePersonalApiKeyRequest, CreateProjectRequest,
         semantic_search::SemanticSearchHitDto,
     },
     pagination::Page,
@@ -634,8 +634,7 @@ async fn semantic_search_api_key_scope_filters_hit_families() {
 
     let key = owner
         .custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(CreatePersonalApiKeyRequest {
             name: "docs-only-semantic".to_owned(),
             r#type: None,
             expires_at: None,

@@ -14,7 +14,7 @@ use atlas_acta::actor::WorkspaceCtx;
 use atlas_acta::entities::identity::MemberRole;
 use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_api::dtos::{
-    ApiKeyScope, CreateUserApiKeyRequest,
+    ApiKeyScope, CreatePersonalApiKeyRequest,
     documents::{
         CreateDocumentRequest, DocumentCompactDto, DocumentContentEditRequest,
         DocumentContentRangeDto, DocumentContentSearchDto, DocumentContentSearchRequest,
@@ -3776,8 +3776,7 @@ async fn api_key_actor_write_sets_actor_type_api_key() {
 
     let key_created = owner
         .custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(CreatePersonalApiKeyRequest {
             name: "test-key".to_string(),
             r#type: None,
             expires_at: None,

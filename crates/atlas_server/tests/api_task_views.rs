@@ -8,7 +8,7 @@
 mod support;
 
 use atlas_api::dtos::{
-    ApiKeyScope, CreateUserApiKeyRequest, InitialGrantRequest,
+    ApiKeyScope, CreatePersonalApiKeyRequest, InitialGrantRequest,
     task_views::{CreateTaskViewRequest, TaskViewFiltersDto, UpdateTaskViewRequest},
 };
 use atlas_client::ClientError;
@@ -282,8 +282,7 @@ async fn create_task_view_allows_same_name_for_different_owners() {
 
     let key_created = user_client
         .custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(CreatePersonalApiKeyRequest {
             name: "test-key".to_string(),
             r#type: None,
             expires_at: None,
@@ -346,8 +345,7 @@ async fn list_task_views_is_owner_scoped_sorted_and_excludes_deleted() {
     // Create an api_key owner's view (should not appear in user's list)
     let key_created = client
         .custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(CreatePersonalApiKeyRequest {
             name: "other-owner-key".to_string(),
             r#type: None,
             expires_at: None,
@@ -466,8 +464,7 @@ async fn get_task_view_returns_404_for_non_owned_id() {
 
     let key_created = client_a
         .custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(CreatePersonalApiKeyRequest {
             name: "intruder-key".to_string(),
             r#type: None,
             expires_at: None,
@@ -650,8 +647,7 @@ async fn update_task_view_returns_404_for_non_owned_id() {
 
     let key_created = client_a
         .custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(CreatePersonalApiKeyRequest {
             name: "intruder-key".to_string(),
             r#type: None,
             expires_at: None,
@@ -763,8 +759,7 @@ async fn delete_task_view_returns_404_for_non_owned_id() {
 
     let key_created = client_a
         .custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(CreatePersonalApiKeyRequest {
             name: "intruder-key".to_string(),
             r#type: None,
             expires_at: None,

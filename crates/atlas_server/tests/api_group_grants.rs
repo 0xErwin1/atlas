@@ -642,11 +642,10 @@ async fn api_key_resolution_unaffected_by_groups() {
         .expect("create project");
 
     // Create an api key for the owner. Give it NO direct grant.
-    use atlas_api::dtos::CreateUserApiKeyRequest;
+    use atlas_api::dtos::CreatePersonalApiKeyRequest;
     let key = owner
         .custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(CreatePersonalApiKeyRequest {
             name: "gg-apikey-key".to_string(),
             r#type: None,
             expires_at: None,

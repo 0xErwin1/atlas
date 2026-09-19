@@ -954,7 +954,7 @@ async fn global_api_key_created_by_root_lists_all_workspaces() {
         .expect("create root-owned key");
 
     root.custos()
-        .set_api_key_global(key.id.0, true)
+        .set_agent_api_key_global(key.id.0, true)
         .await
         .expect("root marks own key global");
 

@@ -1,5 +1,6 @@
 pub(crate) mod acta;
 pub(crate) mod activate;
+pub(crate) mod agent_api_keys;
 pub(crate) mod agents;
 pub(crate) mod api_keys;
 pub(crate) mod attachments;
@@ -21,6 +22,7 @@ pub(crate) mod integration_configs;
 pub(crate) mod integrations_ingest;
 pub(crate) mod members;
 pub mod openapi;
+pub(crate) mod personal_api_keys;
 pub(crate) mod platform;
 pub(crate) mod platform_doctor;
 pub(crate) mod platform_status_templates;

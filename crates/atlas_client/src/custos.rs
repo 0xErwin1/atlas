@@ -1,9 +1,9 @@
 use atlas_api::{
     dtos::{
         ActivationLinkResponse, AgentDto, ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, ApiKeyScope,
-        ChangePasswordRequest, CreateAgentRequest, CreateGrantRequest, CreateUserApiKeyRequest,
-        CreateUserRequest, CreateUserResponse, GrantDto, MeResponse, ResetPasswordRequest,
-        SessionDto, UpdateMeRequest, UserDto, UserMembershipDto,
+        ChangePasswordRequest, CreateAgentApiKeyRequest, CreateAgentRequest, CreateGrantRequest,
+        CreatePersonalApiKeyRequest, CreateUserRequest, CreateUserResponse, GrantDto, MeResponse,
+        ResetPasswordRequest, SessionDto, UpdateMeRequest, UserDto, UserMembershipDto,
         discovery::DiscoverResponseDto,
         groups::{AddGroupMemberRequest, CreateGroupRequest, GroupDto, GroupMemberDto},
     },
@@ -242,35 +242,62 @@ impl Custos<'_> {
             .await
     }
 
-    /// `POST /api/v2/custos/api-keys`
-    pub async fn create_user_api_key(
+    /// `POST /api/v2/custos/personal-api-keys`
+    pub async fn create_personal_api_key(
         &self,
-        body: CreateUserApiKeyRequest,
+        body: CreatePersonalApiKeyRequest,
     ) -> Result<ApiKeyCreated, ClientError> {
         let response = self
-            .post(Component::Custos, "/api-keys")
+            .post(Component::Custos, "/personal-api-keys")
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
             .await?;
-        self.decode_response(response, "create_user_api_key").await
+        self.decode_response(response, "create_personal_api_key")
+            .await
     }
 
-    /// `GET /api/v2/custos/api-keys`
-    pub async fn list_user_api_keys(
+    /// `POST /api/v2/custos/agent-api-keys`
+    pub async fn create_agent_api_key(
+        &self,
+        body: CreateAgentApiKeyRequest,
+    ) -> Result<ApiKeyCreated, ClientError> {
+        let response = self
+            .post(Component::Custos, "/agent-api-keys")
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "create_agent_api_key").await
+    }
+
+    /// `GET /api/v2/custos/personal-api-keys`
+    pub async fn list_personal_api_keys(
         &self,
         cursor: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Page<ApiKeyDto>, ClientError> {
-        let path = build_paginated_path("/api-keys", cursor, limit);
+        let path = build_paginated_path("/personal-api-keys", cursor, limit);
         let response = self.get(Component::Custos, &path).send().await?;
-        self.decode_response(response, "list_user_api_keys").await
+        self.decode_response(response, "list_personal_api_keys")
+            .await
     }
 
-    /// `DELETE /api/v2/custos/api-keys/{key_id}`
-    pub async fn revoke_user_api_key(&self, key_id: uuid::Uuid) -> Result<(), ClientError> {
+    /// `GET /api/v2/custos/agent-api-keys`
+    pub async fn list_agent_api_keys(
+        &self,
+        cursor: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Page<ApiKeyDto>, ClientError> {
+        let path = build_paginated_path("/agent-api-keys", cursor, limit);
+        let response = self.get(Component::Custos, &path).send().await?;
+        self.decode_response(response, "list_agent_api_keys").await
+    }
+
+    /// `DELETE /api/v2/custos/personal-api-keys/{key_id}`
+    pub async fn revoke_personal_api_key(&self, key_id: uuid::Uuid) -> Result<(), ClientError> {
         let response = self
-            .delete(Component::Custos, &format!("/api-keys/{key_id}"))
+            .delete(Component::Custos, &format!("/personal-api-keys/{key_id}"))
             .header("x-atlas-csrf", "1")
             .send()
             .await?;
@@ -284,8 +311,25 @@ impl Custos<'_> {
         Err(ClientError::Api(problem))
     }
 
-    /// `PATCH /api/v2/custos/api-keys/{key_id}`
-    pub async fn set_api_key_global(
+    /// `DELETE /api/v2/custos/agent-api-keys/{key_id}`
+    pub async fn revoke_agent_api_key(&self, key_id: uuid::Uuid) -> Result<(), ClientError> {
+        let response = self
+            .delete(Component::Custos, &format!("/agent-api-keys/{key_id}"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
+    /// `PATCH /api/v2/custos/personal-api-keys/{key_id}`
+    pub async fn set_personal_api_key_global(
         &self,
         key_id: uuid::Uuid,
         is_global: bool,
@@ -297,16 +341,39 @@ impl Custos<'_> {
             scopes: None,
         };
         let response = self
-            .patch(Component::Custos, &format!("/api-keys/{key_id}"))
+            .patch(Component::Custos, &format!("/personal-api-keys/{key_id}"))
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
             .await?;
-        self.decode_response(response, "set_api_key_global").await
+        self.decode_response(response, "set_personal_api_key_global")
+            .await
     }
 
-    /// `PATCH /api/v2/custos/api-keys/{key_id}`
-    pub async fn set_api_key_scopes(
+    /// `PATCH /api/v2/custos/agent-api-keys/{key_id}`
+    pub async fn set_agent_api_key_global(
+        &self,
+        key_id: uuid::Uuid,
+        is_global: bool,
+    ) -> Result<ApiKeyDto, ClientError> {
+        use atlas_api::dtos::UpdateApiKeyRequest;
+
+        let body = UpdateApiKeyRequest {
+            is_global: Some(is_global),
+            scopes: None,
+        };
+        let response = self
+            .patch(Component::Custos, &format!("/agent-api-keys/{key_id}"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "set_agent_api_key_global")
+            .await
+    }
+
+    /// `PATCH /api/v2/custos/personal-api-keys/{key_id}`
+    pub async fn set_personal_api_key_scopes(
         &self,
         key_id: uuid::Uuid,
         scopes: Vec<ApiKeyScope>,
@@ -318,28 +385,71 @@ impl Custos<'_> {
             scopes: Some(scopes),
         };
         let response = self
-            .patch(Component::Custos, &format!("/api-keys/{key_id}"))
+            .patch(Component::Custos, &format!("/personal-api-keys/{key_id}"))
             .header("x-atlas-csrf", "1")
             .json(&body)
             .send()
             .await?;
-        self.decode_response(response, "set_api_key_scopes").await
+        self.decode_response(response, "set_personal_api_key_scopes")
+            .await
     }
 
-    /// `GET /api/v2/custos/api-keys/{key_id}/grants`
-    pub async fn list_api_key_grants(
+    /// `PATCH /api/v2/custos/agent-api-keys/{key_id}`
+    pub async fn set_agent_api_key_scopes(
+        &self,
+        key_id: uuid::Uuid,
+        scopes: Vec<ApiKeyScope>,
+    ) -> Result<ApiKeyDto, ClientError> {
+        use atlas_api::dtos::UpdateApiKeyRequest;
+
+        let body = UpdateApiKeyRequest {
+            is_global: None,
+            scopes: Some(scopes),
+        };
+        let response = self
+            .patch(Component::Custos, &format!("/agent-api-keys/{key_id}"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "set_agent_api_key_scopes")
+            .await
+    }
+
+    /// `GET /api/v2/custos/personal-api-keys/{key_id}/grants`
+    pub async fn list_personal_api_key_grants(
         &self,
         key_id: uuid::Uuid,
     ) -> Result<Vec<ApiKeyGrantDto>, ClientError> {
         let response = self
-            .get(Component::Custos, &format!("/api-keys/{key_id}/grants"))
+            .get(
+                Component::Custos,
+                &format!("/personal-api-keys/{key_id}/grants"),
+            )
             .send()
             .await?;
-        self.decode_response(response, "list_api_key_grants").await
+        self.decode_response(response, "list_personal_api_key_grants")
+            .await
     }
 
-    /// `DELETE /api/v2/custos/api-keys/{key_id}/grants/{grant_id}`
-    pub async fn delete_api_key_grant(
+    /// `GET /api/v2/custos/agent-api-keys/{key_id}/grants`
+    pub async fn list_agent_api_key_grants(
+        &self,
+        key_id: uuid::Uuid,
+    ) -> Result<Vec<ApiKeyGrantDto>, ClientError> {
+        let response = self
+            .get(
+                Component::Custos,
+                &format!("/agent-api-keys/{key_id}/grants"),
+            )
+            .send()
+            .await?;
+        self.decode_response(response, "list_agent_api_key_grants")
+            .await
+    }
+
+    /// `DELETE /api/v2/custos/personal-api-keys/{key_id}/grants/{grant_id}`
+    pub async fn delete_personal_api_key_grant(
         &self,
         key_id: uuid::Uuid,
         grant_id: uuid::Uuid,
@@ -347,7 +457,31 @@ impl Custos<'_> {
         let response = self
             .delete(
                 Component::Custos,
-                &format!("/api-keys/{key_id}/grants/{grant_id}"),
+                &format!("/personal-api-keys/{key_id}/grants/{grant_id}"),
+            )
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
+    /// `DELETE /api/v2/custos/agent-api-keys/{key_id}/grants/{grant_id}`
+    pub async fn delete_agent_api_key_grant(
+        &self,
+        key_id: uuid::Uuid,
+        grant_id: uuid::Uuid,
+    ) -> Result<(), ClientError> {
+        let response = self
+            .delete(
+                Component::Custos,
+                &format!("/agent-api-keys/{key_id}/grants/{grant_id}"),
             )
             .header("x-atlas-csrf", "1")
             .send()

@@ -9,8 +9,41 @@ export type ApiKeyDto = components['schemas']['ApiKeyDto'];
 export type ApiKeyScope = components['schemas']['ApiKeyScope'];
 export type ApiKeyCreated = components['schemas']['ApiKeyCreated'];
 export type ApiKeyGrantDto = components['schemas']['ApiKeyGrantDto'];
-export type CreateUserApiKeyRequest = components['schemas']['CreateUserApiKeyRequest'];
+export type CreatePersonalApiKeyRequest = components['schemas']['CreatePersonalApiKeyRequest'];
 export type InitialGrantRequest = components['schemas']['InitialGrantRequest'];
+
+/**
+ * The two key families replaced `/api-keys` (v2-e4-s3b): personal keys live
+ * under `/personal-api-keys`, agent keys under `/agent-api-keys`. The family
+ * for a key-addressed operation comes from the key's own `key_kind` — the
+ * same field that tells the two kinds apart on read. The per-family path
+ * sets are spelled out in full so every literal is a real document key.
+ */
+const PERSONAL_PATHS = {
+  key: '/api/v2/custos/personal-api-keys/{key_id}',
+  grants: '/api/v2/custos/personal-api-keys/{key_id}/grants',
+  grant: '/api/v2/custos/personal-api-keys/{key_id}/grants/{grant_id}',
+} as const;
+
+const AGENT_PATHS = {
+  key: '/api/v2/custos/agent-api-keys/{key_id}',
+  grants: '/api/v2/custos/agent-api-keys/{key_id}/grants',
+  grant: '/api/v2/custos/agent-api-keys/{key_id}/grants/{grant_id}',
+} as const;
+
+type FamilyPaths = {
+  key: '/api/v2/custos/personal-api-keys/{key_id}' | '/api/v2/custos/agent-api-keys/{key_id}';
+  grants:
+    | '/api/v2/custos/personal-api-keys/{key_id}/grants'
+    | '/api/v2/custos/agent-api-keys/{key_id}/grants';
+  grant:
+    | '/api/v2/custos/personal-api-keys/{key_id}/grants/{grant_id}'
+    | '/api/v2/custos/agent-api-keys/{key_id}/grants/{grant_id}';
+};
+
+function pathsFor(key: ApiKeyDto | undefined): FamilyPaths {
+  return key?.key_kind === 'agent' ? AGENT_PATHS : PERSONAL_PATHS;
+}
 
 export const useApiKeysStore = defineStore('apiKeys', () => {
   const keys = ref<ApiKeyDto[]>([]);
@@ -22,19 +55,27 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     error.value = null;
 
     try {
-      const { items, error: e } = await collectPaged<ApiKeyDto>((cursor) =>
-        custos.GET('/api/v2/custos/api-keys', {
+      const personal = await collectPaged<ApiKeyDto>((cursor) =>
+        custos.GET('/api/v2/custos/personal-api-keys', {
+          params: { query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) } },
+        }),
+      );
+      const agent = await collectPaged<ApiKeyDto>((cursor) =>
+        custos.GET('/api/v2/custos/agent-api-keys', {
           params: { query: { limit: 200, ...(cursor !== undefined ? { cursor } : {}) } },
         }),
       );
 
-      if (e !== undefined) {
-        error.value = errorHint(e, 'Failed to load API keys');
+      if (personal.error !== undefined || agent.error !== undefined) {
+        error.value =
+          personal.error !== undefined
+            ? errorHint(personal.error, 'Failed to load API keys')
+            : errorHint(agent.error, 'Failed to load API keys');
         keys.value = [];
         return;
       }
 
-      keys.value = items.filter((k) => k.revoked_at == null);
+      keys.value = [...personal.items, ...agent.items].filter((k) => k.revoked_at == null);
     } catch {
       error.value = "Can't reach the server";
       keys.value = [];
@@ -43,11 +84,11 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     }
   }
 
-  async function createKey(req: CreateUserApiKeyRequest): Promise<ApiKeyCreated | null> {
+  async function createKey(req: CreatePersonalApiKeyRequest): Promise<ApiKeyCreated | null> {
     error.value = null;
 
     try {
-      const { data, error: e } = await custos.POST('/api/v2/custos/api-keys', {
+      const { data, error: e } = await custos.POST('/api/v2/custos/personal-api-keys', {
         body: req,
       });
 
@@ -67,7 +108,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     error.value = null;
 
     try {
-      const { data, error: e } = await custos.PATCH('/api/v2/custos/api-keys/{key_id}', {
+      const { data, error: e } = await custos.PATCH(pathsFor(keys.value.find((k) => k.id === keyId)).key, {
         params: { path: { key_id: keyId } },
         body: { is_global: isGlobal },
       });
@@ -99,7 +140,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     error.value = null;
 
     try {
-      const { data, error: e } = await custos.PATCH('/api/v2/custos/api-keys/{key_id}', {
+      const { data, error: e } = await custos.PATCH(pathsFor(keys.value.find((k) => k.id === keyId)).key, {
         params: { path: { key_id: keyId } },
         body: { scopes },
       });
@@ -125,7 +166,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     error.value = null;
 
     try {
-      const { error: e } = await custos.DELETE('/api/v2/custos/api-keys/{key_id}', {
+      const { error: e } = await custos.DELETE(pathsFor(keys.value.find((k) => k.id === id)).key, {
         params: { path: { key_id: id } },
       });
 
@@ -146,7 +187,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     error.value = null;
 
     try {
-      const { data, error: e } = await custos.GET('/api/v2/custos/api-keys/{key_id}/grants', {
+      const { data, error: e } = await custos.GET(pathsFor(keys.value.find((k) => k.id === keyId)).grants, {
         params: { path: { key_id: keyId } },
       });
 
@@ -193,7 +234,7 @@ export const useApiKeysStore = defineStore('apiKeys', () => {
     error.value = null;
 
     try {
-      const { error: e } = await custos.DELETE('/api/v2/custos/api-keys/{key_id}/grants/{grant_id}', {
+      const { error: e } = await custos.DELETE(pathsFor(keys.value.find((k) => k.id === keyId)).grant, {
         params: { path: { key_id: keyId, grant_id: grantId } },
       });
 

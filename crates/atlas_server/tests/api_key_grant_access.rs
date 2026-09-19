@@ -722,7 +722,7 @@ async fn global_agent_reaches_creators_workspaces_not_others_and_is_reversible()
     // Mark the key global (the owner does this).
     let dto = a_client
         .custos()
-        .set_api_key_global(key_id, true)
+        .set_agent_api_key_global(key_id, true)
         .await
         .expect("owner marks key global");
     assert!(dto.is_global, "response must reflect is_global=true");
@@ -765,7 +765,7 @@ async fn global_agent_reaches_creators_workspaces_not_others_and_is_reversible()
     // Reversible: turning global off restores the ungranted-deny behavior in W1.
     a_client
         .custos()
-        .set_api_key_global(key_id, false)
+        .set_agent_api_key_global(key_id, false)
         .await
         .expect("owner unmarks global");
     let result = agent
@@ -791,7 +791,7 @@ async fn set_api_key_global_is_owner_scoped() {
     // The owner can toggle global on their own key.
     a_client
         .custos()
-        .set_api_key_global(key_id, true)
+        .set_agent_api_key_global(key_id, true)
         .await
         .expect("owner toggles own key");
 
@@ -799,7 +799,7 @@ async fn set_api_key_global_is_owner_scoped() {
     let (other_client, _w2, _other) = login_user_with_workspace(&server, &db, "glob-c-other").await;
     let result = other_client
         .custos()
-        .set_api_key_global(key_id, false)
+        .set_agent_api_key_global(key_id, false)
         .await;
     assert!(
         matches!(result, Err(ClientError::Api(ref p)) if p.status == 404),

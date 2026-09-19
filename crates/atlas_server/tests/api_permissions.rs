@@ -12,7 +12,7 @@ use atlas_acta::actor::WorkspaceCtx;
 use atlas_acta::entities::identity::MemberRole;
 use atlas_acta_postgres::repos::identity::MembershipRepo;
 use atlas_api::dtos::{
-    CreateGrantRequest, CreateProjectRequest, CreateUserApiKeyRequest, GrantPrincipal,
+    CreateGrantRequest, CreatePersonalApiKeyRequest, CreateProjectRequest, GrantPrincipal,
     UpdateProjectRequest,
 };
 use atlas_custos::capability::Capability;
@@ -123,8 +123,7 @@ async fn agent_cannot_share_project() {
 
     let key_created = owner
         .custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(CreatePersonalApiKeyRequest {
             name: "test-agent-key".to_string(),
             r#type: None,
             expires_at: None,
@@ -457,8 +456,7 @@ async fn agent_with_grant_sees_private_project_in_list() {
 
     let key_created = owner
         .custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(CreatePersonalApiKeyRequest {
             name: "agent-visibility-key".to_string(),
             r#type: None,
             expires_at: None,
@@ -538,8 +536,7 @@ async fn agent_without_grant_cannot_see_workspace_visibility_project() {
 
     let key_created = owner
         .custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(CreatePersonalApiKeyRequest {
             name: "no-grant-agent-key".to_string(),
             r#type: None,
             expires_at: None,
@@ -692,8 +689,7 @@ async fn share_denied_403_does_not_leak_variant_name() {
 
     let key_created = owner
         .custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(CreatePersonalApiKeyRequest {
             name: "sharedeny-key".to_string(),
             r#type: None,
             expires_at: None,

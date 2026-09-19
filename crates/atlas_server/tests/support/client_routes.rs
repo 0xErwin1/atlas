@@ -18,7 +18,7 @@
 //!
 //! **Cross-check.** `atlas_client_route_contract.rs`'s own
 //! `extracted_call_count_is_pinned` test pins its extractor's total resolved
-//! call count to 203 across `lib.rs`/`custos.rs`/`acta.rs`/`platform.rs`.
+//! call count to 210 across `lib.rs`/`custos.rs`/`acta.rs`/`platform.rs`.
 //! Since each test file compiles as an independent binary crate, this module
 //! cannot read that constant directly; [`CROSS_CHECK_EXTRACTED_CALL_COUNT`]
 //! is this module's own copy of that same number, and this module's own
@@ -34,9 +34,9 @@
 //! module follows `self.<method>(` delegation transitively (cycle-guarded,
 //! stopping at the first verb-bearing method) and emits the delegate's
 //! route under the wrapper's own name, flagged `delegated`. The two counts
-//! are pinned separately: the 203 verb-bearing routes are the cross-check
+//! are pinned separately: the 210 verb-bearing routes are the cross-check
 //! against the route contract, and [`WRAPPER_ROUTE_COUNT`] is the number of
-//! wrappers on top of them, so `client_routes()` carries `203 + 3` method
+//! wrappers on top of them, so `client_routes()` carries `210 + 3` method
 //! names. A wrapper whose chain never reaches a verb call, or reaches more
 //! than one distinct route, is an extraction failure naming the wrapper,
 //! never a silently missing route.
@@ -57,7 +57,7 @@ use super::source_walk::{
 /// `atlas_client_route_contract.rs::extracted_call_count_is_pinned`), copied
 /// here because the two test binaries cannot share a constant. See this
 /// module's own doc comment for why equal cardinality is the cross-check.
-pub(crate) const CROSS_CHECK_EXTRACTED_CALL_COUNT: usize = 203;
+pub(crate) const CROSS_CHECK_EXTRACTED_CALL_COUNT: usize = 210;
 
 /// The number of delegating wrappers (public methods with no verb call of
 /// their own that reach a route through another method of the same file)

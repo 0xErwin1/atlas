@@ -8,7 +8,7 @@
 mod support;
 
 use atlas_api::dtos::{
-    ApiKeyScope, CreateUserApiKeyRequest, InitialGrantRequest, LoginRequest, MeResponse,
+    ApiKeyScope, CreatePersonalApiKeyRequest, InitialGrantRequest, LoginRequest, MeResponse,
 };
 use atlas_client::AtlasClient;
 use atlas_custos::entities::identity::ApiKeyType;
@@ -204,8 +204,7 @@ async fn me_for_api_key_returns_agent_identity_with_canonical_scopes() {
     // deduplicated and in canonical family:action order.
     let created = owner
         .custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(CreatePersonalApiKeyRequest {
             name: "self-identity-agent".to_string(),
             r#type: None,
             expires_at: None,
@@ -396,10 +395,9 @@ async fn personal_api_key_authenticates_with_its_atlas_pk_token() {
 
     let created = client
         .custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
+        .create_personal_api_key(CreatePersonalApiKeyRequest {
             name: "personal-me".to_string(),
             r#type: None,
-            key_kind: Some("personal".to_string()),
             expires_at: None,
             initial_grant: None,
             scopes: None,

@@ -8,7 +8,7 @@
 mod support;
 
 use atlas_api::dtos::{
-    CreateUserApiKeyRequest,
+    CreatePersonalApiKeyRequest,
     status_templates::{
         CreateStatusTemplateRequest, PlatformStatusTemplateDto, UpdateStatusTemplateRequest,
     },
@@ -228,8 +228,7 @@ async fn an_api_key_cannot_list_platform_defaults() {
         support::login_user_with_workspace(&server, &db, "pstpl-agent-forbidden").await;
     let api_key = owner
         .custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(CreatePersonalApiKeyRequest {
             name: "platform-defaults-agent".to_string(),
             r#type: None,
             expires_at: None,

@@ -1564,8 +1564,7 @@ async fn audit_api_key_created_happy_path_writes_one_row() {
 
     let created = user_client
         .custos()
-        .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(atlas_api::dtos::CreatePersonalApiKeyRequest {
             name: "audit-akc-key".to_string(),
             r#type: Some("agent".to_string()),
             expires_at: None,
@@ -1612,8 +1611,7 @@ async fn audit_api_key_created_by_api_key_principal_writes_zero_rows() {
     // Create a key first, then use it to try creating another key (not allowed).
     let key = user_client
         .custos()
-        .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(atlas_api::dtos::CreatePersonalApiKeyRequest {
             name: "audit-akc-reject-key".to_string(),
             r#type: Some("agent".to_string()),
             expires_at: None,
@@ -1630,8 +1628,7 @@ async fn audit_api_key_created_by_api_key_principal_writes_zero_rows() {
 
     let result = key_client
         .custos()
-        .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(atlas_api::dtos::CreatePersonalApiKeyRequest {
             name: "should-fail".to_string(),
             r#type: Some("agent".to_string()),
             expires_at: None,
@@ -1668,8 +1665,7 @@ async fn audit_api_key_revoked_happy_path_writes_one_row() {
 
     let key = user_client
         .custos()
-        .create_user_api_key(atlas_api::dtos::CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(atlas_api::dtos::CreatePersonalApiKeyRequest {
             name: "audit-akr-key".to_string(),
             r#type: Some("agent".to_string()),
             expires_at: None,
@@ -1681,7 +1677,7 @@ async fn audit_api_key_revoked_happy_path_writes_one_row() {
 
     user_client
         .custos()
-        .revoke_user_api_key(key.id)
+        .revoke_personal_api_key(key.id)
         .await
         .expect("revoke_user_api_key");
 
@@ -1709,7 +1705,10 @@ async fn audit_api_key_revoked_not_found_writes_zero_rows() {
     let (user_client, _user) = login_admin_user(&server, &db, "audit-akr-reject-user").await;
 
     let nonexistent = uuid::Uuid::now_v7();
-    let result = user_client.custos().revoke_user_api_key(nonexistent).await;
+    let result = user_client
+        .custos()
+        .revoke_personal_api_key(nonexistent)
+        .await;
 
     assert!(result.is_err(), "revoke non-existent key must fail");
 

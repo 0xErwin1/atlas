@@ -441,25 +441,22 @@ pub struct InitialGrantRequest {
     pub role: String,
 }
 
-/// Request body for `POST /api/api-keys` (top-level, user-owned key creation).
+/// Request body for `POST /api/v2/custos/personal-api-keys` (v2-e4-s3b).
+///
+/// A personal key links to the creator's own user principal — the key acts as
+/// the user — so no credential kind and no agent reference exist on this
+/// request: the route family itself is the kind decision.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
-pub struct CreateUserApiKeyRequest {
+pub struct CreatePersonalApiKeyRequest {
     pub name: String,
     /// Key purpose: `"agent"` | `"cli"` | `"bot"` | `"integration"`. Defaults to `"agent"`.
     ///
     /// This is V1 attribution only (a personal key still carries `type =
-    /// "agent"`); it does not vary the key's authority. `key_kind` is the
-    /// authoritative credential kind.
+    /// "agent"`); it does not vary the key's authority. `ApiKeyDto.key_kind`
+    /// reports the authoritative credential kind on read.
     #[serde(default)]
     pub r#type: Option<String>,
-    /// Credential kind: `"personal"` links the key to the creator's user
-    /// principal (the key acts as the user); `"agent"` keeps the agent editor
-    /// cap. Defaults to `"agent"` — never widening authority by omission. The
-    /// minted token prefix mirrors this choice: `atlas_pk_…` personal,
-    /// `atlas_ak_…` agent.
-    #[serde(default)]
-    pub key_kind: Option<String>,
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
     /// Optional initial grant so the key is immediately usable in one workspace.
     #[serde(default)]
@@ -471,7 +468,37 @@ pub struct CreateUserApiKeyRequest {
     pub scopes: Option<Vec<ApiKeyScope>>,
 }
 
-/// Response for `POST /api/api-keys` (secret returned exactly once).
+/// Request body for `POST /api/v2/custos/agent-api-keys` (v2-e4-s3b).
+///
+/// An agent key is bound to an existing agent principal owned by the caller
+/// (or the caller is a platform admin), so `agent_id` is mandatory; the
+/// server verifies the agent inside the caller's visible set exactly as
+/// `POST /agents` resolves one, and a foreign or nonexistent id answers 404.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct CreateAgentApiKeyRequest {
+    /// The agent principal this key authenticates. Mandatory: the key links
+    /// to this agent's principal instead of minting a fresh one.
+    pub agent_id: uuid::Uuid,
+    pub name: String,
+    /// Key purpose: `"agent"` | `"cli"` | `"bot"` | `"integration"`. Defaults to `"agent"`.
+    ///
+    /// This is V1 attribution only; it does not vary the key's authority.
+    #[serde(default)]
+    pub r#type: Option<String>,
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Optional initial grant so the key is immediately usable in one workspace.
+    #[serde(default)]
+    pub initial_grant: Option<InitialGrantRequest>,
+    /// Capability scopes to grant the new key. Omitted or empty defaults to
+    /// read-only access to the five default families (`acta::<family>::read`
+    /// for tasks, docs, boards, folders, projects).
+    #[serde(default)]
+    pub scopes: Option<Vec<ApiKeyScope>>,
+}
+
+/// Response for `POST /personal-api-keys` and `POST /agent-api-keys` (secret
+/// returned exactly once).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ApiKeyCreated {
@@ -528,7 +555,8 @@ pub struct ApiKeyDto {
     pub scopes: Vec<ApiKeyScope>,
 }
 
-/// Request body for `PATCH /api/api-keys/{key_id}`.
+/// Request body for `PATCH /personal-api-keys/{key_id}` and
+/// `PATCH /agent-api-keys/{key_id}`.
 ///
 /// Both fields are PATCH-partial: omit a field to leave it unchanged.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1257,5 +1285,58 @@ mod tests {
                     .unwrap_or_else(|err| panic!("legacy form {legacy} must deserialize: {err}"));
             assert_eq!(from_legacy, scope, "{legacy} must alias {canonical}");
         }
+    }
+
+    /// The two create requests are family-separated (v2-e4-s3b): a personal
+    /// request carries no `key_kind` and no agent reference; an agent request
+    /// carries a mandatory `agent_id`. Serialization must not emit the
+    /// retired wire field and omission must not default one in.
+    #[test]
+    fn personal_key_request_has_no_key_kind_and_no_agent_id() {
+        let json = serde_json::json!({ "name": "my-key" });
+        let req: CreatePersonalApiKeyRequest =
+            serde_json::from_value(json).expect("minimal personal request must deserialize");
+        assert_eq!(req.name, "my-key");
+        assert!(req.r#type.is_none());
+        assert!(req.expires_at.is_none());
+        assert!(req.initial_grant.is_none());
+        assert!(req.scopes.is_none());
+
+        let serialized = serde_json::to_value(&req).expect("request must serialize");
+        let obj = serialized
+            .as_object()
+            .expect("request must serialize to an object");
+        assert!(
+            !obj.contains_key("key_kind"),
+            "the retired key_kind field must not appear on the personal request"
+        );
+        assert!(
+            !obj.contains_key("agent_id"),
+            "a personal request carries no agent reference"
+        );
+    }
+
+    #[test]
+    fn agent_key_request_requires_agent_id_and_has_no_key_kind() {
+        let missing: Result<CreateAgentApiKeyRequest, _> =
+            serde_json::from_value(serde_json::json!({ "name": "my-key" }));
+        assert!(
+            missing.is_err(),
+            "an agent key request without agent_id must be rejected at the wire"
+        );
+
+        let json = serde_json::json!({ "name": "my-key", "agent_id": uuid::Uuid::now_v7() });
+        let req: CreateAgentApiKeyRequest =
+            serde_json::from_value(json).expect("agent request with agent_id must deserialize");
+        assert_eq!(req.name, "my-key");
+
+        let serialized = serde_json::to_value(&req).expect("request must serialize");
+        let obj = serialized
+            .as_object()
+            .expect("request must serialize to an object");
+        assert!(
+            !obj.contains_key("key_kind"),
+            "the retired key_kind field must not appear on the agent request"
+        );
     }
 }

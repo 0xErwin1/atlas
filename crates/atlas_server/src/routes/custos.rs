@@ -181,7 +181,10 @@ mod diagnostics {
 /// `list_project_grants`, `list_workspace_grants`, both
 /// `custos::grants::read`).
 mod protected {
-    use crate::routes::{agents, api_keys, audit, auth, discover, grants, groups, sessions, users};
+    use crate::routes::{
+        agent_api_keys, agents, audit, auth, discover, grants, groups, personal_api_keys, sessions,
+        users,
+    };
     use crate::state::AppState;
 
     crate::component_routes! {
@@ -221,17 +224,33 @@ mod protected {
         "/users/{user_id}/system-admin" => [ post(users::set_system_admin, exempt) ];
         "/users/{user_id}/memberships" => [ get(users::list_user_memberships, exempt) ];
         "/admin/audit" => [ get(audit::list_platform_audit, exempt) ];
-        "/api-keys" => [
-            post(api_keys::create_user_api_key, exempt),
-            get(api_keys::list_user_api_keys, exempt)
+        "/personal-api-keys" => [
+            post(personal_api_keys::create_personal_api_key, exempt, idempotent),
+            get(personal_api_keys::list_personal_api_keys, exempt)
         ];
-        "/api-keys/{key_id}" => [
-            delete(api_keys::revoke_user_api_key, exempt),
-            patch(api_keys::update_user_api_key, exempt)
+        "/personal-api-keys/{key_id}" => [
+            delete(personal_api_keys::revoke_personal_api_key, exempt),
+            patch(personal_api_keys::update_personal_api_key, exempt)
         ];
-        "/api-keys/{key_id}/grants" => [ get(api_keys::list_api_key_grants, exempt) ];
-        "/api-keys/{key_id}/grants/{grant_id}" => [
-            delete(api_keys::delete_api_key_grant, exempt)
+        "/personal-api-keys/{key_id}/grants" => [
+            get(personal_api_keys::list_personal_api_key_grants, exempt)
+        ];
+        "/personal-api-keys/{key_id}/grants/{grant_id}" => [
+            delete(personal_api_keys::delete_personal_api_key_grant, exempt)
+        ];
+        "/agent-api-keys" => [
+            post(agent_api_keys::create_agent_api_key, exempt, idempotent),
+            get(agent_api_keys::list_agent_api_keys, exempt)
+        ];
+        "/agent-api-keys/{key_id}" => [
+            delete(agent_api_keys::revoke_agent_api_key, exempt),
+            patch(agent_api_keys::update_agent_api_key, exempt)
+        ];
+        "/agent-api-keys/{key_id}/grants" => [
+            get(agent_api_keys::list_agent_api_key_grants, exempt)
+        ];
+        "/agent-api-keys/{key_id}/grants/{grant_id}" => [
+            delete(agent_api_keys::delete_agent_api_key_grant, exempt)
         ];
         "/workspaces/{ws}/projects/{project_slug}/grants" => [
             post(grants::create_project_grant, idempotent),
@@ -340,12 +359,18 @@ pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
         crate::routes::users::list_user_memberships,
         crate::routes::audit::list_workspace_audit,
         crate::routes::audit::list_platform_audit,
-        crate::routes::api_keys::create_user_api_key,
-        crate::routes::api_keys::list_user_api_keys,
-        crate::routes::api_keys::revoke_user_api_key,
-        crate::routes::api_keys::update_user_api_key,
-        crate::routes::api_keys::list_api_key_grants,
-        crate::routes::api_keys::delete_api_key_grant,
+        crate::routes::personal_api_keys::create_personal_api_key,
+        crate::routes::personal_api_keys::list_personal_api_keys,
+        crate::routes::personal_api_keys::revoke_personal_api_key,
+        crate::routes::personal_api_keys::update_personal_api_key,
+        crate::routes::personal_api_keys::list_personal_api_key_grants,
+        crate::routes::personal_api_keys::delete_personal_api_key_grant,
+        crate::routes::agent_api_keys::create_agent_api_key,
+        crate::routes::agent_api_keys::list_agent_api_keys,
+        crate::routes::agent_api_keys::revoke_agent_api_key,
+        crate::routes::agent_api_keys::update_agent_api_key,
+        crate::routes::agent_api_keys::list_agent_api_key_grants,
+        crate::routes::agent_api_keys::delete_agent_api_key_grant,
         crate::routes::grants::create_project_grant,
         crate::routes::grants::list_project_grants,
         crate::routes::grants::delete_project_grant,
@@ -379,7 +404,8 @@ pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
         atlas_api::dtos::ApiKeyScope,
         atlas_api::dtos::ChangePasswordRequest,
         atlas_api::dtos::CreateGrantRequest,
-        atlas_api::dtos::CreateUserApiKeyRequest,
+        atlas_api::dtos::CreatePersonalApiKeyRequest,
+        atlas_api::dtos::CreateAgentApiKeyRequest,
         atlas_api::dtos::CreateAgentRequest,
         atlas_api::dtos::CreateUserRequest,
         atlas_api::dtos::CreateUserResponse,
@@ -404,7 +430,8 @@ pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
         (name = "discover", description = "Self-service reverse-grant and membership discovery"),
         (name = "auth", description = "Authentication and session management"),
         (name = "users", description = "User management (root-only)"),
-        (name = "api-keys", description = "Workspace API key management"),
+        (name = "personal-api-keys", description = "Personal API key management (keys acting as their owner)"),
+        (name = "agent-api-keys", description = "Agent API key management (keys bound to an agent principal)"),
         (name = "grants", description = "Permission grant management"),
         (name = "groups", description = "Workspace principal groups"),
     )
@@ -481,11 +508,9 @@ mod tests {
         );
         assert_eq!(
             router_set.len(),
-            46,
-            "custos owns exactly 39 docs/registry-route-ownership.md routes (E11-S8 added \
-             discover, v2-e4-s3a-sessions added the three self-service session routes) plus the 2 \
-             health/ready probes E11-S3a design D2 added, plus the 5 agent-principal lifecycle \
-             routes v2-e4-s3a-agents added"
+            52,
+            "custos owns exactly 52 route (method, path) pairs: the pre-split 46 plus the six \
+             v2-e4-s3b-key-families routes added on top of the six retired `/api-keys` routes"
         );
     }
 

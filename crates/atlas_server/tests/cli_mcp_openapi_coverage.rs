@@ -7,7 +7,7 @@
 //! "A coverage test compares the composed OpenAPI document against CLI and
 //! MCP"; SHELL-REG-4, design D7):
 //!
-//! 1. `support::route_matrix::route_matrix()` — the 226 live REG-5 routes,
+//! 1. `support::route_matrix::route_matrix()` — the 232 live REG-5 routes,
 //!    each carrying its own `(component, method, path_template)`.
 //! 2. `support::client_routes::client_routes()` — `AtlasClient` method name
 //!    ⇒ `(component, method, path_template)`, cross-checked by cardinality
@@ -185,7 +185,7 @@ type UncoveredRoute = (
 // real gap). The spec's own three-per-surface categories
 // (comments/attachments/webhooks; users/grants/api-keys) turned out to cover
 // only a fraction of the real gap: the CLI and the MCP catalog are each
-// materially thinner than the full 226-route registry — most resources
+// materially thinner than the full 232-route registry — most resources
 // expose only list/get/create through either surface, with moves, copies,
 // archive/unarchive, presence, drafts, integrations/automation, admin
 // operations, and most custos self-service/lifecycle endpoints reachable
@@ -988,6 +988,44 @@ const CLI_UNCOVERED: &[UncoveredRoute] = &[
         Category::Webhooks,
         "webhook feature; MCP covers webhooks directly, the CLI has no webhooks command",
     ),
+    // v2-e4-s3b-key-families: the CLI's `api-keys` command reaches the six
+    // personal-family routes and the agent-key create (`--agent-id`); the
+    // five remaining agent-family key-addressed routes have no CLI command.
+    (
+        "custos",
+        HttpMethod::Get,
+        "/agent-api-keys",
+        Category::Agents,
+        "agent-key lifecycle route; the CLI creates agent keys, the rest is managed from the web app, not through a CLI command or MCP catalog operation",
+    ),
+    (
+        "custos",
+        HttpMethod::Delete,
+        "/agent-api-keys/{key_id}",
+        Category::Agents,
+        "agent-key lifecycle route; the CLI creates agent keys, the rest is managed from the web app, not through a CLI command or MCP catalog operation",
+    ),
+    (
+        "custos",
+        HttpMethod::Patch,
+        "/agent-api-keys/{key_id}",
+        Category::Agents,
+        "agent-key lifecycle route; the CLI creates agent keys, the rest is managed from the web app, not through a CLI command or MCP catalog operation",
+    ),
+    (
+        "custos",
+        HttpMethod::Get,
+        "/agent-api-keys/{key_id}/grants",
+        Category::Agents,
+        "agent-key lifecycle route; the CLI creates agent keys, the rest is managed from the web app, not through a CLI command or MCP catalog operation",
+    ),
+    (
+        "custos",
+        HttpMethod::Delete,
+        "/agent-api-keys/{key_id}/grants/{grant_id}",
+        Category::Agents,
+        "agent-key lifecycle route; the CLI creates agent keys, the rest is managed from the web app, not through a CLI command or MCP catalog operation",
+    ),
 ];
 
 const MCP_UNCOVERED: &[UncoveredRoute] = &[
@@ -1077,46 +1115,88 @@ const MCP_UNCOVERED: &[UncoveredRoute] = &[
         Category::AdminOperations,
         "root/system-admin workspace or trash operation; not exposed as a command or catalog operation",
     ),
-    // -- ApiKeys
+    // -- ApiKeys (v2-e4-s3b-key-families: the two families replaced /api-keys)
     (
         "custos",
-        HttpMethod::Get,
-        "/api-keys",
+        HttpMethod::Post,
+        "/personal-api-keys",
         Category::ApiKeys,
         "API key lifecycle management; not exposed as an MCP operation (MCP's custos surface is identity/audit only)",
     ),
     (
         "custos",
-        HttpMethod::Post,
-        "/api-keys",
+        HttpMethod::Get,
+        "/personal-api-keys",
         Category::ApiKeys,
         "API key lifecycle management; not exposed as an MCP operation (MCP's custos surface is identity/audit only)",
     ),
     (
         "custos",
         HttpMethod::Delete,
-        "/api-keys/{key_id}",
+        "/personal-api-keys/{key_id}",
         Category::ApiKeys,
         "API key lifecycle management; not exposed as an MCP operation (MCP's custos surface is identity/audit only)",
     ),
     (
         "custos",
         HttpMethod::Patch,
-        "/api-keys/{key_id}",
+        "/personal-api-keys/{key_id}",
         Category::ApiKeys,
         "API key lifecycle management; not exposed as an MCP operation (MCP's custos surface is identity/audit only)",
     ),
     (
         "custos",
         HttpMethod::Get,
-        "/api-keys/{key_id}/grants",
+        "/personal-api-keys/{key_id}/grants",
         Category::ApiKeys,
         "API key lifecycle management; not exposed as an MCP operation (MCP's custos surface is identity/audit only)",
     ),
     (
         "custos",
         HttpMethod::Delete,
-        "/api-keys/{key_id}/grants/{grant_id}",
+        "/personal-api-keys/{key_id}/grants/{grant_id}",
+        Category::ApiKeys,
+        "API key lifecycle management; not exposed as an MCP operation (MCP's custos surface is identity/audit only)",
+    ),
+    (
+        "custos",
+        HttpMethod::Post,
+        "/agent-api-keys",
+        Category::ApiKeys,
+        "API key lifecycle management; not exposed as an MCP operation (MCP's custos surface is identity/audit only)",
+    ),
+    (
+        "custos",
+        HttpMethod::Get,
+        "/agent-api-keys",
+        Category::ApiKeys,
+        "API key lifecycle management; not exposed as an MCP operation (MCP's custos surface is identity/audit only)",
+    ),
+    (
+        "custos",
+        HttpMethod::Delete,
+        "/agent-api-keys/{key_id}",
+        Category::ApiKeys,
+        "API key lifecycle management; not exposed as an MCP operation (MCP's custos surface is identity/audit only)",
+    ),
+    (
+        "custos",
+        HttpMethod::Patch,
+        "/agent-api-keys/{key_id}",
+        Category::ApiKeys,
+        "API key lifecycle management; not exposed as an MCP operation (MCP's custos surface is identity/audit only)",
+    ),
+    (
+        "custos",
+        HttpMethod::Get,
+        "/agent-api-keys/{key_id}/grants",
+        Category::ApiKeys,
+        "API key lifecycle management; not exposed as an MCP operation (MCP's custos surface is identity/audit only)",
+    ),
+    (
+        "custos",
+        HttpMethod::Delete,
+        "/agent-api-keys/{key_id}/grants/{grant_id}",
         Category::ApiKeys,
         "API key lifecycle management; not exposed as an MCP operation (MCP's custos surface is identity/audit only)",
     ),
@@ -2103,8 +2183,8 @@ fn registry_client_and_surface_walks_are_not_vacuous() {
     let entries = route_matrix();
     assert_eq!(
         entries.len(),
-        226,
-        "the live registry must declare 226 routes"
+        232,
+        "the live registry must declare 232 routes"
     );
 
     let cli_methods: BTreeSet<String> = cli_command_methods().into_values().flatten().collect();
@@ -2321,13 +2401,13 @@ fn no_real_exclusion_list_category_is_dead() {
 
 // ---------------------------------------------------------------------------
 // Per-surface reached/excluded pins — measured at apply time against the
-// 226-route registry; both pairs must sum to it.
+// 232-route registry; both pairs must sum to it.
 // ---------------------------------------------------------------------------
 
-const CLI_REACHED_ROUTE_COUNT: usize = 114;
-const CLI_EXCLUDED_ROUTE_COUNT: usize = 112;
+const CLI_REACHED_ROUTE_COUNT: usize = 115;
+const CLI_EXCLUDED_ROUTE_COUNT: usize = 117;
 const MCP_REACHED_ROUTE_COUNT: usize = 113;
-const MCP_EXCLUDED_ROUTE_COUNT: usize = 113;
+const MCP_EXCLUDED_ROUTE_COUNT: usize = 119;
 
 fn reached_route_count(entries: &[RouteMatrixEntry], covered: &BTreeSet<RouteKey>) -> usize {
     let keys: BTreeSet<RouteKey> = entries

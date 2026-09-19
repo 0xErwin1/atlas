@@ -16,7 +16,7 @@ mod support;
 
 use std::sync::Arc;
 
-use atlas_api::dtos::{CreateUserApiKeyRequest, LoginRequest};
+use atlas_api::dtos::{CreatePersonalApiKeyRequest, LoginRequest};
 use atlas_client::{AtlasClient, ClientError};
 use atlas_core::registry::{WorkerId, build};
 use atlas_server::ops::workers::WorkerStates;
@@ -150,8 +150,7 @@ async fn sh7_platform_admin_authorization_matrix_with_a_seeded_finding() {
 
     let api_key = plain
         .custos()
-        .create_user_api_key(CreateUserApiKeyRequest {
-            key_kind: None,
+        .create_personal_api_key(CreatePersonalApiKeyRequest {
             name: "doctor-agent".to_string(),
             r#type: None,
             expires_at: None,
