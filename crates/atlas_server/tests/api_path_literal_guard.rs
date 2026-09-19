@@ -997,7 +997,22 @@ fn rust_source_files(dir: &Path) -> Vec<PathBuf> {
 
 /// Directory names excluded from the repo-wide walk wherever they occur
 /// (`v2-e3-s7` D3.2): build output, dependency trees, and VCS metadata.
-const EXCLUDED_DIR_SEGMENTS: &[&str] = &["target", "node_modules", ".git", "dist"];
+/// `.direnv` and `result` are an UNRELATED one-line hardening (not part of
+/// `v2-e4-s3a-agents`): both are gitignored generated state that contains no
+/// repository source — `.direnv` is direnv's flake-input cache (it carries
+/// nix's own deliberately non-UTF-8 test fixture
+/// `eval-fail-toJSON-non-utf-8.nix`, which made this gate unrunnable on
+/// development worktrees), and `result` is the `nix build` output symlink
+/// into /nix/store (gitignored `.gitignore:28`, regenerated per build, and
+/// not repository source by construction).
+const EXCLUDED_DIR_SEGMENTS: &[&str] = &[
+    "target",
+    "node_modules",
+    ".git",
+    "dist",
+    ".direnv",
+    "result",
+];
 
 /// Individual repo-relative files excluded from the walk (D3.2): generated
 /// artifacts an allowlist entry would incorrectly staleness-check against a
