@@ -1,4 +1,4 @@
-use crate::ids::PrincipalId;
+use crate::ids::{PrincipalId, UserId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -22,6 +22,20 @@ pub struct NewPrincipal {
     pub kind: PrincipalKind,
     pub display_name: String,
     pub deactivated_at: Option<DateTime<Utc>>,
+}
+
+/// A first-class agent principal with its owning human user (`v2-e4-s3a-agents`).
+/// Unlike [`Principal`] — the shared mirror record, whose owner is NULL for
+/// `user` rows — an `Agent` always carries an owner: the
+/// `custos_principals_kind_owner_check` invariant guarantees every `agent`
+/// principal has exactly one owning human user.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Agent {
+    pub id: PrincipalId,
+    pub display_name: String,
+    pub deactivated_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub owner_user_id: UserId,
 }
 
 /// The two principal kinds the spec defines. Every V1 `ApiKeyType`

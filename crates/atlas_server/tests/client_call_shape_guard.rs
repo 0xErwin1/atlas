@@ -321,20 +321,20 @@ fn login_and_health_are_the_only_methods_with_no_home_namespace() {
 /// Cross-check against `atlas_client_route_contract.rs`'s own count pin
 /// (`extracted_call_count_is_pinned`), proving the two independently-written
 /// walkers agree on the client's method population. The two counts are not
-/// raw-equal: PR1's pin counts *call sites* (194 = every `pub async fn` that
+/// raw-equal: PR1's pin counts *call sites* (203 = every `pub async fn` that
 /// issues its own `self.<verb>(..)` call directly, one call apiece — no
 /// method in the crate issues more than one); this map counts *methods with
-/// a home namespace* (195 = those same 194 call-bearing methods, minus
+/// a home namespace* (204 = those same 203 call-bearing methods, minus
 /// `login` and `health`, which never move to a sub-client, plus the 3
 /// delegate-only methods — `list_documents`, `list_documents_with_unfiled_filter`,
 /// `create_task` — resolved transitively to their callee's home). The
 /// reconciliation below is the real cross-check: every method the map
-/// visits is either one of PR1's 194 call-bearing methods or one of these 3
-/// named delegates, and the two audits agree on the full 197-method
+/// visits is either one of PR1's 203 call-bearing methods or one of these 3
+/// named delegates, and the two audits agree on the full 206-method
 /// population with no method uncounted by either.
 #[test]
 fn method_namespace_map_size_reconciles_with_pr1s_extracted_call_count() {
-    const PR1_EXTRACTED_CALL_COUNT: usize = 198;
+    const PR1_EXTRACTED_CALL_COUNT: usize = 203;
 
     let derived = derive_method_namespace_map();
     assert_eq!(
@@ -761,6 +761,7 @@ const ATLAS_SERVER_TEST_PINS: &[(&str, usize)] = &[
     ("api_account_status.rs", 0),
     ("api_acta_router_parity.rs", 0),
     ("api_activation.rs", 0),
+    ("api_agents.rs", 0),
     ("api_audit_read.rs", 0),
     ("api_audit_writes.rs", 0),
     ("api_auth.rs", 0),
@@ -1657,6 +1658,24 @@ fn api_activation_namespaced_sites_match_their_declared_home() {
         1,
         "expected 1 namespaced sites in crates/atlas_server/tests/api_activation.rs (PR11c), \
          found: {sites:?}"
+    );
+
+    let mismatches = reverse_check_mismatches(&sites, &derived.map);
+    assert_eq!(mismatches, Vec::<String>::new());
+}
+
+#[test]
+fn api_agents_namespaced_sites_match_their_declared_home() {
+    let derived = derive_method_namespace_map();
+    let sites = namespaced_call_sites(&masked_code(
+        &repo_root().join("crates/atlas_server/tests/api_agents.rs"),
+    ));
+
+    assert_eq!(
+        sites.len(),
+        18,
+        "expected 18 namespaced sites in crates/atlas_server/tests/api_agents.rs \
+         (v2-e4-s3a-agents), found: {sites:?}"
     );
 
     let mismatches = reverse_check_mismatches(&sites, &derived.map);

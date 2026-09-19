@@ -14,6 +14,7 @@ use atlas_client::AtlasClient;
 use atlas_custos::entities::identity::ApiKeyType;
 use atlas_server::auth::tokens::hash_token;
 use atlas_server::persistence::repos::{ApiKeyRepo, NewApiKey, UserRepo};
+use sea_orm::ConnectionTrait;
 
 #[tokio::test]
 async fn login_returns_body_token_and_set_cookie() {
@@ -413,6 +414,94 @@ async fn personal_api_key_authenticates_with_its_atlas_pk_token() {
         .await
         .expect("a personal key must authenticate with its atlas_pk_ token");
     assert_eq!(me.principal_type, "api_key");
+
+    db.teardown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Agent principal deactivation (v2-e4-s3a-agents W3): the api-key
+// authentication lookup joins `custos.principals` only to read `kind`, so it
+// must also honor the mirror's `deactivated_at` — deactivating an agent
+// principal has to kill its key's ability to authenticate.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_deactivated_agent_principals_key_stops_authenticating() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, user) = support::login_user(&server, &db, "auth-deactivated-agent").await;
+    let user_id = user.id;
+
+    let raw_token = "atlas_ak_deactivatedBody0123456789abcdefghij00";
+    insert_agent_key_with_token(&db, user_id, "deactivated-agent", raw_token).await;
+    drop(client);
+
+    // Sanity: the key authenticates before deactivation.
+    assert_eq!(
+        me_status_with_bearer(&server, raw_token).await,
+        200,
+        "the agent key must authenticate before its principal is deactivated"
+    );
+
+    // Deactivate the key's agent principal in the mirror (the same column
+    // `POST /agents/{agent_id}/deactivate` writes).
+    db.conn()
+        .execute_unprepared(
+            "UPDATE custos.principals p SET deactivated_at = now() \
+             FROM custos.api_keys k \
+             WHERE k.principal_id = p.id AND k.name = 'deactivated-agent'",
+        )
+        .await
+        .expect("deactivate agent principal");
+
+    let status = me_status_with_bearer(&server, raw_token).await;
+    assert_eq!(
+        status, 401,
+        "a deactivated agent principal's key must stop authenticating"
+    );
+
+    db.teardown().await;
+}
+
+#[tokio::test]
+async fn disabling_the_owner_user_stops_their_agents_key() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (client, user) = support::login_user(&server, &db, "auth-owner-disabled").await;
+    let user_id = user.id;
+
+    let raw_token = "atlas_ak_ownerDisabled0123456789abcdefghij0";
+    insert_agent_key_with_token(&db, user_id, "owned-agent", raw_token).await;
+    drop(client);
+
+    assert_eq!(
+        me_status_with_bearer(&server, raw_token).await,
+        200,
+        "the agent key must authenticate while its owner is active"
+    );
+
+    db.user_repo()
+        .disable(user_id)
+        .await
+        .expect("disable the owner user");
+
+    let status = me_status_with_bearer(&server, raw_token).await;
+    assert_eq!(
+        status, 401,
+        "disabling the owning user must stop the agent's key: an agent acts \
+         under its owner's account and must not outlive it"
+    );
+
+    db.user_repo()
+        .enable(user_id)
+        .await
+        .expect("re-enable the owner user");
+
+    assert_eq!(
+        me_status_with_bearer(&server, raw_token).await,
+        200,
+        "re-enabling the owner must restore the agent's key"
+    );
 
     db.teardown().await;
 }

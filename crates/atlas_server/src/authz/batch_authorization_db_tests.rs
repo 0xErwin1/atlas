@@ -343,8 +343,8 @@ async fn query_b_reloads_key_creator_and_live_group_grant_facts() {
     let principal_id = Uuid::now_v7();
     db.conn
         .execute_unprepared(&format!(
-            "INSERT INTO custos.principals (id, kind, display_name, deactivated_at) \
-             VALUES ('{principal_id}', 'agent', 'key', NULL); \
+            "INSERT INTO custos.principals (id, kind, display_name, deactivated_at, owner_user_id) \
+             VALUES ('{principal_id}', 'agent', 'key', NULL, '{creator_id}'); \
              INSERT INTO custos.api_keys (id, workspace_id, created_by_user_id, name, token_hash, type, created_at, is_global, scopes, principal_id) \
              VALUES ('{key_id}', NULL, '{creator_id}', 'key', 'hash', 'agent', now(), false, ARRAY['docs:read'], '{principal_id}')",
         ))
@@ -439,8 +439,8 @@ async fn query_b_rejects_unknown_scopes_and_propagates_sql_failures() {
     let principal_id = Uuid::now_v7();
     db.conn
         .execute_unprepared(&format!(
-            "INSERT INTO custos.principals (id, kind, display_name, deactivated_at) \
-             VALUES ('{principal_id}', 'agent', 'key', NULL); \
+            "INSERT INTO custos.principals (id, kind, display_name, deactivated_at, owner_user_id) \
+             VALUES ('{principal_id}', 'agent', 'key', NULL, '{creator_id}'); \
              INSERT INTO custos.api_keys (id, workspace_id, created_by_user_id, name, token_hash, type, created_at, is_global, scopes, principal_id) \
              VALUES ('{key_id}', NULL, '{creator_id}', 'key', 'hash', 'agent', now(), false, ARRAY['unknown:read'], '{principal_id}')",
         ))
@@ -1267,8 +1267,8 @@ async fn seed_api_key(
         .join(", ");
     let principal_id = Uuid::now_v7();
     conn.execute_unprepared(&format!(
-        "INSERT INTO custos.principals (id, kind, display_name, deactivated_at) \
-         VALUES ('{principal_id}', 'agent', 'key', NULL); \
+        "INSERT INTO custos.principals (id, kind, display_name, deactivated_at, owner_user_id) \
+         VALUES ('{principal_id}', 'agent', 'key', NULL, '{creator_id}'); \
          INSERT INTO custos.api_keys (id, workspace_id, created_by_user_id, name, token_hash, type, created_at, is_global, scopes, principal_id) \
          VALUES ('{key_id}', NULL, '{creator_id}', 'key', 'hash', 'agent', now(), {is_global}, ARRAY[{scopes_sql}], '{principal_id}')",
     ))

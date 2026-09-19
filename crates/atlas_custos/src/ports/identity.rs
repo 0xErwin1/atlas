@@ -2,7 +2,8 @@ use crate::WorkspaceScope;
 use crate::entities::identity::{
     ActivationToken, ApiKey, NewActivationToken, NewApiKey, NewSession, NewUser, Session, User,
 };
-use crate::ids::{ActivationTokenId, ApiKeyId, SessionId, UserId};
+use crate::entities::principals::Agent;
+use crate::ids::{ActivationTokenId, ApiKeyId, PrincipalId, SessionId, UserId};
 use async_trait::async_trait;
 use atlas_core::Attribution;
 use atlas_core::error::DomainError;
@@ -92,6 +93,29 @@ pub trait SessionRepo: Send + Sync {
         ttl_hours: i64,
         max_ttl_hours: i64,
     ) -> Result<(), DomainError>;
+}
+
+/// First-class agent principals (`v2-e4-s3a-agents`): CRUD over the `agent`
+/// rows of `custos.principals`, each carrying its owning human user. The
+/// route layer owns visibility (an owner sees only their agents; a platform
+/// admin sees all), so listing is always owner-scoped or explicitly admin —
+/// never an unscoped default.
+#[async_trait]
+pub trait AgentRepo: Send + Sync {
+    /// Mints an agent principal owned by `owner`.
+    async fn create(&self, owner: UserId, display_name: String) -> Result<Agent, DomainError>;
+    /// Lists every agent principal owned by `owner`, oldest first.
+    async fn list_for_owner(&self, owner: UserId) -> Result<Vec<Agent>, DomainError>;
+    /// Lists every agent principal regardless of owner (platform-admin view).
+    async fn list_all(&self) -> Result<Vec<Agent>, DomainError>;
+    async fn find_by_id(&self, id: PrincipalId) -> Result<Option<Agent>, DomainError>;
+    /// Stamps or clears `deactivated_at` (`None` reactivates) and returns the
+    /// updated agent, or `None` when no `agent` principal has that id.
+    async fn set_deactivated(
+        &self,
+        id: PrincipalId,
+        deactivated_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<Option<Agent>, DomainError>;
 }
 
 /// D2: every `WorkspaceCtx`-scoped method takes the opaque `WorkspaceScope`

@@ -124,7 +124,10 @@ fn declared_route_count_matches_the_live_router_enumeration() {
     // `GET /api/v2/custos/discover`, raising the total to 218.
     // v2-e4-s3a-sessions added custos's three self-service session routes
     // (`GET /sessions`, `DELETE /sessions/{session_id}`, `DELETE /sessions`),
-    // raising the total to 221.
+    // raising the total to 221. v2-e4-s3a-agents added custos's five
+    // agent-principal lifecycle routes (`POST /agents`, `GET /agents`,
+    // `GET /agents/{agent_id}`, `POST /agents/{agent_id}/deactivate`,
+    // `POST /agents/{agent_id}/reactivate`), raising the total to 226.
     //
     // This assertion compares totals only, which is deliberately weak: a
     // dropped declaration paired with an equally undercounted expectation
@@ -134,8 +137,8 @@ fn declared_route_count_matches_the_live_router_enumeration() {
     // against the live router's set element by element; this count is only a
     // cheap tripwire until that lands.
     assert_eq!(
-        declared_route_count, 221,
-        "platform + custos + acta declared routes must equal the live router's 221 representable (method, path) pairs"
+        declared_route_count, 226,
+        "platform + custos + acta declared routes must equal the live router's 226 representable (method, path) pairs"
     );
 }
 

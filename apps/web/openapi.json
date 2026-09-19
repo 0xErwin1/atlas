@@ -13773,6 +13773,303 @@
         "x-atlas-component": "custos"
       }
     },
+    "/api/v2/custos/agents": {
+      "get": {
+        "tags": [
+          "agents",
+          "custos"
+        ],
+        "operationId": "list_agents",
+        "responses": {
+          "200": {
+            "description": "The caller's own agents (every agent for a platform admin)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "API keys cannot list agents"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      },
+      "post": {
+        "tags": [
+          "agents",
+          "custos"
+        ],
+        "operationId": "create_agent",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-supplied key used to dedupe a retried request. Optional: a route that honors this header runs and stores its response as usual when the header is absent, and every route that does not honor it ignores the header entirely.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Agent principal created, owned by the caller",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            }
+          },
+          "403": {
+            "description": "API keys cannot create agents",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            }
+          },
+          "409": {
+            "description": "Returned when the Idempotency-Key was already used for a different request (`urn:atlas:error:idempotency-key-conflict`), or when a request carrying the same Idempotency-Key is still executing concurrently (`urn:atlas:error:idempotency-key-in-flight`). Neither of those two problem types ever carries the `Idempotent-Replayed` or `Idempotency-Degraded` header; a replayed or degraded domain conflict on this operation carries them like any other response. A replayed problem body differs from the original response only by its `request_id` field.",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Present with value `1` (seconds) only for the `urn:atlas:error:idempotency-key-in-flight` problem type: the first request for this Idempotency-Key is still executing."
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/agents/{agent_id}": {
+      "get": {
+        "tags": [
+          "agents",
+          "custos"
+        ],
+        "operationId": "get_agent",
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "description": "Agent principal id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The agent principal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "API keys cannot view agents"
+          },
+          "404": {
+            "description": "No agent owned by the caller has this id"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/agents/{agent_id}/deactivate": {
+      "post": {
+        "tags": [
+          "agents",
+          "custos"
+        ],
+        "operationId": "deactivate_agent",
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "description": "Agent principal id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The deactivated agent principal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "API keys cannot manage agents"
+          },
+          "404": {
+            "description": "No agent owned by the caller has this id"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/agents/{agent_id}/reactivate": {
+      "post": {
+        "tags": [
+          "agents",
+          "custos"
+        ],
+        "operationId": "reactivate_agent",
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "description": "Agent principal id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The reactivated agent principal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "API keys cannot manage agents"
+          },
+          "404": {
+            "description": "No agent owned by the caller has this id"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
     "/api/v2/custos/api-keys": {
       "get": {
         "tags": [
@@ -16381,6 +16678,41 @@
           }
         }
       },
+      "AgentDto": {
+        "type": "object",
+        "description": "A first-class agent principal with its owning human user\n(`v2-e4-s3a-agents`). `owner` is the `custos.users` id of the human the\nagent acts under; the `custos_principals_kind_owner_check` invariant\nguarantees every agent has exactly one.",
+        "required": [
+          "id",
+          "display_name",
+          "created_at",
+          "owner"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deactivated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "`None` while the agent is active; a set value blocks the agent's\napi keys from authenticating."
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "owner": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "AgentIdentityDto": {
         "type": "object",
         "description": "The self-identity of an API-key (agent) principal, returned in the `agent`\nfield of `GET /api/auth/me` so an agent can inspect its own id, name, and the\ncapability scopes it currently holds.",
@@ -17499,6 +17831,18 @@
               "null"
             ],
             "format": "uuid"
+          }
+        }
+      },
+      "CreateAgentRequest": {
+        "type": "object",
+        "description": "Request body for `POST /api/v2/custos/agents` (`v2-e4-s3a-agents`).",
+        "required": [
+          "display_name"
+        ],
+        "properties": {
+          "display_name": {
+            "type": "string"
           }
         }
       },
@@ -23149,6 +23493,10 @@
     {
       "name": "audit",
       "description": "Security audit log"
+    },
+    {
+      "name": "agents",
+      "description": "Agent principal lifecycle (owner-facing)"
     },
     {
       "name": "discover",

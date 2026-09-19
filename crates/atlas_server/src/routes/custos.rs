@@ -181,7 +181,7 @@ mod diagnostics {
 /// `list_project_grants`, `list_workspace_grants`, both
 /// `custos::grants::read`).
 mod protected {
-    use crate::routes::{api_keys, audit, auth, discover, grants, groups, sessions, users};
+    use crate::routes::{agents, api_keys, audit, auth, discover, grants, groups, sessions, users};
     use crate::state::AppState;
 
     crate::component_routes! {
@@ -190,6 +190,18 @@ mod protected {
         "/auth/logout" => [ post(auth::logout, exempt) ];
         "/auth/me" => [ get(auth::me, exempt) ];
         "/auth/change-password" => [ post(auth::change_password, exempt) ];
+        // v2-e4-s3a-agents: first-class agent principals, owned by the
+        // calling user. Every handler takes a bare `Extension<AuthPrincipal>`
+        // and enforces ownership in the handler body (owner filter with the
+        // platform-admin bypass), so each one is capability-extraction
+        // exempt like the rest of this module's non-`Authorized` routes.
+        "/agents" => [
+            post(agents::create_agent, exempt, idempotent),
+            get(agents::list_agents, exempt)
+        ];
+        "/agents/{agent_id}" => [ get(agents::get_agent, exempt) ];
+        "/agents/{agent_id}/deactivate" => [ post(agents::deactivate_agent, exempt) ];
+        "/agents/{agent_id}/reactivate" => [ post(agents::reactivate_agent, exempt) ];
         "/sessions" => [
             get(sessions::list_sessions, exempt),
             delete(sessions::revoke_other_sessions, exempt)
@@ -310,6 +322,11 @@ pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
         crate::routes::auth::me,
         crate::routes::auth::change_password,
         crate::routes::auth::update_me,
+        crate::routes::agents::create_agent,
+        crate::routes::agents::list_agents,
+        crate::routes::agents::get_agent,
+        crate::routes::agents::deactivate_agent,
+        crate::routes::agents::reactivate_agent,
         crate::routes::sessions::list_sessions,
         crate::routes::sessions::revoke_session,
         crate::routes::sessions::revoke_other_sessions,
@@ -354,6 +371,7 @@ pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
         atlas_api::dtos::ActivatePasswordRequest,
         atlas_api::dtos::ActivationInfoDto,
         atlas_api::dtos::ActivationLinkResponse,
+        atlas_api::dtos::AgentDto,
         atlas_api::dtos::AgentIdentityDto,
         atlas_api::dtos::ApiKeyCreated,
         atlas_api::dtos::ApiKeyDto,
@@ -362,6 +380,7 @@ pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
         atlas_api::dtos::ChangePasswordRequest,
         atlas_api::dtos::CreateGrantRequest,
         atlas_api::dtos::CreateUserApiKeyRequest,
+        atlas_api::dtos::CreateAgentRequest,
         atlas_api::dtos::CreateUserRequest,
         atlas_api::dtos::CreateUserResponse,
         atlas_api::dtos::GrantDto,
@@ -381,6 +400,7 @@ pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
     )),
     tags(
         (name = "audit", description = "Security audit log"),
+        (name = "agents", description = "Agent principal lifecycle (owner-facing)"),
         (name = "discover", description = "Self-service reverse-grant and membership discovery"),
         (name = "auth", description = "Authentication and session management"),
         (name = "users", description = "User management (root-only)"),
@@ -461,15 +481,16 @@ mod tests {
         );
         assert_eq!(
             router_set.len(),
-            41,
+            46,
             "custos owns exactly 39 docs/registry-route-ownership.md routes (E11-S8 added \
              discover, v2-e4-s3a-sessions added the three self-service session routes) plus the 2 \
-             health/ready probes E11-S3a design D2 added"
+             health/ready probes E11-S3a design D2 added, plus the 5 agent-principal lifecycle \
+             routes v2-e4-s3a-agents added"
         );
     }
 
     /// T3.7 (declare-and-verify, D5): exhaustive over every one of custos's
-    /// 37 routes, not a curated subset (R4). Two routes
+    /// routes, not a curated subset (R4). Two routes
     /// (`list_project_grants`, `list_workspace_grants`) declare
     /// `action: Some(custos::grants::read)` — the first real, non-degenerate
     /// exercise of `capability_from_action_id` (platform declared zero

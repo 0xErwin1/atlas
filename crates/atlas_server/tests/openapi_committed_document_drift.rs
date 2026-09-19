@@ -98,19 +98,20 @@ fn operations(
 }
 
 /// A probe against the worst-case "reads nothing" implementation (§0.1's
-/// measured baseline): 146 path keys, 219 operations, every one of them
+/// measured baseline): 149 path keys, 224 operations, every one of them
 /// carrying `x-atlas-component`. A drift check that silently compared an
 /// empty or truncated document to itself would still pass the byte
 /// comparison above; these counts catch that.
-/// (146 = 143 + the two session paths; 219 = 216 + the three session
-/// operations.)
+/// (149 = 145 + the four agent-principal lifecycle path keys — the five
+/// routes share one key, `/custos/agents`; 224 = 219 + the five
+/// agent-principal lifecycle operations.)
 #[test]
 fn document_counts_match_the_measured_baseline() {
     let document = openapi();
 
     assert_eq!(
         document.paths.paths.len(),
-        145,
+        149,
         "committed document's path key count drifted from the measured baseline (design §0.1)"
     );
 
@@ -132,11 +133,11 @@ fn document_counts_match_the_measured_baseline() {
     }
 
     assert_eq!(
-        operation_count, 219,
+        operation_count, 224,
         "committed document's operation count drifted from the measured baseline (design §0.1)"
     );
     assert_eq!(
-        stamped_count, 219,
+        stamped_count, 224,
         "every operation must carry x-atlas-component (design §0.1)"
     );
 }
