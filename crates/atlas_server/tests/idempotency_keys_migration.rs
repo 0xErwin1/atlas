@@ -26,15 +26,12 @@ fn steps_before_idempotency_keys_migration() -> u32 {
     let custos = atlas_custos_postgres::migrations::custos_new().len();
     let acta = atlas_acta_postgres::migrations::acta_new();
 
-    let mut steps = (historical + custos) as u32;
-    for migration in &acta {
-        if migration.name() == IDEMPOTENCY_KEYS_MIGRATION {
-            return steps;
-        }
-        steps += 1;
-    }
+    let offset = acta
+        .iter()
+        .position(|migration| migration.name() == IDEMPOTENCY_KEYS_MIGRATION)
+        .expect("the idempotency-keys migration is present in acta_new()");
 
-    panic!("acta migration {IDEMPOTENCY_KEYS_MIGRATION} not found in acta_new()");
+    (historical + custos + offset) as u32
 }
 
 async fn relation_exists(conn: &sea_orm::DatabaseConnection, relation: &str) -> bool {
