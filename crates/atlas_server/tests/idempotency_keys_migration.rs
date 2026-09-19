@@ -11,14 +11,27 @@ use sea_orm_migration::prelude::MigratorTrait;
 use support::TestDb;
 
 /// Number of composed migration steps that land before the idempotency-keys
-/// migration — it is appended last inside `acta_new()` (T3.1/T3.2), so the
-/// step count right before it is the full composed count minus one.
+/// migration, pinned by name.
+///
+/// This was the full composed count minus one, on the assumption that the
+/// migration is appended last inside `acta_new()`. That assumption silently
+/// retargets the prefix the moment anything is appended after it: the prefix
+/// stops one short of a different migration and the test starts asserting
+/// against the wrong schema, with no change to the file that broke. Counting
+/// up to the named migration cannot drift that way.
 fn steps_before_idempotency_keys_migration() -> u32 {
+    const IDEMPOTENCY_KEYS_MIGRATION: &str = "m20260906_000058_acta_platform_idempotency_keys";
+
     let historical = migration::Migrator::migrations().len();
     let custos = atlas_custos_postgres::migrations::custos_new().len();
-    let acta = atlas_acta_postgres::migrations::acta_new().len();
+    let acta = atlas_acta_postgres::migrations::acta_new();
 
-    (historical + custos + acta - 1) as u32
+    let offset = acta
+        .iter()
+        .position(|migration| migration.name() == IDEMPOTENCY_KEYS_MIGRATION)
+        .expect("the idempotency-keys migration is present in acta_new()");
+
+    (historical + custos + offset) as u32
 }
 
 async fn relation_exists(conn: &sea_orm::DatabaseConnection, relation: &str) -> bool {

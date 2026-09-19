@@ -9,8 +9,8 @@
 //!    passes every other assertion here and fails this one.
 //! 2. **The count**: `index.len()` equals the registry's own declared route
 //!    count, measured independently in this test rather than against the
-//!    literal `221`, so a future registry change fails loudly.
-//! 3. **The document split**: 219 of the index's operation ids appear in
+//!    literal `226`, so a future registry change fails loudly.
+//! 3. **The document split**: 224 of the index's operation ids appear in
 //!    the composed OpenAPI document, and the 2 that do not are exactly
 //!    `/openapi.json` and `/scalar` (`UNANNOTATED_ROUTES`, design D1.2).
 
@@ -134,19 +134,19 @@ fn index_len_equals_the_registrys_own_declared_route_count() {
 
     assert_eq!(index.len(), declared_route_count);
     assert_eq!(
-        declared_route_count, 221,
-        "the registry's own declared route count has moved off the pinned 221 (design D1.2); if \
+        declared_route_count, 226,
+        "the registry's own declared route count has moved off the pinned 226 (design D1.2); if \
          this is an intended registry change, update this count-pin comment"
     );
 }
 
-/// 219 of the index's operation ids appear in the composed document, and
+/// 224 of the index's operation ids appear in the composed document, and
 /// the 2 that do not are exactly `/openapi.json` and `/scalar`
 /// (`UNANNOTATED_ROUTES`, design D1.2). A failure here means the index is
 /// keyed on the wrong path form — a `mounted_path` regression — not that
 /// the exclusion list needs to grow.
 #[test]
-fn two_nineteen_of_221_operation_ids_appear_in_the_document_and_the_rest_are_unannotated() {
+fn two_twenty_four_of_226_operation_ids_appear_in_the_document_and_the_rest_are_unannotated() {
     let registry = build(reg5_component_entries(StorageBackend::Filesystem))
         .expect("REG-5 entries must satisfy every registry::build() validator");
     let index = RouteIndex::from_registry(&registry);
@@ -195,8 +195,8 @@ fn two_nineteen_of_221_operation_ids_appear_in_the_document_and_the_rest_are_una
     }
 
     assert_eq!(
-        present, 219,
-        "expected 219 index operation ids to appear in the composed document"
+        present, 224,
+        "expected 224 index operation ids to appear in the composed document"
     );
 
     let mut expected_absent: Vec<String> = UNANNOTATED_ROUTES

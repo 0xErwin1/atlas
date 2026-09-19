@@ -6,19 +6,19 @@
 )]
 
 //! T4.9/T4.14 (`v2-e3-s3` PR4, D8): exhaustive rule-conformance test for
-//! `RouteDeclaration.idempotent`'s re-derivation. Every one of the 216
+//! `RouteDeclaration.idempotent`'s re-derivation. Every one of the 226
 //! `reg5.rs` entries is checked against the written rule
 //! (`crates/atlas_core/src/registry/route.rs`'s `idempotent` doc comment),
 //! not a sample — a mismatch names the exact offending `(method, path)`
 //! (INV-SET-style, never a count comparison).
 //!
-//! `EXPECTED_IDEMPOTENT` below encodes the same 216 decisions as the
+//! `EXPECTED_IDEMPOTENT` below encodes the same 226 decisions as the
 //! judgment file (`docs/reg5-idempotent-judgment.md`):
 //! every non-`POST` entry is `false` (T4.10, mechanical); every `POST`
 //! entry's value is either a mechanical `create_*` name match or one of the
 //! 39 judged decisions the judgment file explains (including the six
 //! streamed-upload routes, F4). This table
-//! is cross-checked for completeness against `reg5.rs`'s own 216-entry
+//! is cross-checked for completeness against `reg5.rs`'s own 226-entry
 //! enumeration below (`table_is_exhaustive_over_reg5`), the same
 //! "one source, checked exhaustively" shape D4's exclusion-list
 //! completeness check uses.
@@ -74,6 +74,15 @@ const EXPECTED_IDEMPOTENT: &[(HttpMethod, &str, bool)] = &[
         "/api-keys/{key_id}/grants/{grant_id}",
         false,
     ),
+    // v2-e4-s3a-agents: agent-principal lifecycle routes. `create_agent` is
+    // an ordinary create wired to the Idempotency-Key middleware and declared
+    // `true` (no one-shot secret, no judged exception needed); the lifecycle
+    // POSTs and every non-POST entry are mechanically `false` (T4.10).
+    (HttpMethod::Post, "/agents", true),
+    (HttpMethod::Get, "/agents", false),
+    (HttpMethod::Get, "/agents/{agent_id}", false),
+    (HttpMethod::Post, "/agents/{agent_id}/deactivate", false),
+    (HttpMethod::Post, "/agents/{agent_id}/reactivate", false),
     (
         HttpMethod::Post,
         "/workspaces/{ws}/projects/{project_slug}/grants",
@@ -823,13 +832,13 @@ fn table_is_exhaustive_over_reg5() {
     let live = all_declared_routes();
     assert_eq!(
         live.len(),
-        221,
-        "reg5.rs must declare exactly 221 routes; the classification table below assumes this"
+        226,
+        "reg5.rs must declare exactly 226 routes; the classification table below assumes this"
     );
     assert_eq!(
         EXPECTED_IDEMPOTENT.len(),
-        221,
-        "EXPECTED_IDEMPOTENT must cover all 221 reg5.rs entries, not a sample"
+        226,
+        "EXPECTED_IDEMPOTENT must cover all 226 reg5.rs entries, not a sample"
     );
 
     let live_keys: std::collections::HashSet<(HttpMethod, &str)> = live
@@ -930,10 +939,12 @@ fn true_and_false_counts_match_the_pr4_grounding() {
     // growing it to 183. E11-S8 PR3 added `GET /discover`
     // (`idempotent: false`), growing it to 184; v2-e4-s3a-sessions added
     // custos's three self-service session routes (all `idempotent: false`),
-    // growing it to 187; the `true` count (34) is unaffected.
-    assert_eq!(true_count, 34, "expected exactly 34 idempotent:true routes");
+    // growing it to 187. v2-e4-s3a-agents added custos's five
+    // agent-principal lifecycle routes: `POST /agents` (`create_agent`) is
+    // `true` (34 → 35) and the other four are `false` (187 → 191).
+    assert_eq!(true_count, 35, "expected exactly 35 idempotent:true routes");
     assert_eq!(
-        false_count, 187,
-        "expected exactly 187 idempotent:false routes"
+        false_count, 191,
+        "expected exactly 191 idempotent:false routes"
     );
 }

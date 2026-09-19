@@ -318,8 +318,8 @@ mod tests {
         let principal_id = uuid::Uuid::now_v7();
         db.conn()
             .execute_unprepared(&format!(
-                "INSERT INTO custos.principals (id, kind, display_name, deactivated_at) \
-                 VALUES ('{principal_id}', 'agent', '{name}', NULL)"
+                "INSERT INTO custos.principals (id, kind, display_name, deactivated_at, owner_user_id) \
+                 VALUES ('{principal_id}', 'agent', '{name}', NULL, '{owner_id}')"
             ))
             .await
             .expect("seed agent principal");

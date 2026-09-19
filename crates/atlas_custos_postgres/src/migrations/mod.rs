@@ -15,6 +15,7 @@ mod m20260906_000052_grant_principal_idx;
 mod m20260917_000053_custos_principals;
 mod m20260918_000054_custos_principals_not_null;
 mod m20260918_000055_custos_scope_wire_form;
+mod m20260919_000056_custos_principal_owner;
 
 use sea_orm_migration::prelude::MigrationTrait;
 
@@ -27,5 +28,6 @@ pub fn custos_new() -> Vec<Box<dyn MigrationTrait>> {
         Box::new(m20260917_000053_custos_principals::Migration),
         Box::new(m20260918_000054_custos_principals_not_null::Migration),
         Box::new(m20260918_000055_custos_scope_wire_form::Migration),
+        Box::new(m20260919_000056_custos_principal_owner::Migration),
     ]
 }

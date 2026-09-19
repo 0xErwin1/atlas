@@ -24,24 +24,41 @@ use sea_orm_migration::MigratorTrait;
 use sea_orm_migration::prelude::SchemaManager;
 use uuid::Uuid;
 
-/// Migration prefix that stops immediately before the scope wire-form
-/// migration: the last entry of `custos_new()`. Deriving the stop from the
-/// list's tail keeps the prefix correct as further Custos migrations are
-/// appended (the same name-pinned pattern as
-/// `principals_repo_characterization.rs`, expressed against the list tail
-/// because the migration under test is by definition the newest one).
-fn steps_before_scope_wire_form_migration() -> u32 {
-    let historical = migration::Migrator::migrations().len() as u32;
+/// The scope wire-form migration, pinned by name so appending further Custos
+/// migrations cannot silently shift the prefix or the migration this file
+/// tests (the same name-pinned pattern as
+/// `principals_repo_characterization.rs`).
+const SCOPE_WIRE_FORM_MIGRATION: &str = "m20260918_000055_custos_scope_wire_form";
+
+/// Number of migrations to apply so that the named Custos migration is the
+/// last one applied (counted inclusively, after the frozen historical block).
+fn steps_through(migration_name: &str) -> u32 {
+    let historical = migration::Migrator::migrations().len();
     let custos = atlas_custos_postgres::migrations::custos_new();
-    historical + custos.len() as u32 - 1
+    let mut steps = historical as u32;
+    for m in &custos {
+        steps += 1;
+        if m.name() == migration_name {
+            return steps;
+        }
+    }
+    panic!("custos migration {migration_name} not found in custos_new()");
+}
+
+/// Migration prefix that stops immediately before the scope wire-form
+/// migration: a test can seed rows in their pre-migration shape and then
+/// apply the remaining migrations to exercise the rewrite.
+fn steps_before_scope_wire_form_migration() -> u32 {
+    steps_through(SCOPE_WIRE_FORM_MIGRATION) - 1
 }
 
 /// The scope wire-form migration, resolved from `custos_new()` so the tests
 /// exercise exactly the migration that ships in the composed migrator.
 fn scope_wire_form_migration() -> Box<dyn sea_orm_migration::prelude::MigrationTrait> {
     atlas_custos_postgres::migrations::custos_new()
-        .pop()
-        .expect("custos_new() is non-empty")
+        .into_iter()
+        .find(|m| m.name() == SCOPE_WIRE_FORM_MIGRATION)
+        .expect("scope wire-form migration found in custos_new()")
 }
 
 async fn db_before_scope_wire_form_migration() -> TestDb {
@@ -76,6 +93,12 @@ async fn seed_owner(db: &TestDb, username: &str) -> Uuid {
 
 /// Seeds one agent principal plus one `custos.api_keys` row whose `scopes`
 /// array is the exact pre-migration stored bytes under test.
+///
+/// The agent principal deliberately carries no owner: the seed runs at the
+/// prefix that stops before `m20260918_000055`, where `owner_user_id` does
+/// not exist yet. The later owner migration (`m20260919_000056`) back-fills
+/// the owner from the key's `created_by_user_id`, which this fixture
+/// provides — the same shape every pre-`000056` writer left behind.
 async fn seed_key(db: &TestDb, owner_id: Uuid, name: &str, scopes_sql: &str) -> Uuid {
     let principal_id = Uuid::now_v7();
     db.conn()

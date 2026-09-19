@@ -123,6 +123,29 @@ pub struct AgentIdentityDto {
     pub scopes: Vec<ApiKeyScope>,
 }
 
+/// Request body for `POST /api/v2/custos/agents` (`v2-e4-s3a-agents`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct CreateAgentRequest {
+    pub display_name: String,
+}
+
+/// A first-class agent principal with its owning human user
+/// (`v2-e4-s3a-agents`). `owner` is the `custos.users` id of the human the
+/// agent acts under; the `custos_principals_kind_owner_check` invariant
+/// guarantees every agent has exactly one.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(ToSchema))]
+pub struct AgentDto {
+    pub id: uuid::Uuid,
+    pub display_name: String,
+    /// `None` while the agent is active; a set value blocks the agent's
+    /// api keys from authenticating.
+    pub deactivated_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub owner: uuid::Uuid,
+}
+
 /// One workspace a user belongs to, with the membership role.
 ///
 /// Returned by `GET /api/users/{user_id}/memberships` to power the admin

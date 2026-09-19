@@ -6,6 +6,7 @@ use atlas_core::principal::UserId;
 use atlas_custos::capability::Capability;
 use atlas_custos::entities::identity::ApiKeyKind;
 use atlas_custos::entities::identity::ApiKeyType;
+use atlas_custos::entities::principals::Agent;
 use atlas_custos::entities::principals::NewPrincipal;
 use atlas_custos::entities::principals::PrincipalKind;
 use atlas_custos::ids::ActivationTokenId;
@@ -35,6 +36,7 @@ pub use atlas_custos::entities::identity::Session;
 pub use atlas_custos::entities::identity::User;
 
 pub use atlas_custos::ports::identity::ActivationTokenRepo;
+pub use atlas_custos::ports::identity::AgentRepo;
 pub use atlas_custos::ports::identity::ApiKeyRepo;
 pub use atlas_custos::ports::identity::SessionRepo;
 pub use atlas_custos::ports::identity::UserRepo;
@@ -46,6 +48,8 @@ pub struct PgUserRepo {
 /// Inserts the `user` principal backing a new user row on the caller's
 /// connection: a user's principal identity is the user row itself
 /// (`principals.id = users.id`), so both rows commit or roll back together.
+/// A user principal has no owner (`owner_user_id IS NULL`), per the
+/// kind/owner CHECK.
 async fn create_user_principal_in<C: ConnectionTrait>(
     conn: &C,
     user_id: UserId,
@@ -621,7 +625,13 @@ impl ApiKeyRepo for PgApiKeyRepo {
             principal_id: Set(principal_id.0),
         };
         let txn = self.conn.begin().await.map_err(db_err)?;
-        PgApiKeyRepo::create_agent_principal_in(&txn, principal_id, &new.name).await?;
+        PgApiKeyRepo::create_agent_principal_in(
+            &txn,
+            principal_id,
+            &new.name,
+            UserId(created_by_user_id),
+        )
+        .await?;
         let key = model
             .insert(&txn)
             .await
@@ -653,7 +663,7 @@ impl ApiKeyRepo for PgApiKeyRepo {
             principal_id: Set(principal_id.0),
         };
         let txn = self.conn.begin().await.map_err(db_err)?;
-        PgApiKeyRepo::create_agent_principal_in(&txn, principal_id, &new.name).await?;
+        PgApiKeyRepo::create_agent_principal_in(&txn, principal_id, &new.name, user_id).await?;
         let key = model
             .insert(&txn)
             .await
@@ -696,6 +706,7 @@ impl ApiKeyRepo for PgApiKeyRepo {
                AND k.revoked_at IS NULL
                AND (k.expires_at IS NULL OR k.expires_at > now())
                AND u.disabled_at IS NULL
+               AND p.deactivated_at IS NULL
              LIMIT 1",
             [token_hash.into()],
         ))
@@ -852,22 +863,31 @@ impl PgApiKeyRepo {
     /// connection, so the principal and its key commit or roll back together.
     /// Agent principals get a fresh id (unlike users, whose principal is the
     /// user row itself); the key row links to it via `api_keys.principal_id`.
+    /// The insert is a raw statement (not the SeaORM entity) so the
+    /// kind/owner CHECK's `owner_user_id` is set in the same INSERT: an agent
+    /// must be created with its owning human user in one row. The shared
+    /// `PgPrincipalRepo` insert path stays user-principal-only (owner NULL).
     async fn create_agent_principal_in<C: ConnectionTrait>(
         conn: &C,
         principal_id: PrincipalId,
         name: &str,
+        owner_user_id: UserId,
     ) -> Result<(), DomainError> {
-        PgPrincipalRepo::create_in(
-            conn,
-            NewPrincipal {
-                id: principal_id,
-                kind: PrincipalKind::Agent,
-                display_name: name.to_string(),
-                deactivated_at: None,
-            },
-        )
+        conn.execute_raw(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "INSERT INTO custos.principals \
+             (id, kind, display_name, deactivated_at, owner_user_id, created_at, updated_at) \
+             VALUES ($1, $2, $3, NULL, $4, now(), now())",
+            [
+                principal_id.0.into(),
+                PrincipalKind::Agent.as_str().into(),
+                name.to_string().into(),
+                owner_user_id.0.into(),
+            ],
+        ))
         .await
-        .map(|_| ())
+        .map_err(db_err)?;
+        Ok(())
     }
 
     /// Creates a user-owned API key using the provided connection or transaction.
@@ -921,7 +941,8 @@ impl PgApiKeyRepo {
             }
             ApiKeyKind::Agent => {
                 let principal_id = PrincipalId::new();
-                PgApiKeyRepo::create_agent_principal_in(conn, principal_id, &new.name).await?;
+                PgApiKeyRepo::create_agent_principal_in(conn, principal_id, &new.name, user_id)
+                    .await?;
                 (principal_id.0, PrincipalKind::Agent)
             }
         };
@@ -1101,6 +1122,129 @@ impl PgApiKeyRepo {
             .await
             .map_err(db_err)?;
         Ok(())
+    }
+}
+
+/// Adapter for the first-class agent principals (`v2-e4-s3a-agents`). The
+/// `owner_user_id` column is read and written through raw statements: the
+/// SeaORM `principal` entity stays owner-free because the shared
+/// `PgPrincipalRepo` insert path is user-principal-only (owner NULL), and
+/// every agent-aware write lives here.
+pub struct PgAgentRepo {
+    pub conn: DatabaseConnection,
+}
+
+#[derive(Debug, sea_orm::FromQueryResult)]
+struct AgentRow {
+    id: uuid::Uuid,
+    display_name: String,
+    deactivated_at: Option<chrono::DateTime<Utc>>,
+    created_at: chrono::DateTime<Utc>,
+    owner_user_id: uuid::Uuid,
+}
+
+impl AgentRow {
+    fn into_agent(self) -> Agent {
+        Agent {
+            id: PrincipalId(self.id),
+            display_name: self.display_name,
+            deactivated_at: self.deactivated_at,
+            created_at: self.created_at,
+            owner_user_id: UserId(self.owner_user_id),
+        }
+    }
+}
+
+const AGENT_COLUMNS: &str = "id, display_name, deactivated_at, created_at, owner_user_id";
+
+async fn agent_rows(
+    conn: &DatabaseConnection,
+    where_clause: &str,
+) -> Result<Vec<Agent>, DomainError> {
+    let mut rows = AgentRow::find_by_statement(Statement::from_string(
+        sea_orm::DatabaseBackend::Postgres,
+        format!(
+            "SELECT {AGENT_COLUMNS} FROM custos.principals \
+             WHERE kind = 'agent' {where_clause} ORDER BY created_at"
+        ),
+    ))
+    .all(conn)
+    .await
+    .map_err(db_err)?;
+    Ok(rows.drain(..).map(AgentRow::into_agent).collect())
+}
+
+async fn agent_row_by_id(
+    conn: &DatabaseConnection,
+    id: PrincipalId,
+) -> Result<Option<Agent>, DomainError> {
+    let row = AgentRow::find_by_statement(Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        format!(
+            "SELECT {AGENT_COLUMNS} FROM custos.principals \
+             WHERE kind = 'agent' AND id = $1 LIMIT 1"
+        ),
+        [id.0.into()],
+    ))
+    .one(conn)
+    .await
+    .map_err(db_err)?;
+
+    Ok(row.map(|row| row.into_agent()))
+}
+
+#[async_trait]
+impl AgentRepo for PgAgentRepo {
+    async fn create(&self, owner: UserId, display_name: String) -> Result<Agent, DomainError> {
+        let id = PrincipalId::new();
+        self.conn
+            .execute_raw(Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                "INSERT INTO custos.principals \
+                 (id, kind, display_name, deactivated_at, owner_user_id, created_at, updated_at) \
+                 VALUES ($1, 'agent', $2, NULL, $3, now(), now())",
+                [id.0.into(), display_name.into(), owner.0.into()],
+            ))
+            .await
+            .map_err(db_err)?;
+
+        agent_row_by_id(&self.conn, id)
+            .await?
+            .ok_or(DomainError::NotFound {
+                entity: "agent",
+                id: id.0,
+            })
+    }
+
+    async fn list_for_owner(&self, owner: UserId) -> Result<Vec<Agent>, DomainError> {
+        agent_rows(&self.conn, &format!("AND owner_user_id = '{}'", owner.0)).await
+    }
+
+    async fn list_all(&self) -> Result<Vec<Agent>, DomainError> {
+        agent_rows(&self.conn, "").await
+    }
+
+    async fn find_by_id(&self, id: PrincipalId) -> Result<Option<Agent>, DomainError> {
+        agent_row_by_id(&self.conn, id).await
+    }
+
+    async fn set_deactivated(
+        &self,
+        id: PrincipalId,
+        deactivated_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<Option<Agent>, DomainError> {
+        self.conn
+            .execute_raw(Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                "UPDATE custos.principals \
+                 SET deactivated_at = $2, updated_at = now() \
+                 WHERE id = $1 AND kind = 'agent'",
+                [id.0.into(), deactivated_at.into()],
+            ))
+            .await
+            .map_err(db_err)?;
+
+        agent_row_by_id(&self.conn, id).await
     }
 }
 

@@ -134,9 +134,9 @@ async fn post_migration_insert_without_scopes_defaults_to_empty() {
     db.conn()
         .execute_raw(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            "INSERT INTO custos.principals (id, kind, display_name, deactivated_at) \
-             VALUES ($1, 'agent', 'post-migration-key', NULL)",
-            [principal_id.into()],
+            "INSERT INTO custos.principals (id, kind, display_name, deactivated_at, owner_user_id) \
+             VALUES ($1, 'agent', 'post-migration-key', NULL, $2)",
+            [principal_id.into(), user.id.0.into()],
         ))
         .await
         .expect("seed agent principal");

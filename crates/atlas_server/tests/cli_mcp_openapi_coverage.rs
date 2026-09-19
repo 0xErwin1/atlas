@@ -7,7 +7,7 @@
 //! "A coverage test compares the composed OpenAPI document against CLI and
 //! MCP"; SHELL-REG-4, design D7):
 //!
-//! 1. `support::route_matrix::route_matrix()` — the 221 live REG-5 routes,
+//! 1. `support::route_matrix::route_matrix()` — the 226 live REG-5 routes,
 //!    each carrying its own `(component, method, path_template)`.
 //! 2. `support::client_routes::client_routes()` — `AtlasClient` method name
 //!    ⇒ `(component, method, path_template)`, cross-checked by cardinality
@@ -125,6 +125,10 @@ closed_category! {
     /// content range/search/compact/graph) — not a command or catalog
     /// operation on either surface.
     SpecializedMutation,
+    /// Agent-principal lifecycle management (`v2-e4-s3a-agents`) — the
+    /// owner manages its agents from the web app; no CLI command or MCP
+    /// catalog operation covers it on either surface.
+    Agents,
 }
 
 impl Category {
@@ -141,7 +145,8 @@ impl Category {
             | Category::RealTimeCollaboration
             | Category::IntegrationsAndAutomation
             | Category::AdminOperations
-            | Category::SpecializedMutation => true,
+            | Category::SpecializedMutation
+            | Category::Agents => true,
         }
     }
 }
@@ -180,7 +185,7 @@ type UncoveredRoute = (
 // real gap). The spec's own three-per-surface categories
 // (comments/attachments/webhooks; users/grants/api-keys) turned out to cover
 // only a fraction of the real gap: the CLI and the MCP catalog are each
-// materially thinner than the full 221-route registry — most resources
+// materially thinner than the full 226-route registry — most resources
 // expose only list/get/create through either surface, with moves, copies,
 // archive/unarchive, presence, drafts, integrations/automation, admin
 // operations, and most custos self-service/lifecycle endpoints reachable
@@ -189,6 +194,42 @@ type UncoveredRoute = (
 // ---------------------------------------------------------------------------
 
 const CLI_UNCOVERED: &[UncoveredRoute] = &[
+    // -- Agents
+    (
+        "custos",
+        HttpMethod::Post,
+        "/agents",
+        Category::Agents,
+        "agent-principal lifecycle route; the owner manages agents from the web app, not through a CLI command or MCP catalog operation",
+    ),
+    (
+        "custos",
+        HttpMethod::Get,
+        "/agents",
+        Category::Agents,
+        "agent-principal lifecycle route; the owner manages agents from the web app, not through a CLI command or MCP catalog operation",
+    ),
+    (
+        "custos",
+        HttpMethod::Get,
+        "/agents/{agent_id}",
+        Category::Agents,
+        "agent-principal lifecycle route; the owner manages agents from the web app, not through a CLI command or MCP catalog operation",
+    ),
+    (
+        "custos",
+        HttpMethod::Post,
+        "/agents/{agent_id}/deactivate",
+        Category::Agents,
+        "agent-principal lifecycle route; the owner manages agents from the web app, not through a CLI command or MCP catalog operation",
+    ),
+    (
+        "custos",
+        HttpMethod::Post,
+        "/agents/{agent_id}/reactivate",
+        Category::Agents,
+        "agent-principal lifecycle route; the owner manages agents from the web app, not through a CLI command or MCP catalog operation",
+    ),
     // -- AdminOperations
     (
         "acta",
@@ -950,6 +991,42 @@ const CLI_UNCOVERED: &[UncoveredRoute] = &[
 ];
 
 const MCP_UNCOVERED: &[UncoveredRoute] = &[
+    // -- Agents
+    (
+        "custos",
+        HttpMethod::Post,
+        "/agents",
+        Category::Agents,
+        "agent-principal lifecycle route; the owner manages agents from the web app, not through a CLI command or MCP catalog operation",
+    ),
+    (
+        "custos",
+        HttpMethod::Get,
+        "/agents",
+        Category::Agents,
+        "agent-principal lifecycle route; the owner manages agents from the web app, not through a CLI command or MCP catalog operation",
+    ),
+    (
+        "custos",
+        HttpMethod::Get,
+        "/agents/{agent_id}",
+        Category::Agents,
+        "agent-principal lifecycle route; the owner manages agents from the web app, not through a CLI command or MCP catalog operation",
+    ),
+    (
+        "custos",
+        HttpMethod::Post,
+        "/agents/{agent_id}/deactivate",
+        Category::Agents,
+        "agent-principal lifecycle route; the owner manages agents from the web app, not through a CLI command or MCP catalog operation",
+    ),
+    (
+        "custos",
+        HttpMethod::Post,
+        "/agents/{agent_id}/reactivate",
+        Category::Agents,
+        "agent-principal lifecycle route; the owner manages agents from the web app, not through a CLI command or MCP catalog operation",
+    ),
     // -- AdminOperations
     (
         "acta",
@@ -2026,8 +2103,8 @@ fn registry_client_and_surface_walks_are_not_vacuous() {
     let entries = route_matrix();
     assert_eq!(
         entries.len(),
-        221,
-        "the live registry must declare 221 routes"
+        226,
+        "the live registry must declare 226 routes"
     );
 
     let cli_methods: BTreeSet<String> = cli_command_methods().into_values().flatten().collect();
@@ -2244,13 +2321,13 @@ fn no_real_exclusion_list_category_is_dead() {
 
 // ---------------------------------------------------------------------------
 // Per-surface reached/excluded pins — measured at apply time against the
-// 221-route registry; both pairs must sum to it.
+// 226-route registry; both pairs must sum to it.
 // ---------------------------------------------------------------------------
 
 const CLI_REACHED_ROUTE_COUNT: usize = 114;
-const CLI_EXCLUDED_ROUTE_COUNT: usize = 107;
+const CLI_EXCLUDED_ROUTE_COUNT: usize = 112;
 const MCP_REACHED_ROUTE_COUNT: usize = 113;
-const MCP_EXCLUDED_ROUTE_COUNT: usize = 108;
+const MCP_EXCLUDED_ROUTE_COUNT: usize = 113;
 
 fn reached_route_count(entries: &[RouteMatrixEntry], covered: &BTreeSet<RouteKey>) -> usize {
     let keys: BTreeSet<RouteKey> = entries

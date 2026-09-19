@@ -1,9 +1,9 @@
 use atlas_api::{
     dtos::{
-        ActivationLinkResponse, ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, ApiKeyScope,
-        ChangePasswordRequest, CreateGrantRequest, CreateUserApiKeyRequest, CreateUserRequest,
-        CreateUserResponse, GrantDto, MeResponse, ResetPasswordRequest, SessionDto,
-        UpdateMeRequest, UserDto, UserMembershipDto,
+        ActivationLinkResponse, AgentDto, ApiKeyCreated, ApiKeyDto, ApiKeyGrantDto, ApiKeyScope,
+        ChangePasswordRequest, CreateAgentRequest, CreateGrantRequest, CreateUserApiKeyRequest,
+        CreateUserRequest, CreateUserResponse, GrantDto, MeResponse, ResetPasswordRequest,
+        SessionDto, UpdateMeRequest, UserDto, UserMembershipDto,
         discovery::DiscoverResponseDto,
         groups::{AddGroupMemberRequest, CreateGroupRequest, GroupDto, GroupMemberDto},
     },
@@ -360,6 +360,54 @@ impl Custos<'_> {
             .await
             .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
         Err(ClientError::Api(problem))
+    }
+
+    /// `POST /api/v2/custos/agents` (`v2-e4-s3a-agents`)
+    pub async fn create_agent(&self, body: CreateAgentRequest) -> Result<AgentDto, ClientError> {
+        let response = self
+            .post(Component::Custos, "/agents")
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "create_agent").await
+    }
+
+    /// `GET /api/v2/custos/agents` — the caller's own agents (every agent for
+    /// a platform admin).
+    pub async fn list_agents(&self) -> Result<Vec<AgentDto>, ClientError> {
+        let response = self.get(Component::Custos, "/agents").send().await?;
+        self.decode_response(response, "list_agents").await
+    }
+
+    /// `GET /api/v2/custos/agents/{agent_id}` — answers 404 for an agent the
+    /// caller does not own.
+    pub async fn get_agent(&self, agent_id: uuid::Uuid) -> Result<AgentDto, ClientError> {
+        let response = self
+            .get(Component::Custos, &format!("/agents/{agent_id}"))
+            .send()
+            .await?;
+        self.decode_response(response, "get_agent").await
+    }
+
+    /// `POST /api/v2/custos/agents/{agent_id}/deactivate`
+    pub async fn deactivate_agent(&self, agent_id: uuid::Uuid) -> Result<AgentDto, ClientError> {
+        let response = self
+            .post(Component::Custos, &format!("/agents/{agent_id}/deactivate"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        self.decode_response(response, "deactivate_agent").await
+    }
+
+    /// `POST /api/v2/custos/agents/{agent_id}/reactivate`
+    pub async fn reactivate_agent(&self, agent_id: uuid::Uuid) -> Result<AgentDto, ClientError> {
+        let response = self
+            .post(Component::Custos, &format!("/agents/{agent_id}/reactivate"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        self.decode_response(response, "reactivate_agent").await
     }
 
     /// `POST /api/v2/custos/workspaces/{ws}/projects/{slug}/grants`

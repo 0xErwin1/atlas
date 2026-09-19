@@ -438,6 +438,52 @@ fn custos_entry() -> ComponentEntry {
                     idempotent: false,
                     is_public: false,
                 },
+                // v2-e4-s3a-agents: first-class agent principals owned by the
+                // calling user. `create_agent` is an ordinary retried create
+                // with no one-shot secret, so it is wired to the
+                // Idempotency-Key middleware and declared `idempotent: true`
+                // (wired/declared sets move together per T4.15). The flag is
+                // the Idempotency-Key replay bit, not HTTP semantics.
+                RouteDeclaration {
+                    method: HttpMethod::Post,
+                    path: route_path("/agents"),
+                    operation_id: "create_agent".to_string(),
+                    action: None,
+                    idempotent: true,
+                    is_public: false,
+                },
+                RouteDeclaration {
+                    method: HttpMethod::Get,
+                    path: route_path("/agents"),
+                    operation_id: "list_agents".to_string(),
+                    action: None,
+                    idempotent: false,
+                    is_public: false,
+                },
+                RouteDeclaration {
+                    method: HttpMethod::Get,
+                    path: route_path("/agents/{agent_id}"),
+                    operation_id: "get_agent".to_string(),
+                    action: None,
+                    idempotent: false,
+                    is_public: false,
+                },
+                RouteDeclaration {
+                    method: HttpMethod::Post,
+                    path: route_path("/agents/{agent_id}/deactivate"),
+                    operation_id: "deactivate_agent".to_string(),
+                    action: None,
+                    idempotent: false,
+                    is_public: false,
+                },
+                RouteDeclaration {
+                    method: HttpMethod::Post,
+                    path: route_path("/agents/{agent_id}/reactivate"),
+                    operation_id: "reactivate_agent".to_string(),
+                    action: None,
+                    idempotent: false,
+                    is_public: false,
+                },
                 RouteDeclaration {
                     method: HttpMethod::Post,
                     path: route_path("/workspaces/{ws}/projects/{project_slug}/grants"),
