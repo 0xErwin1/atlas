@@ -309,9 +309,22 @@ async fn platform_audit_root_sees_rows() {
         .await
         .expect("GET platform audit");
 
-    assert_eq!(page.items.len(), 1);
-    assert_eq!(page.items[0].action, "user.created");
-    assert!(page.items[0].workspace_id.is_none());
+    // The root login is itself audited, so the page carries its row alongside
+    // the seeded one. Asserting both keeps the new event pinned rather than
+    // filtering it out of the way.
+    let actions: Vec<&str> = page.items.iter().map(|row| row.action.as_str()).collect();
+    assert!(
+        actions.contains(&"root.login"),
+        "a root login must be audited, got: {actions:?}"
+    );
+    assert!(actions.contains(&"user.created"));
+    assert_eq!(page.items.len(), 2);
+    let created = page
+        .items
+        .iter()
+        .find(|row| row.action == "user.created")
+        .expect("the seeded platform row");
+    assert!(created.workspace_id.is_none());
 
     db.teardown().await;
 }
@@ -547,7 +560,12 @@ async fn platform_audit_filter_actor_user() {
         .list_platform_audit(None, None, None, None, None)
         .await
         .expect("GET platform audit all");
-    assert_eq!(all_page.items.len(), 2, "no filter must return both rows");
+    // Three rows: the two seeded ones plus the root login's own audit row.
+    assert_eq!(
+        all_page.items.len(),
+        3,
+        "no filter must return both seeded rows plus the audited root login"
+    );
 
     // Filter actor=user: only user row.
     let user_page = root_client
@@ -555,8 +573,15 @@ async fn platform_audit_filter_actor_user() {
         .list_platform_audit(Some("user"), None, None, None, None)
         .await
         .expect("GET platform audit actor=user");
-    assert_eq!(user_page.items.len(), 1, "actor=user must return one row");
-    assert_eq!(user_page.items[0].actor.r#type, "user");
+    assert_eq!(
+        user_page.items.len(),
+        2,
+        "actor=user must return the seeded user row plus the root login's own row"
+    );
+    assert!(
+        user_page.items.iter().all(|row| row.actor.r#type == "user"),
+        "every row under actor=user must be user-attributed"
+    );
 
     // Filter actor=api_key: only api_key row.
     let key_page = root_client

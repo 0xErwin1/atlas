@@ -407,6 +407,7 @@ async fn login_pending_user_returns_401_not_an_oracle() {
         .login(LoginRequest {
             username: "pending-login".into(),
             password: "anypassword".into(),
+            reason: None,
         })
         .await;
 
@@ -421,6 +422,7 @@ async fn login_pending_user_returns_401_not_an_oracle() {
         .login(LoginRequest {
             username: "no-such-user-oracle".into(),
             password: "anypassword".into(),
+            reason: None,
         })
         .await;
 
@@ -463,6 +465,7 @@ async fn login_disabled_user_still_returns_401() {
         .login(LoginRequest {
             username: "disabled-auth-b1".into(),
             password: "TestPassword1!".into(),
+            reason: None,
         })
         .await;
 
@@ -483,6 +486,7 @@ async fn login_unknown_user_returns_401_not_403() {
         .login(LoginRequest {
             username: "does-not-exist-b1".into(),
             password: "anypassword".into(),
+            reason: None,
         })
         .await;
 
@@ -892,6 +896,7 @@ async fn activated_user_can_login_normally_after_activation() {
         .json(&LoginRequest {
             username: username.clone(),
             password: password.to_string(),
+            reason: None,
         })
         .send()
         .await

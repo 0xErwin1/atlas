@@ -63,6 +63,10 @@ pub struct Session {
     pub last_used_at: Option<DateTime<Utc>>,
     pub revoked_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
+    /// The mandatory justification stated at login for a root (break-glass)
+    /// session; always `None` for non-root sessions. Every state-changing
+    /// request under a root session is audited with this reason.
+    pub root_reason: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -70,6 +74,9 @@ pub struct NewSession {
     pub user_id: UserId,
     pub token_hash: String,
     pub expires_at: DateTime<Utc>,
+    /// `Some` only for a root login, which the route layer requires to carry
+    /// a non-empty justification; `None` for every non-root session.
+    pub root_reason: Option<String>,
 }
 
 /// The declared purpose of an API key. Does not vary the agent cap (always ≤ editor);

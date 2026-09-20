@@ -808,6 +808,7 @@ const ATLAS_SERVER_TEST_PINS: &[(&str, usize)] = &[
     ("api_rate_limit.rs", 0),
     ("api_readiness.rs", 0),
     ("api_rfc9457_sweep.rs", 0),
+    ("api_root_reason.rs", 0),
     ("api_route_exclusion_list.rs", 0),
     ("api_router_mount_assertion.rs", 0),
     ("api_saved_searches.rs", 0),

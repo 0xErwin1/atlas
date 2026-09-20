@@ -194,6 +194,7 @@ async fn login_system_admin(
         .login(atlas_api::dtos::LoginRequest {
             username: username.into(),
             password: password.into(),
+            reason: None,
         })
         .await
         .expect("system admin login");
@@ -849,7 +850,11 @@ async fn trash_allows_only_root_and_system_admin_humans() {
         )
         .await
         .expect("add workspace admin");
-    let api_key = root
+    // A plain workspace admin's personal key, not root's: root may no longer
+    // hold one, because it would carry break-glass authority without a session
+    // and so without a stated reason. Any non-human credential proves the same
+    // thing here, which is what this test is about.
+    let api_key = workspace_admin
         .custos()
         .create_personal_api_key(atlas_api::dtos::CreatePersonalApiKeyRequest {
             name: "trash-agent".into(),

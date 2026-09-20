@@ -1018,7 +1018,10 @@ async fn every_classified_page_route_reaches_its_own_last_page() {
                 let admin_server = support::TestServer::spawn(&admin_db).await;
                 let admin = support::login_root_user(&admin_server, &admin_db).await;
                 let body = fetch_page_json(&admin, "/admin/audit", &component).await;
-                assert_is_own_last_page(&body, route.path.as_str(), 0);
+                // One row, not zero: the root login this arm just performed is
+                // itself audited (`root.login`), so the platform collection is
+                // no longer empty on a freshly created database.
+                assert_is_own_last_page(&body, route.path.as_str(), 1);
                 admin_db.teardown().await;
             }
             "/admin/trash" => {

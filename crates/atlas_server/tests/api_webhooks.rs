@@ -121,6 +121,7 @@ async fn add_member_user_and_login(
         .json(&LoginRequest {
             username: username.to_string(),
             password: password_plaintext.to_string(),
+            reason: None,
         })
         .send()
         .await
@@ -306,6 +307,7 @@ async fn add_editor_user_and_login(
         .json(&LoginRequest {
             username: username.to_string(),
             password: password_plaintext.to_string(),
+            reason: None,
         })
         .send()
         .await

@@ -3508,6 +3508,7 @@ async fn member_client_with_document_grant(
         .login(atlas_api::dtos::LoginRequest {
             username: username.to_string(),
             password: "TestPassword1!".to_string(),
+            reason: None,
         })
         .await
         .expect("member login");
@@ -3726,6 +3727,7 @@ async fn viewer_cannot_create_document() {
         .login(atlas_api::dtos::LoginRequest {
             username: "doc-perm-viewer".to_string(),
             password: "TestPassword1!".to_string(),
+            reason: None,
         })
         .await
         .expect("viewer login");
@@ -3911,6 +3913,7 @@ async fn member_client_with_optional_project_grant(
         .login(atlas_api::dtos::LoginRequest {
             username: username.to_string(),
             password: "TestPassword1!".to_string(),
+            reason: None,
         })
         .await
         .expect("member login");

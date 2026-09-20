@@ -451,6 +451,7 @@ impl SessionRepo for PgSessionRepo {
             last_used_at: Set(None),
             revoked_at: Set(None),
             created_at: Set(Utc::now()),
+            root_reason: Set(new.root_reason),
         };
         model
             .insert(&self.conn)

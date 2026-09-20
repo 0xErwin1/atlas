@@ -166,6 +166,7 @@ async fn add_plain_member(
         .login(atlas_api::dtos::LoginRequest {
             username: username.to_string(),
             password: "TestPassword1!".to_string(),
+            reason: None,
         })
         .await
         .expect("login");
@@ -337,6 +338,7 @@ async fn workspace_activity_board_only_grant_surfaces_board_tasks() {
         .login(atlas_api::dtos::LoginRequest {
             username: "member-board1".to_string(),
             password: "TestPassword1!".to_string(),
+            reason: None,
         })
         .await
         .expect("login");
@@ -416,6 +418,7 @@ async fn workspace_activity_project_grant_surfaces_project_tasks() {
         .login(atlas_api::dtos::LoginRequest {
             username: "member-proj1".to_string(),
             password: "TestPassword1!".to_string(),
+            reason: None,
         })
         .await
         .expect("login");
@@ -1097,6 +1100,9 @@ async fn workspace_activity_root_member_sees_all_via_admin_bypass() {
         .login(atlas_api::dtos::LoginRequest {
             username: "root-member-14".to_string(),
             password: "RootPassword1!".to_string(),
+            // Required for a root login; the user is created as a plain member
+            // earlier in this test, but it is still root.
+            reason: Some("test break-glass seed".to_string()),
         })
         .await
         .expect("root login");

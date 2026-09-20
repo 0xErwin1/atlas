@@ -495,6 +495,7 @@ async fn cross_tenant_task_isolation() {
             .login(LoginRequest {
                 username: "b3-alice-auth".to_string(),
                 password: pw.to_string(),
+                reason: None,
             })
             .await
             .expect("login");

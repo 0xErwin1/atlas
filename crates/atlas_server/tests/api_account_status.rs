@@ -615,6 +615,7 @@ async fn disabled_user_cannot_login() {
         .login(LoginRequest {
             username: "acst-t07-disabled".to_string(),
             password: "TestPassword1!".to_string(),
+            reason: None,
         })
         .await;
 

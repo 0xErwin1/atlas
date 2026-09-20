@@ -41,6 +41,11 @@ pub struct VersionResponse {
 pub struct LoginRequest {
     pub username: String,
     pub password: String,
+    /// Mandatory justification for a root (break-glass) login. Ignored for
+    /// non-root users; a root login with a missing or blank reason is
+    /// rejected, and the stated reason is stored on the session and audited.
+    #[serde(default)]
+    pub reason: Option<String>,
 }
 
 /// Response body from `POST /api/auth/login`.

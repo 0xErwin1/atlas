@@ -289,6 +289,7 @@ async fn audit_membership_role_changed_admin_on_owner_writes_zero_rows() {
             .login(LoginRequest {
                 username: "audit-rc-admin-403-caller".to_string(),
                 password: "TestPassword1!".to_string(),
+                reason: None,
             })
             .await
             .expect("login");
@@ -937,6 +938,7 @@ async fn login_admin_user(
         .login(LoginRequest {
             username: username.to_string(),
             password: "TestPassword1!".to_string(),
+            reason: None,
         })
         .await
         .expect("login as admin");
@@ -980,6 +982,8 @@ async fn login_root(
         .login(LoginRequest {
             username: username.to_string(),
             password: "TestPassword1!".to_string(),
+            // Root logins are break-glass and must state a reason.
+            reason: Some("test break-glass seed".to_string()),
         })
         .await
         .expect("login as root");

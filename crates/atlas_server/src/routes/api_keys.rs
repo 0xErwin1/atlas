@@ -295,6 +295,30 @@ pub(crate) async fn create_key_of_kind(
 ) -> Result<impl IntoResponse, ApiError> {
     let user_id = require_caller_user(principal, "create other API keys")?;
 
+    // A root user must not hold a personal API key (`v2-e4-s3c` W4): a key
+    // acts as its user without any session, so it has nowhere to carry the
+    // mandatory break-glass justification — a standing root personal key
+    // would defeat the per-action root audit entirely. Agent keys owned by
+    // root are unaffected: they act as the agent principal.
+    if expected == ApiKeyKind::Personal {
+        let user = PgUserRepo {
+            conn: (*state.db).clone(),
+        }
+        .find_by_id(user_id)
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?
+        .ok_or(ApiError::Unauthorized)?;
+        if user.is_root {
+            return Err(ApiError::Forbidden {
+                message: "root users cannot hold personal API keys: a key acts as its user \
+                          without a session and so carries no break-glass justification"
+                    .into(),
+            });
+        }
+    }
+
     let key_type = parse_key_type(fields.key_type.as_deref())?;
     // The token prefix and the linked principal come from this single kind
     // decision, so a freshly minted key can never carry a prefix that

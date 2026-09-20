@@ -39,6 +39,7 @@ async fn login_invalid_credentials_returns_401() {
         .login(LoginRequest {
             username: "nobody".into(),
             password: "wrong".into(),
+            reason: None,
         })
         .await;
 
@@ -115,6 +116,7 @@ async fn nonexistent_user_login_returns_401() {
         .login(LoginRequest {
             username: "does-not-exist-at-all".into(),
             password: "anypassword".into(),
+            reason: None,
         })
         .await;
 
@@ -136,6 +138,7 @@ async fn wrong_password_returns_401() {
         .login(LoginRequest {
             username: user.username.clone(),
             password: "definitelywrong".into(),
+            reason: None,
         })
         .await;
 
@@ -161,6 +164,7 @@ async fn disabled_user_with_correct_password_returns_401() {
         .login(LoginRequest {
             username: user.username.clone(),
             password: "TestPassword1!".into(),
+            reason: None,
         })
         .await;
 

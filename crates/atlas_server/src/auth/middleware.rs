@@ -15,6 +15,18 @@ use atlas_custos_postgres::repos::identity::{PgApiKeyRepo, PgSessionRepo, PgUser
 
 use atlas_custos::entities::principals::PrincipalKind;
 
+/// The break-glass context of a session-authenticated root user, resolved at
+/// authentication time so the root-audit gate never needs a second lookup.
+/// Present only for a root user authenticated by session; API-key principals
+/// never carry it (a root personal key must not exist at all — W4/W1).
+#[derive(Debug, Clone)]
+pub(crate) struct RootSession {
+    pub(crate) user_id: atlas_core::principal::UserId,
+    /// The justification stated at root login. `None` means the session was
+    /// tampered with or predates the requirement, and must fail closed.
+    pub(crate) reason: Option<String>,
+}
+
 /// The resolved authentication principal injected into request extensions.
 #[derive(Debug, Clone)]
 pub enum Principal {
@@ -54,15 +66,18 @@ pub async fn require_authn(
     };
     let token_hash = hash_token(&raw_token);
 
-    let principal = if raw_token.starts_with("atlas_pk_") {
-        resolve_api_key(&state, &token_hash, Some(PrincipalKind::User)).await?
+    let (principal, root_session) = if raw_token.starts_with("atlas_pk_") {
+        let (p, _) = resolve_api_key(&state, &token_hash, Some(PrincipalKind::User)).await?;
+        (p, None)
     } else if raw_token.starts_with("atlas_ak_") {
-        resolve_api_key(&state, &token_hash, Some(PrincipalKind::Agent)).await?
+        let (p, _) = resolve_api_key(&state, &token_hash, Some(PrincipalKind::Agent)).await?;
+        (p, None)
     } else if raw_token.starts_with("atlas_") {
         // V1 keys have no kind segment: untyped tokens are accepted whatever
         // principal kind they link to. Only a *declared* kind that disagrees
         // with the linked principal is rejected.
-        resolve_api_key(&state, &token_hash, None).await?
+        let (p, _) = resolve_api_key(&state, &token_hash, None).await?;
+        (p, None)
     } else {
         resolve_session(&state, &token_hash).await?
     };
@@ -75,6 +90,27 @@ pub async fn require_authn(
     }
 
     request.extensions_mut().insert(principal);
+
+    // The one per-action audit site for break-glass sessions: runs before the
+    // handler so an unjustified or unrecordable root mutation never executes.
+    // The path is taken from `OriginalUri` (inserted by `Router::nest`) so the
+    // row records the externally visible path, not the prefix-stripped one.
+    if let Some(root) = &root_session {
+        let path = request
+            .extensions()
+            .get::<axum::extract::OriginalUri>()
+            .map(|uri| uri.0.path().to_owned())
+            .unwrap_or_else(|| request.uri().path().to_owned());
+        crate::middleware::root_audit::gate_root_session(
+            &state,
+            root.user_id,
+            root.reason.as_deref(),
+            request.method(),
+            &path,
+        )
+        .await?;
+    }
+
     Ok(next.run(request).await)
 }
 
@@ -93,7 +129,7 @@ async fn resolve_api_key(
     state: &AppState,
     token_hash: &str,
     declared_kind: Option<PrincipalKind>,
-) -> Result<Principal, ApiError> {
+) -> Result<(Principal, Option<RootSession>), ApiError> {
     let repo = PgApiKeyRepo {
         conn: (*state.db).clone(),
     };
@@ -132,10 +168,13 @@ async fn resolve_api_key(
         tracing::warn!(api_key_id = ?key.id, error = %e, "failed to touch api key last_used");
     }
 
-    Ok(Principal::ApiKey(key.id))
+    Ok((Principal::ApiKey(key.id), None))
 }
 
-async fn resolve_session(state: &AppState, token_hash: &str) -> Result<Principal, ApiError> {
+async fn resolve_session(
+    state: &AppState,
+    token_hash: &str,
+) -> Result<(Principal, Option<RootSession>), ApiError> {
     let session_repo = PgSessionRepo {
         conn: (*state.db).clone(),
     };
@@ -184,5 +223,14 @@ async fn resolve_session(state: &AppState, token_hash: &str) -> Result<Principal
         tracing::warn!(user_id = ?session.user_id, error = %e, "failed to touch session expiry");
     }
 
-    Ok(Principal::User(session.user_id))
+    let root_session = if user.is_root {
+        Some(RootSession {
+            user_id: session.user_id,
+            reason: session.root_reason,
+        })
+    } else {
+        None
+    };
+
+    Ok((Principal::User(session.user_id), root_session))
 }

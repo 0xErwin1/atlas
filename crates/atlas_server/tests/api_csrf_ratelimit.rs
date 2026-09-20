@@ -41,6 +41,7 @@ async fn raw_login(base_url: &str, username: &str, password: &str) -> (String, O
         .json(&LoginRequest {
             username: username.to_string(),
             password: password.to_string(),
+            reason: None,
         })
         .send()
         .await
@@ -196,6 +197,7 @@ async fn login_rate_limit_returns_429_after_quota_exceeded() {
                 .json(&LoginRequest {
                     username: "nonexistent".to_string(),
                     password: "wrong".to_string(),
+                    reason: None,
                 })
                 .send()
         })

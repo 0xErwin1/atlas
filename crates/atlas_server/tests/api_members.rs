@@ -179,6 +179,7 @@ async fn list_members_visible_to_plain_member() {
             .login(LoginRequest {
                 username: "members-plain-login".to_string(),
                 password: "TestPassword1!".to_string(),
+                reason: None,
             })
             .await
             .expect("login");
@@ -335,6 +336,7 @@ async fn login_member_with_role(
         .login(LoginRequest {
             username: username.to_string(),
             password: "TestPassword1!".to_string(),
+            reason: None,
         })
         .await
         .expect("login");
@@ -376,6 +378,9 @@ async fn login_break_glass_user(
         .login(LoginRequest {
             username: username.to_string(),
             password: "TestPassword1!".to_string(),
+            // Required when this helper logs in the root user and ignored for a
+            // non-root login, so one helper serves both.
+            reason: Some("test break-glass seed".to_string()),
         })
         .await
         .expect("login");

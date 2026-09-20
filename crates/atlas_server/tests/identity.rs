@@ -46,6 +46,7 @@ async fn session_token_hash_lookup() {
             user_id: user.id,
             token_hash: token_hash.clone(),
             expires_at: chrono::Utc::now() + Duration::hours(1),
+            root_reason: None,
         })
         .await
         .expect("create session");

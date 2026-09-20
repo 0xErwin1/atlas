@@ -295,6 +295,7 @@ pub(crate) async fn login_user(
         .login(LoginRequest {
             username: username.to_string(),
             password: password_plaintext.to_string(),
+            reason: None,
         })
         .await
         .expect("login");
@@ -367,6 +368,7 @@ pub(crate) async fn login_user_with_workspace(
         .login(LoginRequest {
             username: username.to_string(),
             password: password_plaintext.to_string(),
+            reason: None,
         })
         .await
         .expect("login");
@@ -407,6 +409,9 @@ pub(crate) async fn login_root_user(server: &TestServer, db: &TestDb) -> AtlasCl
         .login(LoginRequest {
             username,
             password: password_plaintext.to_string(),
+            // A root login is break-glass and must state a reason; test seeds
+            // use a fixed one so audit-row assertions stay deterministic.
+            reason: Some("test break-glass seed".to_string()),
         })
         .await
         .expect("root login");

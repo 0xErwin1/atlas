@@ -139,6 +139,7 @@ async fn add_member(
         .login(LoginRequest {
             username: username.to_string(),
             password: password.to_string(),
+            reason: None,
         })
         .await
         .expect("login workspace owner");

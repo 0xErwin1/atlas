@@ -72,6 +72,7 @@ async fn seed_session(
             user_id: atlas_core::principal::UserId(user_id),
             token_hash: token_hash.to_string(),
             expires_at: Utc::now() + chrono::Duration::days(30),
+            root_reason: None,
         })
         .await
         .expect("seed session");
