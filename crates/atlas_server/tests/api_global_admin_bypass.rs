@@ -94,7 +94,9 @@ async fn login_as(server: &support::TestServer, username: &str) -> AtlasClient {
         .login(LoginRequest {
             username: username.to_string(),
             password: "TestPassword1!".to_string(),
-            reason: None,
+            // Required when this helper logs in the root user and ignored for a
+            // non-root login, so one helper serves both.
+            reason: Some("test break-glass seed".to_string()),
         })
         .await
         .expect("login");
