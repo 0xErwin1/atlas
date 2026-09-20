@@ -182,11 +182,16 @@ async fn self_disable_writes_zero_audit_rows() {
     let me = root.custos().me().await.expect("me");
     let my_id = me.id.expect("me.id must be present");
 
+    // Baseline taken after the login: a root login is itself audited, so the
+    // property under test is that the self-action adds no row, not that the
+    // collection is empty.
+    let before = count_platform_audit_rows(&db).await;
+
     let _ = root.custos().disable_user(my_id).await;
 
     assert_eq!(
         count_platform_audit_rows(&db).await,
-        0,
+        before,
         "self-disable must not write audit rows"
     );
 
@@ -250,11 +255,14 @@ async fn self_enable_writes_zero_audit_rows() {
     let me = root.custos().me().await.expect("me");
     let my_id = me.id.expect("me.id must be present");
 
+    // Baseline taken after the login, for the same reason as the disable case.
+    let before = count_platform_audit_rows(&db).await;
+
     let _ = root.custos().enable_user(my_id).await;
 
     assert_eq!(
         count_platform_audit_rows(&db).await,
-        0,
+        before,
         "self-enable must not write audit rows"
     );
 
