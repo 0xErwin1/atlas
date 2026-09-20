@@ -120,14 +120,20 @@ fn assert_403(result: Result<impl std::fmt::Debug, ClientError>, context: &str) 
     }
 }
 
-/// Counts platform-scoped (workspace_id IS NULL) audit rows — used for
-/// disable/enable events which record no workspace.
-async fn count_platform_audit_rows(db: &TestDb) -> usize {
+/// The `action` of every platform-scoped (workspace_id IS NULL) audit row.
+///
+/// Asserting on the domain event rather than on the collection's size is what
+/// these tests mean: a root login and every state-changing root request write
+/// their own rows, so the collection is never empty and a count cannot
+/// distinguish "this action was not recorded" from "other root traffic was".
+async fn platform_audit_actions(db: &TestDb) -> Vec<String> {
     let repo = PgSecurityAuditRepo::new(db.conn().clone());
     repo.list_platform(&AuditFilters::default(), None, 100)
         .await
         .expect("list_platform")
-        .len()
+        .into_iter()
+        .map(|row| row.action.to_string())
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -182,17 +188,15 @@ async fn self_disable_writes_zero_audit_rows() {
     let me = root.custos().me().await.expect("me");
     let my_id = me.id.expect("me.id must be present");
 
-    // Baseline taken after the login: a root login is itself audited, so the
-    // property under test is that the self-action adds no row, not that the
-    // collection is empty.
-    let before = count_platform_audit_rows(&db).await;
-
+    // The rejected request still writes its own `root.action` row, because the
+    // audit is recorded before the handler runs so that an unaudited root
+    // attempt cannot happen; the domain event is what must be absent here.
     let _ = root.custos().disable_user(my_id).await;
 
-    assert_eq!(
-        count_platform_audit_rows(&db).await,
-        before,
-        "self-disable must not write audit rows"
+    let actions = platform_audit_actions(&db).await;
+    assert!(
+        !actions.iter().any(|action| action == "user.disabled"),
+        "self-disable must not write a `user.disabled` audit row, got: {actions:?}"
     );
 
     db.teardown().await;
@@ -255,15 +259,12 @@ async fn self_enable_writes_zero_audit_rows() {
     let me = root.custos().me().await.expect("me");
     let my_id = me.id.expect("me.id must be present");
 
-    // Baseline taken after the login, for the same reason as the disable case.
-    let before = count_platform_audit_rows(&db).await;
-
     let _ = root.custos().enable_user(my_id).await;
 
-    assert_eq!(
-        count_platform_audit_rows(&db).await,
-        before,
-        "self-enable must not write audit rows"
+    let actions = platform_audit_actions(&db).await;
+    assert!(
+        !actions.iter().any(|action| action == "user.enabled"),
+        "self-enable must not write a `user.enabled` audit row, got: {actions:?}"
     );
 
     db.teardown().await;
