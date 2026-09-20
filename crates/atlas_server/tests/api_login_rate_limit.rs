@@ -32,6 +32,7 @@ async fn login_burst_is_rate_limited_and_activate_is_not() {
                 .json(&LoginRequest {
                     username: "no-such-user".to_string(),
                     password: "wrong-password".to_string(),
+                    reason: None,
                 })
                 .send()
         })

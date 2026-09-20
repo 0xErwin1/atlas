@@ -73,6 +73,7 @@ async fn add_member(
         .login(LoginRequest {
             username: username.to_string(),
             password: "TestPassword1!".to_string(),
+            reason: None,
         })
         .await
         .expect("login");

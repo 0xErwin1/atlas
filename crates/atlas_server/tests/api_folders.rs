@@ -969,6 +969,7 @@ async fn move_folder_underprivileged_destination_returns_404() {
         .login(LoginRequest {
             username: "mv-unpriv-caller".to_string(),
             password: "TestPassword1!".to_string(),
+            reason: None,
         })
         .await
         .expect("login caller");

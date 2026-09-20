@@ -15,7 +15,10 @@ use atlas_api::dtos::{
     AgentIdentityDto, ChangePasswordRequest, LoginRequest, LoginResponse, MeResponse,
     UpdateMeRequest, UserDto,
 };
+use atlas_core::attribution::UserAttributionId;
 use atlas_core::principal::UserId;
+use atlas_custos::entities::security_audit::NewSecurityAuditEvent;
+use atlas_custos::entities::security_audit::SecurityAction;
 use atlas_custos::ids::SessionId;
 
 use crate::{
@@ -31,6 +34,7 @@ use crate::{
     state::AppState,
 };
 use atlas_custos_postgres::repos::identity::{PgApiKeyRepo, PgSessionRepo, PgUserRepo};
+use atlas_custos_postgres::repos::security_audit::PgSecurityAuditRepo;
 
 /// A pre-computed argon2 hash of a throwaway password used to equalise timing
 /// when the submitted username does not exist. Without this, an attacker could
@@ -113,6 +117,28 @@ pub(crate) async fn login(
         return Err(ApiError::Unauthorized);
     }
 
+    // Root is break-glass that must justify itself: a root login without a
+    // non-empty reason is rejected before any session exists. A non-root
+    // login needs no reason and is otherwise unchanged.
+    let stated_reason = body
+        .reason
+        .as_deref()
+        .map(str::trim)
+        .filter(|reason| !reason.is_empty());
+    let root_reason = if user.is_root {
+        Some(
+            stated_reason
+                .ok_or_else(|| ApiError::InvalidInput {
+                    message: "root login requires a non-empty \"reason\" field stating why \
+                      break-glass access is needed"
+                        .into(),
+                })?
+                .to_owned(),
+        )
+    } else {
+        None
+    };
+
     let raw_token = generate_session_token();
     let token_hash = hash_token(&raw_token);
     let expires_at = Utc::now() + chrono::Duration::hours(state.session_ttl_hours);
@@ -122,11 +148,32 @@ pub(crate) async fn login(
             user_id: user.id,
             token_hash,
             expires_at,
+            root_reason: root_reason.clone(),
         })
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
         })?;
+
+    // The login itself is the first audited root action: it created the
+    // justified credential, so the audit row must carry the stated reason.
+    if root_reason.is_some() {
+        PgSecurityAuditRepo::append_in(
+            &*state.db,
+            NewSecurityAuditEvent {
+                workspace_id: None,
+                actor: atlas_core::Attribution::User(UserAttributionId(user.id.0)),
+                action: SecurityAction::RootLogin,
+                target_type: "session".to_string(),
+                target_id: Some(session.id.0),
+                metadata: serde_json::json!({ "reason": root_reason }),
+            },
+        )
+        .await
+        .map_err(|e| ApiError::Internal {
+            message: e.to_string(),
+        })?;
+    }
 
     let user_dto = user_to_dto(&user);
     let response_body = LoginResponse {

@@ -7,10 +7,12 @@ use serde::{Deserialize, Serialize};
 
 /// All security-relevant action verbs. The column in `security_audit_log` is
 /// TEXT (no enum constraint in the DB), but this type guards write-sites against
-/// typo drift across the 16 instrumented call-sites.
+/// typo drift across the instrumented call-sites.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SecurityAction {
+    RootLogin,
+    RootAction,
     MembershipAdded,
     MembershipRoleChanged,
     MembershipRemoved,
@@ -43,6 +45,8 @@ pub enum SecurityAction {
 impl SecurityAction {
     pub fn as_str(self) -> &'static str {
         match self {
+            SecurityAction::RootLogin => "root.login",
+            SecurityAction::RootAction => "root.action",
             SecurityAction::MembershipAdded => "membership.added",
             SecurityAction::MembershipRoleChanged => "membership.role_changed",
             SecurityAction::MembershipRemoved => "membership.removed",
@@ -126,6 +130,8 @@ mod tests {
     #[test]
     fn security_action_as_str_round_trips() {
         let cases = [
+            (SecurityAction::RootLogin, "root.login"),
+            (SecurityAction::RootAction, "root.action"),
             (SecurityAction::MembershipAdded, "membership.added"),
             (
                 SecurityAction::MembershipRoleChanged,

@@ -94,6 +94,7 @@ async fn login_as(server: &support::TestServer, username: &str) -> AtlasClient {
         .login(LoginRequest {
             username: username.to_string(),
             password: "TestPassword1!".to_string(),
+            reason: None,
         })
         .await
         .expect("login");

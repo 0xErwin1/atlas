@@ -75,6 +75,7 @@ pub mod session {
         pub last_used_at: Option<DateTime<Utc>>,
         pub revoked_at: Option<DateTime<Utc>>,
         pub created_at: DateTime<Utc>,
+        pub root_reason: Option<String>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -161,6 +162,7 @@ pub fn session_from(m: session::Model) -> Session {
         last_used_at: m.last_used_at,
         revoked_at: m.revoked_at,
         created_at: m.created_at,
+        root_reason: m.root_reason,
     }
 }
 

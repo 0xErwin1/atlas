@@ -219,6 +219,7 @@ async fn member_of_both_workspaces_cannot_cross_scope_projects() {
         .login(atlas_api::dtos::LoginRequest {
             username: "ten-dual-member".to_string(),
             password: password_plaintext.to_string(),
+            reason: None,
         })
         .await
         .expect("dual login");

@@ -93,6 +93,7 @@ async fn add_member_and_login(
         .json(&LoginRequest {
             username: username.to_string(),
             password: plaintext.to_string(),
+            reason: None,
         })
         .send()
         .await

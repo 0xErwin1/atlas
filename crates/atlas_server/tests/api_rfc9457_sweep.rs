@@ -152,6 +152,7 @@ async fn every_declared_route_answers_with_a_conformant_problem_body() {
                         .json(&atlas_api::dtos::LoginRequest {
                             username: "rfc9457-sweep-no-such-user".to_string(),
                             password: "definitely-wrong-password".to_string(),
+                            reason: None,
                         })
                         .send()
                         .await

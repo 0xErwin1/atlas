@@ -20181,6 +20181,13 @@
           "password": {
             "type": "string"
           },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Mandatory justification for a root (break-glass) login. Ignored for\nnon-root users; a root login with a missing or blank reason is\nrejected, and the stated reason is stored on the session and audited."
+          },
           "username": {
             "type": "string"
           }

@@ -121,6 +121,7 @@ async fn change_password_succeeds_and_rotates_credentials() {
         .login(LoginRequest {
             username: "settings-rotate".to_string(),
             password: "TestPassword1!".to_string(),
+            reason: None,
         })
         .await;
     assert!(
@@ -134,6 +135,7 @@ async fn change_password_succeeds_and_rotates_credentials() {
         .login(LoginRequest {
             username: "settings-rotate".to_string(),
             password: "BrandNewPass2@".to_string(),
+            reason: None,
         })
         .await
         .expect("login with new password");
@@ -166,6 +168,7 @@ async fn change_password_rejects_wrong_current_password() {
         .login(LoginRequest {
             username: "settings-wrongpw".to_string(),
             password: "TestPassword1!".to_string(),
+            reason: None,
         })
         .await
         .expect("original password must still work");
@@ -433,6 +436,7 @@ async fn reset_password_rotates_credentials_and_revokes_sessions() {
         .login(LoginRequest {
             username: "reset-victim".to_string(),
             password: "TestPassword1!".to_string(),
+            reason: None,
         })
         .await;
     assert!(
@@ -446,6 +450,7 @@ async fn reset_password_rotates_credentials_and_revokes_sessions() {
         .login(LoginRequest {
             username: "reset-victim".to_string(),
             password: "FreshSecret9!".to_string(),
+            reason: None,
         })
         .await
         .expect("login with reset password");
@@ -486,6 +491,7 @@ async fn change_password_revokes_other_sessions() {
         .login(LoginRequest {
             username: "pw-revoke-sessions".to_string(),
             password: "TestPassword1!".to_string(),
+            reason: None,
         })
         .await
         .expect("second login");
@@ -583,6 +589,7 @@ async fn change_password_rejects_short_new_password() {
         .login(LoginRequest {
             username: "settings-shortpw".to_string(),
             password: "TestPassword1!".to_string(),
+            reason: None,
         })
         .await
         .expect("original password must still work after a rejected change");
@@ -620,6 +627,7 @@ async fn reset_password_rejects_short_new_password() {
         .login(LoginRequest {
             username: "reset-shortpw".to_string(),
             password: "TestPassword1!".to_string(),
+            reason: None,
         })
         .await
         .expect("original password must still work after a rejected reset");

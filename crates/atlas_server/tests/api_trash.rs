@@ -194,6 +194,7 @@ async fn login_system_admin(
         .login(atlas_api::dtos::LoginRequest {
             username: username.into(),
             password: password.into(),
+            reason: None,
         })
         .await
         .expect("system admin login");

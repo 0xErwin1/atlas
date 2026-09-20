@@ -100,6 +100,7 @@ async fn add_user_to_workspace(
         .login(LoginRequest {
             username: username.to_string(),
             password: "TestPassword1!".to_string(),
+            reason: None,
         })
         .await
         .expect("login");
@@ -142,6 +143,7 @@ async fn create_non_member_user(
         .login(LoginRequest {
             username: username.to_string(),
             password: "TestPassword1!".to_string(),
+            reason: None,
         })
         .await
         .expect("login");

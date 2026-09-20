@@ -211,6 +211,7 @@ async fn pending_user_created_via_api_cannot_login() {
         .login(LoginRequest {
             username: "pending-api-user".into(),
             password: "anypassword".into(),
+            reason: None,
         })
         .await;
 
@@ -371,6 +372,7 @@ async fn disable_user_revokes_sessions() {
         .login(LoginRequest {
             username: "victim-disable".to_string(),
             password: "TestPassword1!".to_string(),
+            reason: None,
         })
         .await;
     assert!(
@@ -402,6 +404,7 @@ async fn enable_user_restores_access() {
         .login(LoginRequest {
             username: "victim2-enable".to_string(),
             password: "TestPassword1!".to_string(),
+            reason: None,
         })
         .await
         .expect("login after re-enable");

@@ -69,6 +69,7 @@ async fn create_and_login_system_admin(
         .login(LoginRequest {
             username: username.to_string(),
             password: "TestPassword1!".to_string(),
+            reason: None,
         })
         .await
         .expect("login system admin");
@@ -330,6 +331,7 @@ async fn self_role_change_admin_returns_403() {
         .login(LoginRequest {
             username: "sp-rc-self-admin".to_string(),
             password: "TestPassword1!".to_string(),
+            reason: None,
         })
         .await
         .expect("login");
