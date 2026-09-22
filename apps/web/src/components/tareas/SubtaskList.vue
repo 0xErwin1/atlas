@@ -281,9 +281,9 @@ function attach(hit: SearchHitDto): void {
   align-items: center;
   gap: 5px;
   flex: 0 0 auto;
-  height: 20px;
+  height: var(--h-compact);
   padding: 0 8px 0 7px;
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   font-weight: var(--fw-semibold);
   white-space: nowrap;
 }
@@ -308,10 +308,10 @@ function attach(hit: SearchHitDto): void {
 
 .atl-sub-id {
   flex: 0 0 auto;
-  width: 46px;
+  width: 54px;
   text-align: right;
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   color: var(--c-muted);
 }
 

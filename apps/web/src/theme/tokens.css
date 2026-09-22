@@ -162,13 +162,13 @@
   --font-code: 'IBM Plex Mono', ui-monospace, monospace;
 
   /* Font sizes */
-  --fs-label: 10px;
-  --fs-xs: 11px;
-  --fs-sm: 12px;
-  --fs-base: 12.5px;
-  --fs-lg: 14px;
-  --fs-xl: 17px;
-  --fs-title: 23px;
+  --fs-label: 12px;
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-base: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 18px;
+  --fs-title: 24px;
 
   /* Font weights. Light strokes on a dark ground read thinner than dark on
      light at the same weight, so the dark theme runs the variable Plex Sans
@@ -190,7 +190,7 @@
   --font-feature-ui: normal;
 
   /* Tracking, for the uppercase mono section labels. */
-  --ls-label: 0.14em;
+  --ls-label: 0.08em;
 
   /* Spacing */
   --sp-xs: 4px;
@@ -200,13 +200,13 @@
   --sp-xl: 24px;
 
   /* Heights */
-  --h-row: 22px;
-  --h-compact: 20px;
-  --h-header: 28px;
-  --h-toolbar: 32px;
-  --h-tab: 24px;
-  --h-input: 26px;
-  --h-button: 26px;
+  --h-row: 26px;
+  --h-compact: 24px;
+  --h-header: 32px;
+  --h-toolbar: 36px;
+  --h-tab: 28px;
+  --h-input: 32px;
+  --h-button: 32px;
   --h-icon-sm: 12px;
   --h-icon-md: 15px;
   --h-icon-lg: 20px;

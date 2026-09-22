@@ -138,14 +138,62 @@ describe('Blueprint geometry', () => {
     expect(light['--shadow-lg']).toBeUndefined();
   });
 
-  it('tightens the control heights', () => {
-    expect(dark['--h-row']).toBe('22px');
-    expect(dark['--h-compact']).toBe('20px');
-    expect(dark['--h-header']).toBe('28px');
-    expect(dark['--h-toolbar']).toBe('32px');
-    expect(dark['--h-tab']).toBe('24px');
-    expect(dark['--h-input']).toBe('26px');
-    expect(dark['--h-button']).toBe('26px');
+  it('grows the control heights with the readability type scale', () => {
+    expect(dark['--h-row']).toBe('26px');
+    expect(dark['--h-compact']).toBe('24px');
+    expect(dark['--h-header']).toBe('32px');
+    expect(dark['--h-toolbar']).toBe('36px');
+    expect(dark['--h-tab']).toBe('28px');
+    expect(dark['--h-input']).toBe('32px');
+    expect(dark['--h-button']).toBe('32px');
+  });
+});
+
+describe('readability type scale', () => {
+  const sizes: [string, string][] = [
+    ['--fs-label', '12px'],
+    ['--fs-xs', '12px'],
+    ['--fs-sm', '13px'],
+    ['--fs-base', '14px'],
+    ['--fs-lg', '16px'],
+    ['--fs-xl', '18px'],
+    ['--fs-title', '24px'],
+  ];
+
+  it.each(sizes)('%s', (name, expected) => {
+    expect(dark[name]).toBe(expected);
+  });
+
+  it('keeps the scale non-decreasing from label to title', () => {
+    const px = sizes.map(([name]) => Number.parseFloat(token(dark, name)));
+    for (let i = 1; i < px.length; i += 1) {
+      expect(px[i]).toBeGreaterThanOrEqual(px[i - 1] ?? 0);
+    }
+  });
+
+  it('relaxes uppercase mono label tracking to the readability-tuned 0.08em', () => {
+    expect(dark['--ls-label']).toBe('0.08em');
+  });
+});
+
+describe('scoped component typography', () => {
+  // The readability scale lives in the tokens; these seven components used to
+  // override it with hardcoded tiny sizes (9–10.5px). Each file is asserted by
+  // name so the regression stays targeted instead of a fragile repo-wide regex.
+  const scopedComponents = [
+    'components/settings/GroupsPanel.vue',
+    'components/share/ShareDialog.vue',
+    'components/tareas/SubtaskList.vue',
+    'components/tareas/TaskTimelineView.vue',
+    'components/notas/BacklinksPanel.vue',
+    'components/notas/HistoryPanel.vue',
+    'components/notas/WikiLinkSuggest.vue',
+  ];
+
+  it.each(scopedComponents)('%s carries no hardcoded tiny font-size literal', (rel) => {
+    const source = readFileSync(resolve(process.cwd(), 'src', rel), 'utf8');
+    const literals = [...source.matchAll(/font-size:\s*(?:9|10|10\.5)px/g)].map((m) => m[0]);
+    expect(literals, `${rel} hardcodes ${literals.join(', ')}`).toEqual([]);
   });
 });
 

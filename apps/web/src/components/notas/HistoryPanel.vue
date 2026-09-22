@@ -47,7 +47,7 @@ const emit = defineEmits<{
   <div>
     <div
       style="
-        font-size: 10px;
+        font-size: var(--fs-label);
         font-weight: var(--fw-semibold);
         letter-spacing: var(--ls-label);
         font-family: var(--font-mono);

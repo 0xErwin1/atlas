@@ -376,7 +376,7 @@ async function invite(): Promise<void> {
         </div>
 
         <div
-          style="font-size: 10px; font-weight: var(--fw-semibold); letter-spacing: var(--ls-label); font-family: var(--font-mono);
+          style="font-size: var(--fs-label); font-weight: var(--fw-semibold); letter-spacing: var(--ls-label); font-family: var(--font-mono);
   text-transform: uppercase; color: var(--c-muted); margin-bottom: 4px;"
         >
           People, groups &amp; agents with access
@@ -439,7 +439,7 @@ async function invite(): Promise<void> {
         <div style="height: 1px; background-color: var(--c-border); margin: 14px 0;" />
 
         <div
-          style="font-size: 10px; font-weight: var(--fw-semibold); letter-spacing: var(--ls-label); text-transform: uppercase; color: var(--c-muted); margin-bottom: 6px;"
+          style="font-size: var(--fs-label); font-weight: var(--fw-semibold); letter-spacing: var(--ls-label); text-transform: uppercase; color: var(--c-muted); margin-bottom: 6px;"
         >
           General access
         </div>

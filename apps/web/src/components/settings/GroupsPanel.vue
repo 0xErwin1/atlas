@@ -485,7 +485,7 @@ async function confirmDelete(): Promise<void> {
   background-color: var(--c-raised);
   border: 1px solid var(--c-border);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--fs-label);
   font-weight: 700;
   color: var(--c-foreground);
 }

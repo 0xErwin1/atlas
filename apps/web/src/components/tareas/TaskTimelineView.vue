@@ -363,7 +363,7 @@ const offWindowNotes = computed<string[]>(() => {
 }
 
 .atl-tm-axis-letter {
-  font-size: 9px;
+  font-size: var(--fs-label);
   color: color-mix(in srgb, var(--c-foreground) 50%, transparent);
   text-transform: uppercase;
 }
@@ -428,7 +428,7 @@ const offWindowNotes = computed<string[]>(() => {
 
 .atl-tm-id {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   color: var(--c-muted);
 }
 
@@ -461,7 +461,7 @@ const offWindowNotes = computed<string[]>(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   font-weight: var(--fw-semibold);
 }
 
