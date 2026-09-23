@@ -10,6 +10,7 @@ use crate::entities::authorization::{
 };
 use async_trait::async_trait;
 use atlas_core::error::DomainError;
+use atlas_core::ids::ActionId;
 
 #[async_trait]
 pub trait RoleRepo: Send + Sync {
@@ -20,6 +21,17 @@ pub trait RoleRepo: Send + Sync {
     async fn get(&self, id: RoleId) -> Result<Option<CustomRole>, DomainError>;
 
     async fn list_by_product(&self, product: &str) -> Result<Vec<CustomRole>, DomainError>;
+
+    /// Renames a role and/or replaces its action list; an absent field keeps
+    /// its current value. Returns `None` when no such role exists. A new
+    /// name that collides within the product fails with
+    /// `DomainError::AlreadyExists`.
+    async fn update(
+        &self,
+        id: RoleId,
+        name: Option<String>,
+        actions: Option<Vec<ActionId>>,
+    ) -> Result<Option<CustomRole>, DomainError>;
 
     /// Deletes a role, returning `false` when no such role exists. A role
     /// still referenced by a grant cannot be deleted: the call fails with
