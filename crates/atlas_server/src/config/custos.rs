@@ -2,11 +2,15 @@
 //! `ConfigDeclaration::new("CustosConfig", "ATLAS_CUSTOS_", true)`,
 //! `reg5.rs`).
 
+use std::time::Duration;
+
 use atlas_core::config::{ComponentConfig, ConfigError, EnvSource, Secret};
 
 use super::env_var_nonempty;
 
 const EXPLICIT_DENY_MODE_VAR: &str = "ATLAS_EXPLICIT_DENY_MODE";
+const AUTHORIZE_TIMEOUT_VAR: &str = "ATLAS_CUSTOS_AUTHORIZE_TIMEOUT_MS";
+const DEFAULT_AUTHORIZE_TIMEOUT: Duration = Duration::from_millis(2000);
 
 /// How explicit deny rules take part in authorization
 /// (`ATLAS_EXPLICIT_DENY_MODE`). Deny rows persist regardless of the mode.
@@ -43,6 +47,10 @@ pub struct CustosConfig {
     pub root_password: Option<Secret<String>>,
     /// Explicit deny mode (`ATLAS_EXPLICIT_DENY_MODE`), `disabled` when unset.
     pub explicit_deny_mode: DenyModeConfig,
+    /// Bound on every V2 resource-provider call the authorization service
+    /// makes (`ATLAS_CUSTOS_AUTHORIZE_TIMEOUT_MS`, whole milliseconds, at
+    /// least 1), 2000 ms when unset.
+    pub authorize_timeout: Duration,
 }
 
 impl ComponentConfig for CustosConfig {
@@ -50,7 +58,22 @@ impl ComponentConfig for CustosConfig {
         Ok(Self {
             root_password: env_var_nonempty(source, "ATLAS_ROOT_PASSWORD").map(Secret::new),
             explicit_deny_mode: read_explicit_deny_mode(source)?,
+            authorize_timeout: read_authorize_timeout(source)?,
         })
+    }
+}
+
+fn read_authorize_timeout(source: &dyn EnvSource) -> Result<Duration, ConfigError> {
+    let Some(raw) = env_var_nonempty(source, AUTHORIZE_TIMEOUT_VAR) else {
+        return Ok(DEFAULT_AUTHORIZE_TIMEOUT);
+    };
+
+    match raw.parse::<u64>() {
+        Ok(millis) if millis > 0 => Ok(Duration::from_millis(millis)),
+        _ => Err(ConfigError::invalid(
+            AUTHORIZE_TIMEOUT_VAR,
+            "must be a whole number of milliseconds greater than zero",
+        )),
     }
 }
 
@@ -167,5 +190,47 @@ mod tests {
             DenyModeConfig::Enforced
         );
         assert!("Enforced".parse::<DenyModeConfig>().is_err());
+    }
+
+    #[test]
+    fn authorize_timeout_defaults_to_two_seconds_when_unset() {
+        let cfg = CustosConfig::from_env(&env(&[])).expect("expected Ok");
+
+        assert_eq!(
+            cfg.authorize_timeout,
+            std::time::Duration::from_millis(2000)
+        );
+    }
+
+    #[test]
+    fn authorize_timeout_binds_milliseconds() {
+        let cfg = CustosConfig::from_env(&env(&[("ATLAS_CUSTOS_AUTHORIZE_TIMEOUT_MS", "500")]))
+            .expect("expected Ok");
+
+        assert_eq!(cfg.authorize_timeout, std::time::Duration::from_millis(500));
+    }
+
+    #[test]
+    fn authorize_timeout_rejects_zero_and_garbage() {
+        let cases: [&'static [(&'static str, &'static str)]; 4] = [
+            &[("ATLAS_CUSTOS_AUTHORIZE_TIMEOUT_MS", "0")],
+            &[("ATLAS_CUSTOS_AUTHORIZE_TIMEOUT_MS", "soon")],
+            &[("ATLAS_CUSTOS_AUTHORIZE_TIMEOUT_MS", "-5")],
+            &[("ATLAS_CUSTOS_AUTHORIZE_TIMEOUT_MS", "1.5")],
+        ];
+
+        for pairs in cases {
+            let error =
+                CustosConfig::from_env(&env(pairs)).expect_err("invalid timeout must not load");
+
+            assert!(
+                matches!(&error, ConfigError::Invalid { name, .. } if name == "ATLAS_CUSTOS_AUTHORIZE_TIMEOUT_MS"),
+                "case {pairs:?}: got {error:?}"
+            );
+            assert!(
+                !error.to_string().contains(pairs[0].1),
+                "case {pairs:?}: the message must not echo the value: {error}"
+            );
+        }
     }
 }

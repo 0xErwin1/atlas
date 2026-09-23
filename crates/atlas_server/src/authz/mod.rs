@@ -12,6 +12,7 @@ pub mod extract_scope;
 pub mod extractors;
 pub mod policy;
 pub mod v2_ceiling;
+pub mod v2_service;
 
 pub use extract_scope::ExtractScope;
 

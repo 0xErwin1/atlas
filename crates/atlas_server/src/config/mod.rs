@@ -561,6 +561,7 @@ mod tests {
         let config = CustosConfig {
             root_password: Some(Secret::new("rootsecret".to_string())),
             explicit_deny_mode: DenyModeConfig::Disabled,
+            authorize_timeout: std::time::Duration::from_millis(2000),
         };
 
         let output = format!("{config:?}");

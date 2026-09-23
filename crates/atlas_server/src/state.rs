@@ -6,6 +6,7 @@ use std::sync::Arc;
 use atlas_acta::ports::attachment_store::AttachmentStore;
 use atlas_acta::semantic_search::EmbeddingProvider;
 
+use crate::authz::v2_service::{ServerAuthorizationService, build_authorization_service};
 use crate::config::{
     AtlasConfig, DEFAULT_MAX_ATTACHMENT_BYTES, DenyModeConfig, DispatcherConfig,
     EmbeddingProviderKind, SearchSemanticConfig, StorageConfig, env_var_nonempty, read_env,
@@ -103,6 +104,15 @@ pub struct AppState {
     /// `ATLAS_EXPLICIT_DENY_MODE`: whether deny rules may be administered
     /// through the Custos authorization routes. Reads work in every mode.
     pub explicit_deny_mode: DenyModeConfig,
+    /// The V2 authorization service (`v2-e5-s5b`): effective actions and
+    /// delegation checks on the Custos authorization routes. Built once from
+    /// the registry, the database and `explicit_deny_mode`/
+    /// `authorize_timeout`; tests swap it via
+    /// [`Self::with_authorization_service`].
+    pub authorization: Arc<ServerAuthorizationService>,
+    /// The provider timeout the service was built with, kept so
+    /// [`Self::with_deny_mode`] can rebuild it unchanged.
+    pub authorize_timeout: std::time::Duration,
 }
 
 impl AppState {
@@ -135,6 +145,12 @@ impl AppState {
             workers.clone(),
             std::time::Duration::from_millis(cfg.acta.dispatcher.poll_interval_ms),
         )?);
+        let authorization = Arc::new(build_authorization_service(
+            &registry,
+            db.clone(),
+            cfg.custos.explicit_deny_mode,
+            cfg.custos.authorize_timeout,
+        )?);
 
         Ok(Self {
             db: Arc::new(db),
@@ -157,6 +173,8 @@ impl AppState {
             embedding_provider,
             search_semantic: cfg.modules.search_semantic.clone(),
             explicit_deny_mode: cfg.custos.explicit_deny_mode,
+            authorization,
+            authorize_timeout: cfg.custos.authorize_timeout,
             registry,
             diagnostics,
             readiness_timeout: DEFAULT_READINESS_TIMEOUT,
@@ -222,6 +240,12 @@ impl AppState {
             workers.clone(),
             std::time::Duration::from_millis(DispatcherConfig::default().poll_interval_ms),
         )?);
+        let authorization = Arc::new(build_authorization_service(
+            &registry,
+            (*db).clone(),
+            DenyModeConfig::Disabled,
+            std::time::Duration::from_millis(2000),
+        )?);
 
         Ok(Self {
             db,
@@ -244,6 +268,8 @@ impl AppState {
             embedding_provider,
             search_semantic: SearchSemanticConfig::default(),
             explicit_deny_mode: DenyModeConfig::Disabled,
+            authorization,
+            authorize_timeout: std::time::Duration::from_millis(2000),
             registry,
             diagnostics,
             readiness_timeout: DEFAULT_READINESS_TIMEOUT,
@@ -292,6 +318,30 @@ impl AppState {
     /// the test seam that proves `/ready`'s budget (design D3, T1.28)
     /// without waiting out the real default on every stalling-component
     /// scenario.
+    /// Sets the explicit deny mode and rebuilds the V2 authorization service
+    /// with it, so the routes' 409 check and the evaluator's deny handling
+    /// never disagree. The only supported way to change the mode after
+    /// construction.
+    pub fn with_deny_mode(mut self, mode: DenyModeConfig) -> Result<Self, anyhow::Error> {
+        self.explicit_deny_mode = mode;
+        self.authorization = Arc::new(build_authorization_service(
+            &self.registry,
+            (*self.db).clone(),
+            mode,
+            self.authorize_timeout,
+        )?);
+
+        Ok(self)
+    }
+
+    /// Swaps the V2 authorization service: the seam a test uses to drive the
+    /// routes against a fake provider (for instance one that never answers,
+    /// to prove the provider timeout) while everything else stays real.
+    pub fn with_authorization_service(mut self, service: Arc<ServerAuthorizationService>) -> Self {
+        self.authorization = service;
+        self
+    }
+
     pub fn with_readiness_timeout(mut self, timeout: std::time::Duration) -> Self {
         self.readiness_timeout = timeout;
         self
