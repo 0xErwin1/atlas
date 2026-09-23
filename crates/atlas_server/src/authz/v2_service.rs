@@ -16,6 +16,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use sea_orm::DatabaseConnection;
 
+use atlas_acta::provider::ActaResourceProvider;
+use atlas_acta_postgres::repos::resource_store::PgActaResourceStore;
 use atlas_core::registry::{ComponentId, Registry};
 use atlas_custos::authorize::{AuthorizationService, AuthorizationSettings, ProviderSet, Sleeper};
 use atlas_custos::eval::{Catalog, CatalogError, DenyMode, ProductSpec, RoleSpec};
@@ -95,7 +97,8 @@ pub fn deny_mode(config: DenyModeConfig) -> DenyMode {
 }
 
 /// Builds the server's authorization service: the Custos provider publishes
-/// the registry's Custos `Authorization`, facts and memberships come from
+/// the registry's Custos `Authorization`, the Acta provider joins when the
+/// registry declares Acta, facts and memberships come from
 /// Postgres, and every provider call is bounded by `provider_timeout`.
 pub fn build_authorization_service(
     registry: &Registry,
@@ -121,8 +124,20 @@ pub fn build_authorization_service(
         provider_timeout,
     };
 
+    let mut providers = ProviderSet::new().with("custos", Arc::new(provider));
+    if let Some(acta) = ComponentId::new("acta")
+        .ok()
+        .and_then(|id| registry.get(&id))
+    {
+        let acta_provider = ActaResourceProvider::new(
+            PgActaResourceStore { conn: db.clone() },
+            &acta.authorization,
+        );
+        providers = providers.with("acta", Arc::new(acta_provider));
+    }
+
     Ok(AuthorizationService::new(
-        ProviderSet::new().with("custos", Arc::new(provider)),
+        providers,
         PgAuthorizationFactsStore { conn: db.clone() },
         PgGroupMembershipSource { conn: db },
         Arc::new(TokioSleeper),
