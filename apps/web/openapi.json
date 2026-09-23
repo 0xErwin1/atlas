@@ -14990,7 +14990,7 @@
             }
           },
           "403": {
-            "description": "Caller is not a platform admin",
+            "description": "Caller lacks authority to delegate on this target: no effective custos::grant::create there, an action beyond the caller's own authority, a path or selector target (platform-admin only), or an API key (no key scope carries the delegation action); platform admins and root are never refused",
             "headers": {
               "Idempotency-Degraded": {
                 "schema": {
@@ -15045,6 +15045,23 @@
                 "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
               }
             }
+          },
+          "503": {
+            "description": "Authorization facts unavailable (urn:atlas:error:authorization-unavailable); retry shortly",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            }
           }
         },
         "security": [
@@ -15082,10 +15099,13 @@
             "description": "Unauthenticated"
           },
           "403": {
-            "description": "Caller is not a platform admin"
+            "description": "Caller lacks authority to delegate on this target: no effective custos::grant::delete on the grant's target, or an API key; platform admins and root are never refused"
           },
           "404": {
-            "description": "No such grant"
+            "description": "No such grant (resolved before any authority check)"
+          },
+          "503": {
+            "description": "Authorization facts unavailable (urn:atlas:error:authorization-unavailable); retry shortly"
           }
         },
         "security": [

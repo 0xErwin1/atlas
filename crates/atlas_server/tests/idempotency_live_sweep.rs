@@ -576,10 +576,11 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
             // `disabled`, so this arm runs against a second server on the
             // same database with the mode set to `audit`.
             "/denies" => {
-                let mut state = AppState::for_test(db.conn().clone())
+                let state = AppState::for_test(db.conn().clone())
                     .await
-                    .expect("AppState::for_test");
-                state.explicit_deny_mode = DenyModeConfig::Audit;
+                    .expect("AppState::for_test")
+                    .with_deny_mode(DenyModeConfig::Audit)
+                    .expect("rebuild the authorization service in audit mode");
                 let audit_server = TestServer::spawn_with_state(state).await;
 
                 let (root, _admin) = support::login_system_admin(&audit_server, &db).await;
