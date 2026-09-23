@@ -84,13 +84,13 @@ fn wired_middleware_set_matches_registry_idempotent_true_set_exactly() {
     );
     assert_eq!(
         wired.len(),
-        37,
-        "expected exactly 37 wired idempotent routes"
+        40,
+        "expected exactly 40 wired idempotent routes"
     );
     assert_eq!(
         declared.len(),
-        37,
-        "expected exactly 37 declared idempotent:true routes"
+        40,
+        "expected exactly 40 declared idempotent:true routes"
     );
 }
 

@@ -40,6 +40,11 @@ pub enum SecurityAction {
     ResourcePurgeCleanupPending,
     ResourcePurgeCleanupFailed,
     ResourcePurgeCompleted,
+    RoleCreated,
+    RoleUpdated,
+    RoleDeleted,
+    DenyCreated,
+    DenyDeleted,
 }
 
 impl SecurityAction {
@@ -74,6 +79,11 @@ impl SecurityAction {
             SecurityAction::ResourcePurgeCleanupPending => "resource.purge_cleanup_pending",
             SecurityAction::ResourcePurgeCleanupFailed => "resource.purge_cleanup_failed",
             SecurityAction::ResourcePurgeCompleted => "resource.purge_completed",
+            SecurityAction::RoleCreated => "role.created",
+            SecurityAction::RoleUpdated => "role.updated",
+            SecurityAction::RoleDeleted => "role.deleted",
+            SecurityAction::DenyCreated => "deny.created",
+            SecurityAction::DenyDeleted => "deny.deleted",
         }
     }
 }

@@ -419,6 +419,49 @@ pub(crate) async fn login_root_user(server: &TestServer, db: &TestDb) -> AtlasCl
     client
 }
 
+/// Creates an activated `is_system_admin` (non-root) user with a real
+/// password hash and logs it in. Unlike [`login_root_user`], any number of
+/// these can coexist in one database (`users_single_root_uq` allows exactly
+/// one root), so a test that needs several platform admins, or an admin
+/// after some other fixture already claimed root, uses this one.
+pub(crate) async fn login_system_admin(server: &TestServer, db: &TestDb) -> (AtlasClient, User) {
+    use atlas_api::dtos::LoginRequest;
+    use atlas_server::auth::password;
+
+    let username = format!("sysadmin-{}", uuid::Uuid::now_v7().as_simple());
+    let password_plaintext = "AdminPassword1!";
+    let password_hash = password::hash(password_plaintext.to_string())
+        .await
+        .expect("hash password");
+
+    let user_repo = db.user_repo();
+    let admin = user_repo
+        .create(NewUser {
+            username: username.clone(),
+            display_name: "System Admin".to_string(),
+            email: None,
+            password_hash: Some(password_hash),
+            is_root: false,
+            is_system_admin: true,
+        })
+        .await
+        .expect("create system admin");
+
+    activate_user_in_db(db, admin.id.0).await;
+
+    let mut client = AtlasClient::new(server.base_url().to_string());
+    client
+        .login(LoginRequest {
+            username,
+            password: password_plaintext.to_string(),
+            reason: None,
+        })
+        .await
+        .expect("system admin login");
+
+    (client, admin)
+}
+
 /// Expires all sessions in the test database immediately.
 pub(crate) async fn expire_all_sessions(db: &TestDb) {
     db.conn()

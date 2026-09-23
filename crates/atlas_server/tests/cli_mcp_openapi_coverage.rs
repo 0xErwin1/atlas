@@ -7,7 +7,7 @@
 //! "A coverage test compares the composed OpenAPI document against CLI and
 //! MCP"; SHELL-REG-4, design D7):
 //!
-//! 1. `support::route_matrix::route_matrix()` — the 232 live REG-5 routes,
+//! 1. `support::route_matrix::route_matrix()` — the 242 live REG-5 routes,
 //!    each carrying its own `(component, method, path_template)`.
 //! 2. `support::client_routes::client_routes()` — `AtlasClient` method name
 //!    ⇒ `(component, method, path_template)`, cross-checked by cardinality
@@ -185,7 +185,7 @@ type UncoveredRoute = (
 // real gap). The spec's own three-per-surface categories
 // (comments/attachments/webhooks; users/grants/api-keys) turned out to cover
 // only a fraction of the real gap: the CLI and the MCP catalog are each
-// materially thinner than the full 232-route registry — most resources
+// materially thinner than the full 242-route registry — most resources
 // expose only list/get/create through either surface, with moves, copies,
 // archive/unarchive, presence, drafts, integrations/automation, admin
 // operations, and most custos self-service/lifecycle endpoints reachable
@@ -393,6 +393,76 @@ const CLI_UNCOVERED: &[UncoveredRoute] = &[
         "/sessions/{session_id}",
         Category::Auth,
         "self-service session/activation endpoint; the CLI's `users` command manages accounts administratively, not through the browser-session auth flow",
+    ),
+    (
+        "custos",
+        HttpMethod::Get,
+        "/roles",
+        Category::AdminOperations,
+        "platform-admin V2 authorization administration (v2-e5-s4-authz-routes); the S4 surface is the web app only, no CLI command or MCP catalog operation until the delegated authority model lands",
+    ),
+    (
+        "custos",
+        HttpMethod::Post,
+        "/roles",
+        Category::AdminOperations,
+        "platform-admin V2 authorization administration (v2-e5-s4-authz-routes); the S4 surface is the web app only, no CLI command or MCP catalog operation until the delegated authority model lands",
+    ),
+    (
+        "custos",
+        HttpMethod::Patch,
+        "/roles/{role_id}",
+        Category::AdminOperations,
+        "platform-admin V2 authorization administration (v2-e5-s4-authz-routes); the S4 surface is the web app only, no CLI command or MCP catalog operation until the delegated authority model lands",
+    ),
+    (
+        "custos",
+        HttpMethod::Delete,
+        "/roles/{role_id}",
+        Category::AdminOperations,
+        "platform-admin V2 authorization administration (v2-e5-s4-authz-routes); the S4 surface is the web app only, no CLI command or MCP catalog operation until the delegated authority model lands",
+    ),
+    (
+        "custos",
+        HttpMethod::Get,
+        "/grants",
+        Category::AdminOperations,
+        "platform-admin V2 authorization administration (v2-e5-s4-authz-routes); the S4 surface is the web app only, no CLI command or MCP catalog operation until the delegated authority model lands",
+    ),
+    (
+        "custos",
+        HttpMethod::Post,
+        "/grants",
+        Category::AdminOperations,
+        "platform-admin V2 authorization administration (v2-e5-s4-authz-routes); the S4 surface is the web app only, no CLI command or MCP catalog operation until the delegated authority model lands",
+    ),
+    (
+        "custos",
+        HttpMethod::Delete,
+        "/grants/{grant_id}",
+        Category::AdminOperations,
+        "platform-admin V2 authorization administration (v2-e5-s4-authz-routes); the S4 surface is the web app only, no CLI command or MCP catalog operation until the delegated authority model lands",
+    ),
+    (
+        "custos",
+        HttpMethod::Get,
+        "/denies",
+        Category::AdminOperations,
+        "platform-admin V2 authorization administration (v2-e5-s4-authz-routes); the S4 surface is the web app only, no CLI command or MCP catalog operation until the delegated authority model lands",
+    ),
+    (
+        "custos",
+        HttpMethod::Post,
+        "/denies",
+        Category::AdminOperations,
+        "platform-admin V2 authorization administration (v2-e5-s4-authz-routes); the S4 surface is the web app only, no CLI command or MCP catalog operation until the delegated authority model lands",
+    ),
+    (
+        "custos",
+        HttpMethod::Delete,
+        "/denies/{deny_id}",
+        Category::AdminOperations,
+        "platform-admin V2 authorization administration (v2-e5-s4-authz-routes); the S4 surface is the web app only, no CLI command or MCP catalog operation until the delegated authority model lands",
     ),
     (
         "custos",
@@ -1770,6 +1840,76 @@ const MCP_UNCOVERED: &[UncoveredRoute] = &[
     (
         "custos",
         HttpMethod::Get,
+        "/roles",
+        Category::AdminOperations,
+        "platform-admin V2 authorization administration (v2-e5-s4-authz-routes); the S4 surface is the web app only, no CLI command or MCP catalog operation until the delegated authority model lands",
+    ),
+    (
+        "custos",
+        HttpMethod::Post,
+        "/roles",
+        Category::AdminOperations,
+        "platform-admin V2 authorization administration (v2-e5-s4-authz-routes); the S4 surface is the web app only, no CLI command or MCP catalog operation until the delegated authority model lands",
+    ),
+    (
+        "custos",
+        HttpMethod::Patch,
+        "/roles/{role_id}",
+        Category::AdminOperations,
+        "platform-admin V2 authorization administration (v2-e5-s4-authz-routes); the S4 surface is the web app only, no CLI command or MCP catalog operation until the delegated authority model lands",
+    ),
+    (
+        "custos",
+        HttpMethod::Delete,
+        "/roles/{role_id}",
+        Category::AdminOperations,
+        "platform-admin V2 authorization administration (v2-e5-s4-authz-routes); the S4 surface is the web app only, no CLI command or MCP catalog operation until the delegated authority model lands",
+    ),
+    (
+        "custos",
+        HttpMethod::Get,
+        "/grants",
+        Category::AdminOperations,
+        "platform-admin V2 authorization administration (v2-e5-s4-authz-routes); the S4 surface is the web app only, no CLI command or MCP catalog operation until the delegated authority model lands",
+    ),
+    (
+        "custos",
+        HttpMethod::Post,
+        "/grants",
+        Category::AdminOperations,
+        "platform-admin V2 authorization administration (v2-e5-s4-authz-routes); the S4 surface is the web app only, no CLI command or MCP catalog operation until the delegated authority model lands",
+    ),
+    (
+        "custos",
+        HttpMethod::Delete,
+        "/grants/{grant_id}",
+        Category::AdminOperations,
+        "platform-admin V2 authorization administration (v2-e5-s4-authz-routes); the S4 surface is the web app only, no CLI command or MCP catalog operation until the delegated authority model lands",
+    ),
+    (
+        "custos",
+        HttpMethod::Get,
+        "/denies",
+        Category::AdminOperations,
+        "platform-admin V2 authorization administration (v2-e5-s4-authz-routes); the S4 surface is the web app only, no CLI command or MCP catalog operation until the delegated authority model lands",
+    ),
+    (
+        "custos",
+        HttpMethod::Post,
+        "/denies",
+        Category::AdminOperations,
+        "platform-admin V2 authorization administration (v2-e5-s4-authz-routes); the S4 surface is the web app only, no CLI command or MCP catalog operation until the delegated authority model lands",
+    ),
+    (
+        "custos",
+        HttpMethod::Delete,
+        "/denies/{deny_id}",
+        Category::AdminOperations,
+        "platform-admin V2 authorization administration (v2-e5-s4-authz-routes); the S4 surface is the web app only, no CLI command or MCP catalog operation until the delegated authority model lands",
+    ),
+    (
+        "custos",
+        HttpMethod::Get,
         "/users",
         Category::Users,
         "custos identity/account-lifecycle endpoint beyond MCP's identity/audit surface (3 custos operations total); not exposed as an MCP operation",
@@ -2183,8 +2323,8 @@ fn registry_client_and_surface_walks_are_not_vacuous() {
     let entries = route_matrix();
     assert_eq!(
         entries.len(),
-        232,
-        "the live registry must declare 232 routes"
+        242,
+        "the live registry must declare 242 routes"
     );
 
     let cli_methods: BTreeSet<String> = cli_command_methods().into_values().flatten().collect();
@@ -2401,13 +2541,13 @@ fn no_real_exclusion_list_category_is_dead() {
 
 // ---------------------------------------------------------------------------
 // Per-surface reached/excluded pins — measured at apply time against the
-// 232-route registry; both pairs must sum to it.
+// 242-route registry; both pairs must sum to it.
 // ---------------------------------------------------------------------------
 
 const CLI_REACHED_ROUTE_COUNT: usize = 115;
-const CLI_EXCLUDED_ROUTE_COUNT: usize = 117;
+const CLI_EXCLUDED_ROUTE_COUNT: usize = 127;
 const MCP_REACHED_ROUTE_COUNT: usize = 113;
-const MCP_EXCLUDED_ROUTE_COUNT: usize = 119;
+const MCP_EXCLUDED_ROUTE_COUNT: usize = 129;
 
 fn reached_route_count(entries: &[RouteMatrixEntry], covered: &BTreeSet<RouteKey>) -> usize {
     let keys: BTreeSet<RouteKey> = entries

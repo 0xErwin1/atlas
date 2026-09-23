@@ -7,8 +7,8 @@ use atlas_acta::ports::attachment_store::AttachmentStore;
 use atlas_acta::semantic_search::EmbeddingProvider;
 
 use crate::config::{
-    AtlasConfig, DEFAULT_MAX_ATTACHMENT_BYTES, DispatcherConfig, EmbeddingProviderKind,
-    SearchSemanticConfig, StorageConfig, env_var_nonempty, read_env,
+    AtlasConfig, DEFAULT_MAX_ATTACHMENT_BYTES, DenyModeConfig, DispatcherConfig,
+    EmbeddingProviderKind, SearchSemanticConfig, StorageConfig, env_var_nonempty, read_env,
 };
 use crate::crypto::WebhookCrypto;
 use crate::embeddings::{DeterministicEmbeddingProvider, OpenAiCompatibleEmbeddingProvider};
@@ -100,6 +100,9 @@ pub struct AppState {
     /// both `new` and `for_test`, alongside `registry` and `workers`, so no
     /// request-handling code path ever rebuilds it.
     pub route_index: Arc<crate::observability::route_index::RouteIndex>,
+    /// `ATLAS_EXPLICIT_DENY_MODE`: whether deny rules may be administered
+    /// through the Custos authorization routes. Reads work in every mode.
+    pub explicit_deny_mode: DenyModeConfig,
 }
 
 impl AppState {
@@ -153,6 +156,7 @@ impl AppState {
             presence: Arc::new(PresenceRegistry::default()),
             embedding_provider,
             search_semantic: cfg.modules.search_semantic.clone(),
+            explicit_deny_mode: cfg.custos.explicit_deny_mode,
             registry,
             diagnostics,
             readiness_timeout: DEFAULT_READINESS_TIMEOUT,
@@ -239,6 +243,7 @@ impl AppState {
             presence: Arc::new(PresenceRegistry::default()),
             embedding_provider,
             search_semantic: SearchSemanticConfig::default(),
+            explicit_deny_mode: DenyModeConfig::Disabled,
             registry,
             diagnostics,
             readiness_timeout: DEFAULT_READINESS_TIMEOUT,

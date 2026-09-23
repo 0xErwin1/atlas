@@ -329,12 +329,12 @@ fn login_and_health_are_the_only_methods_with_no_home_namespace() {
 /// delegate-only methods — `list_documents`, `list_documents_with_unfiled_filter`,
 /// `create_task` — resolved transitively to their callee's home). The
 /// reconciliation below is the real cross-check: every method the map
-/// visits is either one of PR1's 210 call-bearing methods or one of these 3
-/// named delegates, and the two audits agree on the full 213-method
+/// visits is either one of PR1's 220 call-bearing methods or one of these 3
+/// named delegates, and the two audits agree on the full 223-method
 /// population with no method uncounted by either.
 #[test]
 fn method_namespace_map_size_reconciles_with_pr1s_extracted_call_count() {
-    const PR1_EXTRACTED_CALL_COUNT: usize = 210;
+    const PR1_EXTRACTED_CALL_COUNT: usize = 220;
 
     let derived = derive_method_namespace_map();
     assert_eq!(
@@ -773,6 +773,7 @@ const ATLAS_SERVER_TEST_PINS: &[(&str, usize)] = &[
     ("api_copy.rs", 0),
     ("api_create_workspace.rs", 0),
     ("api_csrf_ratelimit.rs", 0),
+    ("api_custos_authorization.rs", 0),
     ("api_custos_discover.rs", 0),
     ("api_custos_principals.rs", 0),
     ("api_custos_router_parity.rs", 0),

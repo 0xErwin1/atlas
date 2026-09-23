@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use atlas_core::error::DomainError;
+use atlas_core::ids::ActionId;
 use atlas_custos::entities::authorization::{
     CustomRole, DenyRecord, DenyRuleId, GrantId, GrantRecord, NewCustomRole, NewDenyRecord,
     NewGrantRecord, ROLE_IN_USE_CONFLICT, RoleId, SubjectSet,
@@ -84,6 +85,15 @@ impl RoleRepo for PgRoleRepo {
         Self::list_by_product_in(&self.conn, product).await
     }
 
+    async fn update(
+        &self,
+        id: RoleId,
+        name: Option<String>,
+        actions: Option<Vec<ActionId>>,
+    ) -> Result<Option<CustomRole>, DomainError> {
+        Self::update_in(&self.conn, id, name, actions).await
+    }
+
     async fn delete(&self, id: RoleId) -> Result<bool, DomainError> {
         Self::delete_in(&self.conn, id).await
     }
@@ -145,6 +155,48 @@ impl PgRoleRepo {
             .into_iter()
             .map(role_from)
             .collect()
+    }
+
+    /// Applies the requested field changes and bumps `updated_at`. Reads the
+    /// row first so an unknown id answers `None` instead of a zero-row update
+    /// indistinguishable from a no-op change.
+    pub async fn update_in<C: ConnectionTrait>(
+        conn: &C,
+        id: RoleId,
+        name: Option<String>,
+        actions: Option<Vec<ActionId>>,
+    ) -> Result<Option<CustomRole>, DomainError> {
+        let Some(existing) = role::Entity::find_by_id(id.0)
+            .one(conn)
+            .await
+            .map_err(db_err)?
+        else {
+            return Ok(None);
+        };
+
+        let mut model: role::ActiveModel = existing.into();
+        if let Some(name) = name {
+            model.name = Set(name);
+        }
+        if let Some(actions) = actions {
+            model.actions = Set(actions_to_stored(&actions));
+        }
+        model.updated_at = Set(Utc::now());
+
+        model
+            .update(conn)
+            .await
+            .map_err(|e| {
+                if violated_constraint(&e) == Some(ROLES_PRODUCT_NAME_KEY) {
+                    DomainError::AlreadyExists {
+                        message: "a role with this name already exists in the product".into(),
+                    }
+                } else {
+                    db_err(e)
+                }
+            })
+            .and_then(role_from)
+            .map(Some)
     }
 
     /// Deletes a role by id. The `ON DELETE RESTRICT` foreign key from

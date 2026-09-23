@@ -891,3 +891,56 @@ async fn deny_rules_list_for_subjects_returns_only_rows_addressed_to_the_subject
 
     db.teardown().await.expect("teardown");
 }
+
+#[tokio::test]
+async fn roles_update_renames_replaces_actions_and_reports_unknown_or_colliding_names() {
+    let db = TestDb::create().await.expect("TestDb::create");
+    let repo = role_repo(&db);
+
+    let reviewer = repo
+        .create(new_role("acta", "reviewer"))
+        .await
+        .expect("create reviewer");
+    let editor = repo
+        .create(new_role("acta", "editor"))
+        .await
+        .expect("create editor");
+
+    let renamed = repo
+        .update(reviewer.id, Some("auditor".to_string()), None)
+        .await
+        .expect("rename role")
+        .expect("role exists");
+    assert_eq!(renamed.name, "auditor");
+    assert_eq!(renamed.actions, reviewer.actions, "actions untouched");
+    assert!(renamed.updated_at > reviewer.updated_at);
+
+    let replaced = repo
+        .update(
+            reviewer.id,
+            None,
+            Some(vec![action("acta::document::delete")]),
+        )
+        .await
+        .expect("replace actions")
+        .expect("role exists");
+    assert_eq!(replaced.name, "auditor", "name untouched");
+    assert_eq!(replaced.actions, vec![action("acta::document::delete")]);
+
+    let missing = repo
+        .update(RoleId::new(), Some("ghost".to_string()), None)
+        .await
+        .expect("update unknown role");
+    assert!(missing.is_none());
+
+    let collision = repo
+        .update(reviewer.id, Some(editor.name.clone()), None)
+        .await
+        .expect_err("a name collision within the product must be rejected");
+    assert!(
+        matches!(collision, DomainError::AlreadyExists { .. }),
+        "got: {collision:?}"
+    );
+
+    db.teardown().await.expect("teardown");
+}
