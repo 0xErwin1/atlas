@@ -182,7 +182,7 @@ mod diagnostics {
 /// `custos::grants::read`).
 mod protected {
     use crate::routes::{
-        agent_api_keys, agents, audit, auth, authorization, discover, grants, groups,
+        agent_api_keys, agents, audit, auth, authorization, authorize, discover, grants, groups,
         personal_api_keys, sessions, users,
     };
     use crate::state::AppState;
@@ -232,6 +232,12 @@ mod protected {
             post(authorization::create_deny, exempt, idempotent)
         ];
         "/denies/{deny_id}" => [ delete(authorization::delete_deny, exempt) ];
+        // v2-e5-s6b-authorize-route: any authenticated principal asks about
+        // its own authority. The service enforces the caller's credential
+        // ceiling, so both are capability-extraction exempt; reads carried
+        // by POST, without the Idempotency-Key replay bit.
+        "/authorize" => [ post(authorize::authorize, exempt) ];
+        "/authorize/batch" => [ post(authorize::authorize_batch, exempt) ];
         "/users/me" => [ patch(auth::update_me, exempt) ];
         "/users" => [
             post(users::create_user, exempt),
@@ -381,6 +387,8 @@ pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
         crate::routes::authorization::list_denies,
         crate::routes::authorization::create_deny,
         crate::routes::authorization::delete_deny,
+        crate::routes::authorize::authorize,
+        crate::routes::authorize::authorize_batch,
         crate::routes::users::list_users,
         crate::routes::users::create_user,
         crate::routes::users::disable_user,
@@ -451,6 +459,12 @@ pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
         atlas_api::dtos::ResetPasswordRequest,
         atlas_api::dtos::SessionDto,
         atlas_api::dtos::authorization::AuthorityDto,
+        atlas_api::dtos::authorization::AuthorizeBatchRequest,
+        atlas_api::dtos::authorization::AuthorizeBatchResponse,
+        atlas_api::dtos::authorization::AuthorizeBatchResult,
+        atlas_api::dtos::authorization::AuthorizeDecision,
+        atlas_api::dtos::authorization::AuthorizeRequest,
+        atlas_api::dtos::authorization::AuthorizeResponse,
         atlas_api::dtos::authorization::CreateDenyRequest,
         atlas_api::dtos::authorization::CreateGrantV2Request,
         atlas_api::dtos::authorization::CreateRoleRequest,
@@ -551,10 +565,11 @@ mod tests {
         );
         assert_eq!(
             router_set.len(),
-            62,
-            "custos owns exactly 62 route (method, path) pairs: the pre-split 46 plus the six \
+            64,
+            "custos owns exactly 64 route (method, path) pairs: the pre-split 46 plus the six \
              v2-e4-s3b-key-families routes added on top of the six retired `/api-keys` routes, \
-             plus the ten v2-e5-s4-authz-routes administration routes"
+             plus the ten v2-e5-s4-authz-routes administration routes, plus the two \
+             v2-e5-s6b-authorize-route questions"
         );
     }
 

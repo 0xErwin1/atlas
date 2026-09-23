@@ -1,7 +1,9 @@
 use async_trait::async_trait;
 use atlas_core::error::DomainError;
-use atlas_core::principal::UserId;
-use sea_orm::{DatabaseConnection, EntityTrait, Statement};
+use atlas_core::principal::{ApiKeyId, UserId};
+use atlas_custos::ids::PrincipalId;
+use atlas_custos_postgres::entities::identity::api_key;
+use sea_orm::{DatabaseConnection, EntityTrait, QuerySelect, Statement};
 
 use crate::persistence::entities::identity::{user_ui_state, user_ui_state_from};
 use atlas_postgres::db_err;
@@ -20,6 +22,23 @@ pub use atlas_custos::ports::identity::SessionRepo;
 pub use atlas_custos::ports::identity::UserRepo;
 
 pub use crate::platform::{UiStateRepo, UserUiState};
+
+/// The principal an API key acts as: the owning user's principal for a
+/// personal key, the key's own agent principal for an agent key. `None` when
+/// no such key exists.
+pub async fn api_key_principal(
+    conn: &DatabaseConnection,
+    key: ApiKeyId,
+) -> Result<Option<PrincipalId>, DomainError> {
+    api_key::Entity::find_by_id(key.0)
+        .select_only()
+        .column(api_key::Column::PrincipalId)
+        .into_tuple::<uuid::Uuid>()
+        .one(conn)
+        .await
+        .map(|principal| principal.map(PrincipalId))
+        .map_err(db_err)
+}
 
 pub struct PgUiStateRepo {
     pub conn: DatabaseConnection,

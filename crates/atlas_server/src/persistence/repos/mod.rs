@@ -27,6 +27,7 @@ mod workspace_core;
 pub use identity::{
     ActivationTokenRepo, ApiKey, ApiKeyRepo, NewActivationToken, NewApiKey, NewSession, NewUser,
     PgUiStateRepo, Session, SessionRepo, UiStateRepo, User, UserRepo, UserUiState,
+    api_key_principal,
 };
 
 pub use idempotency::{

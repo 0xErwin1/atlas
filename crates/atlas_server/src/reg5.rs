@@ -768,6 +768,27 @@ fn custos_entry() -> ComponentEntry {
                     idempotent: false,
                     is_public: false,
                 },
+                // v2-e5-s6b-authorize-route: any authenticated principal asks
+                // the V2 authorization service about its own authority.
+                // Reads carried by POST (like `search_content`), so not
+                // idempotent; `action: None` because the service enforces
+                // the caller's ceiling itself.
+                RouteDeclaration {
+                    method: HttpMethod::Post,
+                    path: route_path("/authorize"),
+                    operation_id: "authorize".to_string(),
+                    action: None,
+                    idempotent: false,
+                    is_public: false,
+                },
+                RouteDeclaration {
+                    method: HttpMethod::Post,
+                    path: route_path("/authorize/batch"),
+                    operation_id: "authorize_batch".to_string(),
+                    action: None,
+                    idempotent: false,
+                    is_public: false,
+                },
                 // E11-S3a design D2: custos's own health/ready probe,
                 // namespaced (`/api/v2/custos/health|ready`) —
                 // unreinterpreted, unlike root `/ready`'s aggregate.

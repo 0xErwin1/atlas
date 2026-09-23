@@ -5,6 +5,7 @@ use atlas_api::{
         CreatePersonalApiKeyRequest, CreateUserRequest, CreateUserResponse, GrantDto, MeResponse,
         ResetPasswordRequest, SessionDto, UpdateMeRequest, UserDto, UserMembershipDto,
         authorization::{
+            AuthorizeBatchRequest, AuthorizeBatchResponse, AuthorizeRequest, AuthorizeResponse,
             CreateDenyRequest, CreateGrantV2Request, CreateRoleRequest, DenyRuleDto, GrantV2Dto,
             RoleDto, UpdateRoleRequest,
         },
@@ -221,6 +222,36 @@ impl Custos<'_> {
             .send()
             .await?;
         self.expect_success(response).await
+    }
+
+    /// `POST /api/v2/custos/authorize` — may the caller perform one action on
+    /// one target.
+    pub async fn authorize(
+        &self,
+        body: &AuthorizeRequest,
+    ) -> Result<AuthorizeResponse, ClientError> {
+        let response = self
+            .post(Component::Custos, "/authorize")
+            .header("x-atlas-csrf", "1")
+            .json(body)
+            .send()
+            .await?;
+        self.decode_response(response, "authorize").await
+    }
+
+    /// `POST /api/v2/custos/authorize/batch` — one action over many targets,
+    /// one result per target in request order.
+    pub async fn authorize_batch(
+        &self,
+        body: &AuthorizeBatchRequest,
+    ) -> Result<AuthorizeBatchResponse, ClientError> {
+        let response = self
+            .post(Component::Custos, "/authorize/batch")
+            .header("x-atlas-csrf", "1")
+            .json(body)
+            .send()
+            .await?;
+        self.decode_response(response, "authorize_batch").await
     }
 
     /// `DELETE /api/v2/custos/sessions` — revokes every active session

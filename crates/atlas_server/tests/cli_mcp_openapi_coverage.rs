@@ -7,7 +7,7 @@
 //! "A coverage test compares the composed OpenAPI document against CLI and
 //! MCP"; SHELL-REG-4, design D7):
 //!
-//! 1. `support::route_matrix::route_matrix()` — the 242 live REG-5 routes,
+//! 1. `support::route_matrix::route_matrix()` — the 244 live REG-5 routes,
 //!    each carrying its own `(component, method, path_template)`.
 //! 2. `support::client_routes::client_routes()` — `AtlasClient` method name
 //!    ⇒ `(component, method, path_template)`, cross-checked by cardinality
@@ -185,7 +185,7 @@ type UncoveredRoute = (
 // real gap). The spec's own three-per-surface categories
 // (comments/attachments/webhooks; users/grants/api-keys) turned out to cover
 // only a fraction of the real gap: the CLI and the MCP catalog are each
-// materially thinner than the full 242-route registry — most resources
+// materially thinner than the full 244-route registry — most resources
 // expose only list/get/create through either surface, with moves, copies,
 // archive/unarchive, presence, drafts, integrations/automation, admin
 // operations, and most custos self-service/lifecycle endpoints reachable
@@ -463,6 +463,20 @@ const CLI_UNCOVERED: &[UncoveredRoute] = &[
         "/denies/{deny_id}",
         Category::AdminOperations,
         "platform-admin V2 authorization administration (v2-e5-s4-authz-routes); the S4 surface is the web app only, no CLI command or MCP catalog operation until the delegated authority model lands",
+    ),
+    (
+        "custos",
+        HttpMethod::Post,
+        "/authorize",
+        Category::SpecializedMutation,
+        "a principal's question about its own V2 authority (v2-e5-s6b-authorize-route); a fetch carried by POST that products answer in-process, not a command or catalog operation on either surface",
+    ),
+    (
+        "custos",
+        HttpMethod::Post,
+        "/authorize/batch",
+        Category::SpecializedMutation,
+        "a principal's question about its own V2 authority (v2-e5-s6b-authorize-route); a fetch carried by POST that products answer in-process, not a command or catalog operation on either surface",
     ),
     (
         "custos",
@@ -1909,6 +1923,20 @@ const MCP_UNCOVERED: &[UncoveredRoute] = &[
     ),
     (
         "custos",
+        HttpMethod::Post,
+        "/authorize",
+        Category::SpecializedMutation,
+        "a principal's question about its own V2 authority (v2-e5-s6b-authorize-route); a fetch carried by POST that products answer in-process, not a command or catalog operation on either surface",
+    ),
+    (
+        "custos",
+        HttpMethod::Post,
+        "/authorize/batch",
+        Category::SpecializedMutation,
+        "a principal's question about its own V2 authority (v2-e5-s6b-authorize-route); a fetch carried by POST that products answer in-process, not a command or catalog operation on either surface",
+    ),
+    (
+        "custos",
         HttpMethod::Get,
         "/users",
         Category::Users,
@@ -2323,8 +2351,8 @@ fn registry_client_and_surface_walks_are_not_vacuous() {
     let entries = route_matrix();
     assert_eq!(
         entries.len(),
-        242,
-        "the live registry must declare 242 routes"
+        244,
+        "the live registry must declare 244 routes"
     );
 
     let cli_methods: BTreeSet<String> = cli_command_methods().into_values().flatten().collect();
@@ -2541,13 +2569,13 @@ fn no_real_exclusion_list_category_is_dead() {
 
 // ---------------------------------------------------------------------------
 // Per-surface reached/excluded pins — measured at apply time against the
-// 242-route registry; both pairs must sum to it.
+// 244-route registry; both pairs must sum to it.
 // ---------------------------------------------------------------------------
 
 const CLI_REACHED_ROUTE_COUNT: usize = 115;
-const CLI_EXCLUDED_ROUTE_COUNT: usize = 127;
+const CLI_EXCLUDED_ROUTE_COUNT: usize = 129;
 const MCP_REACHED_ROUTE_COUNT: usize = 113;
-const MCP_EXCLUDED_ROUTE_COUNT: usize = 129;
+const MCP_EXCLUDED_ROUTE_COUNT: usize = 131;
 
 fn reached_route_count(entries: &[RouteMatrixEntry], covered: &BTreeSet<RouteKey>) -> usize {
     let keys: BTreeSet<RouteKey> = entries

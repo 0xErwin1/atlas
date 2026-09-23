@@ -55,10 +55,8 @@ use atlas_api::dtos::authorization::{
     GrantV2Dto, RoleDto, SubjectDto, TargetDto, UpdateRoleRequest,
 };
 use atlas_core::Attribution;
-use atlas_core::attribution::{ApiKeyAttributionId, UserAttributionId};
 use atlas_core::error::DomainError;
 use atlas_core::ids::ActionId;
-use atlas_core::principal::ApiKeyId;
 use atlas_core::registry::Registry;
 use atlas_custos::authorize::ActorContext;
 use atlas_custos::entities::authorization::{
@@ -68,21 +66,19 @@ use atlas_custos::entities::authorization::{
 use atlas_custos::entities::identity::User;
 use atlas_custos::entities::security_audit::{NewSecurityAuditEvent, SecurityAction};
 use atlas_custos::eval::{
-    ActionSet, Catalog, CatalogError, Ceiling, DelegationRefused, EvalError, GrantSpec,
-    GrantTarget, Subject, can_delegate, grant_spec,
+    ActionSet, Catalog, CatalogError, Ceiling, DelegationRefused, GrantSpec, GrantTarget, Subject,
+    can_delegate, grant_spec,
 };
 use atlas_custos::ids::{GroupId, PrincipalId};
 use atlas_custos_postgres::repos::authorization::{PgDenyRuleRepo, PgGrantV2Repo, PgRoleRepo};
-use atlas_custos_postgres::repos::identity::{ApiKeyRepo, PgApiKeyRepo};
 use atlas_custos_postgres::repos::security_audit::PgSecurityAuditRepo;
 
 use crate::{
     auth::middleware::Principal as AuthPrincipal,
-    authz::v2_ceiling::{api_key_ceiling, session_ceiling},
+    authz::v2_caller::{Caller, actor_of, caller, unavailable},
     authz::v2_service::{product_specs, validation_catalog},
     config::DenyModeConfig,
     error::{ApiError, custos_conflict},
-    routes::agents::{caller_user_record, is_platform_admin},
     state::AppState,
 };
 
@@ -111,64 +107,6 @@ pub(crate) struct DenyPath {
 // Gate
 // ---------------------------------------------------------------------------
 
-/// Who is calling, resolved once per request. A platform admin or root
-/// session keeps the S4 administration path; any other session is a
-/// delegate whose authority is computed on the exact target it acts on; an
-/// API key is bounded by the ceiling its scopes translate to (`v2_ceiling`).
-enum Caller {
-    Session {
-        user: User,
-        admin: bool,
-        actor: ActorContext,
-    },
-    ApiKey {
-        key_id: ApiKeyId,
-        ceiling: Ceiling,
-    },
-}
-
-impl Caller {
-    fn attribution(&self) -> Attribution {
-        match self {
-            Caller::Session { user, .. } => actor_of(user),
-            Caller::ApiKey { key_id, .. } => Attribution::ApiKey(ApiKeyAttributionId(key_id.0)),
-        }
-    }
-}
-
-async fn caller(state: &AppState, principal: AuthPrincipal) -> Result<Caller, ApiError> {
-    match principal {
-        AuthPrincipal::User(user_id) => {
-            let user = caller_user_record(state, user_id).await?;
-            let actor = ActorContext {
-                principal: PrincipalId::from(user.id),
-                is_root: user.is_root,
-                ceiling: session_ceiling(),
-            };
-
-            Ok(Caller::Session {
-                admin: is_platform_admin(&user),
-                user,
-                actor,
-            })
-        }
-        AuthPrincipal::ApiKey(key_id) => {
-            let key = PgApiKeyRepo {
-                conn: (*state.db).clone(),
-            }
-            .get_by_id(key_id)
-            .await
-            .map_err(ApiError::Domain)?
-            .ok_or(ApiError::Unauthorized)?;
-
-            Ok(Caller::ApiKey {
-                key_id,
-                ceiling: api_key_ceiling(&key.scopes),
-            })
-        }
-    }
-}
-
 /// Resolves the calling platform admin (root or `is_system_admin`). An API
 /// key or a plain user answers 403: roles, deny rules and listings have no
 /// delegated authority model in this release.
@@ -188,10 +126,6 @@ async fn platform_admin(state: &AppState, principal: AuthPrincipal) -> Result<Us
                 .into(),
         }),
     }
-}
-
-fn actor_of(user: &User) -> Attribution {
-    Attribution::User(UserAttributionId(user.id.0))
 }
 
 fn require_deny_administration(state: &AppState) -> Result<(), ApiError> {
@@ -683,13 +617,6 @@ async fn refuse(
             _ => "you may not delegate on this target".into(),
         },
     })
-}
-
-/// Every evaluation failure is a 503 with the cause logged, never returned
-/// (AVAIL-1).
-fn unavailable(error: EvalError) -> ApiError {
-    tracing::error!(error = %error, "V2 authorization facts unavailable");
-    ApiError::AuthorizationUnavailable
 }
 
 /// The delegation action a request needs on its target.

@@ -857,7 +857,7 @@ fn extracted_call_count_is_pinned() {
     let total: usize = per_file.iter().map(|(_, calls)| calls.len()).sum();
 
     assert_eq!(
-        total, 220,
+        total, 222,
         "the total number of self.<verb>(..)/self.root_get(..) call sites across every mapped \
          atlas_client/src file changed without this pin moving — a pure move between mapped \
          files must leave this total unchanged"
@@ -871,6 +871,7 @@ fn extracted_call_count_is_pinned() {
 /// reactivate_agent), by 7 in v2-e4-s3b-key-families (the seven
 /// `/api-keys` methods became the fourteen family methods), and by 10 in
 /// v2-e5-s4-authz-routes (the roles/grants/denies administration methods),
+/// and by 2 in v2-e5-s6b-authorize-route (authorize, authorize_batch),
 /// `acta.rs`
 /// split out exactly the
 /// 154 acta-owned call sites in PR4, and `platform.rs` split out exactly the
@@ -894,7 +895,7 @@ fn extracted_call_count_is_pinned_per_file() {
     );
     assert_eq!(
         counts.get("custos.rs").copied(),
-        Some(60),
+        Some(62),
         "custos.rs's own call count moved"
     );
     assert_eq!(
