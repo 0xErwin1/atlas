@@ -6,12 +6,14 @@ Atlas is a hexagonal (ports-and-adapters) Rust monorepo: a pure domain core, a s
 
 13 workspace members (plus the `atlas_test_db`/`atlas_test_harness` test utilities), matching the
 root `Cargo.toml`'s `[workspace] members` exactly. The dependency direction is strict and
-**compiler-enforced**: `atlas_custos` and `atlas_acta` each declare only `serde`/`thiserror`/`uuid`/
-`chrono` (plus `atlas_core` for `atlas_acta`), so an accidental `use sea_orm` or `use axum` in
-either fails to compile. `atlas_custos` and `atlas_acta` never depend on each other — they compose
-only through `atlas_server`. Since V2-E2, the SeaORM adapters for each pure crate live in their own
-Postgres crate (`atlas_custos_postgres`, `atlas_acta_postgres`), not in `atlas_server`; `atlas_server`
-depends on both and composes them, but owns no product entity/repo logic of its own.
+**compiler-enforced**: `atlas_custos` declares only `atlas_core`/`async-trait`/`serde`/
+`serde_json`/`uuid`/`chrono`, and `atlas_acta` only `atlas_core`/`async-trait`/`serde`/`serde_json`/
+`thiserror`/`uuid`/`chrono`/`bytes`/`diffy-imara`/`fractional_index`, so an accidental `use sea_orm`
+or `use axum` in either fails to compile. `atlas_custos` and `atlas_acta` never depend on each other
+— they compose only through `atlas_server`. Since V2-E2, the SeaORM adapters for each pure crate
+live in their own Postgres crate (`atlas_custos_postgres`, `atlas_acta_postgres`), not in
+`atlas_server`; `atlas_server` depends on both and composes them, but owns no product entity/repo
+logic of its own.
 
 ```mermaid
 flowchart TD
@@ -23,7 +25,7 @@ flowchart TD
     server[atlas_server<br/>axum: composition only] --> api
     server --> custospg[atlas_custos_postgres<br/>SeaORM adapters: custos.*]
     server --> actapg[atlas_acta_postgres<br/>SeaORM adapters: acta.*]
-    custospg --> custos[atlas_custos<br/>pure: identity/auth types, ports]
+    custospg --> custos[atlas_custos<br/>pure: identity/auth types, ports,<br/>V2 authorization evaluator]
     actapg --> acta[atlas_acta<br/>pure: workspace/content types, ports]
     custospg --> pgcore[atlas_postgres<br/>pool + connection]
     actapg --> pgcore
@@ -35,7 +37,7 @@ flowchart TD
 |-------|----------------|------------------|
 | `atlas_core` | Neutral V2 platform contracts: identifiers, compiled-registry types and `registry::build()` validation, capability traits, and the component config contract | `ids/`, `registry/`, `capabilities/`, `config/` |
 | `atlas_postgres` | Neutral Postgres runtime — pool configuration and connection construction, with no product repositories or entities | `config.rs`, `connect.rs` |
-| `atlas_custos` | Pure identity/auth types, value objects, and **repository ports**: users, sessions, api keys, groups, security audit, capability scopes | `entities/`, `ports/`, `capability.rs`, `ids.rs` |
+| `atlas_custos` | Pure identity/auth types, value objects, and **repository ports**: users, sessions, api keys, groups, security audit, capability scopes; plus the pure V2 authorization evaluator, the `AuthorizationService` that loads its facts, and Custos's own resource provider (see [V2 authorization model](#v2-authorization-model)) | `entities/`, `ports/`, `eval/`, `authorize/`, `provider/`, `capability.rs`, `ids.rs` |
 | `atlas_acta` | Pure workspace/content types, value objects, and **repository ports**: workspaces, projects, folders, documents, boards/tasks, comments, plus pure logic (permission resolution, revision diff/anchor, fractional positions, wikilinks) | `entities/`, `ports/`, `permissions.rs`, `ids.rs`, `wikilink.rs` |
 | `atlas_custos_postgres` | SeaORM entities + repository **adapters** implementing every `atlas_custos` port against the `custos.*` schema | `entities/`, `repos/`, `migrations/` |
 | `atlas_acta_postgres` | SeaORM entities + repository **adapters** implementing every `atlas_acta` port against the `acta.*` schema (documents, boards/tasks, comments, search, webhooks, automation, …) | `entities/`, `repos/`, `migrations/` |
@@ -101,6 +103,7 @@ there is no curated re-export prelude in `atlas_server::persistence`.
 | Search | `GET /v1/workspaces/{ws}/search` (ranked docs+tasks, permission-filtered, filter tokens) |
 | Attachments | `GET /v1/workspaces/{ws}/attachments` (every file on a note, task, or comment of either — permission-filtered, with its owner and uploader) · `GET\|PATCH\|DELETE …/attachments/{id}` (download, rename, delete); a rename also rewrites the `[[file:…]]` links addressing it |
 | Sharing + meta | grants (`…/grants`) · `GET /v1/meta` (server version/build) |
+| V2 authorization (platform admin) | `GET\|POST /api/v2/custos/roles` · `PATCH\|DELETE …/roles/{role_id}` · `GET\|POST /api/v2/custos/grants` · `DELETE …/grants/{grant_id}` · `GET\|POST /api/v2/custos/denies` · `DELETE …/denies/{deny_id}` — administration of the V2 records only; see [V2 authorization model](#v2-authorization-model) for what they can target today |
 
 ## Data model
 
@@ -114,7 +117,7 @@ their owning schema and crate:
 
 | Area | Tables | Notes |
 |------|--------|-------|
-| Identity (`custos.*`) | principals, users, sessions, user_activation_tokens, api_keys, groups, group_members, permission_grants, security_audit_log, roles, grants_v2, deny_rules | the twelve Custos tables (`roles`, `grants_v2` and `deny_rules` hold the V2 authorization model, not yet read by the runtime); `users`/`sessions`/`api_keys` are the tenancy-root exceptions to `workspace_id NOT NULL` |
+| Identity (`custos.*`) | principals, users, sessions, user_activation_tokens, api_keys, groups, group_members, permission_grants, security_audit_log, roles, grants_v2, deny_rules | the twelve Custos tables (`roles`, `grants_v2` and `deny_rules` hold the V2 authorization model: administered through the V2 routes, not yet consulted when a request is authorized); `users`/`sessions`/`api_keys` are the tenancy-root exceptions to `workspace_id NOT NULL` |
 | Tenancy (`acta.*`) | workspaces, workspace_memberships | workspaces are an Acta concept (no other product has them); memberships FK into `custos.users` |
 | Content (`acta.*`) | folders, documents, document_revisions, document_links, attachments | document content is `TEXT` (TOAST); revisions are line diffs with snapshot anchors; attachments are metadata-only (blobs live in object storage → Cloudflare R2). `document_links` is the wikilink/backlink graph, bound to the **stable target id** |
 | Projects + tasks (`acta.*`) | projects, boards, board_columns, tasks, task_references, task_assignees, task_checklist_items, task_activity | readable IDs `PREFIX-n` per project (immutable); kanban order via `fractional_index` `TEXT` position; multiple assignees (user/agent), actor-attributed activity log. **Sub-tasks** are full tasks linked by `tasks.parent_task_id`: they carry every task field (status, assignees, description, tags, estimate, their own `readable_id` so they are wikilink-referenceable) but are excluded from the board listings (`parent_task_id IS NULL`); promoting one clears the parent so it appears on the board |
@@ -126,6 +129,50 @@ Every domain row records its `created_by` actor (user XOR api_key, DB CHECK), en
 ## Permission model
 
 Resource-sharing (not IAM). Grants `(principal, resource, role)` with roles `viewer < editor < admin` (+ `owner`, workspace-only) inheriting down `workspace > project > folder > document | board`. Most-specific grant wins; **default deny**. Visibility (`private` / `workspace` / `public`) is sugar over implicit grants. Defaults: a resource creator gets `admin`; workspace owner/admin hold implicit admin over all workspace resources; new resources default to `workspace`-edit visibility. **Agents (API keys) are capped at `editor` and never manage grants.** The list query (`list_visible`) mirrors the `resolve()` engine in both directions so a listed resource and its detail endpoint always agree. Full model: `Atlas/E00-diseno-de-producto/E00-permisos` (Obsidian).
+
+### V2 authorization model
+
+**Every request is still authorized by the resource-sharing model above.** The V2 model (V2-E5) exists beside it: its records are stored and administered, and a pure evaluator plus a fact-loading service decide over them, but no request path consults it yet. Wiring it into request authorization is V2-E7 work.
+
+| Part | Where | Role |
+|------|-------|------|
+| Evaluator | `atlas_custos::eval` | Pure decisions over caller-supplied facts: single and batch evaluation, the list visibility predicate, the catalog, delegation, effective actions, and conversions from stored records |
+| Storage | `custos.roles`, `custos.grants_v2`, `custos.deny_rules` (`atlas_custos_postgres`) | Custom roles, grants and deny rules. A grant has exactly one subject (principal, group or principal set), one target (ref, path or selector, stored as canonical text) and one authority (built-in `name@version`, custom role, or explicit action list) |
+| Deny mode | `ATLAS_EXPLICIT_DENY_MODE` (`CustosConfig`) | `disabled` (default) or `audit`. `enforced` is rejected at config load: the runtime does not evaluate deny rules yet, so accepting it would promise enforcement that does not happen. Deny rows persist across mode changes |
+| Admin routes | `/api/v2/custos/{roles,grants,denies}` | Platform-admin and root sessions only; every API key gets 403. Every write is validated through the catalog and writes its audit row in the same transaction |
+| Authorization service | `atlas_custos::authorize` | Loads the facts one request needs and runs the evaluator |
+| Provider contract | `ResourceProvider::resource_facts` (`atlas_core::capabilities`) | Existence and current path for many resources in one call |
+| Custos provider | `atlas_custos::provider` + `PgCustosResourceStore` | Answers `resource_facts` for Custos resource kinds |
+
+#### Evaluator rules
+
+- **Precedence.** Grants reaching the actor are matched against the target's chain. The nearest level wins, then the strongest tier within it (ref > path > selector, with selector tie breakers), and equal tiers union their actions. There is no fallback to a weaker tier or a farther level. The credential ceiling, supplied by the caller, intersects the result.
+- **Denies.** In `enforced` mode a deny on the action at the target or any ancestor removes the action whatever the grant precedence; `audit` reports the rules that would change the decision without applying them; `disabled` ignores them. Root is exempt; platform admins are not.
+- **Discovery.** The requested action held gives `Allowed`, another action on the target's own kind gives `Denied`, and no effective action gives `NotFound`, indistinguishable from a missing target. Hidden results carry no grant or deny metadata.
+- **Fail closed.** Missing ancestry, facts bound to another principal, or unknown group membership that could decide the outcome are technical errors, never an allow. Unknown principal-set membership reads as nonmember.
+- **Batch and lists.** A batch returns one result per target in input order; an unavailable target is `NotFound`. The visibility predicate (`All`, `Nothing`, or grant rules plus deny targets) permits a path exactly when single evaluation returns `Allowed`, and fails as a whole on unknown membership that could decide any row.
+- **Catalog.** Built from plain per-product data: kinds, actions, versioned built-in roles and declared principal sets. It validates targets, custom roles (non-empty, one product, never a `custos::` action) and grant specs (one subject, one target, one authority of the target's product).
+- **Delegation.** An action set may add the Custos delegation actions (`custos::grant::create|delete`, `custos::group::create|update|delete|add_member|remove_member`) to one product's actions. Precedence runs in separate lanes, so a delegation-only grant never shadows product authority and the reverse; delegation authority never discloses a target. `effective_actions` computes what an actor holds on a target, and `can_delegate` requires `custos::grant::create` there and that the granted actions are a subset of it.
+
+#### Admin routes in this release
+
+- Only Custos declares V2 resource kinds in the registry, so only Custos targets are accepted. An Acta target answers 422 until Acta publishes its catalog; the routes take it without code changes once it does.
+- No product declares built-in roles, and custom roles may never carry Custos actions, so `POST /roles` answers 422 for every product today. On a Custos target the only usable authority is an explicit action set.
+- Creating or deleting a deny rule answers 409 while the deny mode is `disabled`. Stored denies are inert either way: nothing evaluates them for requests yet.
+
+#### Authorization service and providers
+
+- **One provider call and one load.** `authorize`, `authorize_batch` and `effective_actions` make at most one `resource_facts` call per target product and one stored-facts load; `visibility_filter` makes no `resource_facts` call. The load returns the grants and deny rules addressed to the actor, its groups (from the V1 group tables) or any principal set, plus the custom roles they reference; principal-set membership is resolved through the owning provider's `members_of` only for sets a loaded row names.
+- **Fail-closed mapping.** A provider failure or timeout makes the affected targets unavailable: a single authorization or effective-actions call fails with `FactsUnavailable` and a typed cause, a batch reports those targets as `NotFound`. A store or membership-source failure fails the request; nothing is narrowed into an allow.
+- **Injected timer.** `atlas_custos` stays runtime-free, so provider calls race a `Sleeper` the composition root injects (default timeout 2 s). A sleeper that never fires lets a hanging provider hang the request.
+- **Canonical ids.** The Custos provider answers only for lowercase hyphenated UUID ids; any other spelling of an existing id is missing, so an alias cannot escape a deny stored on the canonical id. Paths are single-segment, the platform is the singleton `custos::platform::atlas`, and an unknown kind is missing rather than an error. `members_of` identities are compared the same way.
+
+#### Carried to V2-E7
+
+- **Predicate translation order.** The predicate's grant rules are sorted by specificity, which is not precedence: a storage translation must decide nearest level first, then tier, exactly as `VisibilityPredicate::permits` does.
+- **Opaque 503.** `FactsUnavailable` must reach clients as a 503 that reveals neither its cause nor whether the target exists.
+- **Memberships before listing.** A list route must resolve the actor's group memberships before compiling its predicate; unknown membership that could decide a row fails the whole list.
+- **Statement timeout.** The timeout covers provider calls only; the stored-facts load and the membership query run without a statement timeout.
 
 ## Web frontend (`apps/web`)
 
