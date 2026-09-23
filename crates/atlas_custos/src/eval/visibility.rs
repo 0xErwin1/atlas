@@ -10,10 +10,10 @@
 
 use crate::eval::EvalError;
 use crate::eval::evaluator::{
-    DenyMode, EvaluationFacts, Reach, chain_from_path, covers_chain, level_of, reach,
+    DenyMode, EvaluationFacts, Lane, Reach, chain_from_path, covers_chain, level_of, reach,
     validate_membership_binding, winners,
 };
-use crate::eval::model::{Ceiling, GrantTarget};
+use crate::eval::model::{Ceiling, GrantTarget, is_delegation_action};
 use crate::ids::{GroupId, PrincipalId};
 use atlas_core::ids::{ActionId, ResourcePath};
 
@@ -95,14 +95,19 @@ impl VisibilityPredicate {
 /// a [`VisibilityPredicate`].
 ///
 /// Root sees everything; a ceiling without the action or grants that never
-/// include it yield [`VisibilityPredicate::Nothing`]. Otherwise unknown
-/// facts that could decide some resource fail closed: any group grant of
-/// the action's product with unknown membership (it could win or shadow a
-/// tier), and in enforced or audit mode any group deny with unknown
-/// membership on the action. Audit mode additionally rejects unknown group
-/// denies on other actions of `kind` when a confirmed deny on the action
-/// exists, because the single-target evaluator needs them to tell a denied
-/// resource from a hidden one. Facts of other products are ignored.
+/// include it yield [`VisibilityPredicate::Nothing`]. Grants compete in the
+/// action's precedence lane only: grants able to carry the action's product
+/// for a product action, grants carrying delegation actions for a
+/// delegation action. Otherwise unknown facts that could decide some
+/// resource fail closed: any group grant of the lane with unknown
+/// membership (it could win or shadow a tier), and in enforced or audit
+/// mode any group deny with unknown membership on the action. Audit mode
+/// additionally rejects, when a confirmed deny on the action exists,
+/// unknown group denies on other actions of `kind` and, for a delegation
+/// action, unknown product-lane group grants, because the single-target
+/// evaluator needs them to tell a denied resource from a hidden one. For a
+/// product action, deny facts of other products are ignored; a delegation
+/// action applies to targets of every product.
 pub fn visibility_filter(
     actor: PrincipalId,
     is_root: bool,
@@ -145,10 +150,11 @@ fn grant_rules(
     let mut unknown: Option<GroupId> = None;
     let mut unknown_allows = false;
 
+    let lane = Lane::of(action);
     let relevant = facts
         .grants
         .iter()
-        .filter(|grant| grant.target().product() == action.product());
+        .filter(|grant| lane.admits(grant, action.product()));
 
     for grant in relevant {
         let allows = grant.actions().contains(action);
@@ -174,6 +180,13 @@ fn grant_rules(
     rules.sort_by_key(|rule| std::cmp::Reverse(rule.target.specificity()));
 
     Ok(rules)
+}
+
+/// Whether facts on `target` can decide `action`. A product action only
+/// applies to targets of its product; a delegation action applies to
+/// targets of any product, so no fact is excluded by product.
+fn in_scope(target: &GrantTarget, action: &ActionId) -> bool {
+    is_delegation_action(action) || target.product() == action.product()
 }
 
 fn merge_rule(rules: &mut Vec<VisibilityRule>, target: &GrantTarget, allows: bool) {
@@ -214,7 +227,7 @@ fn deny_targets(
     let relevant = facts
         .denies
         .iter()
-        .filter(|rule| rule.target().product() == action.product());
+        .filter(|rule| in_scope(rule.target(), action));
 
     for rule in relevant {
         let on_action = rule.actions().contains(action);
@@ -243,8 +256,34 @@ fn deny_targets(
         return Ok(targets);
     }
 
-    match unknown_on_kind {
-        Some(group) if !targets.is_empty() => Err(EvalError::GroupMembershipUnavailable { group }),
-        _ => Ok(Vec::new()),
+    if targets.is_empty() {
+        return Ok(Vec::new());
     }
+
+    let unknown_discovery = if is_delegation_action(action) {
+        unknown_discovery_grant(actor, facts)
+    } else {
+        None
+    };
+
+    match unknown_on_kind.or(unknown_discovery) {
+        Some(group) => Err(EvalError::GroupMembershipUnavailable { group }),
+        None => Ok(Vec::new()),
+    }
+}
+
+/// The first product-lane grant with unknown group membership. An audited
+/// delegation request that a confirmed deny would block falls back to
+/// product discovery, which needs these memberships.
+fn unknown_discovery_grant(actor: PrincipalId, facts: &EvaluationFacts<'_>) -> Option<GroupId> {
+    facts
+        .grants
+        .iter()
+        .filter(|grant| !grant.actions().is_delegation_only())
+        .find_map(
+            |grant| match reach(grant.subject(), actor, facts.membership) {
+                Reach::Unknown(group) => Some(group),
+                Reach::Applies | Reach::DoesNotApply => None,
+            },
+        )
 }
