@@ -16,6 +16,19 @@ pub mod acta_conflict {
     pub const POSITION_EXHAUSTED: &str = "position-exhausted";
 }
 
+/// Component-conflict codes raised by the Custos authorization routes. The
+/// role-in-use code itself is declared by `atlas_custos` (the owning
+/// component); the deny-mode code is a composition-level refusal, since
+/// only the server knows the configured `ATLAS_EXPLICIT_DENY_MODE`.
+pub mod custos_conflict {
+    pub use atlas_custos::entities::authorization::ROLE_IN_USE_CONFLICT as ROLE_IN_USE;
+
+    /// Explicit deny administration was attempted while
+    /// `ATLAS_EXPLICIT_DENY_MODE=disabled`; deny rows are neither created
+    /// nor deleted in that mode, though existing rows stay readable.
+    pub const DENY_MODE_DISABLED: &str = "deny-mode-disabled";
+}
+
 /// `Retry-After` value (whole seconds) a `409 idempotency-key-in-flight`
 /// response carries: the in-flight window is expected to be short.
 pub(crate) const IDEMPOTENCY_KEY_IN_FLIGHT_RETRY_AFTER: &str = "1";
@@ -343,6 +356,25 @@ fn domain_error_response(err: DomainError) -> Response {
                     409,
                 )
                 .with_hint("Retry the move; the server attempted to rebalance column positions."),
+            ),
+            custos_conflict::ROLE_IN_USE => (
+                StatusCode::CONFLICT,
+                ProblemDetails::new("urn:atlas:error:role-in-use", "Role In Use", 409)
+                    .with_hint("Delete or re-point every grant that references this role first.")
+                    .with_detail(message.unwrap_or_else(|| "the role is still in use".into())),
+            ),
+            custos_conflict::DENY_MODE_DISABLED => (
+                StatusCode::CONFLICT,
+                ProblemDetails::new(
+                    "urn:atlas:error:deny-mode-disabled",
+                    "Deny Mode Disabled",
+                    409,
+                )
+                .with_hint(
+                    "Set ATLAS_EXPLICIT_DENY_MODE=audit to administer deny rules; existing rules \
+                     stay readable in every mode.",
+                )
+                .with_detail(message.unwrap_or_else(|| "explicit deny mode is disabled".into())),
             ),
             unknown => {
                 tracing::error!(code = %unknown, "unmapped component conflict code");

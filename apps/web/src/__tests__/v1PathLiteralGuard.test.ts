@@ -219,7 +219,7 @@ describe('v1PathLiteralGuard — document owners (D5.3)', () => {
   it('maps every path key to its x-atlas-component, with 153 entries and known owners', () => {
     const owners = loadDocumentOwners();
 
-    expect(owners.size).toBe(153);
+    expect(owners.size).toBe(159);
     expect(owners.get('/health')).toBe('platform');
     expect(owners.get('/api/v2/acta/admin/status-templates')).toBe('acta');
     expect(owners.get('/api/v2/custos/activate/{}')).toBe('custos');

@@ -86,7 +86,7 @@ async fn caller_user(state: &AppState, principal: AuthPrincipal) -> Result<User,
     caller_user_record(state, user_id).await
 }
 
-fn is_platform_admin(user: &User) -> bool {
+pub(crate) fn is_platform_admin(user: &User) -> bool {
     user.is_root || user.is_system_admin
 }
 

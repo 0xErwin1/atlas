@@ -182,8 +182,8 @@ mod diagnostics {
 /// `custos::grants::read`).
 mod protected {
     use crate::routes::{
-        agent_api_keys, agents, audit, auth, discover, grants, groups, personal_api_keys, sessions,
-        users,
+        agent_api_keys, agents, audit, auth, authorization, discover, grants, groups,
+        personal_api_keys, sessions, users,
     };
     use crate::state::AppState;
 
@@ -210,6 +210,28 @@ mod protected {
             delete(sessions::revoke_other_sessions, exempt)
         ];
         "/sessions/{session_id}" => [ delete(sessions::revoke_session, exempt) ];
+        // v2-e5-s4-authz-routes: platform-admin administration of V2 roles,
+        // grants and deny rules. Every handler gates on a platform admin or
+        // root session in its body, so each is capability-extraction exempt
+        // like agents/sessions.
+        "/roles" => [
+            get(authorization::list_roles, exempt),
+            post(authorization::create_role, exempt, idempotent)
+        ];
+        "/roles/{role_id}" => [
+            patch(authorization::update_role, exempt),
+            delete(authorization::delete_role, exempt)
+        ];
+        "/grants" => [
+            get(authorization::list_grants_v2, exempt),
+            post(authorization::create_grant_v2, exempt, idempotent)
+        ];
+        "/grants/{grant_id}" => [ delete(authorization::delete_grant_v2, exempt) ];
+        "/denies" => [
+            get(authorization::list_denies, exempt),
+            post(authorization::create_deny, exempt, idempotent)
+        ];
+        "/denies/{deny_id}" => [ delete(authorization::delete_deny, exempt) ];
         "/users/me" => [ patch(auth::update_me, exempt) ];
         "/users" => [
             post(users::create_user, exempt),
@@ -349,6 +371,16 @@ pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
         crate::routes::sessions::list_sessions,
         crate::routes::sessions::revoke_session,
         crate::routes::sessions::revoke_other_sessions,
+        crate::routes::authorization::list_roles,
+        crate::routes::authorization::create_role,
+        crate::routes::authorization::update_role,
+        crate::routes::authorization::delete_role,
+        crate::routes::authorization::list_grants_v2,
+        crate::routes::authorization::create_grant_v2,
+        crate::routes::authorization::delete_grant_v2,
+        crate::routes::authorization::list_denies,
+        crate::routes::authorization::create_deny,
+        crate::routes::authorization::delete_deny,
         crate::routes::users::list_users,
         crate::routes::users::create_user,
         crate::routes::users::disable_user,
@@ -418,6 +450,16 @@ pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
         atlas_api::dtos::MeResponse,
         atlas_api::dtos::ResetPasswordRequest,
         atlas_api::dtos::SessionDto,
+        atlas_api::dtos::authorization::AuthorityDto,
+        atlas_api::dtos::authorization::CreateDenyRequest,
+        atlas_api::dtos::authorization::CreateGrantV2Request,
+        atlas_api::dtos::authorization::CreateRoleRequest,
+        atlas_api::dtos::authorization::DenyRuleDto,
+        atlas_api::dtos::authorization::GrantV2Dto,
+        atlas_api::dtos::authorization::RoleDto,
+        atlas_api::dtos::authorization::SubjectDto,
+        atlas_api::dtos::authorization::TargetDto,
+        atlas_api::dtos::authorization::UpdateRoleRequest,
         atlas_api::dtos::SetSystemAdminRequest,
         atlas_api::dtos::UpdateApiKeyRequest,
         atlas_api::dtos::UpdateMeRequest,
@@ -434,6 +476,7 @@ pub(crate) fn public_declared_routes() -> Vec<AuditedRoute> {
         (name = "agent-api-keys", description = "Agent API key management (keys bound to an agent principal)"),
         (name = "grants", description = "Permission grant management"),
         (name = "groups", description = "Workspace principal groups"),
+        (name = "authorization", description = "V2 authorization administration: custom roles, grants and deny rules (platform admin)"),
     )
 )]
 struct CustosOpenApi;
@@ -508,9 +551,10 @@ mod tests {
         );
         assert_eq!(
             router_set.len(),
-            52,
-            "custos owns exactly 52 route (method, path) pairs: the pre-split 46 plus the six \
-             v2-e4-s3b-key-families routes added on top of the six retired `/api-keys` routes"
+            62,
+            "custos owns exactly 62 route (method, path) pairs: the pre-split 46 plus the six \
+             v2-e4-s3b-key-families routes added on top of the six retired `/api-keys` routes, \
+             plus the ten v2-e5-s4-authz-routes administration routes"
         );
     }
 

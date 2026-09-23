@@ -4,6 +4,10 @@ use atlas_api::{
         ChangePasswordRequest, CreateAgentApiKeyRequest, CreateAgentRequest, CreateGrantRequest,
         CreatePersonalApiKeyRequest, CreateUserRequest, CreateUserResponse, GrantDto, MeResponse,
         ResetPasswordRequest, SessionDto, UpdateMeRequest, UserDto, UserMembershipDto,
+        authorization::{
+            CreateDenyRequest, CreateGrantV2Request, CreateRoleRequest, DenyRuleDto, GrantV2Dto,
+            RoleDto, UpdateRoleRequest,
+        },
         discovery::DiscoverResponseDto,
         groups::{AddGroupMemberRequest, CreateGroupRequest, GroupDto, GroupMemberDto},
     },
@@ -97,6 +101,126 @@ impl Custos<'_> {
             .await
             .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
         Err(ClientError::Api(problem))
+    }
+
+    /// Accepts any 2xx as `Ok(())`; anything else is decoded as a problem.
+    async fn expect_success(&self, response: reqwest::Response) -> Result<(), ClientError> {
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let problem: ProblemDetails = response
+            .json()
+            .await
+            .unwrap_or_else(|_| ProblemDetails::new("urn:atlas:error:unknown", "Unknown", 0));
+        Err(ClientError::Api(problem))
+    }
+
+    /// `GET /api/v2/custos/roles?product=…` — the custom roles of one product.
+    pub async fn list_roles(&self, product: &str) -> Result<Vec<RoleDto>, ClientError> {
+        let response = self
+            .get(Component::Custos, &format!("/roles?product={product}"))
+            .send()
+            .await?;
+        self.decode_response(response, "list_roles").await
+    }
+
+    /// `POST /api/v2/custos/roles`
+    pub async fn create_role(&self, body: CreateRoleRequest) -> Result<RoleDto, ClientError> {
+        let response = self
+            .post(Component::Custos, "/roles")
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "create_role").await
+    }
+
+    /// `PATCH /api/v2/custos/roles/{role_id}`
+    pub async fn update_role(
+        &self,
+        role_id: uuid::Uuid,
+        body: UpdateRoleRequest,
+    ) -> Result<RoleDto, ClientError> {
+        let response = self
+            .patch(Component::Custos, &format!("/roles/{role_id}"))
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "update_role").await
+    }
+
+    /// `DELETE /api/v2/custos/roles/{role_id}`
+    pub async fn delete_role(&self, role_id: uuid::Uuid) -> Result<(), ClientError> {
+        let response = self
+            .delete(Component::Custos, &format!("/roles/{role_id}"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        self.expect_success(response).await
+    }
+
+    /// `GET /api/v2/custos/grants?product=…` — the V2 grants of one product.
+    pub async fn list_grants_v2(&self, product: &str) -> Result<Vec<GrantV2Dto>, ClientError> {
+        let response = self
+            .get(Component::Custos, &format!("/grants?product={product}"))
+            .send()
+            .await?;
+        self.decode_response(response, "list_grants_v2").await
+    }
+
+    /// `POST /api/v2/custos/grants`
+    pub async fn create_grant_v2(
+        &self,
+        body: CreateGrantV2Request,
+    ) -> Result<GrantV2Dto, ClientError> {
+        let response = self
+            .post(Component::Custos, "/grants")
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "create_grant_v2").await
+    }
+
+    /// `DELETE /api/v2/custos/grants/{grant_id}`
+    pub async fn delete_grant_v2(&self, grant_id: uuid::Uuid) -> Result<(), ClientError> {
+        let response = self
+            .delete(Component::Custos, &format!("/grants/{grant_id}"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        self.expect_success(response).await
+    }
+
+    /// `GET /api/v2/custos/denies?product=…` — the deny rules of one product.
+    pub async fn list_denies(&self, product: &str) -> Result<Vec<DenyRuleDto>, ClientError> {
+        let response = self
+            .get(Component::Custos, &format!("/denies?product={product}"))
+            .send()
+            .await?;
+        self.decode_response(response, "list_denies").await
+    }
+
+    /// `POST /api/v2/custos/denies`
+    pub async fn create_deny(&self, body: CreateDenyRequest) -> Result<DenyRuleDto, ClientError> {
+        let response = self
+            .post(Component::Custos, "/denies")
+            .header("x-atlas-csrf", "1")
+            .json(&body)
+            .send()
+            .await?;
+        self.decode_response(response, "create_deny").await
+    }
+
+    /// `DELETE /api/v2/custos/denies/{deny_id}`
+    pub async fn delete_deny(&self, deny_id: uuid::Uuid) -> Result<(), ClientError> {
+        let response = self
+            .delete(Component::Custos, &format!("/denies/{deny_id}"))
+            .header("x-atlas-csrf", "1")
+            .send()
+            .await?;
+        self.expect_success(response).await
     }
 
     /// `DELETE /api/v2/custos/sessions` — revokes every active session

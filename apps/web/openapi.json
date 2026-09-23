@@ -14619,6 +14619,231 @@
         "x-atlas-component": "custos"
       }
     },
+    "/api/v2/custos/denies": {
+      "get": {
+        "tags": [
+          "authorization",
+          "custos"
+        ],
+        "operationId": "list_denies",
+        "parameters": [
+          {
+            "name": "product",
+            "in": "query",
+            "description": "Product whose deny rules to list",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The product's deny rules (readable in every deny mode)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DenyRuleDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Caller is not a platform admin"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      },
+      "post": {
+        "tags": [
+          "authorization",
+          "custos"
+        ],
+        "operationId": "create_deny",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-supplied key used to dedupe a retried request. Optional: a route that honors this header runs and stores its response as usual when the header is absent, and every route that does not honor it ignores the header entirely.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDenyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Deny rule created",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DenyRuleDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not a platform admin",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            }
+          },
+          "409": {
+            "description": "ATLAS_EXPLICIT_DENY_MODE is disabled\n\nReturned when the Idempotency-Key was already used for a different request (`urn:atlas:error:idempotency-key-conflict`), or when a request carrying the same Idempotency-Key is still executing concurrently (`urn:atlas:error:idempotency-key-in-flight`). Neither of those two problem types ever carries the `Idempotent-Replayed` or `Idempotency-Degraded` header; a replayed or degraded domain conflict on this operation carries them like any other response. A replayed problem body differs from the original response only by its `request_id` field.",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Present with value `1` (seconds) only for the `urn:atlas:error:idempotency-key-in-flight` problem type: the first request for this Idempotency-Key is still executing."
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid subject, target or actions for the target's product",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/denies/{deny_id}": {
+      "delete": {
+        "tags": [
+          "authorization",
+          "custos"
+        ],
+        "operationId": "delete_deny",
+        "parameters": [
+          {
+            "name": "deny_id",
+            "in": "path",
+            "description": "Deny rule id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deny rule deleted"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Caller is not a platform admin"
+          },
+          "404": {
+            "description": "No such deny rule"
+          },
+          "409": {
+            "description": "ATLAS_EXPLICIT_DENY_MODE is disabled"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
     "/api/v2/custos/discover": {
       "get": {
         "tags": [
@@ -14639,6 +14864,228 @@
           },
           "401": {
             "description": "Unauthenticated"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/grants": {
+      "get": {
+        "tags": [
+          "authorization",
+          "custos"
+        ],
+        "operationId": "list_grants_v2",
+        "parameters": [
+          {
+            "name": "product",
+            "in": "query",
+            "description": "Product whose grants to list",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The product's V2 grants",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GrantV2Dto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Caller is not a platform admin"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      },
+      "post": {
+        "tags": [
+          "authorization",
+          "custos"
+        ],
+        "operationId": "create_grant_v2",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-supplied key used to dedupe a retried request. Optional: a route that honors this header runs and stores its response as usual when the header is absent, and every route that does not honor it ignores the header entirely.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGrantV2Request"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Grant created",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantV2Dto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not a platform admin",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            }
+          },
+          "409": {
+            "description": "Returned when the Idempotency-Key was already used for a different request (`urn:atlas:error:idempotency-key-conflict`), or when a request carrying the same Idempotency-Key is still executing concurrently (`urn:atlas:error:idempotency-key-in-flight`). Neither of those two problem types ever carries the `Idempotent-Replayed` or `Idempotency-Degraded` header; a replayed or degraded domain conflict on this operation carries them like any other response. A replayed problem body differs from the original response only by its `request_id` field.",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Present with value `1` (seconds) only for the `urn:atlas:error:idempotency-key-in-flight` problem type: the first request for this Idempotency-Key is still executing."
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid subject, target or authority for the target's product",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/grants/{grant_id}": {
+      "delete": {
+        "tags": [
+          "authorization",
+          "custos"
+        ],
+        "operationId": "delete_grant_v2",
+        "parameters": [
+          {
+            "name": "grant_id",
+            "in": "path",
+            "description": "Grant id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Grant revoked"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Caller is not a platform admin"
+          },
+          "404": {
+            "description": "No such grant"
           }
         },
         "security": [
@@ -15112,6 +15559,293 @@
             }
           }
         },
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/roles": {
+      "get": {
+        "tags": [
+          "authorization",
+          "custos"
+        ],
+        "operationId": "list_roles",
+        "parameters": [
+          {
+            "name": "product",
+            "in": "query",
+            "description": "Product whose custom roles to list",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The product's custom roles",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RoleDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Caller is not a platform admin"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      },
+      "post": {
+        "tags": [
+          "authorization",
+          "custos"
+        ],
+        "operationId": "create_role",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-supplied key used to dedupe a retried request. Optional: a route that honors this header runs and stores its response as usual when the header is absent, and every route that does not honor it ignores the header entirely.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Custom role created",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not a platform admin",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            }
+          },
+          "409": {
+            "description": "A role with this name already exists in the product\n\nReturned when the Idempotency-Key was already used for a different request (`urn:atlas:error:idempotency-key-conflict`), or when a request carrying the same Idempotency-Key is still executing concurrently (`urn:atlas:error:idempotency-key-in-flight`). Neither of those two problem types ever carries the `Idempotent-Replayed` or `Idempotency-Degraded` header; a replayed or degraded domain conflict on this operation carries them like any other response. A replayed problem body differs from the original response only by its `request_id` field.",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Present with value `1` (seconds) only for the `urn:atlas:error:idempotency-key-in-flight` problem type: the first request for this Idempotency-Key is still executing."
+              }
+            }
+          },
+          "422": {
+            "description": "Unknown product, unknown action, or an action outside the product",
+            "headers": {
+              "Idempotency-Degraded": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Present with value `store-unavailable` when the idempotency store was unavailable and the request executed without dedup protection. Never present together with the replayed marker."
+              },
+              "Idempotent-Replayed": {
+                "schema": {
+                  "type": "boolean"
+                },
+                "description": "Present with value `true` when this response was served from the idempotency store as a replay of a previously completed request carrying the same Idempotency-Key. Absent on the original response."
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/roles/{role_id}": {
+      "delete": {
+        "tags": [
+          "authorization",
+          "custos"
+        ],
+        "operationId": "delete_role",
+        "parameters": [
+          {
+            "name": "role_id",
+            "in": "path",
+            "description": "Custom role id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Custom role deleted"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Caller is not a platform admin"
+          },
+          "404": {
+            "description": "No such role"
+          },
+          "409": {
+            "description": "The role is still referenced by a grant"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      },
+      "patch": {
+        "tags": [
+          "authorization",
+          "custos"
+        ],
+        "operationId": "update_role",
+        "parameters": [
+          {
+            "name": "role_id",
+            "in": "path",
+            "description": "Custom role id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The updated custom role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Caller is not a platform admin"
+          },
+          "404": {
+            "description": "No such role"
+          },
+          "409": {
+            "description": "A role with this name already exists in the product"
+          },
+          "422": {
+            "description": "Unknown action or an action outside the role's product"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
         "x-atlas-component": "custos"
       }
     },
@@ -17640,6 +18374,75 @@
           }
         }
       },
+      "AuthorityDto": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "version",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "builtin"
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "version": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "role_id",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "custom"
+                ]
+              },
+              "role_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "actions",
+              "kind"
+            ],
+            "properties": {
+              "actions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "actions"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "What a grant confers: a versioned built-in role of the target's product,\na custom role by id, or an explicit action list."
+      },
       "AutomationRuleDto": {
         "type": "object",
         "description": "Automation rule representation.",
@@ -18540,6 +19343,29 @@
           }
         }
       },
+      "CreateDenyRequest": {
+        "type": "object",
+        "description": "Request body for `POST /api/v2/custos/denies`.",
+        "required": [
+          "subject",
+          "target",
+          "actions"
+        ],
+        "properties": {
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "subject": {
+            "$ref": "#/components/schemas/SubjectDto"
+          },
+          "target": {
+            "$ref": "#/components/schemas/TargetDto"
+          }
+        }
+      },
       "CreateDocumentRequest": {
         "type": "object",
         "description": "Request body for `POST /api/workspaces/{ws}/projects/{ps}/documents`.\n\nThe slug is always server-generated; any slug field provided by the client\nis silently ignored.",
@@ -18597,6 +19423,26 @@
           },
           "role": {
             "type": "string"
+          }
+        }
+      },
+      "CreateGrantV2Request": {
+        "type": "object",
+        "description": "Request body for `POST /api/v2/custos/grants`.",
+        "required": [
+          "subject",
+          "target",
+          "authority"
+        ],
+        "properties": {
+          "authority": {
+            "$ref": "#/components/schemas/AuthorityDto"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/SubjectDto"
+          },
+          "target": {
+            "$ref": "#/components/schemas/TargetDto"
           }
         }
       },
@@ -18838,6 +19684,29 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "CreateRoleRequest": {
+        "type": "object",
+        "description": "Request body for `POST /api/v2/custos/roles`.",
+        "required": [
+          "product",
+          "name",
+          "actions"
+        ],
+        "properties": {
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
           }
         }
       },
@@ -19136,6 +20005,48 @@
         "properties": {
           "name": {
             "type": "string"
+          }
+        }
+      },
+      "DenyRuleDto": {
+        "type": "object",
+        "description": "An explicit deny rule. `product` is always the target's product.",
+        "required": [
+          "id",
+          "subject",
+          "target",
+          "product",
+          "actions",
+          "created_by",
+          "created_at"
+        ],
+        "properties": {
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "product": {
+            "type": "string"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/SubjectDto"
+          },
+          "target": {
+            "$ref": "#/components/schemas/TargetDto"
           }
         }
       },
@@ -19979,6 +20890,45 @@
           },
           "type": {
             "type": "string"
+          }
+        }
+      },
+      "GrantV2Dto": {
+        "type": "object",
+        "description": "A V2 grant. `product` is always the target's product.",
+        "required": [
+          "id",
+          "subject",
+          "target",
+          "product",
+          "authority",
+          "created_by",
+          "created_at"
+        ],
+        "properties": {
+          "authority": {
+            "$ref": "#/components/schemas/AuthorityDto"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "product": {
+            "type": "string"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/SubjectDto"
+          },
+          "target": {
+            "$ref": "#/components/schemas/TargetDto"
           }
         }
       },
@@ -22204,6 +23154,49 @@
           }
         }
       },
+      "RoleDto": {
+        "type": "object",
+        "description": "A product-scoped custom role.",
+        "required": [
+          "id",
+          "product",
+          "name",
+          "actions",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "SavedSearchDto": {
         "type": "object",
         "description": "Saved search representation. Does not expose the owner principal.",
@@ -22604,6 +23597,67 @@
           }
         }
       },
+      "SubjectDto": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "principal"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "group"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "principal_set"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "The subject a grant or deny rule is addressed to: exactly one of a\nprincipal, a group or a named principal set (`<scope>::<set>`)."
+      },
       "TagDto": {
         "type": "object",
         "description": "Workspace tag representation.",
@@ -22641,6 +23695,65 @@
             "format": "uuid"
           }
         }
+      },
+      "TargetDto": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ref"
+                ]
+              },
+              "value": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "path"
+                ]
+              },
+              "value": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "selector"
+                ]
+              },
+              "value": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "description": "The resource side of a grant or deny rule, in canonical text form."
       },
       "TaskAttachmentDto": {
         "type": "object",
@@ -23492,6 +24605,27 @@
           }
         }
       },
+      "UpdateRoleRequest": {
+        "type": "object",
+        "description": "Request body for `PATCH /api/v2/custos/roles/{role_id}`. Absent fields\nkeep their current value.",
+        "properties": {
+          "actions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "UpdateStatusTemplateRequest": {
         "type": "object",
         "description": "Request body for `PATCH /api/workspaces/{ws}/status-templates/{id}` and\n`PATCH /api/admin/status-templates/{id}`.\n\n`name`: `None` = leave unchanged; `Some(v)` = rename.\n`color`: absent = leave unchanged; explicit `null` = clear; string = set.\n`before`/`after`: position anchors for reorder.",
@@ -24090,6 +25224,10 @@
     {
       "name": "groups",
       "description": "Workspace principal groups"
+    },
+    {
+      "name": "authorization",
+      "description": "V2 authorization administration: custom roles, grants and deny rules (platform admin)"
     },
     {
       "name": "projects",
