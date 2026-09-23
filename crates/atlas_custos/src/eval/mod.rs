@@ -1,10 +1,15 @@
-//! Pure V2 authorization evaluation (E5 S1).
+//! Pure V2 authorization evaluation (E5).
 //!
 //! The evaluator decides one action of one principal on one resource from
 //! caller-supplied facts only: no I/O, no provider calls, no state across
 //! requests. It is additive to the V1 role-resolution in
 //! `atlas_server::authz::policy::resolve()`, which stays unchanged until the
 //! coordinated E7 integration.
+//!
+//! Built on the same decision procedure: [`evaluate_batch`] decides one
+//! action over many targets, [`visibility_filter`] compiles a list predicate
+//! that agrees with [`evaluate`], and [`Catalog`] validates grant targets,
+//! custom roles and grant specs against the declared product vocabulary.
 //!
 //! Facts boundary (the contract the caller must honor):
 //!
@@ -44,9 +49,16 @@
 //! action a deny matches on the target or any ancestor from the actor's
 //! effective authority, beating any allow (the root principal is exempt).
 
+mod batch;
+mod catalog;
 mod evaluator;
 mod model;
+mod visibility;
 
+pub use batch::{BatchRequest, BatchTarget, evaluate_batch};
+pub use catalog::{
+    BuiltinRole, Catalog, CatalogError, CustomRole, GrantSpec, ProductSpec, RoleRef, RoleSpec,
+};
 pub use evaluator::{
     Decision, DenyCause, DenyEvidence, DenyMode, EvalRequest, Evaluated, EvaluationFacts, evaluate,
 };
@@ -54,6 +66,7 @@ pub use model::{
     ActionSet, Ceiling, CeilingActions, DenyRule, Existence, Grant, GrantTarget, Membership,
     MembershipFacts, Subject,
 };
+pub use visibility::{RuleEffect, VisibilityPredicate, VisibilityRule, visibility_filter};
 
 use crate::ids::GroupId;
 use std::fmt;
