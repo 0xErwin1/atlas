@@ -15,10 +15,17 @@
 //! tier's action sets are unioned, and the credential ceiling intersects the
 //! union. There is no fallback to a weaker tier or a farther level.
 //!
+//! Precedence runs per lane. A product action competes only among grants
+//! that can carry the target product's actions, and a delegation action only
+//! among grants carrying delegation actions, so a delegation-only grant never
+//! shadows product authority and a product-only grant never shadows
+//! delegation authority.
+//!
 //! The effective actions decide the outcome: the requested action present
 //! is `Allowed`, any other effective action is `Denied`, and none is
 //! `NotFound`, so an existing target the actor cannot act on is
-//! indistinguishable from a missing one.
+//! indistinguishable from a missing one. Discovery only ever uses the
+//! product lane: delegation authority never discloses a target.
 
 use std::cmp::Reverse;
 use std::collections::BTreeSet;
@@ -26,7 +33,7 @@ use std::collections::BTreeSet;
 use crate::eval::EvalError;
 use crate::eval::model::{
     ActionSet, Ceiling, DenyRule, Existence, Grant, GrantTarget, Membership, MembershipFacts,
-    Subject,
+    Subject, is_delegation_action,
 };
 use crate::ids::{GroupId, PrincipalId};
 use atlas_core::ids::{ActionId, PathSegment, ResourcePath, ResourceRef, Specificity};
@@ -184,14 +191,53 @@ pub(super) fn evaluate_validated(
     }
 
     let chain = chain_nodes(request)?;
-    let effective = effective_actions(request, facts, &chain)?;
+    let lanes = |lane| {
+        lane_actions(
+            request.actor,
+            request.ceiling,
+            request.target.product(),
+            lane,
+            facts,
+            &chain,
+        )
+    };
+
+    decide(request, facts, &chain, &lanes)
+}
+
+/// Decides a validated request on an existing target for a non-root actor.
+/// `lanes` yields the actor's actions per [`Lane`]; a delegation request is
+/// allowed from its lane alone when no deny decides it, so product
+/// discovery facts are only consulted when they can change the outcome.
+pub(super) fn decide(
+    request: &RequestView<'_>,
+    facts: &EvaluationFacts<'_>,
+    chain: &[ChainNode],
+    lanes: &impl Fn(Lane) -> Result<BTreeSet<ActionId>, EvalError>,
+) -> Result<Evaluated, EvalError> {
+    let held_delegation = Lane::of(request.action) == Lane::Delegation
+        && lanes(Lane::Delegation)?.contains(request.action);
+
+    if held_delegation && allowed_without_discovery(request, facts, chain)? {
+        return Ok(Evaluated::new(Decision::Allowed));
+    }
+
+    let mut effective: BTreeSet<ActionId> = lanes(Lane::Product)?
+        .into_iter()
+        .filter(|action| discloses_target(action, request))
+        .collect();
+
+    if held_delegation {
+        effective.insert(request.action.clone());
+    }
+
     let unenforced = decision_without_denies(request, &effective);
 
     if request.deny_mode == DenyMode::Disabled {
         return Ok(Evaluated::new(unenforced));
     }
 
-    let enforced = enforced_outcome(request, facts, &chain, &effective)?;
+    let enforced = enforced_outcome(request, facts, chain, &effective)?;
 
     if request.deny_mode == DenyMode::Enforced {
         return Ok(Evaluated::new(enforced.decision));
@@ -217,10 +263,12 @@ pub(super) fn evaluate_validated(
     })
 }
 
-/// Validates the per-target facts of a request: the action product and the
+/// Validates the per-target facts of a request: the action product, which
+/// must be the target's unless the action is a delegation action, and the
 /// consistency of the supplied path with the target.
 pub(super) fn validate_request(request: &RequestView<'_>) -> Result<(), EvalError> {
-    if request.action.product() != request.target.product() {
+    if request.action.product() != request.target.product() && !is_delegation_action(request.action)
+    {
         return Err(EvalError::CrossProductRequest {
             target_product: request.target.product().to_string(),
             action_product: request.action.product().to_string(),
@@ -249,7 +297,10 @@ pub(super) fn validate_membership_binding(
     Ok(())
 }
 
-fn validate_path_consistency(path: &ResourcePath, target: &ResourceRef) -> Result<(), EvalError> {
+pub(super) fn validate_path_consistency(
+    path: &ResourcePath,
+    target: &ResourceRef,
+) -> Result<(), EvalError> {
     if path.product() != target.product() {
         return Err(EvalError::InconsistentFacts {
             detail: format!(
@@ -379,24 +430,68 @@ pub(super) fn reach(subject: &Subject, actor: PrincipalId, membership: &Membersh
     }
 }
 
-/// The actor's effective actions on the target before denies: the union of
-/// the winning grants at the nearest level and strongest tier, intersected
-/// with the credential ceiling, keeping only the requested action and
-/// actions of the target's own product and kind.
+/// Which grants compete in precedence for a requested action.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Lane {
+    /// Grants able to carry actions of the target's product: their action
+    /// set is not delegation-only (an empty set included) and their target
+    /// is of that product.
+    Product,
+    /// Grants carrying at least one delegation action, whatever the
+    /// product of their target.
+    Delegation,
+}
+
+impl Lane {
+    pub(super) fn of(action: &ActionId) -> Self {
+        if is_delegation_action(action) {
+            Self::Delegation
+        } else {
+            Self::Product
+        }
+    }
+
+    /// Whether `grant` competes in this lane for targets of `product`.
+    pub(super) fn admits(self, grant: &Grant, product: &str) -> bool {
+        match self {
+            Self::Product => {
+                !grant.actions().is_delegation_only() && grant.target().product() == product
+            }
+            Self::Delegation => grant.actions().iter().any(is_delegation_action),
+        }
+    }
+
+    fn carries(self, action: &ActionId) -> bool {
+        match self {
+            Self::Product => !is_delegation_action(action),
+            Self::Delegation => is_delegation_action(action),
+        }
+    }
+}
+
+/// The actions the actor holds in `lane` on the chain's target before
+/// denies: the union of the lane's winning grants at the nearest level and
+/// strongest tier, restricted to the lane's actions and intersected with
+/// the credential ceiling.
 ///
-/// A group grant with unknown membership fails closed when it sits at or
-/// above the winning level and tier, because its membership could change
-/// which grants win. Shadowed unknown grants are ignored.
-fn effective_actions(
-    request: &RequestView<'_>,
+/// A group grant of the lane with unknown membership fails closed when it
+/// sits at or above the winning level and tier, because its membership
+/// could change which grants win. Shadowed unknown grants and grants of the
+/// other lane are ignored.
+pub(super) fn lane_actions(
+    actor: PrincipalId,
+    ceiling: &Ceiling,
+    product: &str,
+    lane: Lane,
     facts: &EvaluationFacts<'_>,
     chain: &[ChainNode],
 ) -> Result<BTreeSet<ActionId>, EvalError> {
     let candidates: Vec<(usize, Specificity, (&Grant, Reach))> = facts
         .grants
         .iter()
+        .filter(|grant| lane.admits(grant, product))
         .filter_map(|grant| {
-            let grant_reach = reach(grant.subject(), request.actor, facts.membership);
+            let grant_reach = reach(grant.subject(), actor, facts.membership);
             if grant_reach == Reach::DoesNotApply {
                 return None;
             }
@@ -418,15 +513,35 @@ fn effective_actions(
         return Err(EvalError::GroupMembershipUnavailable { group });
     }
 
-    let effective = winners
+    let held = winners
         .iter()
         .flat_map(|(grant, _)| grant.actions().iter())
-        .filter(|action| request.ceiling.permits(action))
-        .filter(|action| discloses_target(action, request))
+        .filter(|action| lane.carries(action) && ceiling.permits(action))
         .cloned()
         .collect();
 
-    Ok(effective)
+    Ok(held)
+}
+
+/// Whether a held delegation action is allowed without consulting product
+/// discovery: denies are disabled, or no relevant deny applies to it. An
+/// unknown relevant group deny fails closed.
+fn allowed_without_discovery(
+    request: &RequestView<'_>,
+    facts: &EvaluationFacts<'_>,
+    chain: &[ChainNode],
+) -> Result<bool, EvalError> {
+    if request.deny_mode == DenyMode::Disabled {
+        return Ok(true);
+    }
+
+    let denials = action_denials(request.action, request, facts, chain);
+
+    if let Some(group) = denials.unknown {
+        return Err(EvalError::GroupMembershipUnavailable { group });
+    }
+
+    Ok(denials.applying.is_empty())
 }
 
 /// Whether holding `action` makes the target discoverable. Actions of

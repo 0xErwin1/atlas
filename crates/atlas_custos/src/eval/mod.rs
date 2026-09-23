@@ -10,6 +10,14 @@
 //! action over many targets, [`visibility_filter`] compiles a list predicate
 //! that agrees with [`evaluate`], and [`Catalog`] validates grant targets,
 //! custom roles and grant specs against the declared product vocabulary.
+//! Grants may carry Custos delegation actions ([`is_delegation_action`])
+//! next to one product's actions; they are evaluated against the grant's
+//! own target like any action, in their own precedence lane.
+//! [`effective_actions`] computes what an actor holds on a target, and
+//! [`can_delegate`] checks against it that an actor only grants what it
+//! holds. [`grant_spec`] and the `From`/`TryFrom`
+//! conversions bridge the stored `entities::authorization` records into
+//! this model.
 //!
 //! Facts boundary (the contract the caller must honor):
 //!
@@ -51,21 +59,27 @@
 
 mod batch;
 mod catalog;
+mod delegation;
 mod evaluator;
 mod model;
+mod records;
 mod visibility;
 
 pub use batch::{BatchRequest, BatchTarget, evaluate_batch};
 pub use catalog::{
     BuiltinRole, Catalog, CatalogError, CustomRole, GrantSpec, ProductSpec, RoleRef, RoleSpec,
 };
+pub use delegation::{
+    DelegationRefused, EffectiveActions, EffectiveRequest, can_delegate, effective_actions,
+};
 pub use evaluator::{
     Decision, DenyCause, DenyEvidence, DenyMode, EvalRequest, Evaluated, EvaluationFacts, evaluate,
 };
 pub use model::{
     ActionSet, Ceiling, CeilingActions, DenyRule, Existence, Grant, GrantTarget, Membership,
-    MembershipFacts, Subject,
+    MembershipFacts, Subject, is_delegation_action,
 };
+pub use records::grant_spec;
 pub use visibility::{RuleEffect, VisibilityPredicate, VisibilityRule, visibility_filter};
 
 use crate::ids::GroupId;

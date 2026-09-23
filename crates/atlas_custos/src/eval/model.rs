@@ -85,47 +85,86 @@ impl MembershipFacts {
     }
 }
 
-/// The resolved action set of a grant or deny rule. All actions must share
-/// one product; an empty set grants and denies nothing.
+/// The product whose actions administer authorization itself.
+pub(crate) const CUSTOS_PRODUCT: &str = "custos";
+
+/// The Custos delegation actions as `(kind, action)` pairs under the
+/// `custos` product: `custos::grant::create`, `custos::grant::delete` and
+/// `custos::group::create|update|delete|add_member|remove_member`.
+const DELEGATION_ACTIONS: [(&str, &str); 7] = [
+    ("grant", "create"),
+    ("grant", "delete"),
+    ("group", "create"),
+    ("group", "update"),
+    ("group", "delete"),
+    ("group", "add_member"),
+    ("group", "remove_member"),
+];
+
+/// Whether `action` is one of the fixed Custos delegation actions. They are
+/// the only Custos actions an action set may carry next to another
+/// product's actions, and they are evaluated against the grant's own target
+/// like any other action.
+pub fn is_delegation_action(action: &ActionId) -> bool {
+    action.product() == CUSTOS_PRODUCT
+        && DELEGATION_ACTIONS
+            .iter()
+            .any(|(kind, verb)| action.kind() == *kind && action.action() == *verb)
+}
+
+/// The resolved action set of a grant or deny rule: the actions of one
+/// product plus any Custos delegation actions. A set of Custos actions only
+/// is valid too. An empty set grants and denies nothing.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ActionSet {
     product: Option<String>,
     actions: HashSet<ActionId>,
+    delegation_only: bool,
 }
 
 impl ActionSet {
-    /// Builds an action set from resolved actions, rejecting a set that
-    /// mixes products.
+    /// Builds an action set from resolved actions, rejecting a set whose
+    /// non-delegation actions span more than one product.
     pub fn new(actions: impl IntoIterator<Item = ActionId>) -> Result<Self, EvalError> {
-        let mut product: Option<String> = None;
+        let mut anchor: Option<String> = None;
         let mut set = HashSet::new();
 
         for action in actions {
-            let action_product = action.product().to_string();
-
-            if let Some(existing) = &product {
-                if *existing != action_product {
-                    return Err(EvalError::CrossProductActions {
-                        first: existing.clone(),
-                        second: action_product,
-                    });
+            if !is_delegation_action(&action) {
+                match &anchor {
+                    Some(existing) if existing != action.product() => {
+                        return Err(EvalError::CrossProductActions {
+                            first: existing.clone(),
+                            second: action.product().to_string(),
+                        });
+                    }
+                    Some(_) => {}
+                    None => anchor = Some(action.product().to_string()),
                 }
-            } else {
-                product = Some(action_product);
             }
 
             set.insert(action);
         }
 
+        let delegation_only = anchor.is_none() && !set.is_empty();
+        let product = anchor.or_else(|| delegation_only.then(|| CUSTOS_PRODUCT.to_string()));
+
         Ok(Self {
             product,
             actions: set,
+            delegation_only,
         })
     }
 
-    /// The single product of the set, or `None` when the set is empty.
+    /// The product of the set's non-delegation actions, `custos` for a set
+    /// of delegation actions only, or `None` when the set is empty.
     pub fn product(&self) -> Option<&str> {
         self.product.as_deref()
+    }
+
+    /// Whether the set is non-empty and holds delegation actions only.
+    pub fn is_delegation_only(&self) -> bool {
+        self.delegation_only
     }
 
     pub fn contains(&self, action: &ActionId) -> bool {
@@ -172,7 +211,14 @@ impl GrantTarget {
     }
 }
 
+/// Requires the action set's product to be the target's product. A
+/// delegation-only set is valid on any target: delegation is evaluated
+/// against the resource being delegated, whatever its product.
 fn require_matching_product(target: &GrantTarget, actions: &ActionSet) -> Result<(), EvalError> {
+    if actions.is_delegation_only() {
+        return Ok(());
+    }
+
     if let Some(action_product) = actions.product()
         && action_product != target.product()
     {

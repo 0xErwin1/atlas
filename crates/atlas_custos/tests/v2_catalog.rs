@@ -11,59 +11,12 @@
 mod support;
 
 use atlas_core::ids::PrincipalSetId;
-use atlas_custos::eval::{
-    Catalog, CatalogError, GrantSpec, GrantTarget, ProductSpec, RoleRef, RoleSpec, Subject,
-};
+use atlas_custos::eval::{Catalog, CatalogError, GrantSpec, GrantTarget, ProductSpec, Subject};
 use atlas_custos::ids::{GroupId, PrincipalId};
-use support::{READ, UPDATE, action, actions, path_target, ref_target, selector_target};
-
-const CUSTOS_READ: &str = "custos::grant::read";
-
-fn role(name: &str, version: u32, granted: &[&str]) -> RoleSpec {
-    RoleSpec {
-        name: name.to_string(),
-        version,
-        actions: granted.iter().map(|raw| action(raw)).collect(),
-    }
-}
-
-fn acta() -> ProductSpec {
-    ProductSpec {
-        product: "acta".to_string(),
-        kinds: ["workspace", "folder", "document"]
-            .map(String::from)
-            .to_vec(),
-        actions: [READ, UPDATE, "acta::folder::read"].map(action).to_vec(),
-        roles: vec![
-            role("viewer", 1, &[READ, "acta::folder::read"]),
-            role("editor", 1, &[READ, UPDATE]),
-            role("editor", 2, &[READ, UPDATE, "acta::folder::read"]),
-        ],
-        principal_sets: vec!["members".to_string()],
-    }
-}
-
-fn custos() -> ProductSpec {
-    ProductSpec {
-        product: "custos".to_string(),
-        kinds: vec!["grant".to_string()],
-        actions: vec![action(CUSTOS_READ)],
-        roles: vec![role("admin", 1, &[CUSTOS_READ])],
-        principal_sets: Vec::new(),
-    }
-}
-
-fn catalog() -> Catalog {
-    Catalog::new([acta(), custos()]).unwrap()
-}
-
-fn role_ref(product: &str, name: &str, version: u32) -> RoleRef {
-    RoleRef {
-        product: product.to_string(),
-        name: name.to_string(),
-        version,
-    }
-}
+use support::{
+    CUSTOS_READ, READ, UPDATE, acta, action, actions, catalog, custos, path_target, ref_target,
+    role, role_ref, selector_target,
+};
 
 fn spec_for(target: GrantTarget) -> GrantSpec {
     GrantSpec {
@@ -404,4 +357,74 @@ fn a_custom_role_is_rechecked_against_the_catalog_that_resolves_the_grant() {
             action: action(UPDATE)
         })
     );
+}
+
+const GRANT_CREATE: &str = "custos::grant::create";
+const ADD_MEMBER: &str = "custos::group::add_member";
+
+fn catalog_with_admin() -> Catalog {
+    let mut product = acta();
+    product
+        .roles
+        .push(role("admin", 1, &[READ, UPDATE, GRANT_CREATE, ADD_MEMBER]));
+
+    Catalog::new([product, custos()]).unwrap()
+}
+
+#[test]
+fn builtin_roles_may_carry_delegation_actions() {
+    let catalog = catalog_with_admin();
+
+    let admin = catalog.builtin_role("acta", "admin", 1).unwrap();
+
+    assert!(admin.actions().contains(&action(GRANT_CREATE)));
+    assert!(admin.actions().contains(&action(ADD_MEMBER)));
+    assert_eq!(admin.actions().product(), Some("acta"));
+}
+
+#[test]
+fn a_builtin_role_may_not_carry_other_custos_actions() {
+    let mut product = acta();
+    product.roles.push(role("auditor", 1, &[READ, CUSTOS_READ]));
+
+    assert!(invalid_catalog(vec![product, custos()]));
+}
+
+#[test]
+fn a_builtin_role_with_delegation_actions_resolves_into_a_grant_on_its_product() {
+    let catalog = catalog_with_admin();
+    let mut spec = spec_for(ref_target("acta::workspace::w1"));
+    spec.builtin_role = Some(role_ref("acta", "admin", 1));
+
+    let grant = catalog.resolve_grant(spec).unwrap();
+
+    assert!(grant.actions().contains(&action(GRANT_CREATE)));
+    assert!(grant.actions().contains(&action(READ)));
+}
+
+#[test]
+fn explicit_actions_may_carry_delegation_actions() {
+    let catalog = catalog();
+
+    for granted in [&[READ, GRANT_CREATE][..], &[GRANT_CREATE, ADD_MEMBER][..]] {
+        let mut spec = spec_for(ref_target("acta::workspace::w1"));
+        spec.builtin_role = None;
+        spec.actions = Some(actions(granted));
+
+        let grant = catalog.resolve_grant(spec).unwrap();
+
+        assert!(grant.actions().contains(&action(GRANT_CREATE)));
+    }
+}
+
+#[test]
+fn custom_roles_still_reject_every_custos_action_including_delegation() {
+    let catalog = catalog();
+
+    for rejected in [&[READ, GRANT_CREATE][..], &[ADD_MEMBER][..]] {
+        assert!(matches!(
+            catalog.custom_role(rejected.iter().map(|raw| action(raw))),
+            Err(CatalogError::CustosActionInCustomRole { .. })
+        ));
+    }
 }

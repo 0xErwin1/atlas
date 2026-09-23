@@ -10,14 +10,13 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
+use crate::entities::authorization::RoleId;
 use crate::eval::EvalError;
-use crate::eval::model::{ActionSet, Grant, GrantTarget, Subject};
+use crate::eval::model::{
+    ActionSet, CUSTOS_PRODUCT, Grant, GrantTarget, Subject, is_delegation_action,
+};
 use crate::ids::{GroupId, PrincipalId};
 use atlas_core::ids::{ActionId, PrincipalSetId, SelectorSegment};
-
-/// The product whose actions administer authorization itself. Custom roles
-/// may never carry them.
-const CUSTOS_PRODUCT: &str = "custos";
 
 /// The plain catalog data one product declares.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -161,6 +160,17 @@ pub enum CatalogError {
     UndeclaredPrincipalSet {
         set: PrincipalSetId,
     },
+    /// A stored grant references a custom role whose row was not supplied.
+    UnknownCustomRole {
+        id: RoleId,
+    },
+    /// A stored custom role's `product` differs from the product of its
+    /// actions.
+    CustomRoleProductMismatch {
+        id: RoleId,
+        stored_product: String,
+        actions_product: String,
+    },
 }
 
 impl fmt::Display for CatalogError {
@@ -205,6 +215,15 @@ impl fmt::Display for CatalogError {
             Self::UndeclaredPrincipalSet { set } => {
                 write!(f, "principal set `{set}` is not declared")
             }
+            Self::UnknownCustomRole { id } => write!(f, "custom role `{id}` was not supplied"),
+            Self::CustomRoleProductMismatch {
+                id,
+                stored_product,
+                actions_product,
+            } => write!(
+                f,
+                "custom role `{id}` is stored for product `{stored_product}` but its actions belong to `{actions_product}`"
+            ),
         }
     }
 }
@@ -222,7 +241,8 @@ impl Catalog {
     /// Builds a catalog from plain product data, rejecting duplicate
     /// products, actions of another product or of an undeclared kind, and
     /// built-in roles that are empty, duplicated by name and version, or use
-    /// undeclared actions.
+    /// undeclared actions. Built-in roles may also carry Custos delegation
+    /// actions, which need no declaration.
     pub fn new(products: impl IntoIterator<Item = ProductSpec>) -> Result<Self, CatalogError> {
         let mut entries = HashMap::new();
 
@@ -341,16 +361,19 @@ impl Catalog {
             })
     }
 
-    /// Checks a non-empty action set against the catalog.
+    /// Checks a non-empty action set against the catalog. Delegation
+    /// actions form a fixed Custos list and need no product declaration.
     fn validate_actions(&self, actions: &ActionSet) -> Result<(), CatalogError> {
         if actions.is_empty() {
             return Err(CatalogError::EmptyActions);
         }
 
         let unknown = actions.iter().find(|action| {
-            self.products
-                .get(action.product())
-                .is_none_or(|entry| !entry.actions.contains(*action))
+            !is_delegation_action(action)
+                && self
+                    .products
+                    .get(action.product())
+                    .is_none_or(|entry| !entry.actions.contains(*action))
         });
 
         match unknown {
@@ -493,7 +516,7 @@ fn builtin_role(
     if let Some(action) = role
         .actions
         .iter()
-        .find(|action| !declared.contains(*action))
+        .find(|action| !declared.contains(*action) && !is_delegation_action(action))
     {
         return Err(invalid(format!(
             "built-in role `{}` uses undeclared action `{action}`",
@@ -517,7 +540,7 @@ fn invalid(detail: String) -> CatalogError {
 
 /// Maps the action-set construction error, which only reports mixed
 /// products, into the catalog vocabulary.
-fn mixed_products(error: EvalError) -> CatalogError {
+pub(super) fn mixed_products(error: EvalError) -> CatalogError {
     match error {
         EvalError::CrossProductActions { first, second } => {
             CatalogError::MixedProducts { first, second }
