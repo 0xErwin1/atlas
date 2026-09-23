@@ -775,6 +775,7 @@ const ATLAS_SERVER_TEST_PINS: &[(&str, usize)] = &[
     ("api_csrf_ratelimit.rs", 0),
     ("api_custos_authorization.rs", 0),
     ("api_custos_discover.rs", 0),
+    ("api_custos_grant_authority.rs", 0),
     ("api_custos_principals.rs", 0),
     ("api_custos_router_parity.rs", 0),
     ("api_doctor.rs", 0),

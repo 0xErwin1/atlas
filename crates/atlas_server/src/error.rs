@@ -81,6 +81,11 @@ pub enum ApiError {
     ServiceUnavailable {
         message: String,
     },
+    /// The V2 authorization facts could not be loaded or evaluated
+    /// (`v2-e5-s5b`, AVAIL-1): a provider failure or timeout, a store
+    /// failure, or inconsistent facts. Never an allow, never a deny with a
+    /// reason: the technical cause is logged, not returned.
+    AuthorizationUnavailable,
     /// The authenticated principal exceeded its request quota. Carries the number
     /// of whole seconds the caller should wait, surfaced via `Retry-After`.
     TooManyRequests {
@@ -173,6 +178,15 @@ impl IntoResponse for ApiError {
                     503,
                 )
                 .with_detail(message),
+            ),
+            ApiError::AuthorizationUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ProblemDetails::new(
+                    "urn:atlas:error:authorization-unavailable",
+                    "Authorization Unavailable",
+                    503,
+                )
+                .with_hint("Retry shortly; the authorization facts could not be loaded."),
             ),
             ApiError::RevisionConflict(c) => {
                 let body = ConflictProblemDto::new(

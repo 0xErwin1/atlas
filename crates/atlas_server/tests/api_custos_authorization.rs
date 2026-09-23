@@ -83,10 +83,11 @@ async fn api_key_client(server: &support::TestServer, db: &support::TestDb) -> A
 }
 
 async fn server_with_deny_mode(db: &support::TestDb, mode: DenyModeConfig) -> support::TestServer {
-    let mut state = AppState::for_test(db.conn().clone())
+    let state = AppState::for_test(db.conn().clone())
         .await
-        .expect("AppState::for_test");
-    state.explicit_deny_mode = mode;
+        .expect("AppState::for_test")
+        .with_deny_mode(mode)
+        .expect("rebuild the authorization service with the mode");
     support::TestServer::spawn_with_state(state).await
 }
 
@@ -293,7 +294,14 @@ async fn assert_every_route_answers_403(client: &AtlasClient) {
         status_of(client.custos().delete_deny(id).await.expect_err("403")),
     ];
 
-    assert_eq!(statuses, [403; 10], "every route must answer 403");
+    // `DELETE /grants/{id}` resolves the grant before any authority check
+    // (v2-e5-s5b): an unknown id is 404 for everyone, so a non-admin cannot
+    // probe ids through the difference between 403 and 404.
+    assert_eq!(
+        statuses,
+        [403, 403, 403, 403, 403, 403, 404, 403, 403, 403],
+        "every route must refuse; the grant revocation answers 404 for an unknown id"
+    );
 }
 
 #[tokio::test]
@@ -1053,6 +1061,61 @@ async fn denies_are_created_listed_and_deleted_in_audit_mode_with_an_audit_row_p
         assert_eq!(row.metadata["subject_kind"], "group");
         assert_eq!(row.metadata["subject"], group_id.to_string());
     }
+
+    db.teardown().await;
+}
+
+/// A principal-set subject the catalog does not declare can never be stored,
+/// as a grant or as a deny rule: the facts loader resolves only declared
+/// sets, so an undeclared one would be a row nothing ever evaluates.
+#[tokio::test]
+async fn an_undeclared_principal_set_subject_is_422_on_grants_and_denies() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = server_with_deny_mode(&db, DenyModeConfig::Audit).await;
+    let (admin, admin_id) = login_platform_admin(&server, &db).await;
+    let undeclared = SubjectDto::PrincipalSet {
+        id: "custos::group::g1::members".to_string(),
+    };
+
+    let grant = admin
+        .custos()
+        .create_grant_v2(CreateGrantV2Request {
+            subject: undeclared.clone(),
+            target: custos_ref("g1"),
+            authority: explicit_custos_actions(),
+        })
+        .await
+        .expect_err("custos declares no principal sets");
+    assert_eq!(status_of(grant), 422);
+
+    let deny = admin
+        .custos()
+        .create_deny(CreateDenyRequest {
+            subject: undeclared,
+            target: custos_ref("g1"),
+            actions: vec!["custos::group::read".to_string()],
+        })
+        .await
+        .expect_err("custos declares no principal sets");
+    assert_eq!(status_of(deny), 422);
+
+    assert!(
+        admin
+            .custos()
+            .list_grants_v2("custos")
+            .await
+            .expect("list grants")
+            .is_empty()
+    );
+    assert!(
+        admin
+            .custos()
+            .list_denies("custos")
+            .await
+            .expect("list denies")
+            .is_empty()
+    );
+    assert!(audit_rows(&db, admin_id, "").await.is_empty());
 
     db.teardown().await;
 }

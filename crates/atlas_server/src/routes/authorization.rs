@@ -1,26 +1,40 @@
-//! Platform-admin administration of the V2 authorization records
-//! (`v2-e5-s4-authz-routes`): custom roles, grants and deny rules over the
-//! S3 storage, validated through the S2 catalog.
+//! Administration of the V2 authorization records (`v2-e5-s4-authz-routes`,
+//! `v2-e5-s5b-grant-authority`): custom roles, grants and deny rules over
+//! the S3 storage, validated through the S2 catalog and, for delegated
+//! grants, gated by the V2 authorization service.
 //!
 //! ## Policy decisions baked into these handlers
 //!
-//! - **Platform admin or root sessions only.** Every route answers 403 to a
-//!   non-admin user and to any API key, regardless of the key's scopes: the
-//!   delegated authority model (a workspace admin granting within its own
-//!   ceiling) arrives in S5.
+//! - **Roles, deny rules and listings are platform-admin only.** A plain
+//!   session and any API key answer 403 there.
+//! - **Grants may be delegated (GRANT-3/GRANT-4).** A platform admin or
+//!   root keeps the unrestricted administration path. Any other session is
+//!   a delegate: `POST /grants` needs effective `custos::grant::create` on
+//!   the exact target (a `Ref`; paths and selectors stay platform-admin
+//!   only) and may only confer actions the delegate holds there;
+//!   `DELETE /grants/{id}` needs effective `custos::grant::delete` on the
+//!   grant's own target, after the grant was resolved (an unknown id is 404
+//!   for everyone). An API key is refused on its ceiling first: no key scope
+//!   translates to a delegation action (`authz::v2_ceiling`). Every refusal
+//!   writes a `grant.denied` row with a reason code, in its own committed
+//!   transaction, and answers 403 without saying whether the target exists.
+//! - **Unavailable facts are 503, never a decision (AVAIL-1).** Every
+//!   `EvalError` maps to `authorization-unavailable` with the cause logged.
 //! - **Deny administration follows `ATLAS_EXPLICIT_DENY_MODE`.** Creating
 //!   or deleting a deny rule answers 409 while the mode is `disabled`;
 //!   listing works in every mode, and existing rows persist across mode
-//!   changes.
+//!   changes. The mode the routes read is the one the service was built
+//!   with (`AppState::with_deny_mode` rebuilds both together).
 //! - **Validation is catalog-driven.** Grants, deny rules and custom roles
-//!   are resolved through the [`Catalog`] built from the registry's
-//!   `Authorization` declarations, the same rules the evaluator applies. A
-//!   product enters the catalog only once it declares V2 resource kinds;
-//!   today only Custos does, so an Acta target answers 422 until E7
-//!   publishes Acta's catalog, after which these routes accept it without
-//!   code changes. No product declares built-in roles yet, and custom roles
-//!   may never carry Custos actions (GRANT-5), so in this release the only
-//!   usable authority on a Custos target is an explicit action set.
+//!   are resolved through the [`Catalog`] the service also uses
+//!   (`authz::v2_service::validation_catalog`), built from the registry's
+//!   `Authorization` declarations. A product enters the catalog only once it
+//!   declares V2 resource kinds; today only Custos does, so an Acta target
+//!   answers 422 until E7 publishes Acta's catalog, after which these routes
+//!   accept it without code changes. No product declares built-in roles
+//!   yet, and custom roles may never carry Custos actions (GRANT-5), so in
+//!   this release the only usable authority on a Custos target is an
+//!   explicit action set.
 //! - **Every mutation writes its audit row in the same transaction** as the
 //!   row it changes (CUSTOS-DB-1).
 
@@ -32,6 +46,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
+use chrono::Utc;
 use sea_orm::{DatabaseTransaction, TransactionTrait};
 use serde::Deserialize;
 
@@ -40,10 +55,12 @@ use atlas_api::dtos::authorization::{
     GrantV2Dto, RoleDto, SubjectDto, TargetDto, UpdateRoleRequest,
 };
 use atlas_core::Attribution;
-use atlas_core::attribution::UserAttributionId;
+use atlas_core::attribution::{ApiKeyAttributionId, UserAttributionId};
 use atlas_core::error::DomainError;
 use atlas_core::ids::ActionId;
+use atlas_core::principal::ApiKeyId;
 use atlas_core::registry::Registry;
+use atlas_custos::authorize::ActorContext;
 use atlas_custos::entities::authorization::{
     CustomRole, DenyRecord, DenyRuleId, GrantAuthority, GrantId, GrantRecord, NewCustomRole,
     NewDenyRecord, NewGrantRecord, RoleId, SubjectRecord, TargetKind, TargetRecord,
@@ -51,14 +68,18 @@ use atlas_custos::entities::authorization::{
 use atlas_custos::entities::identity::User;
 use atlas_custos::entities::security_audit::{NewSecurityAuditEvent, SecurityAction};
 use atlas_custos::eval::{
-    ActionSet, Catalog, CatalogError, GrantSpec, GrantTarget, ProductSpec, RoleRef,
+    ActionSet, Catalog, CatalogError, Ceiling, DelegationRefused, EvalError, GrantSpec,
+    GrantTarget, Subject, can_delegate, grant_spec,
 };
 use atlas_custos::ids::{GroupId, PrincipalId};
 use atlas_custos_postgres::repos::authorization::{PgDenyRuleRepo, PgGrantV2Repo, PgRoleRepo};
+use atlas_custos_postgres::repos::identity::{ApiKeyRepo, PgApiKeyRepo};
 use atlas_custos_postgres::repos::security_audit::PgSecurityAuditRepo;
 
 use crate::{
     auth::middleware::Principal as AuthPrincipal,
+    authz::v2_ceiling::{api_key_ceiling, session_ceiling},
+    authz::v2_service::{product_specs, validation_catalog},
     config::DenyModeConfig,
     error::{ApiError, custos_conflict},
     routes::agents::{caller_user_record, is_platform_admin},
@@ -90,29 +111,83 @@ pub(crate) struct DenyPath {
 // Gate
 // ---------------------------------------------------------------------------
 
-/// Resolves the calling platform admin (root or `is_system_admin`). An API
-/// key or a plain user answers 403: S4 has no delegated authority model.
-async fn platform_admin(state: &AppState, principal: AuthPrincipal) -> Result<User, ApiError> {
-    let user_id = match principal {
-        AuthPrincipal::User(user_id) => user_id,
-        AuthPrincipal::ApiKey(_) => {
-            return Err(ApiError::Forbidden {
-                message: "API keys cannot administer authorization; authenticate as a \
-                          platform admin"
-                    .into(),
-            });
+/// Who is calling, resolved once per request. A platform admin or root
+/// session keeps the S4 administration path; any other session is a
+/// delegate whose authority is computed on the exact target it acts on; an
+/// API key is bounded by the ceiling its scopes translate to (`v2_ceiling`).
+enum Caller {
+    Session {
+        user: User,
+        admin: bool,
+        actor: ActorContext,
+    },
+    ApiKey {
+        key_id: ApiKeyId,
+        ceiling: Ceiling,
+    },
+}
+
+impl Caller {
+    fn attribution(&self) -> Attribution {
+        match self {
+            Caller::Session { user, .. } => actor_of(user),
+            Caller::ApiKey { key_id, .. } => Attribution::ApiKey(ApiKeyAttributionId(key_id.0)),
         }
-    };
-
-    let user = caller_user_record(state, user_id).await?;
-    if !is_platform_admin(&user) {
-        return Err(ApiError::Forbidden {
-            message: "only a platform admin or root can administer roles, grants and deny rules"
-                .into(),
-        });
     }
+}
 
-    Ok(user)
+async fn caller(state: &AppState, principal: AuthPrincipal) -> Result<Caller, ApiError> {
+    match principal {
+        AuthPrincipal::User(user_id) => {
+            let user = caller_user_record(state, user_id).await?;
+            let actor = ActorContext {
+                principal: PrincipalId::from(user.id),
+                is_root: user.is_root,
+                ceiling: session_ceiling(),
+            };
+
+            Ok(Caller::Session {
+                admin: is_platform_admin(&user),
+                user,
+                actor,
+            })
+        }
+        AuthPrincipal::ApiKey(key_id) => {
+            let key = PgApiKeyRepo {
+                conn: (*state.db).clone(),
+            }
+            .get_by_id(key_id)
+            .await
+            .map_err(ApiError::Domain)?
+            .ok_or(ApiError::Unauthorized)?;
+
+            Ok(Caller::ApiKey {
+                key_id,
+                ceiling: api_key_ceiling(&key.scopes),
+            })
+        }
+    }
+}
+
+/// Resolves the calling platform admin (root or `is_system_admin`). An API
+/// key or a plain user answers 403: roles, deny rules and listings have no
+/// delegated authority model in this release.
+async fn platform_admin(state: &AppState, principal: AuthPrincipal) -> Result<User, ApiError> {
+    match caller(state, principal).await? {
+        Caller::Session {
+            user, admin: true, ..
+        } => Ok(user),
+        Caller::Session { admin: false, .. } => Err(ApiError::Forbidden {
+            message: "only a platform admin or root can administer roles, deny rules and \
+                      listings; grants may be delegated within your own authority"
+                .into(),
+        }),
+        Caller::ApiKey { .. } => Err(ApiError::Forbidden {
+            message: "API keys cannot administer authorization; authenticate as a \
+                      platform admin"
+                .into(),
+        }),
+    }
 }
 
 fn actor_of(user: &User) -> Attribution {
@@ -181,31 +256,11 @@ struct Validation {
 
 impl Validation {
     fn new(registry: &Registry) -> Result<Self, ApiError> {
-        let specs: Vec<ProductSpec> = registry
-            .entries()
-            .iter()
-            .filter(|entry| !entry.authorization.resource_kinds.is_empty())
-            .map(|entry| {
-                let kinds = entry.authorization.resource_kinds.clone();
-                let actions = entry
-                    .authorization
-                    .actions
-                    .iter()
-                    .filter(|action| kinds.iter().any(|kind| kind == action.kind()))
-                    .cloned()
-                    .collect();
-
-                ProductSpec {
-                    product: entry.identity.stable_id.as_str().to_string(),
-                    kinds,
-                    actions,
-                    roles: vec![],
-                    principal_sets: entry.authorization.principal_sets.clone(),
-                }
-            })
+        let published = product_specs(registry)
+            .into_iter()
+            .map(|spec| spec.product)
             .collect();
-        let published = specs.iter().map(|spec| spec.product.clone()).collect();
-        let catalog = Catalog::new(specs).map_err(|e| ApiError::Internal {
+        let catalog = validation_catalog(registry).map_err(|e| ApiError::Internal {
             message: format!("registry authorization declarations do not form a catalog: {e}"),
         })?;
 
@@ -226,58 +281,49 @@ impl Validation {
         }
     }
 
-    /// Resolves the grant through the catalog exactly as the evaluator
-    /// would: declared product and kinds, a declared principal set, and one
-    /// authority whose actions exist and match the target's product.
+    /// Resolves the candidate grant through the catalog exactly as the
+    /// evaluator would (`eval::records::grant_spec`): declared product and
+    /// kinds, a declared principal set, and one authority whose actions
+    /// exist and match the target's product. A custom-role authority is
+    /// revalidated from its stored row.
     async fn validate_grant(
         &self,
-        subject: &SubjectRecord,
-        target: &TargetRecord,
-        authority: &GrantAuthority,
+        candidate: &GrantRecord,
         roles: &PgRoleRepo,
-    ) -> Result<(), ApiError> {
-        let mut spec = self.spec_for(subject, target);
+    ) -> Result<ActionSet, ApiError> {
+        let custom_roles: Vec<CustomRole> = match &candidate.authority {
+            GrantAuthority::CustomRole(role_id) => PgRoleRepo::get_in(&roles.conn, *role_id)
+                .await
+                .map_err(ApiError::Domain)?
+                .into_iter()
+                .collect(),
+            GrantAuthority::Builtin { .. } | GrantAuthority::Actions(_) => Vec::new(),
+        };
 
-        match authority {
-            GrantAuthority::Builtin { name, version } => {
-                spec.builtin_role = Some(RoleRef {
-                    product: target.product().to_string(),
-                    name: name.clone(),
-                    version: *version,
-                });
-            }
-            GrantAuthority::CustomRole(role_id) => {
-                let role = PgRoleRepo::get_in(&roles.conn, *role_id)
-                    .await
-                    .map_err(ApiError::Domain)?
-                    .ok_or_else(|| invalid(format!("unknown custom role `{role_id}`")))?;
-                spec.custom_role = Some(
-                    self.catalog
-                        .custom_role(role.actions.iter().cloned())
-                        .map_err(Self::catalog_error)?,
-                );
-            }
-            GrantAuthority::Actions(actions) => {
-                spec.actions = Some(action_set(actions)?);
-            }
-        }
+        let spec =
+            grant_spec(candidate, &self.catalog, &custom_roles).map_err(Self::catalog_error)?;
 
         self.catalog
             .resolve_grant(spec)
-            .map(|_| ())
+            .map(|grant| grant.actions().clone())
             .map_err(Self::catalog_error)
     }
 
-    /// A deny rule is validated like a grant with an explicit action set:
-    /// same target, subject and action rules.
-    fn validate_deny(
-        &self,
-        subject: &SubjectRecord,
-        target: &TargetRecord,
-        actions: &[ActionId],
-    ) -> Result<(), ApiError> {
-        let mut spec = self.spec_for(subject, target);
-        spec.actions = Some(action_set(actions)?);
+    /// A deny rule is validated like a grant with an explicit action set
+    /// (same target, subject and action rules), so an undeclared kind or
+    /// action is refused here and not only at evaluation time.
+    fn validate_deny(&self, candidate: &DenyRecord) -> Result<(), ApiError> {
+        let mut spec = GrantSpec {
+            target: Some(GrantTarget::from(&candidate.target)),
+            actions: Some(action_set(&candidate.actions)?),
+            ..GrantSpec::default()
+        };
+
+        match Subject::from(&candidate.subject) {
+            Subject::Principal(id) => spec.principal = Some(id),
+            Subject::Group(id) => spec.group = Some(id),
+            Subject::PrincipalSet(set) => spec.principal_set = Some(set),
+        }
 
         self.catalog
             .resolve_grant(spec)
@@ -305,33 +351,10 @@ impl Validation {
             _ => Ok(()),
         }
     }
-
-    fn spec_for(&self, subject: &SubjectRecord, target: &TargetRecord) -> GrantSpec {
-        let mut spec = GrantSpec {
-            target: Some(grant_target(target)),
-            ..GrantSpec::default()
-        };
-
-        match subject {
-            SubjectRecord::Principal(id) => spec.principal = Some(*id),
-            SubjectRecord::Group(id) => spec.group = Some(*id),
-            SubjectRecord::PrincipalSet(set) => spec.principal_set = Some(set.clone()),
-        }
-
-        spec
-    }
 }
 
 fn action_set(actions: &[ActionId]) -> Result<ActionSet, ApiError> {
     ActionSet::new(actions.iter().cloned()).map_err(|e| invalid(e.to_string()))
-}
-
-fn grant_target(target: &TargetRecord) -> GrantTarget {
-    match target {
-        TargetRecord::Ref(reference) => GrantTarget::Ref(reference.clone()),
-        TargetRecord::Path(path) => GrantTarget::Path(path.clone()),
-        TargetRecord::Selector(selector) => GrantTarget::Selector(selector.clone()),
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -523,7 +546,7 @@ fn deny_audit_metadata(deny: &DenyRecord) -> serde_json::Value {
 
 async fn audit(
     txn: &DatabaseTransaction,
-    actor: &User,
+    actor: Attribution,
     action: SecurityAction,
     target_type: &str,
     target_id: uuid::Uuid,
@@ -533,7 +556,7 @@ async fn audit(
         txn,
         NewSecurityAuditEvent {
             workspace_id: None,
-            actor: actor_of(actor),
+            actor,
             action,
             target_type: target_type.to_string(),
             target_id: Some(target_id),
@@ -559,6 +582,263 @@ async fn commit(txn: DatabaseTransaction) -> Result<(), ApiError> {
 fn role_repo(state: &AppState) -> PgRoleRepo {
     PgRoleRepo {
         conn: (*state.db).clone(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Delegation (GRANT-3/GRANT-4)
+// ---------------------------------------------------------------------------
+
+/// Why a delegate's request was refused, as recorded in `grant.denied`.
+#[derive(Debug, Clone, Copy)]
+enum RefusalReason {
+    CeilingLacksGrantCreate,
+    CeilingLacksGrantDelete,
+    NotExactTarget,
+    MissingGrantCreate,
+    MissingGrantDelete,
+    BeyondAuthority,
+}
+
+impl RefusalReason {
+    fn code(self) -> &'static str {
+        match self {
+            Self::CeilingLacksGrantCreate => "ceiling_lacks_grant_create",
+            Self::CeilingLacksGrantDelete => "ceiling_lacks_grant_delete",
+            Self::NotExactTarget => "not_exact_target",
+            Self::MissingGrantCreate => "missing_grant_create",
+            Self::MissingGrantDelete => "missing_grant_delete",
+            Self::BeyondAuthority => "beyond_authority",
+        }
+    }
+}
+
+/// What a delegate asked for, for the refusal row.
+struct DelegationRequest<'a> {
+    target: &'a TargetRecord,
+    granted: Vec<ActionId>,
+    grant_id: Option<GrantId>,
+}
+
+/// Records the refusal in its own committed transaction and answers 403
+/// with a reason that never reveals whether the target exists.
+async fn refuse(
+    state: &AppState,
+    caller: &Caller,
+    request: &DelegationRequest<'_>,
+    reason: RefusalReason,
+    beyond: Vec<ActionId>,
+) -> Result<ApiError, ApiError> {
+    let mut metadata = serde_json::Map::new();
+    metadata.insert(
+        "product".into(),
+        serde_json::json!(request.target.product()),
+    );
+    metadata.insert(
+        "target_kind".into(),
+        serde_json::json!(request.target.kind().as_str()),
+    );
+    metadata.insert(
+        "target".into(),
+        serde_json::json!(request.target.canonical()),
+    );
+    metadata.insert(
+        "granted".into(),
+        serde_json::json!(actions_dto(&request.granted)),
+    );
+    metadata.insert("reason".into(), serde_json::json!(reason.code()));
+    if !beyond.is_empty() {
+        metadata.insert("beyond".into(), serde_json::json!(actions_dto(&beyond)));
+    }
+    if let Some(grant_id) = request.grant_id {
+        metadata.insert("grant_id".into(), serde_json::json!(grant_id.0));
+    }
+
+    let txn = begin(state).await?;
+    PgSecurityAuditRepo::append_in(
+        &txn,
+        NewSecurityAuditEvent {
+            workspace_id: None,
+            actor: caller.attribution(),
+            action: SecurityAction::GrantDenied,
+            target_type: "grant_v2".to_string(),
+            target_id: None,
+            metadata: serde_json::Value::Object(metadata),
+        },
+    )
+    .await
+    .map_err(ApiError::Domain)?;
+    commit(txn).await?;
+
+    Ok(ApiError::Forbidden {
+        message: match reason {
+            RefusalReason::BeyondAuthority => {
+                "the grant confers actions beyond your authority on this target".into()
+            }
+            RefusalReason::NotExactTarget => {
+                "delegated grants must name one exact resource; paths and selectors are \
+                 platform-admin only"
+                    .into()
+            }
+            _ => "you may not delegate on this target".into(),
+        },
+    })
+}
+
+/// Every evaluation failure is a 503 with the cause logged, never returned
+/// (AVAIL-1).
+fn unavailable(error: EvalError) -> ApiError {
+    tracing::error!(error = %error, "V2 authorization facts unavailable");
+    ApiError::AuthorizationUnavailable
+}
+
+/// The delegation action a request needs on its target.
+#[derive(Debug, Clone, Copy)]
+enum DelegationAction {
+    Create,
+    Delete,
+}
+
+impl DelegationAction {
+    fn action_id(self) -> Result<ActionId, ApiError> {
+        let action = match self {
+            Self::Create => "create",
+            Self::Delete => "delete",
+        };
+
+        ActionId::new("custos", "grant", action).map_err(|e| ApiError::Internal {
+            message: format!("the custos grant action vocabulary is malformed: {e}"),
+        })
+    }
+}
+
+/// A key's refusal: its ceiling never carries the delegation action in this
+/// release (no scope translates to `custos::grant::create|delete`), and a
+/// key that somehow did would still lack the delegate evaluation path.
+async fn refuse_key(
+    state: &AppState,
+    caller: &Caller,
+    ceiling: &Ceiling,
+    request: &DelegationRequest<'_>,
+    needed: DelegationAction,
+) -> Result<ApiError, ApiError> {
+    let reason = match (needed, ceiling.permits(&needed.action_id()?)) {
+        (DelegationAction::Create, false) => RefusalReason::CeilingLacksGrantCreate,
+        (DelegationAction::Create, true) => RefusalReason::MissingGrantCreate,
+        (DelegationAction::Delete, false) => RefusalReason::CeilingLacksGrantDelete,
+        (DelegationAction::Delete, true) => RefusalReason::MissingGrantDelete,
+    };
+
+    refuse(state, caller, request, reason, vec![]).await
+}
+
+/// GRANT-3/GRANT-4 for a delegate's grant creation: effective
+/// `custos::grant::create` on the exact target, and only actions it holds
+/// there.
+async fn authorize_creation(
+    state: &AppState,
+    caller: &Caller,
+    actor: &ActorContext,
+    candidate: &GrantRecord,
+    granted: &ActionSet,
+) -> Result<(), ApiError> {
+    let mut granted_list: Vec<ActionId> = granted.iter().cloned().collect();
+    granted_list.sort();
+    let request = DelegationRequest {
+        target: &candidate.target,
+        granted: granted_list,
+        grant_id: None,
+    };
+
+    let TargetRecord::Ref(target) = &candidate.target else {
+        return Err(refuse(
+            state,
+            caller,
+            &request,
+            RefusalReason::NotExactTarget,
+            vec![],
+        )
+        .await?);
+    };
+
+    let effective = state
+        .authorization
+        .effective_actions(actor, target)
+        .await
+        .map_err(unavailable)?;
+
+    match can_delegate(&effective, granted) {
+        Ok(()) => Ok(()),
+        Err(DelegationRefused::MissingGrantCreate) => Err(refuse(
+            state,
+            caller,
+            &request,
+            RefusalReason::MissingGrantCreate,
+            vec![],
+        )
+        .await?),
+        Err(DelegationRefused::BeyondAuthority { actions }) => Err(refuse(
+            state,
+            caller,
+            &request,
+            RefusalReason::BeyondAuthority,
+            actions,
+        )
+        .await?),
+    }
+}
+
+/// GRANT-3 for a delegate's revocation: effective `custos::grant::delete` on
+/// the grant's own target.
+async fn authorize_revocation(
+    state: &AppState,
+    caller: &Caller,
+    actor: &ActorContext,
+    grant: &GrantRecord,
+) -> Result<(), ApiError> {
+    let request = DelegationRequest {
+        target: &grant.target,
+        granted: vec![],
+        grant_id: Some(grant.id),
+    };
+
+    let TargetRecord::Ref(target) = &grant.target else {
+        return Err(refuse(
+            state,
+            caller,
+            &request,
+            RefusalReason::NotExactTarget,
+            vec![],
+        )
+        .await?);
+    };
+
+    let effective = state
+        .authorization
+        .effective_actions(actor, target)
+        .await
+        .map_err(unavailable)?;
+
+    if effective.contains(&DelegationAction::Delete.action_id()?) {
+        Ok(())
+    } else {
+        Err(refuse(
+            state,
+            caller,
+            &request,
+            RefusalReason::MissingGrantDelete,
+            vec![],
+        )
+        .await?)
+    }
+}
+
+/// The actions a request names explicitly, for a refusal recorded before
+/// the authority is resolved.
+fn explicit_actions(authority: &GrantAuthority) -> Vec<ActionId> {
+    match authority {
+        GrantAuthority::Actions(actions) => actions.clone(),
+        GrantAuthority::Builtin { .. } | GrantAuthority::CustomRole(_) => Vec::new(),
     }
 }
 
@@ -632,7 +912,7 @@ pub(crate) async fn create_role(
     .map_err(ApiError::Domain)?;
     audit(
         &txn,
-        &admin,
+        actor_of(&admin),
         SecurityAction::RoleCreated,
         "role",
         role.id.0,
@@ -687,7 +967,7 @@ pub(crate) async fn update_role(
         .ok_or(ApiError::NotFound)?;
     audit(
         &txn,
-        &admin,
+        actor_of(&admin),
         SecurityAction::RoleUpdated,
         "role",
         role.id.0,
@@ -734,7 +1014,7 @@ pub(crate) async fn delete_role(
     }
     audit(
         &txn,
-        &admin,
+        actor_of(&admin),
         SecurityAction::RoleDeleted,
         "role",
         role.id.0,
@@ -785,8 +1065,9 @@ pub(crate) async fn list_grants_v2(
     responses(
         (status = 201, description = "Grant created", body = GrantV2Dto),
         (status = 401, description = "Unauthenticated"),
-        (status = 403, description = "Caller is not a platform admin"),
+        (status = 403, description = "Caller lacks authority to delegate on this target: no effective custos::grant::create there, an action beyond the caller's own authority, a path or selector target (platform-admin only), or an API key (no key scope carries the delegation action); platform admins and root are never refused"),
         (status = 422, description = "Invalid subject, target or authority for the target's product"),
+        (status = 503, description = "Authorization facts unavailable (urn:atlas:error:authorization-unavailable); retry shortly"),
     )
 )]
 pub(crate) async fn create_grant_v2(
@@ -794,32 +1075,61 @@ pub(crate) async fn create_grant_v2(
     Extension(principal): Extension<AuthPrincipal>,
     Json(body): Json<CreateGrantV2Request>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let admin = platform_admin(&state, principal).await?;
-
+    let caller = caller(&state, principal).await?;
     let subject = parse_subject(&body.subject)?;
     let target = parse_target(&body.target)?;
     let authority = parse_authority(&body.authority)?;
 
-    Validation::new(&state.registry)?
-        .validate_grant(&subject, &target, &authority, &role_repo(&state))
+    let created_by = match &caller {
+        Caller::Session { user, .. } => PrincipalId::from(user.id),
+        Caller::ApiKey { ceiling, .. } => {
+            let request = DelegationRequest {
+                target: &target,
+                granted: explicit_actions(&authority),
+                grant_id: None,
+            };
+            return Err(
+                refuse_key(&state, &caller, ceiling, &request, DelegationAction::Create).await?,
+            );
+        }
+    };
+
+    let candidate = GrantRecord {
+        id: GrantId::new(),
+        subject,
+        target,
+        authority,
+        created_by,
+        created_at: Utc::now(),
+    };
+    let granted = Validation::new(&state.registry)?
+        .validate_grant(&candidate, &role_repo(&state))
         .await?;
+    if let Caller::Session {
+        admin: false,
+        actor,
+        ..
+    } = &caller
+    {
+        authorize_creation(&state, &caller, actor, &candidate, &granted).await?;
+    }
 
     let txn = begin(&state).await?;
     let grant = PgGrantV2Repo::create_in(
         &txn,
         NewGrantRecord {
-            id: GrantId::new(),
-            subject,
-            target,
-            authority,
-            created_by: PrincipalId::from(admin.id),
+            id: candidate.id,
+            subject: candidate.subject,
+            target: candidate.target,
+            authority: candidate.authority,
+            created_by: candidate.created_by,
         },
     )
     .await
     .map_err(ApiError::Domain)?;
     audit(
         &txn,
-        &admin,
+        caller.attribution(),
         SecurityAction::GrantCreated,
         "grant_v2",
         grant.id.0,
@@ -840,8 +1150,9 @@ pub(crate) async fn create_grant_v2(
     responses(
         (status = 204, description = "Grant revoked"),
         (status = 401, description = "Unauthenticated"),
-        (status = 403, description = "Caller is not a platform admin"),
-        (status = 404, description = "No such grant"),
+        (status = 403, description = "Caller lacks authority to delegate on this target: no effective custos::grant::delete on the grant's target, or an API key; platform admins and root are never refused"),
+        (status = 404, description = "No such grant (resolved before any authority check)"),
+        (status = 503, description = "Authorization facts unavailable (urn:atlas:error:authorization-unavailable); retry shortly"),
     )
 )]
 pub(crate) async fn delete_grant_v2(
@@ -849,14 +1160,33 @@ pub(crate) async fn delete_grant_v2(
     Extension(principal): Extension<AuthPrincipal>,
     Path(path): Path<GrantPath>,
 ) -> Result<StatusCode, ApiError> {
-    let admin = platform_admin(&state, principal).await?;
+    let caller = caller(&state, principal).await?;
     let grant_id = GrantId(path.grant_id);
 
-    let txn = begin(&state).await?;
-    let grant = PgGrantV2Repo::get_in(&txn, grant_id)
+    let grant = PgGrantV2Repo::get_in(&*state.db, grant_id)
         .await
         .map_err(ApiError::Domain)?
         .ok_or(ApiError::NotFound)?;
+    match &caller {
+        Caller::Session { admin: true, .. } => {}
+        Caller::Session {
+            admin: false,
+            actor,
+            ..
+        } => authorize_revocation(&state, &caller, actor, &grant).await?,
+        Caller::ApiKey { ceiling, .. } => {
+            let request = DelegationRequest {
+                target: &grant.target,
+                granted: vec![],
+                grant_id: Some(grant.id),
+            };
+            return Err(
+                refuse_key(&state, &caller, ceiling, &request, DelegationAction::Delete).await?,
+            );
+        }
+    }
+
+    let txn = begin(&state).await?;
     if !PgGrantV2Repo::delete_in(&txn, grant_id)
         .await
         .map_err(ApiError::Domain)?
@@ -865,7 +1195,7 @@ pub(crate) async fn delete_grant_v2(
     }
     audit(
         &txn,
-        &admin,
+        caller.attribution(),
         SecurityAction::GrantRevoked,
         "grant_v2",
         grant.id.0,
@@ -929,28 +1259,32 @@ pub(crate) async fn create_deny(
     let admin = platform_admin(&state, principal).await?;
     require_deny_administration(&state)?;
 
-    let subject = parse_subject(&body.subject)?;
-    let target = parse_target(&body.target)?;
-    let actions = parse_actions(&body.actions)?;
-
-    Validation::new(&state.registry)?.validate_deny(&subject, &target, &actions)?;
+    let candidate = DenyRecord {
+        id: DenyRuleId::new(),
+        subject: parse_subject(&body.subject)?,
+        target: parse_target(&body.target)?,
+        actions: parse_actions(&body.actions)?,
+        created_by: PrincipalId::from(admin.id),
+        created_at: Utc::now(),
+    };
+    Validation::new(&state.registry)?.validate_deny(&candidate)?;
 
     let txn = begin(&state).await?;
     let deny = PgDenyRuleRepo::create_in(
         &txn,
         NewDenyRecord {
-            id: DenyRuleId::new(),
-            subject,
-            target,
-            actions,
-            created_by: PrincipalId::from(admin.id),
+            id: candidate.id,
+            subject: candidate.subject,
+            target: candidate.target,
+            actions: candidate.actions,
+            created_by: candidate.created_by,
         },
     )
     .await
     .map_err(ApiError::Domain)?;
     audit(
         &txn,
-        &admin,
+        actor_of(&admin),
         SecurityAction::DenyCreated,
         "deny_rule",
         deny.id.0,
@@ -998,7 +1332,7 @@ pub(crate) async fn delete_deny(
     }
     audit(
         &txn,
-        &admin,
+        actor_of(&admin),
         SecurityAction::DenyDeleted,
         "deny_rule",
         deny.id.0,

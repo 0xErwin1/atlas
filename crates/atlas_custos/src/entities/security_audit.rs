@@ -45,6 +45,7 @@ pub enum SecurityAction {
     RoleDeleted,
     DenyCreated,
     DenyDeleted,
+    GrantDenied,
 }
 
 impl SecurityAction {
@@ -84,6 +85,7 @@ impl SecurityAction {
             SecurityAction::RoleDeleted => "role.deleted",
             SecurityAction::DenyCreated => "deny.created",
             SecurityAction::DenyDeleted => "deny.deleted",
+            SecurityAction::GrantDenied => "grant.denied",
         }
     }
 }
@@ -193,6 +195,12 @@ mod tests {
                 SecurityAction::ResourcePurgeCompleted,
                 "resource.purge_completed",
             ),
+            (SecurityAction::RoleCreated, "role.created"),
+            (SecurityAction::RoleUpdated, "role.updated"),
+            (SecurityAction::RoleDeleted, "role.deleted"),
+            (SecurityAction::DenyCreated, "deny.created"),
+            (SecurityAction::DenyDeleted, "deny.deleted"),
+            (SecurityAction::GrantDenied, "grant.denied"),
         ];
 
         for (action, expected) in cases {
