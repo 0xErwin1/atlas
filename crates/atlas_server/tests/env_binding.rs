@@ -1146,3 +1146,58 @@ fn check_s3_region() -> Result<(), String> {
 
     Ok(())
 }
+
+/// Variables introduced after the V1 split, pinned by name the same way as
+/// `VARS` so a later rename or a silently changed default fails here. Kept
+/// as a separate table: `VARS` is frozen at the 44 V1 names.
+const V2_VARS: &[VarCase] = &[VarCase {
+    name: "ATLAS_EXPLICIT_DENY_MODE",
+    check: check_explicit_deny_mode,
+}];
+
+#[test]
+fn enumerates_all_1_v2_variables_by_name() {
+    assert_eq!(
+        V2_VARS.len(),
+        1,
+        "the by-name V2 enumeration must cover exactly 1 variable; got {}",
+        V2_VARS.len()
+    );
+}
+
+#[test]
+fn every_enumerated_v2_variable_binds_to_its_documented_field() {
+    let mut failures = Vec::new();
+
+    for case in V2_VARS {
+        if let Err(message) = (case.check)() {
+            failures.push(format!("{}: {message}", case.name));
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "V2 variables that failed to bind to their documented field:\n{}",
+        failures.join("\n")
+    );
+}
+
+fn check_explicit_deny_mode() -> Result<(), String> {
+    use atlas_server::config::{CustosConfig, DenyModeConfig};
+
+    let set = CustosConfig::from_env(&env(&[("ATLAS_EXPLICIT_DENY_MODE", "audit")]))
+        .map_err(|e| e.to_string())?;
+    if set.explicit_deny_mode != DenyModeConfig::Audit {
+        return Err(format!("expected Audit, got {:?}", set.explicit_deny_mode));
+    }
+
+    let unset = CustosConfig::from_env(&empty()).map_err(|e| e.to_string())?;
+    if unset.explicit_deny_mode != DenyModeConfig::Disabled {
+        return Err(format!(
+            "expected Disabled when unset, got {:?}",
+            unset.explicit_deny_mode
+        ));
+    }
+
+    Ok(())
+}
