@@ -14619,6 +14619,104 @@
         "x-atlas-component": "custos"
       }
     },
+    "/api/v2/custos/authorize": {
+      "post": {
+        "tags": [
+          "authorization",
+          "custos"
+        ],
+        "operationId": "authorize",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthorizeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The caller's decision for the action on the target",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The action or target does not parse"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "422": {
+            "description": "The action or target belongs to a product that has not published its V2 catalog, or the action does not apply to the target's product"
+          },
+          "503": {
+            "description": "The authorization facts could not be loaded"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
+    "/api/v2/custos/authorize/batch": {
+      "post": {
+        "tags": [
+          "authorization",
+          "custos"
+        ],
+        "operationId": "authorize_batch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthorizeBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "One decision per target, in request order; a target whose facts could not be loaded is not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizeBatchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The action or a target does not parse"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "422": {
+            "description": "The action or a target belongs to a product that has not published its V2 catalog, or the action does not apply to a target's product"
+          },
+          "503": {
+            "description": "The authorization facts could not be loaded"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "x-atlas-component": "custos"
+      }
+    },
     "/api/v2/custos/denies": {
       "get": {
         "tags": [
@@ -18462,6 +18560,93 @@
           }
         ],
         "description": "What a grant confers: a versioned built-in role of the target's product,\na custom role by id, or an explicit action list."
+      },
+      "AuthorizeBatchRequest": {
+        "type": "object",
+        "description": "Request body for `POST /api/v2/custos/authorize/batch`: one action over\nmany targets.",
+        "required": [
+          "action",
+          "targets"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "AuthorizeBatchResponse": {
+        "type": "object",
+        "description": "Response body for `POST /api/v2/custos/authorize/batch`: one result per\nrequested target, in request order.",
+        "required": [
+          "results"
+        ],
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuthorizeBatchResult"
+            }
+          }
+        }
+      },
+      "AuthorizeBatchResult": {
+        "type": "object",
+        "description": "One target's outcome in a batch response.",
+        "required": [
+          "target",
+          "decision"
+        ],
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/AuthorizeDecision"
+          },
+          "target": {
+            "type": "string"
+          }
+        }
+      },
+      "AuthorizeDecision": {
+        "type": "string",
+        "description": "The outcome of one authorization question. `not_found` is returned both\nwhen the target does not exist and when the caller may not know it\nexists; no reason or evidence is ever included.",
+        "enum": [
+          "allow",
+          "deny",
+          "not_found"
+        ]
+      },
+      "AuthorizeRequest": {
+        "type": "object",
+        "description": "Request body for `POST /api/v2/custos/authorize`: may the caller perform\n`action` (`<product>::<kind>::<action>`) on `target`\n(`<product>::<kind>::<id>`)?",
+        "required": [
+          "action",
+          "target"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        }
+      },
+      "AuthorizeResponse": {
+        "type": "object",
+        "description": "Response body for `POST /api/v2/custos/authorize`.",
+        "required": [
+          "decision"
+        ],
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/AuthorizeDecision"
+          }
+        }
       },
       "AutomationRuleDto": {
         "type": "object",
