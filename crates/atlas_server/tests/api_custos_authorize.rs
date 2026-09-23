@@ -556,6 +556,15 @@ async fn a_hanging_provider_is_503_for_one_target_and_not_found_in_a_batch() {
     db.teardown().await;
 }
 
+/// Lowercase deny-mode name usable inside a workspace slug.
+fn mode_slug(mode: DenyModeConfig) -> &'static str {
+    match mode {
+        DenyModeConfig::Disabled => "disabled",
+        DenyModeConfig::Audit => "audit",
+        DenyModeConfig::Enforced => "enforced",
+    }
+}
+
 #[tokio::test]
 async fn stored_denies_never_block_in_audit_or_disabled_mode() {
     let db = support::TestDb::create().await.expect("TestDb::create");
@@ -568,8 +577,8 @@ async fn stored_denies_never_block_in_audit_or_disabled_mode() {
             .expect("deny mode");
         let server = support::TestServer::spawn_with_state(state).await;
         let (client, user) =
-            support::login_user(&server, &db, &format!("authorize-{mode:?}")).await;
-        let group = seed_group(&db, &format!("authorize-deny-{mode:?}")).await;
+            support::login_user(&server, &db, &format!("authorize-{}", mode_slug(mode))).await;
+        let group = seed_group(&db, &format!("authorize-deny-{}", mode_slug(mode))).await;
         let principal = PrincipalId::from(user.id);
         seed_grant(
             &db,
