@@ -17,6 +17,14 @@ pub enum ProductScope {
     All,
 }
 
+/// A principal set declared by a product: stored set subjects of that
+/// product ending in this set name are loadable, any other set is not.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DeclaredSet {
+    pub product: String,
+    pub name: String,
+}
+
 /// The stored facts one evaluation loads in a single logical query.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StoredAuthorizationFacts {
@@ -38,15 +46,16 @@ pub trait GroupMembershipSource: Send + Sync {
 #[async_trait]
 pub trait AuthorizationFactsStore: Send + Sync {
     /// Every grant and deny rule in `scope` addressed to `principal`, to one
-    /// of `groups`, or to any principal set, plus the custom roles those
-    /// grants reference. Principal-set rows are returned whatever the
-    /// actor's membership, which the caller resolves only for the sets the
-    /// rows name. One logical load: an implementation may use several
-    /// statements.
+    /// of `groups`, or to an instance of one of `declared_sets`, plus the
+    /// custom roles those grants reference. Principal-set rows are returned
+    /// whatever the actor's membership, which the caller resolves only for
+    /// the sets the rows name; with no declared sets, no set rows load. One
+    /// logical load: an implementation may use several statements.
     async fn load(
         &self,
         scope: &ProductScope,
         principal: PrincipalId,
         groups: &[GroupId],
+        declared_sets: &[DeclaredSet],
     ) -> Result<StoredAuthorizationFacts, DomainError>;
 }

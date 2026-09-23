@@ -283,9 +283,9 @@ async fn only_the_canonical_lowercase_hyphenated_id_names_a_row() {
     store.rows.insert(CustosKind::User, HashSet::from([user]));
     store.rows.insert(CustosKind::Group, HashSet::from([group]));
     let provider = provider(store);
+    let rows = [("user", user), ("group", group)];
 
-    for (kind, id) in [("user", user), ("group", group)] {
-        let canonical = custos(kind, &id.to_string());
+    for (kind, id) in rows {
         let spelled: Vec<ResourceRef> = aliases(id)
             .iter()
             .map(|alias| custos(kind, alias))
@@ -298,6 +298,13 @@ async fn only_the_canonical_lowercase_hyphenated_id_names_a_row() {
             spelled.iter().map(missing).collect::<Vec<_>>(),
             "{kind}"
         );
+    }
+
+    assert!(provider_queries(&provider).is_empty());
+
+    for (kind, id) in rows {
+        let canonical = custos(kind, &id.to_string());
+
         assert_eq!(
             provider
                 .resource_facts(std::slice::from_ref(&canonical))
