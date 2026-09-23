@@ -117,10 +117,39 @@ pub struct Evaluated {
 }
 
 impl Evaluated {
-    fn new(decision: Decision) -> Self {
+    pub(super) fn new(decision: Decision) -> Self {
         Self {
             decision,
             would_block: Vec::new(),
+        }
+    }
+}
+
+/// A borrowed view of one single-target request. Single and batch
+/// evaluation share it so the facts common to many targets are never cloned
+/// per target.
+pub(super) struct RequestView<'r> {
+    pub(super) actor: PrincipalId,
+    pub(super) is_root: bool,
+    pub(super) action: &'r ActionId,
+    pub(super) target: &'r ResourceRef,
+    pub(super) path: Option<&'r ResourcePath>,
+    pub(super) existence: Existence,
+    pub(super) ceiling: &'r Ceiling,
+    pub(super) deny_mode: DenyMode,
+}
+
+impl EvalRequest {
+    fn view(&self) -> RequestView<'_> {
+        RequestView {
+            actor: self.actor,
+            is_root: self.is_root,
+            action: &self.action,
+            target: &self.target,
+            path: self.path.as_ref(),
+            existence: self.existence,
+            ceiling: &self.ceiling,
+            deny_mode: self.deny_mode,
         }
     }
 }
@@ -130,9 +159,20 @@ pub fn evaluate(
     request: &EvalRequest,
     facts: &EvaluationFacts<'_>,
 ) -> Result<Evaluated, EvalError> {
-    validate_request(request)?;
-    validate_membership_binding(request, facts.membership)?;
+    let view = request.view();
 
+    validate_request(&view)?;
+    validate_membership_binding(request.actor, facts.membership)?;
+
+    evaluate_validated(&view, facts)
+}
+
+/// Evaluates a request whose target facts and membership binding were
+/// already validated.
+pub(super) fn evaluate_validated(
+    request: &RequestView<'_>,
+    facts: &EvaluationFacts<'_>,
+) -> Result<Evaluated, EvalError> {
     match request.existence {
         Existence::Missing => return Ok(Evaluated::new(Decision::NotFound)),
         Existence::Unavailable(cause) => return Err(EvalError::FactsUnavailable { cause }),
@@ -177,7 +217,9 @@ pub fn evaluate(
     })
 }
 
-fn validate_request(request: &EvalRequest) -> Result<(), EvalError> {
+/// Validates the per-target facts of a request: the action product and the
+/// consistency of the supplied path with the target.
+pub(super) fn validate_request(request: &RequestView<'_>) -> Result<(), EvalError> {
     if request.action.product() != request.target.product() {
         return Err(EvalError::CrossProductRequest {
             target_product: request.target.product().to_string(),
@@ -185,18 +227,19 @@ fn validate_request(request: &EvalRequest) -> Result<(), EvalError> {
         });
     }
 
-    if let Some(path) = &request.path {
-        validate_path_consistency(path, &request.target)?;
+    if let Some(path) = request.path {
+        validate_path_consistency(path, request.target)?;
     }
 
     Ok(())
 }
 
-fn validate_membership_binding(
-    request: &EvalRequest,
+/// Rejects membership facts resolved for another principal than `actor`.
+pub(super) fn validate_membership_binding(
+    actor: PrincipalId,
     membership: &MembershipFacts,
 ) -> Result<(), EvalError> {
-    if membership.actor() != request.actor {
+    if membership.actor() != actor {
         return Err(EvalError::InconsistentFacts {
             detail: "membership facts were resolved for a different principal than the actor"
                 .to_string(),
@@ -231,16 +274,21 @@ fn validate_path_consistency(path: &ResourcePath, target: &ResourceRef) -> Resul
 
 /// One node of the canonical resource chain: index 0 is the target, higher
 /// indices are its ancestors toward the root.
-struct ChainNode {
+pub(super) struct ChainNode {
     reference: ResourceRef,
     path: Option<ResourcePath>,
 }
 
-fn chain_nodes(request: &EvalRequest) -> Result<Vec<ChainNode>, EvalError> {
-    let Some(path) = &request.path else {
+fn chain_nodes(request: &RequestView<'_>) -> Result<Vec<ChainNode>, EvalError> {
+    let Some(path) = request.path else {
         return Err(EvalError::MissingAncestry);
     };
 
+    chain_from_path(path)
+}
+
+/// Builds the canonical chain of `path`, from its leaf toward its root.
+pub(super) fn chain_from_path(path: &ResourcePath) -> Result<Vec<ChainNode>, EvalError> {
     let descendants: Vec<PathSegment> = path.segments().skip(1).cloned().collect();
     let mut chain = Vec::with_capacity(descendants.len() + 1);
 
@@ -273,13 +321,37 @@ fn covers(target: &GrantTarget, node: &ChainNode) -> bool {
     }
 }
 
-fn covers_chain(target: &GrantTarget, chain: &[ChainNode]) -> bool {
+pub(super) fn covers_chain(target: &GrantTarget, chain: &[ChainNode]) -> bool {
     chain.iter().any(|node| covers(target, node))
+}
+
+/// The chain level of the nearest node `target` covers; 0 is the target.
+pub(super) fn level_of(target: &GrantTarget, chain: &[ChainNode]) -> Option<usize> {
+    chain.iter().position(|node| covers(target, node))
+}
+
+/// Keeps the candidates at the nearest chain level and, within it, the
+/// strongest specificity tier. There is no fallback to a weaker tier or a
+/// farther level.
+pub(super) fn winners<T>(candidates: Vec<(usize, Specificity, T)>) -> Vec<T> {
+    let Some(best) = candidates
+        .iter()
+        .map(|(level, specificity, _)| (Reverse(*level), *specificity))
+        .max()
+    else {
+        return Vec::new();
+    };
+
+    candidates
+        .into_iter()
+        .filter(|(level, specificity, _)| (Reverse(*level), *specificity) == best)
+        .map(|(.., candidate)| candidate)
+        .collect()
 }
 
 /// Whether a grant or deny subject reaches the actor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Reach {
+pub(super) enum Reach {
     Applies,
     DoesNotApply,
     /// A group subject whose membership fact is missing or indeterminate.
@@ -289,7 +361,7 @@ enum Reach {
 /// Resolves a fact subject against the actor. Group subjects without a
 /// confirmed fact stay [`Reach::Unknown`] so the caller can fail closed
 /// when they matter; principal sets without a confirmed fact never apply.
-fn reach(subject: &Subject, actor: PrincipalId, membership: &MembershipFacts) -> Reach {
+pub(super) fn reach(subject: &Subject, actor: PrincipalId, membership: &MembershipFacts) -> Reach {
     let applies = match subject {
         Subject::Principal(principal) => *principal == actor,
         Subject::Group(group) => match membership.group_membership(group) {
@@ -316,11 +388,11 @@ fn reach(subject: &Subject, actor: PrincipalId, membership: &MembershipFacts) ->
 /// above the winning level and tier, because its membership could change
 /// which grants win. Shadowed unknown grants are ignored.
 fn effective_actions(
-    request: &EvalRequest,
+    request: &RequestView<'_>,
     facts: &EvaluationFacts<'_>,
     chain: &[ChainNode],
 ) -> Result<BTreeSet<ActionId>, EvalError> {
-    let candidates: Vec<(usize, Specificity, &Grant, Reach)> = facts
+    let candidates: Vec<(usize, Specificity, (&Grant, Reach))> = facts
         .grants
         .iter()
         .filter_map(|grant| {
@@ -329,28 +401,12 @@ fn effective_actions(
                 return None;
             }
 
-            chain
-                .iter()
-                .position(|node| covers(grant.target(), node))
-                .map(|level| (level, grant.target().specificity(), grant, grant_reach))
+            level_of(grant.target(), chain)
+                .map(|level| (level, grant.target().specificity(), (grant, grant_reach)))
         })
         .collect();
 
-    let Some((Reverse(winning_level), winning_specificity)) = candidates
-        .iter()
-        .map(|(level, specificity, ..)| (Reverse(*level), *specificity))
-        .max()
-    else {
-        return Ok(BTreeSet::new());
-    };
-
-    let winners: Vec<(&Grant, Reach)> = candidates
-        .into_iter()
-        .filter(|(level, specificity, ..)| {
-            *level == winning_level && *specificity == winning_specificity
-        })
-        .map(|(_, _, grant, grant_reach)| (grant, grant_reach))
-        .collect();
+    let winners = winners(candidates);
 
     if let Some(group) = winners
         .iter()
@@ -377,13 +433,13 @@ fn effective_actions(
 /// another product or of another resource kind than the target describe
 /// something else and never disclose it; an ancestor grant's descendant
 /// actions count because they are compared with the target's kind.
-fn discloses_target(action: &ActionId, request: &EvalRequest) -> bool {
-    *action == request.action
+fn discloses_target(action: &ActionId, request: &RequestView<'_>) -> bool {
+    action == request.action
         || (action.product() == request.target.product() && action.kind() == request.target.kind())
 }
 
-fn decision_without_denies(request: &EvalRequest, effective: &BTreeSet<ActionId>) -> Decision {
-    if effective.contains(&request.action) {
+fn decision_without_denies(request: &RequestView<'_>, effective: &BTreeSet<ActionId>) -> Decision {
+    if effective.contains(request.action) {
         Decision::Allowed
     } else if effective.is_empty() {
         Decision::NotFound
@@ -412,7 +468,7 @@ struct ActionDenials<'f> {
 /// relevant rules.
 fn action_denials<'f>(
     action: &ActionId,
-    request: &EvalRequest,
+    request: &RequestView<'_>,
     facts: &EvaluationFacts<'f>,
     chain: &[ChainNode],
 ) -> ActionDenials<'f> {
@@ -449,15 +505,15 @@ fn action_denials<'f>(
 /// such action exists, because only then could they decide between
 /// `Denied` and `NotFound`.
 fn enforced_outcome<'f>(
-    request: &EvalRequest,
+    request: &RequestView<'_>,
     facts: &EvaluationFacts<'f>,
     chain: &[ChainNode],
     effective: &BTreeSet<ActionId>,
 ) -> Result<EnforcedOutcome<'f>, EvalError> {
     let mut blocking = Vec::new();
 
-    let because = if effective.contains(&request.action) {
-        let denials = action_denials(&request.action, request, facts, chain);
+    let because = if effective.contains(request.action) {
+        let denials = action_denials(request.action, request, facts, chain);
 
         if let Some(group) = denials.unknown {
             return Err(EvalError::GroupMembershipUnavailable { group });
@@ -479,7 +535,7 @@ fn enforced_outcome<'f>(
     let mut hiding: Vec<&DenyRule> = Vec::new();
     let mut unknown = None;
 
-    for action in effective.iter().filter(|action| **action != request.action) {
+    for action in effective.iter().filter(|action| *action != request.action) {
         let denials = action_denials(action, request, facts, chain);
 
         if denials.applying.is_empty() && denials.unknown.is_none() {

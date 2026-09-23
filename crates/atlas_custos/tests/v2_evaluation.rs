@@ -9,97 +9,18 @@
     clippy::indexing_slicing
 )]
 
-use atlas_core::ids::{ActionId, PrincipalSetId, ResourcePath, ResourceRef};
+mod support;
+
+use atlas_core::ids::{PrincipalSetId, ResourcePath, ResourceRef};
 use atlas_custos::eval::{
-    ActionSet, Ceiling, Decision, DenyCause, DenyMode, DenyRule, EvalError, EvalRequest,
-    EvaluationFacts, Existence, FactFailure, Grant, GrantTarget, Membership, MembershipFacts,
-    Subject, evaluate,
+    Ceiling, Decision, DenyCause, DenyMode, EvalError, EvaluationFacts, Existence, FactFailure,
+    Membership, MembershipFacts, Subject, evaluate,
 };
 use atlas_custos::ids::{GroupId, PrincipalId};
-
-fn action(raw: &str) -> ActionId {
-    raw.parse().unwrap()
-}
-
-fn actions(raw: &[&str]) -> ActionSet {
-    ActionSet::new(raw.iter().map(|raw| action(raw))).unwrap()
-}
-
-fn ref_target(raw: &str) -> GrantTarget {
-    GrantTarget::Ref(raw.parse().unwrap())
-}
-
-fn path_target(raw: &str) -> GrantTarget {
-    GrantTarget::Path(raw.parse().unwrap())
-}
-
-fn selector_target(raw: &str) -> GrantTarget {
-    GrantTarget::Selector(raw.parse().unwrap())
-}
-
-fn grant(subject: Subject, target: GrantTarget, granted: &[&str]) -> Grant {
-    Grant::new(subject, target, actions(granted)).unwrap()
-}
-
-fn deny(subject: Subject, target: GrantTarget, denied: &[&str]) -> DenyRule {
-    DenyRule::new(subject, target, actions(denied)).unwrap()
-}
-
-const DOC: &str = "acta::document::d1";
-const READ: &str = "acta::document::read";
-const UPDATE: &str = "acta::document::update";
-const DELETE: &str = "acta::document::delete";
-
-/// One test fixture: the acting principal, its subject form for grants and
-/// denies, and the membership facts bound to it.
-struct Fixture {
-    actor: PrincipalId,
-    alice: Subject,
-    membership: MembershipFacts,
-}
-
-impl Fixture {
-    fn new() -> Self {
-        let actor = PrincipalId::new();
-
-        Self {
-            actor,
-            alice: Subject::Principal(actor),
-            membership: MembershipFacts::new(actor),
-        }
-    }
-
-    fn facts<'a>(&'a self, grants: &'a [Grant], denies: &'a [DenyRule]) -> EvaluationFacts<'a> {
-        EvaluationFacts {
-            grants,
-            denies,
-            membership: &self.membership,
-        }
-    }
-}
-
-fn request(actor: PrincipalId, action_id: ActionId, target: ResourceRef) -> EvalRequest {
-    EvalRequest {
-        actor,
-        is_root: false,
-        action: action_id,
-        target,
-        path: Some(doc_path()),
-        existence: Existence::Exists,
-        ceiling: Ceiling::Unrestricted,
-        deny_mode: DenyMode::Enforced,
-    }
-}
-
-fn doc_path() -> ResourcePath {
-    "acta::workspace::w1/folder::f1/document::d1"
-        .parse()
-        .unwrap()
-}
-
-fn read_request(actor: PrincipalId) -> EvalRequest {
-    request(actor, action(READ), DOC.parse().unwrap())
-}
+use support::{
+    DELETE, DOC, Fixture, READ, UPDATE, action, deny, grant, path_target, read_request, ref_target,
+    request, selector_target,
+};
 
 #[test]
 fn a_confirmed_grant_on_the_target_allows_the_requested_action() {
