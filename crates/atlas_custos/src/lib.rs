@@ -10,6 +10,7 @@
 
 pub mod capability;
 pub mod entities;
+pub mod eval;
 pub mod ids;
 pub mod ports;
 
