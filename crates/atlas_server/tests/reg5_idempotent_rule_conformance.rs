@@ -6,19 +6,19 @@
 )]
 
 //! T4.9/T4.14 (`v2-e3-s3` PR4, D8): exhaustive rule-conformance test for
-//! `RouteDeclaration.idempotent`'s re-derivation. Every one of the 232
+//! `RouteDeclaration.idempotent`'s re-derivation. Every one of the 242
 //! `reg5.rs` entries is checked against the written rule
 //! (`crates/atlas_core/src/registry/route.rs`'s `idempotent` doc comment),
 //! not a sample — a mismatch names the exact offending `(method, path)`
 //! (INV-SET-style, never a count comparison).
 //!
-//! `EXPECTED_IDEMPOTENT` below encodes the same 232 decisions as the
+//! `EXPECTED_IDEMPOTENT` below encodes the same 242 decisions as the
 //! judgment file (`docs/reg5-idempotent-judgment.md`):
 //! every non-`POST` entry is `false` (T4.10, mechanical); every `POST`
 //! entry's value is either a mechanical `create_*` name match or one of the
 //! 39 judged decisions the judgment file explains (including the six
 //! streamed-upload routes, F4). This table
-//! is cross-checked for completeness against `reg5.rs`'s own 232-entry
+//! is cross-checked for completeness against `reg5.rs`'s own 242-entry
 //! enumeration below (`table_is_exhaustive_over_reg5`), the same
 //! "one source, checked exhaustively" shape D4's exclusion-list
 //! completeness check uses.
@@ -54,6 +54,24 @@ const EXPECTED_IDEMPOTENT: &[(HttpMethod, &str, bool)] = &[
     (HttpMethod::Get, "/sessions", false),
     (HttpMethod::Delete, "/sessions/{session_id}", false),
     (HttpMethod::Delete, "/sessions", false),
+    // v2-e5-s4-authz-routes: platform-admin administration of V2 roles,
+    // grants and deny rules. The three POST creates carry the replay bit
+    // (`true`, no one-shot secret); PATCH/DELETE/GET entries are
+    // mechanically `false` (T4.10). Judged exception in the live sweep:
+    // `POST /roles` keeps `true` although no custom role is creatable in
+    // this release (no product publishes V2 role-capable kinds until E7,
+    // and GRANT-5 forbids custos actions in custom roles), so its sweep arm
+    // asserts the handler's 422 instead of a replay until Acta publishes.
+    (HttpMethod::Get, "/roles", false),
+    (HttpMethod::Post, "/roles", true),
+    (HttpMethod::Patch, "/roles/{role_id}", false),
+    (HttpMethod::Delete, "/roles/{role_id}", false),
+    (HttpMethod::Get, "/grants", false),
+    (HttpMethod::Post, "/grants", true),
+    (HttpMethod::Delete, "/grants/{grant_id}", false),
+    (HttpMethod::Get, "/denies", false),
+    (HttpMethod::Post, "/denies", true),
+    (HttpMethod::Delete, "/denies/{deny_id}", false),
     (HttpMethod::Patch, "/users/me", false),
     (HttpMethod::Post, "/users", false),
     (HttpMethod::Get, "/users", false),
@@ -847,13 +865,13 @@ fn table_is_exhaustive_over_reg5() {
     let live = all_declared_routes();
     assert_eq!(
         live.len(),
-        232,
-        "reg5.rs must declare exactly 232 routes; the classification table below assumes this"
+        242,
+        "reg5.rs must declare exactly 242 routes; the classification table below assumes this"
     );
     assert_eq!(
         EXPECTED_IDEMPOTENT.len(),
-        232,
-        "EXPECTED_IDEMPOTENT must cover all 232 reg5.rs entries, not a sample"
+        242,
+        "EXPECTED_IDEMPOTENT must cover all 242 reg5.rs entries, not a sample"
     );
 
     let live_keys: std::collections::HashSet<(HttpMethod, &str)> = live
@@ -960,10 +978,12 @@ fn true_and_false_counts_match_the_pr4_grounding() {
     // v2-e4-s3b-key-families replaced the six `/api-keys` routes (all
     // `false`) with the twelve family routes: `POST /personal-api-keys` and
     // `POST /agent-api-keys` are `true` (35 → 37) and the other ten are
-    // `false` (191 → 195).
-    assert_eq!(true_count, 37, "expected exactly 37 idempotent:true routes");
+    // `false` (191 → 195). v2-e5-s4-authz-routes added the ten authorization
+    // administration routes: the three POST creates are `true` (37 → 40) and
+    // the other seven are `false` (195 → 202).
+    assert_eq!(true_count, 40, "expected exactly 40 idempotent:true routes");
     assert_eq!(
-        false_count, 195,
-        "expected exactly 195 idempotent:false routes"
+        false_count, 202,
+        "expected exactly 202 idempotent:false routes"
     );
 }

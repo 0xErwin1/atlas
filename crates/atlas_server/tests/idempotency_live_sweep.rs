@@ -12,7 +12,7 @@
 //!
 //! Data-driven off `reg5.rs` via the registry (never a hand list): the set
 //! of routes exercised is `declared_routes()` filtered to `idempotent ==
-//! true` (37 routes today), sorted by `(method, path)` for a reproducible
+//! true` (40 routes today), sorted by `(method, path)` for a reproducible
 //! failure name. `body_for`'s match FAILS, naming the route, for any
 //! declared-true route it has no provisioning arm for (INV-DATA-DRIVEN,
 //! mirrors `api_page_conformance.rs`'s own `unregistered` check) — a new
@@ -46,6 +46,9 @@ mod support;
 
 use std::collections::HashSet;
 
+use atlas_api::dtos::authorization::{
+    AuthorityDto, CreateDenyRequest, CreateGrantV2Request, CreateRoleRequest, SubjectDto, TargetDto,
+};
 use atlas_api::dtos::boards_tasks::{
     CreateBoardRequest, CreateChecklistItemRequest, CreateColumnRequest, CreateReferenceRequest,
     CreateSubtaskRequest, CreateTaskRequest,
@@ -55,7 +58,9 @@ use atlas_api::dtos::{
 };
 use atlas_client::AtlasClient;
 use atlas_core::registry::{HttpMethod, build};
+use atlas_server::config::DenyModeConfig;
 use atlas_server::reg5::{StorageBackend, reg5_component_entries};
+use atlas_server::state::AppState;
 use support::{
     TestDb, TestServer, activate_user_in_db, login_root_user, login_user_with_workspace,
 };
@@ -378,8 +383,8 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
     let true_routes = declared_true_routes();
     assert_eq!(
         true_routes.len(),
-        37,
-        "expected exactly 37 declared idempotent:true routes"
+        40,
+        "expected exactly 40 declared idempotent:true routes"
     );
 
     let mut covered: HashSet<Route> = HashSet::new();
@@ -503,6 +508,95 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
                 );
                 assert_idempotent_true(
                     &client,
+                    &support::path::api_path("custos", route.path.as_str()),
+                    &[],
+                    body,
+                )
+                .await;
+            }
+
+            // ---------------------------------------------------------------
+            // custos: V2 authorization administration (platform admin)
+            // ---------------------------------------------------------------
+            // Judged exception: `POST /roles` keeps the replay bit (it is a
+            // plain JSON create), but no custom role can be created in this
+            // release — Acta has not published its V2 catalog and Custos
+            // actions are banned from custom roles (GRANT-5) — so the
+            // handler answers 422 before anything is stored and the three-
+            // request replay proof has nothing to replay. This arm pins that
+            // 422 so the route cannot silently skip the sweep; it becomes a
+            // full `assert_idempotent_true` arm once Acta publishes.
+            "/roles" => {
+                let (admin, _user) = support::login_system_admin(&server, &db).await;
+                let body = ReqBody::Json(
+                    serde_json::to_value(CreateRoleRequest {
+                        product: "acta".to_string(),
+                        name: "sweep-role".to_string(),
+                        actions: vec!["acta::doc::read".to_string()],
+                    })
+                    .expect("serialize CreateRoleRequest"),
+                );
+                let path = support::path::api_path("custos", route.path.as_str());
+                let key = format!("sweep-{}", uuid::Uuid::now_v7());
+                let response = send(&admin, &path, &key, &[], &body).await;
+                assert_eq!(
+                    response.status().as_u16(),
+                    422,
+                    "{path}: no custom role is creatable until a product publishes grantable \
+                     actions; got {}: {:?}",
+                    response.status(),
+                    response.text().await
+                );
+            }
+            "/grants" => {
+                let (root, _admin) = support::login_system_admin(&server, &db).await;
+                let body = ReqBody::Json(
+                    serde_json::to_value(CreateGrantV2Request {
+                        subject: SubjectDto::Principal {
+                            id: uuid::Uuid::now_v7(),
+                        },
+                        target: TargetDto::Ref {
+                            value: "custos::group::sweep".to_string(),
+                        },
+                        authority: AuthorityDto::Actions {
+                            actions: vec!["custos::group::read".to_string()],
+                        },
+                    })
+                    .expect("serialize CreateGrantV2Request"),
+                );
+                assert_idempotent_true(
+                    &root,
+                    &support::path::api_path("custos", route.path.as_str()),
+                    &[],
+                    body,
+                )
+                .await;
+            }
+            // Deny administration is refused while the default deny mode is
+            // `disabled`, so this arm runs against a second server on the
+            // same database with the mode set to `audit`.
+            "/denies" => {
+                let mut state = AppState::for_test(db.conn().clone())
+                    .await
+                    .expect("AppState::for_test");
+                state.explicit_deny_mode = DenyModeConfig::Audit;
+                let audit_server = TestServer::spawn_with_state(state).await;
+
+                let (root, _admin) = support::login_system_admin(&audit_server, &db).await;
+                let body = ReqBody::Json(
+                    serde_json::to_value(CreateDenyRequest {
+                        subject: SubjectDto::Principal {
+                            id: uuid::Uuid::now_v7(),
+                        },
+                        target: TargetDto::Ref {
+                            value: "custos::group::sweep".to_string(),
+                        },
+                        actions: vec!["custos::group::delete".to_string()],
+                    })
+                    .expect("serialize CreateDenyRequest"),
+                );
+                assert_idempotent_true(
+                    &root,
                     &support::path::api_path("custos", route.path.as_str()),
                     &[],
                     body,
