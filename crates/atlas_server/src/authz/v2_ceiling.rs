@@ -74,7 +74,7 @@ mod tests {
             "no V1 capability stands for a Custos group action"
         );
         assert!(
-            !ceiling.permits(&action("acta::doc::read")),
+            !ceiling.permits(&action("acta::document::read")),
             "Acta families translate only once Acta publishes its V2 catalog"
         );
     }

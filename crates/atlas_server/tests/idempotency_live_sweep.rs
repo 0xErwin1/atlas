@@ -518,35 +518,23 @@ async fn every_declared_idempotent_true_route_replays_and_rejects_mismatch() {
             // ---------------------------------------------------------------
             // custos: V2 authorization administration (platform admin)
             // ---------------------------------------------------------------
-            // Judged exception: `POST /roles` keeps the replay bit (it is a
-            // plain JSON create), but no custom role can be created in this
-            // release — Acta has not published its V2 catalog and Custos
-            // actions are banned from custom roles (GRANT-5) — so the
-            // handler answers 422 before anything is stored and the three-
-            // request replay proof has nothing to replay. This arm pins that
-            // 422 so the route cannot silently skip the sweep; it becomes a
-            // full `assert_idempotent_true` arm once Acta publishes.
             "/roles" => {
                 let (admin, _user) = support::login_system_admin(&server, &db).await;
                 let body = ReqBody::Json(
                     serde_json::to_value(CreateRoleRequest {
                         product: "acta".to_string(),
                         name: "sweep-role".to_string(),
-                        actions: vec!["acta::doc::read".to_string()],
+                        actions: vec!["acta::document::read".to_string()],
                     })
                     .expect("serialize CreateRoleRequest"),
                 );
-                let path = support::path::api_path("custos", route.path.as_str());
-                let key = format!("sweep-{}", uuid::Uuid::now_v7());
-                let response = send(&admin, &path, &key, &[], &body).await;
-                assert_eq!(
-                    response.status().as_u16(),
-                    422,
-                    "{path}: no custom role is creatable until a product publishes grantable \
-                     actions; got {}: {:?}",
-                    response.status(),
-                    response.text().await
-                );
+                assert_idempotent_true(
+                    &admin,
+                    &support::path::api_path("custos", route.path.as_str()),
+                    &[],
+                    body,
+                )
+                .await;
             }
             "/grants" => {
                 let (root, _admin) = support::login_system_admin(&server, &db).await;

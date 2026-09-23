@@ -7,12 +7,12 @@
 //! `audit`; in `disabled` mode the rules stay readable but not writable.
 //! Every mutation writes its security-audit row in the same transaction.
 //!
-//! Validation follows the registry catalog: in this release only Custos
-//! declares V2 resource kinds, so an Acta target answers 422 until E7
-//! publishes Acta's catalog, and no custom role can be created through the
-//! API yet (Acta is unpublished, Custos actions are banned from custom roles
-//! by GRANT-5). The role and role-in-use paths are therefore exercised on
-//! rows seeded through the repositories.
+//! Validation follows the registry catalog: Custos and Acta declare V2
+//! resource kinds, so their targets validate through the catalog, while a
+//! product without a published catalog (`platform` today) answers 422.
+//! Custos actions are banned from custom roles (GRANT-5), so custom roles
+//! exist for Acta; the role-in-use path is exercised on rows seeded through
+//! the repositories.
 
 #![allow(
     clippy::unwrap_used,
@@ -126,7 +126,7 @@ fn custos_ref(id: &str) -> TargetDto {
 
 fn acta_ref(id: &str) -> TargetDto {
     TargetDto::Ref {
-        value: format!("acta::doc::{id}"),
+        value: format!("acta::document::{id}"),
     }
 }
 
@@ -151,7 +151,7 @@ async fn seed_acta_role(db: &support::TestDb, name: &str) -> CustomRole {
         id: RoleId::new(),
         product: "acta".to_string(),
         name: name.to_string(),
-        actions: vec![action("acta::doc::read")],
+        actions: vec![action("acta::document::read")],
         created_by: PrincipalId::new(),
     })
     .await
@@ -167,7 +167,7 @@ async fn seed_custom_role_grant(db: &support::TestDb, role: &CustomRole) -> Gran
     .create(NewGrantRecord {
         id: GrantId::new(),
         subject: SubjectRecord::Principal(PrincipalId::new()),
-        target: TargetRecord::Ref("acta::doc::d1".parse().unwrap()),
+        target: TargetRecord::Ref("acta::document::d1".parse().unwrap()),
         authority: GrantAuthority::CustomRole(role.id),
         created_by: PrincipalId::new(),
     })
@@ -241,7 +241,7 @@ async fn assert_every_route_answers_403(client: &AtlasClient) {
                 .create_role(CreateRoleRequest {
                     product: "acta".to_string(),
                     name: "reviewer".to_string(),
-                    actions: vec!["acta::doc::read".to_string()],
+                    actions: vec!["acta::document::read".to_string()],
                 })
                 .await
                 .expect_err("403"),
@@ -331,23 +331,35 @@ async fn an_api_key_gets_403_on_every_route_even_with_every_scope() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn role_creation_is_422_for_every_product_until_a_catalog_with_grantable_actions_exists() {
+async fn role_creation_accepts_a_published_product_and_rejects_the_rest_with_422() {
     let db = support::TestDb::create().await.expect("TestDb::create");
     let server = support::TestServer::spawn(&db).await;
     let (admin, admin_id) = login_platform_admin(&server, &db).await;
 
-    let acta = admin
+    let created = admin
         .custos()
         .create_role(CreateRoleRequest {
             product: "acta".to_string(),
             name: "reviewer".to_string(),
-            actions: vec!["acta::doc::read".to_string()],
+            actions: vec!["acta::document::read".to_string()],
         })
         .await
-        .expect_err("acta has not published its catalog");
-    let detail = detail_of(acta);
+        .expect("acta has published its catalog");
+    assert_eq!(created.product, "acta");
+    assert_eq!(created.actions, vec!["acta::document::read"]);
+
+    let unpublished = admin
+        .custos()
+        .create_role(CreateRoleRequest {
+            product: "platform".to_string(),
+            name: "operator".to_string(),
+            actions: vec!["platform::thing::read".to_string()],
+        })
+        .await
+        .expect_err("platform has not published a V2 catalog");
+    let detail = detail_of(unpublished);
     assert!(
-        detail.contains("acta") && detail.contains("published"),
+        detail.contains("platform") && detail.contains("published"),
         "got: {detail}"
     );
 
@@ -371,7 +383,7 @@ async fn role_creation_is_422_for_every_product_until_a_catalog_with_grantable_a
         (
             "empty action list",
             CreateRoleRequest {
-                product: "custos".to_string(),
+                product: "acta".to_string(),
                 name: "empty".to_string(),
                 actions: vec![],
             },
@@ -379,9 +391,25 @@ async fn role_creation_is_422_for_every_product_until_a_catalog_with_grantable_a
         (
             "malformed action",
             CreateRoleRequest {
-                product: "custos".to_string(),
+                product: "acta".to_string(),
                 name: "malformed".to_string(),
                 actions: vec!["not an action".to_string()],
+            },
+        ),
+        (
+            "V1 plural family is not a V2 action",
+            CreateRoleRequest {
+                product: "acta".to_string(),
+                name: "plural".to_string(),
+                actions: vec!["acta::docs::read".to_string()],
+            },
+        ),
+        (
+            "actions of another product than the role's",
+            CreateRoleRequest {
+                product: "acta".to_string(),
+                name: "custos-actions".to_string(),
+                actions: vec!["custos::group::read".to_string()],
             },
         ),
     ];
@@ -394,18 +422,25 @@ async fn role_creation_is_422_for_every_product_until_a_catalog_with_grantable_a
         assert_eq!(status_of(err), 422, "case: {label}");
     }
 
-    for product in ["acta", "custos"] {
-        assert!(
-            admin
-                .custos()
-                .list_roles(product)
-                .await
-                .expect("list roles")
-                .is_empty(),
-            "no role was persisted for {product}"
-        );
-    }
-    assert!(audit_rows(&db, admin_id, "role.").await.is_empty());
+    assert_eq!(
+        admin
+            .custos()
+            .list_roles("acta")
+            .await
+            .expect("list roles")
+            .len(),
+        1,
+        "only the valid role was persisted"
+    );
+    assert!(
+        admin
+            .custos()
+            .list_roles("custos")
+            .await
+            .expect("list roles")
+            .is_empty()
+    );
+    assert_eq!(audit_rows(&db, admin_id, "role.").await.len(), 1);
 
     db.teardown().await;
 }
@@ -424,7 +459,7 @@ async fn roles_are_listed_renamed_and_deleted_with_an_audit_row_per_mutation() {
         listed.iter().map(|r| r.id).collect::<Vec<_>>(),
         vec![reviewer.id.0, editor.id.0]
     );
-    assert_eq!(listed[0].actions, vec!["acta::doc::read"]);
+    assert_eq!(listed[0].actions, vec!["acta::document::read"]);
     assert!(
         admin
             .custos()
@@ -449,7 +484,7 @@ async fn roles_are_listed_renamed_and_deleted_with_an_audit_row_per_mutation() {
     assert_eq!(renamed.name, "auditor");
     assert_eq!(
         renamed.actions,
-        vec!["acta::doc::read"],
+        vec!["acta::document::read"],
         "actions untouched"
     );
     assert!(renamed.updated_at > reviewer.updated_at);
@@ -467,18 +502,18 @@ async fn roles_are_listed_renamed_and_deleted_with_an_audit_row_per_mutation() {
         .expect_err("a whitespace-only name is rejected");
     assert_eq!(status_of(blank), 422);
 
-    let unpublished = admin
+    let replaced = admin
         .custos()
         .update_role(
             reviewer.id.0,
             UpdateRoleRequest {
                 name: None,
-                actions: Some(vec!["acta::doc::update".to_string()]),
+                actions: Some(vec!["acta::document::update".to_string()]),
             },
         )
         .await
-        .expect_err("acta actions cannot be validated until acta publishes its catalog");
-    assert_eq!(status_of(unpublished), 422);
+        .expect("acta actions validate against the published catalog");
+    assert_eq!(replaced.actions, vec!["acta::document::update"]);
 
     let collision = admin
         .custos()
@@ -532,7 +567,7 @@ async fn roles_are_listed_renamed_and_deleted_with_an_audit_row_per_mutation() {
 
     let rows = audit_rows(&db, admin_id, "role.").await;
     let actions: Vec<&str> = rows.iter().map(|row| row.action.as_str()).collect();
-    assert_eq!(actions, ["role.updated", "role.deleted"]);
+    assert_eq!(actions, ["role.updated", "role.updated", "role.deleted"]);
     for row in &rows {
         assert_eq!(row.target_type, "role");
         assert_eq!(row.target_id, Some(reviewer.id.0));
@@ -548,7 +583,13 @@ async fn roles_are_listed_renamed_and_deleted_with_an_audit_row_per_mutation() {
         "unchanged actions are not recorded as previous: {}",
         rows[0].metadata
     );
+    assert_eq!(
+        rows[1].metadata["previous_actions"],
+        serde_json::json!(["acta::document::read"]),
+        "role.updated records the actions it replaced"
+    );
     assert!(rows[1].metadata.get("previous_name").is_none());
+    assert!(rows[2].metadata.get("previous_name").is_none());
 
     db.teardown().await;
 }
@@ -738,20 +779,55 @@ async fn grant_creation_rejects_invalid_targets_and_authorities_with_422() {
     let (admin, _) = login_platform_admin(&server, &db).await;
     let acta_role = seed_acta_role(&db, "reviewer").await;
 
-    let acta = admin
+    let on_acta = admin
         .custos()
         .create_grant_v2(CreateGrantV2Request {
             subject: principal_subject(),
             target: acta_ref("d1"),
             authority: AuthorityDto::Actions {
-                actions: vec!["acta::doc::read".to_string()],
+                actions: vec!["acta::document::read".to_string()],
             },
         })
         .await
-        .expect_err("acta has not published its catalog");
-    let detail = detail_of(acta);
+        .expect("acta has published its catalog");
+    assert_eq!(on_acta.product, "acta");
+
+    let builtin_on_acta = admin
+        .custos()
+        .create_grant_v2(CreateGrantV2Request {
+            subject: principal_subject(),
+            target: acta_ref("d1"),
+            authority: AuthorityDto::Builtin {
+                name: "editor".to_string(),
+                version: 1,
+            },
+        })
+        .await
+        .expect("acta declares editor@1");
+    assert_eq!(
+        builtin_on_acta.authority,
+        AuthorityDto::Builtin {
+            name: "editor".to_string(),
+            version: 1,
+        }
+    );
+
+    let unpublished = admin
+        .custos()
+        .create_grant_v2(CreateGrantV2Request {
+            subject: principal_subject(),
+            target: TargetDto::Ref {
+                value: "platform::thing::t1".to_string(),
+            },
+            authority: AuthorityDto::Actions {
+                actions: vec!["platform::thing::read".to_string()],
+            },
+        })
+        .await
+        .expect_err("platform has not published a V2 catalog");
+    let detail = detail_of(unpublished);
     assert!(
-        detail.contains("acta") && detail.contains("published"),
+        detail.contains("platform") && detail.contains("published"),
         "got: {detail}"
     );
 
@@ -807,7 +883,7 @@ async fn grant_creation_rejects_invalid_targets_and_authorities_with_422() {
             },
         ),
         (
-            "built-in role (no product declares role definitions yet)",
+            "built-in role of a product that declares none (custos)",
             CreateGrantV2Request {
                 authority: AuthorityDto::Builtin {
                     name: "admin".to_string(),
@@ -826,7 +902,18 @@ async fn grant_creation_rejects_invalid_targets_and_authorities_with_422() {
             },
         ),
         (
-            "custom role of another (unpublished) product than the target",
+            "unknown built-in role version on acta",
+            CreateGrantV2Request {
+                target: acta_ref("d1"),
+                authority: AuthorityDto::Builtin {
+                    name: "editor".to_string(),
+                    version: 2,
+                },
+                ..base.clone()
+            },
+        ),
+        (
+            "custom role of another product than the target",
             CreateGrantV2Request {
                 authority: AuthorityDto::Custom {
                     role_id: acta_role.id.0,
@@ -838,7 +925,7 @@ async fn grant_creation_rejects_invalid_targets_and_authorities_with_422() {
             "action outside the target's product",
             CreateGrantV2Request {
                 authority: AuthorityDto::Actions {
-                    actions: vec!["acta::doc::read".to_string()],
+                    actions: vec!["acta::document::read".to_string()],
                 },
                 ..base.clone()
             },
@@ -867,7 +954,7 @@ async fn grant_creation_rejects_invalid_targets_and_authorities_with_422() {
                 authority: AuthorityDto::Actions {
                     actions: vec![
                         "custos::group::read".to_string(),
-                        "acta::doc::read".to_string(),
+                        "acta::document::read".to_string(),
                     ],
                 },
                 ..base.clone()
@@ -890,17 +977,25 @@ async fn grant_creation_rejects_invalid_targets_and_authorities_with_422() {
             .expect_err("invalid grant must be rejected");
         assert_eq!(status_of(err), 422, "case: {label}");
     }
-    for product in ["custos", "acta"] {
-        assert!(
-            admin
-                .custos()
-                .list_grants_v2(product)
-                .await
-                .expect("list grants")
-                .is_empty(),
-            "no invalid grant was persisted for {product}"
-        );
-    }
+    assert!(
+        admin
+            .custos()
+            .list_grants_v2("custos")
+            .await
+            .expect("list grants")
+            .is_empty(),
+        "no invalid grant was persisted for custos"
+    );
+    assert_eq!(
+        admin
+            .custos()
+            .list_grants_v2("acta")
+            .await
+            .expect("list grants")
+            .len(),
+        2,
+        "only the two accepted acta grants were persisted"
+    );
 
     db.teardown().await;
 }
@@ -980,6 +1075,17 @@ async fn denies_are_created_listed_and_deleted_in_audit_mode_with_an_audit_row_p
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].id, created.id);
 
+    let on_acta = admin
+        .custos()
+        .create_deny(CreateDenyRequest {
+            subject: principal_subject(),
+            target: acta_ref("d1"),
+            actions: vec!["acta::document::read".to_string()],
+        })
+        .await
+        .expect("acta has published its catalog");
+    assert_eq!(on_acta.product, "acta");
+
     for (label, invalid) in [
         (
             "empty actions",
@@ -994,15 +1100,17 @@ async fn denies_are_created_listed_and_deleted_in_audit_mode_with_an_audit_row_p
             CreateDenyRequest {
                 subject: principal_subject(),
                 target: custos_ref("g1"),
-                actions: vec!["acta::doc::read".to_string()],
+                actions: vec!["acta::document::read".to_string()],
             },
         ),
         (
-            "acta target (catalog not published)",
+            "platform target (catalog not published)",
             CreateDenyRequest {
                 subject: principal_subject(),
-                target: acta_ref("d1"),
-                actions: vec!["acta::doc::read".to_string()],
+                target: TargetDto::Ref {
+                    value: "platform::thing::t1".to_string(),
+                },
+                actions: vec!["platform::thing::read".to_string()],
             },
         ),
         (

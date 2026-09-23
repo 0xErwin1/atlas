@@ -57,11 +57,9 @@ const EXPECTED_IDEMPOTENT: &[(HttpMethod, &str, bool)] = &[
     // v2-e5-s4-authz-routes: platform-admin administration of V2 roles,
     // grants and deny rules. The three POST creates carry the replay bit
     // (`true`, no one-shot secret); PATCH/DELETE/GET entries are
-    // mechanically `false` (T4.10). Judged exception in the live sweep:
-    // `POST /roles` keeps `true` although no custom role is creatable in
-    // this release (no product publishes V2 role-capable kinds until E7,
-    // and GRANT-5 forbids custos actions in custom roles), so its sweep arm
-    // asserts the handler's 422 instead of a replay until Acta publishes.
+    // mechanically `false` (T4.10). `POST /roles` replays like any other
+    // create since v2-e7-s1a: Acta publishes its V2 catalog, so an Acta
+    // custom role is creatable and the sweep arm proves the replay.
     (HttpMethod::Get, "/roles", false),
     (HttpMethod::Post, "/roles", true),
     (HttpMethod::Patch, "/roles/{role_id}", false),
