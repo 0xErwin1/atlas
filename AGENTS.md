@@ -46,9 +46,9 @@ pure and never import HTTP/SQL.
 |-------|------|---------------|
 | `atlas_core` | Neutral V2 platform contracts: ids (`ActionId`, `ResourceRef`, …), registry types + `registry::build()`, capability traits, config contract (`ComponentConfig`, `EnvSource`, `Secret`) | serde, thiserror, async-trait, chrono, bytes — **no axum, no sea-orm, no tokio** |
 | `atlas_postgres` | Neutral Postgres runtime: pool config (`PostgresConfig`) and connection construction — **no product repos, no entities** | atlas_core, sea-orm |
-| `atlas_custos` | Pure identity/auth types and **repository ports**: users, sessions, api keys, groups, security audit, capability scopes | serde, thiserror, uuid, chrono only — **no axum, no sea-orm, no tokio** |
-| `atlas_acta` | Pure workspace/content types and **repository ports**: workspaces, projects, folders, documents, boards/tasks, comments, permissions, wikilinks, revisions | atlas_core; serde, thiserror, uuid, chrono only — **no axum, no sea-orm, no tokio** |
-| `atlas_custos_postgres` | SeaORM entities + repository **adapters** for every `custos.*` table (identity, sessions, api keys, groups, security audit) | atlas_core, atlas_custos, atlas_postgres, sea-orm |
+| `atlas_custos` | Pure identity/auth types and **repository ports**: users, sessions, api keys, groups, security audit, capability scopes | atlas_core; async-trait, serde, serde_json, uuid, chrono only — **no axum, no sea-orm, no tokio** |
+| `atlas_acta` | Pure workspace/content types and **repository ports**: workspaces, projects, folders, documents, boards/tasks, comments, permissions, wikilinks, revisions | atlas_core; async-trait, bytes, chrono, diffy-imara, fractional_index, serde, serde_json, thiserror, uuid only — **no axum, no sea-orm, no tokio** |
+| `atlas_custos_postgres` | SeaORM entities + repository **adapters** for every `custos.*` table (identity, sessions, api keys, groups, security audit) | atlas_core, atlas_custos, atlas_postgres, sea-orm, sea-orm-migration; async-trait, chrono, uuid, serde_json, tracing |
 | `atlas_acta_postgres` | SeaORM entities + repository **adapters** for every `acta.*` table (workspaces, projects, folders, documents, boards/tasks, comments, search, webhooks, automation) | atlas_core, atlas_acta, atlas_postgres, sea-orm |
 | `atlas_api` | Shared DTOs + OpenAPI schemas (the wire contract) | — |
 | `atlas_client` | Typed HTTP client speaking `atlas_api` types | atlas_api, reqwest |
