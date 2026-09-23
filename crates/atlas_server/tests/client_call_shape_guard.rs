@@ -926,6 +926,7 @@ const ATLAS_SERVER_TEST_PINS: &[(&str, usize)] = &[
     ("tasks.rs", 0),
     ("tenancy.rs", 0),
     ("ui_state_repo_characterization.rs", 0),
+    ("v2_acta_provider_registration.rs", 0),
     ("visibility_ancestors.rs", 0),
     ("workspace_core.rs", 0),
 ];
