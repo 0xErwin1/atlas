@@ -98,7 +98,7 @@ fn operations(
 }
 
 /// A probe against the worst-case "reads nothing" implementation (§0.1's
-/// measured baseline): 159 path keys, 240 operations, every one of them
+/// measured baseline): 161 path keys, 242 operations, every one of them
 /// carrying `x-atlas-component`. A drift check that silently compared an
 /// empty or truncated document to itself would still pass the byte
 /// comparison above; these counts catch that.
@@ -111,14 +111,16 @@ fn operations(
 /// the six retired `/api-keys` operations; 159 = 153 + the six
 /// v2-e5-s4-authz-routes path keys `/custos/roles(/{role_id})`,
 /// `/custos/grants(/{grant_id})` and `/custos/denies(/{deny_id})`; 240 =
-/// 230 + their ten operations.)
+/// 230 + their ten operations; 161 = 159 + the two
+/// v2-e5-s6b-authorize-route path keys `/custos/authorize(/batch)`; 242 =
+/// 240 + their two operations.)
 #[test]
 fn document_counts_match_the_measured_baseline() {
     let document = openapi();
 
     assert_eq!(
         document.paths.paths.len(),
-        159,
+        161,
         "committed document's path key count drifted from the measured baseline (design §0.1)"
     );
 
@@ -140,11 +142,11 @@ fn document_counts_match_the_measured_baseline() {
     }
 
     assert_eq!(
-        operation_count, 240,
+        operation_count, 242,
         "committed document's operation count drifted from the measured baseline (design §0.1)"
     );
     assert_eq!(
-        stamped_count, 240,
+        stamped_count, 242,
         "every operation must carry x-atlas-component (design §0.1)"
     );
 }

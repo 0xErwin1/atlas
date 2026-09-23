@@ -6,19 +6,19 @@
 )]
 
 //! T4.9/T4.14 (`v2-e3-s3` PR4, D8): exhaustive rule-conformance test for
-//! `RouteDeclaration.idempotent`'s re-derivation. Every one of the 242
+//! `RouteDeclaration.idempotent`'s re-derivation. Every one of the 244
 //! `reg5.rs` entries is checked against the written rule
 //! (`crates/atlas_core/src/registry/route.rs`'s `idempotent` doc comment),
 //! not a sample — a mismatch names the exact offending `(method, path)`
 //! (INV-SET-style, never a count comparison).
 //!
-//! `EXPECTED_IDEMPOTENT` below encodes the same 242 decisions as the
+//! `EXPECTED_IDEMPOTENT` below encodes the same 244 decisions as the
 //! judgment file (`docs/reg5-idempotent-judgment.md`):
 //! every non-`POST` entry is `false` (T4.10, mechanical); every `POST`
 //! entry's value is either a mechanical `create_*` name match or one of the
 //! 39 judged decisions the judgment file explains (including the six
 //! streamed-upload routes, F4). This table
-//! is cross-checked for completeness against `reg5.rs`'s own 242-entry
+//! is cross-checked for completeness against `reg5.rs`'s own 244-entry
 //! enumeration below (`table_is_exhaustive_over_reg5`), the same
 //! "one source, checked exhaustively" shape D4's exclusion-list
 //! completeness check uses.
@@ -72,6 +72,12 @@ const EXPECTED_IDEMPOTENT: &[(HttpMethod, &str, bool)] = &[
     (HttpMethod::Get, "/denies", false),
     (HttpMethod::Post, "/denies", true),
     (HttpMethod::Delete, "/denies/{deny_id}", false),
+    // v2-e5-s6b-authorize-route: authorization questions carried by POST.
+    // Judged `false` like `search_content`: a read-shaped POST whose retry
+    // answers the same question again, with no resource created and no side
+    // effect to replay.
+    (HttpMethod::Post, "/authorize", false),
+    (HttpMethod::Post, "/authorize/batch", false),
     (HttpMethod::Patch, "/users/me", false),
     (HttpMethod::Post, "/users", false),
     (HttpMethod::Get, "/users", false),
@@ -865,13 +871,13 @@ fn table_is_exhaustive_over_reg5() {
     let live = all_declared_routes();
     assert_eq!(
         live.len(),
-        242,
-        "reg5.rs must declare exactly 242 routes; the classification table below assumes this"
+        244,
+        "reg5.rs must declare exactly 244 routes; the classification table below assumes this"
     );
     assert_eq!(
         EXPECTED_IDEMPOTENT.len(),
-        242,
-        "EXPECTED_IDEMPOTENT must cover all 242 reg5.rs entries, not a sample"
+        244,
+        "EXPECTED_IDEMPOTENT must cover all 244 reg5.rs entries, not a sample"
     );
 
     let live_keys: std::collections::HashSet<(HttpMethod, &str)> = live
@@ -980,10 +986,11 @@ fn true_and_false_counts_match_the_pr4_grounding() {
     // `POST /agent-api-keys` are `true` (35 → 37) and the other ten are
     // `false` (191 → 195). v2-e5-s4-authz-routes added the ten authorization
     // administration routes: the three POST creates are `true` (37 → 40) and
-    // the other seven are `false` (195 → 202).
+    // the other seven are `false` (195 → 202). v2-e5-s6b-authorize-route
+    // added the two read-shaped authorize POSTs, both `false` (202 → 204).
     assert_eq!(true_count, 40, "expected exactly 40 idempotent:true routes");
     assert_eq!(
-        false_count, 202,
-        "expected exactly 202 idempotent:false routes"
+        false_count, 204,
+        "expected exactly 204 idempotent:false routes"
     );
 }
