@@ -1075,10 +1075,11 @@ async fn denies_are_created_listed_and_deleted_in_audit_mode_with_an_audit_row_p
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].id, created.id);
 
+    let acta_principal = uuid::Uuid::now_v7();
     let on_acta = admin
         .custos()
         .create_deny(CreateDenyRequest {
-            subject: principal_subject(),
+            subject: SubjectDto::Principal { id: acta_principal },
             target: acta_ref("d1"),
             actions: vec!["acta::document::read".to_string()],
         })
@@ -1158,17 +1159,26 @@ async fn denies_are_created_listed_and_deleted_in_audit_mode_with_an_audit_row_p
 
     let rows = audit_rows(&db, admin_id, "deny.").await;
     let actions: Vec<&str> = rows.iter().map(|row| row.action.as_str()).collect();
-    assert_eq!(actions, ["deny.created", "deny.deleted"]);
+    assert_eq!(actions, ["deny.created", "deny.created", "deny.deleted"]);
     for row in &rows {
         assert_eq!(row.target_type, "deny_rule");
+    }
+    for row in [&rows[0], &rows[2]] {
         assert_eq!(row.target_id, Some(created.id));
         assert_eq!(row.metadata["product"], "custos");
-    }
-    assert_eq!(rows[0].metadata["target"], "custos::**");
-    for row in &rows {
+        assert_eq!(row.metadata["target"], "custos::**");
         assert_eq!(row.metadata["subject_kind"], "group");
         assert_eq!(row.metadata["subject"], group_id.to_string());
     }
+    assert_eq!(rows[1].target_id, Some(on_acta.id));
+    assert_eq!(rows[1].metadata["product"], "acta");
+    assert_eq!(rows[1].metadata["target"], "acta::document::d1");
+    assert_eq!(rows[1].metadata["subject_kind"], "principal");
+    assert_eq!(rows[1].metadata["subject"], acta_principal.to_string());
+    assert_eq!(
+        rows[1].metadata["actions"],
+        serde_json::json!(["acta::document::read"])
+    );
 
     db.teardown().await;
 }
