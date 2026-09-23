@@ -10,7 +10,9 @@ use crate::eval::{
     MembershipFacts, Subject, grant_spec,
 };
 use crate::ids::{GroupId, PrincipalId};
-use crate::ports::authorize::{AuthorizationFactsStore, GroupMembershipSource, ProductScope};
+use crate::ports::authorize::{
+    AuthorizationFactsStore, DeclaredSet, GroupMembershipSource, ProductScope,
+};
 use atlas_core::capabilities::{CapabilityError, ResourceExistence};
 use atlas_core::ids::{PrincipalSetId, ResourcePath, ResourceRef};
 
@@ -130,6 +132,9 @@ impl<S: AuthorizationFactsStore, M: GroupMembershipSource> AuthorizationService<
     /// name that the actor is not in are confirmed nonmembers. Principal
     /// sets are resolved through the owning provider's `members_of` only for
     /// sets the rows name; an unresolvable set stays nonmember (GRANT-7).
+    /// Those calls run one after another, each under the provider timeout,
+    /// so a request naming `n` sets can wait up to `n` timeouts; a failing
+    /// or timed-out set never stops the remaining ones from resolving.
     /// A membership source or store failure fails closed, and a stored row
     /// that no longer resolves against the catalog is inconsistent.
     pub(super) async fn load_facts(
@@ -144,7 +149,7 @@ impl<S: AuthorizationFactsStore, M: GroupMembershipSource> AuthorizationService<
         let groups = self.membership.groups_of(actor).await.map_err(internal)?;
         let stored = self
             .store
-            .load(&scope, actor, &groups)
+            .load(&scope, actor, &groups, &self.declared_sets())
             .await
             .map_err(internal)?;
 
@@ -191,6 +196,22 @@ impl<S: AuthorizationFactsStore, M: GroupMembershipSource> AuthorizationService<
             denies,
             membership,
         })
+    }
+
+    /// Every principal set the catalog declares. The load takes all of them,
+    /// not only those of the products in scope: a grant or deny may name a
+    /// set declared by another product than its target's, and leaving such a
+    /// deny unloaded would stop it from applying.
+    fn declared_sets(&self) -> Vec<DeclaredSet> {
+        self.settings
+            .catalog
+            .declared_principal_sets()
+            .into_iter()
+            .map(|(product, name)| DeclaredSet {
+                product: product.to_string(),
+                name: name.to_string(),
+            })
+            .collect()
     }
 
     /// The actor's membership in `set`, from the provider owning the set's

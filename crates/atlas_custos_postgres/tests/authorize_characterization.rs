@@ -27,7 +27,7 @@ use atlas_custos::entities::identity::{ApiKeyKind, ApiKeyType, NewApiKey, NewSes
 use atlas_custos::ids::{GroupId, PrincipalId};
 use atlas_custos::ports::authorization::{DenyRuleRepo, GrantV2Repo, RoleRepo};
 use atlas_custos::ports::authorize::{
-    AuthorizationFactsStore, GroupMembershipSource, ProductScope,
+    AuthorizationFactsStore, DeclaredSet, GroupMembershipSource, ProductScope,
 };
 use atlas_custos::ports::group_repo::GroupRepo;
 use atlas_custos::ports::identity::{AgentRepo, SessionRepo, UserRepo};
@@ -449,20 +449,27 @@ async fn the_facts_store_loads_rows_that_can_reach_the_actor_in_scope() {
         .id;
 
     let store = PgAuthorizationFactsStore { conn };
+    let declared = [declared_set("acta", "members")];
     let acta = store
         .load(
             &ProductScope::Products(vec!["acta".to_string()]),
             alice,
             &[member_group],
+            &declared,
         )
         .await
         .unwrap();
     let everything = store
-        .load(&ProductScope::All, alice, &[member_group])
+        .load(&ProductScope::All, alice, &[member_group], &declared)
         .await
         .unwrap();
     let nothing = store
-        .load(&ProductScope::Products(Vec::new()), alice, &[member_group])
+        .load(
+            &ProductScope::Products(Vec::new()),
+            alice,
+            &[member_group],
+            &declared,
+        )
         .await
         .unwrap();
 
@@ -532,6 +539,90 @@ async fn the_custos_provider_answers_only_canonical_ids_from_postgres() {
                 ResourceExistence::Missing,
             ],
             "{kind}"
+        );
+    }
+
+    db.teardown().await.expect("teardown");
+}
+
+fn declared_set(product: &str, name: &str) -> DeclaredSet {
+    DeclaredSet {
+        product: product.to_string(),
+        name: name.to_string(),
+    }
+}
+
+#[tokio::test]
+async fn the_facts_store_loads_set_rows_only_for_declared_sets() {
+    let db = create_custos_only_db().await;
+    let alice = PrincipalId(seed_user(&db, "alice").await.0);
+    let conn = db.conn().clone();
+    let grants = PgGrantV2Repo { conn: conn.clone() };
+    let denies = PgDenyRuleRepo { conn: conn.clone() };
+    let mut by_set = std::collections::HashMap::new();
+
+    for raw in [
+        "acta::workspace::w1::members",
+        "acta::workspace::w2::guests",
+        "acta::workspace::w3::memXbers",
+    ] {
+        let set: PrincipalSetId = raw.parse().unwrap();
+        let grant = grants
+            .create(NewGrantRecord {
+                id: GrantId::new(),
+                subject: SubjectRecord::PrincipalSet(set.clone()),
+                target: TargetRecord::Ref("acta::workspace::w1".parse().unwrap()),
+                authority: GrantAuthority::Actions(vec![action("acta::document::read")]),
+                created_by: alice,
+            })
+            .await
+            .unwrap()
+            .id;
+        denies
+            .create(NewDenyRecord {
+                id: DenyRuleId::new(),
+                subject: SubjectRecord::PrincipalSet(set),
+                target: TargetRecord::Ref("acta::workspace::w1".parse().unwrap()),
+                actions: vec![action("acta::document::update")],
+                created_by: alice,
+            })
+            .await
+            .unwrap();
+        by_set.insert(raw, grant);
+    }
+
+    let store = PgAuthorizationFactsStore { conn };
+    let load = |declared: Vec<DeclaredSet>| {
+        let store = &store;
+        async move {
+            store
+                .load(&ProductScope::All, alice, &[], &declared)
+                .await
+                .unwrap()
+        }
+    };
+
+    let members = load(vec![declared_set("acta", "members")]).await;
+    assert_eq!(
+        members
+            .grants
+            .iter()
+            .map(|grant| grant.id)
+            .collect::<Vec<_>>(),
+        vec![by_set["acta::workspace::w1::members"]]
+    );
+    assert_eq!(members.denies.len(), 1);
+
+    for declared in [
+        Vec::new(),
+        vec![declared_set("custos", "members")],
+        vec![declared_set("acta", "mem_bers")],
+    ] {
+        let loaded = load(declared.clone()).await;
+
+        assert!(
+            loaded.grants.is_empty() && loaded.denies.is_empty(),
+            "{declared:?}"
         );
     }
 

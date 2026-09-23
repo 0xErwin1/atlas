@@ -9,10 +9,12 @@ use atlas_core::error::DomainError;
 use atlas_custos::entities::authorization::GrantAuthority;
 use atlas_custos::ids::{GroupId, PrincipalId};
 use atlas_custos::ports::authorize::{
-    AuthorizationFactsStore, GroupMembershipSource, ProductScope, StoredAuthorizationFacts,
+    AuthorizationFactsStore, DeclaredSet, GroupMembershipSource, ProductScope,
+    StoredAuthorizationFacts,
 };
 use atlas_custos::provider::{CustosKind, CustosResourceStore};
 use atlas_postgres::db_err;
+use sea_orm::sea_query::LikeExpr;
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, DatabaseBackend, DatabaseConnection, EntityTrait,
     FromQueryResult, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Statement,
@@ -203,6 +205,7 @@ impl AuthorizationFactsStore for PgAuthorizationFactsStore {
         scope: &ProductScope,
         principal: PrincipalId,
         groups: &[GroupId],
+        declared_sets: &[DeclaredSet],
     ) -> Result<StoredAuthorizationFacts, DomainError> {
         let products = match scope {
             ProductScope::Products(products) if products.is_empty() => {
@@ -218,6 +221,7 @@ impl AuthorizationFactsStore for PgAuthorizationFactsStore {
             grant_v2::Column::SubjectPrincipalSet,
             principal,
             groups,
+            declared_sets,
         ));
         let mut deny_query = deny_rule::Entity::find().filter(reaching(
             deny_rule::Column::SubjectPrincipalId,
@@ -225,6 +229,7 @@ impl AuthorizationFactsStore for PgAuthorizationFactsStore {
             deny_rule::Column::SubjectPrincipalSet,
             principal,
             groups,
+            declared_sets,
         ));
 
         if let Some(products) = products {
@@ -281,23 +286,49 @@ impl AuthorizationFactsStore for PgAuthorizationFactsStore {
     }
 }
 
-/// Rows addressed to the principal, to one of its groups, or to any
-/// principal set.
+/// Rows addressed to the principal, to one of its groups, or to an instance
+/// of a declared principal set.
 fn reaching<C: ColumnTrait>(
     principal_column: C,
     group_column: C,
     principal_set_column: C,
     principal: PrincipalId,
     groups: &[GroupId],
+    declared_sets: &[DeclaredSet],
 ) -> Condition {
-    let mut condition = Condition::any()
-        .add(principal_column.eq(principal.0))
-        .add(principal_set_column.is_not_null());
+    let mut condition = Condition::any().add(principal_column.eq(principal.0));
 
     if !groups.is_empty() {
         let group_ids: Vec<Uuid> = groups.iter().map(|group| group.0).collect();
         condition = condition.add(group_column.is_in(group_ids));
     }
 
+    for set in declared_sets {
+        condition = condition.add(principal_set_column.like(declared_set_pattern(set)));
+    }
+
     condition
+}
+
+/// Matches the stored text of every instance of `set`: a principal set id
+/// is `<product>::<kind>::<id>::<name>`, and no segment contains `:`, so the
+/// wildcard can only span the scope's kind and id. The product and name are
+/// escaped because `_` is a valid segment character and a `LIKE` wildcard.
+fn declared_set_pattern(set: &DeclaredSet) -> LikeExpr {
+    LikeExpr::new(format!(
+        "{}::%::{}",
+        escape_like(&set.product),
+        escape_like(&set.name)
+    ))
+    .escape('\\')
+}
+
+fn escape_like(segment: &str) -> String {
+    segment
+        .chars()
+        .flat_map(|ch| match ch {
+            '\\' | '%' | '_' => vec!['\\', ch],
+            other => vec![other],
+        })
+        .collect()
 }

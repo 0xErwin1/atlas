@@ -34,7 +34,8 @@ use atlas_custos::eval::{
 };
 use atlas_custos::ids::{GroupId, PrincipalId};
 use atlas_custos::ports::authorize::{
-    AuthorizationFactsStore, GroupMembershipSource, ProductScope, StoredAuthorizationFacts,
+    AuthorizationFactsStore, DeclaredSet, GroupMembershipSource, ProductScope,
+    StoredAuthorizationFacts,
 };
 use chrono::Utc;
 use support::{READ, UPDATE, action, catalog, ceiling};
@@ -56,6 +57,7 @@ struct FakeProvider {
     answer: Answer,
     resources: HashMap<ResourceRef, Option<ResourcePath>>,
     members: HashMap<PrincipalSetId, Result<Vec<atlas_core::ids::PrincipalId>, CapabilityError>>,
+    hanging_sets: Vec<PrincipalSetId>,
     facts_calls: AtomicUsize,
     members_calls: AtomicUsize,
 }
@@ -66,6 +68,7 @@ impl FakeProvider {
             answer,
             resources: HashMap::new(),
             members: HashMap::new(),
+            hanging_sets: Vec::new(),
             facts_calls: AtomicUsize::new(0),
             members_calls: AtomicUsize::new(0),
         }
@@ -118,6 +121,10 @@ impl ResourceProvider for FakeProvider {
     ) -> Result<Vec<atlas_core::ids::PrincipalId>, CapabilityError> {
         self.members_calls.fetch_add(1, Ordering::SeqCst);
 
+        if self.hanging_sets.contains(set) {
+            std::future::pending::<()>().await;
+        }
+
         self.members
             .get(set)
             .cloned()
@@ -164,6 +171,7 @@ struct FakeStore {
     facts: StoredAuthorizationFacts,
     fail: bool,
     scopes: Mutex<Vec<ProductScope>>,
+    declared: Mutex<Vec<Vec<DeclaredSet>>>,
 }
 
 impl FakeStore {
@@ -182,8 +190,10 @@ impl AuthorizationFactsStore for SharedStore {
         scope: &ProductScope,
         _principal: PrincipalId,
         _groups: &[GroupId],
+        declared_sets: &[DeclaredSet],
     ) -> Result<StoredAuthorizationFacts, DomainError> {
         self.0.scopes.lock().unwrap().push(scope.clone());
+        self.0.declared.lock().unwrap().push(declared_sets.to_vec());
 
         if self.0.fail {
             return Err(DomainError::Internal {
@@ -1086,5 +1096,110 @@ async fn an_enforced_deny_on_a_canonical_custos_id_cannot_be_bypassed_by_an_alia
         denied.braced().to_string(),
     ] {
         assert_eq!(decide(alias.clone()).await, Decision::NotFound, "{alias}");
+    }
+}
+
+#[tokio::test]
+async fn every_facts_load_receives_the_sets_the_catalog_declares() {
+    let principal = PrincipalId::new();
+    let harness = Harness::new(
+        FakeProvider::new(Answer::Facts).with_resource(DOC_PATH),
+        reader_store(principal, &[READ, GRANT_CREATE]),
+    );
+    let actor = actor(principal);
+
+    harness
+        .service
+        .authorize(&actor, &action(READ), &target(DOC))
+        .await
+        .unwrap();
+    harness
+        .service
+        .authorize_batch(&actor, &action(READ), &[target(DOC)])
+        .await
+        .unwrap();
+    harness
+        .service
+        .visibility_filter(&actor, "document", &action(READ))
+        .await
+        .unwrap();
+    harness
+        .service
+        .visibility_filter(&actor, "document", &action(GRANT_CREATE))
+        .await
+        .unwrap();
+    harness
+        .service
+        .effective_actions(&actor, &target(DOC))
+        .await
+        .unwrap();
+
+    let declared = vec![DeclaredSet {
+        product: "acta".to_string(),
+        name: "members".to_string(),
+    }];
+    assert_eq!(*harness.store.declared.lock().unwrap(), vec![declared; 5]);
+}
+
+/// Two principal sets granting read on the workspace, the first of which
+/// cannot be resolved.
+fn two_set_store() -> (FakeStore, PrincipalSetId, PrincipalSetId) {
+    let first: PrincipalSetId = "acta::workspace::w1::members".parse().unwrap();
+    let second: PrincipalSetId = "acta::workspace::w2::members".parse().unwrap();
+    let store = store_with(
+        [&first, &second]
+            .into_iter()
+            .map(|set| {
+                grant_record(
+                    SubjectRecord::PrincipalSet(set.clone()),
+                    "acta::workspace::w1",
+                    explicit(&[READ]),
+                )
+            })
+            .collect(),
+        Vec::new(),
+    );
+    (store, first, second)
+}
+
+#[tokio::test]
+async fn a_failing_or_hanging_set_does_not_stop_the_next_set_from_resolving() {
+    let principal = PrincipalId::new();
+    let member = atlas_core::ids::PrincipalId::new(&principal.0.to_string()).unwrap();
+
+    let (store, first, second) = two_set_store();
+    let failing = Harness::new(
+        FakeProvider::new(Answer::Facts)
+            .with_resource(DOC_PATH)
+            .with_members(
+                &first,
+                Err(CapabilityError::unavailable("set backend down")),
+            )
+            .with_members(&second, Ok(vec![member.clone()])),
+        store,
+    );
+
+    let (store, first, second) = two_set_store();
+    let mut provider = FakeProvider::new(Answer::Facts)
+        .with_resource(DOC_PATH)
+        .with_members(&second, Ok(vec![member]));
+    provider.hanging_sets.push(first);
+    let hanging = Harness::build(
+        provider,
+        store,
+        FakeMembership::default(),
+        Arc::new(InstantSleeper),
+        DenyMode::Enforced,
+    );
+
+    for harness in [&failing, &hanging] {
+        let outcome = harness
+            .service
+            .authorize(&actor(principal), &action(READ), &target(DOC))
+            .await
+            .unwrap();
+
+        assert_eq!(outcome.decision, Decision::Allowed);
+        assert_eq!(harness.provider.members_calls(), 2);
     }
 }

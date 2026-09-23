@@ -267,6 +267,23 @@ impl Catalog {
             .find(|role| role.name == name && role.version == version)
     }
 
+    /// Every declared principal set as `(product, set name)`, in ascending
+    /// order.
+    pub fn declared_principal_sets(&self) -> Vec<(&str, &str)> {
+        let mut sets: Vec<(&str, &str)> = self
+            .products
+            .iter()
+            .flat_map(|(product, entry)| {
+                entry
+                    .principal_sets
+                    .iter()
+                    .map(move |name| (product.as_str(), name.as_str()))
+            })
+            .collect();
+        sets.sort_unstable();
+        sets
+    }
+
     /// Checks that a grant or deny target names a declared product and only
     /// declared kinds. Selector wildcards carry no kind.
     pub fn validate_target(&self, target: &GrantTarget) -> Result<(), CatalogError> {
