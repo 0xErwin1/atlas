@@ -11,6 +11,7 @@ mod batch_authorization_tests;
 pub mod extract_scope;
 pub mod extractors;
 pub mod policy;
+pub mod v2_ceiling;
 
 pub use extract_scope::ExtractScope;
 

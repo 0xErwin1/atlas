@@ -32,6 +32,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
+use chrono::Utc;
 use sea_orm::{DatabaseTransaction, TransactionTrait};
 use serde::Deserialize;
 
@@ -51,7 +52,7 @@ use atlas_custos::entities::authorization::{
 use atlas_custos::entities::identity::User;
 use atlas_custos::entities::security_audit::{NewSecurityAuditEvent, SecurityAction};
 use atlas_custos::eval::{
-    ActionSet, Catalog, CatalogError, GrantSpec, GrantTarget, ProductSpec, RoleRef,
+    ActionSet, Catalog, CatalogError, GrantSpec, GrantTarget, ProductSpec, Subject, grant_spec,
 };
 use atlas_custos::ids::{GroupId, PrincipalId};
 use atlas_custos_postgres::repos::authorization::{PgDenyRuleRepo, PgGrantV2Repo, PgRoleRepo};
@@ -226,41 +227,27 @@ impl Validation {
         }
     }
 
-    /// Resolves the grant through the catalog exactly as the evaluator
-    /// would: declared product and kinds, a declared principal set, and one
-    /// authority whose actions exist and match the target's product.
+    /// Resolves the candidate grant through the catalog exactly as the
+    /// evaluator would (`eval::records::grant_spec`): declared product and
+    /// kinds, a declared principal set, and one authority whose actions
+    /// exist and match the target's product. A custom-role authority is
+    /// revalidated from its stored row.
     async fn validate_grant(
         &self,
-        subject: &SubjectRecord,
-        target: &TargetRecord,
-        authority: &GrantAuthority,
+        candidate: &GrantRecord,
         roles: &PgRoleRepo,
     ) -> Result<(), ApiError> {
-        let mut spec = self.spec_for(subject, target);
+        let custom_roles: Vec<CustomRole> = match &candidate.authority {
+            GrantAuthority::CustomRole(role_id) => PgRoleRepo::get_in(&roles.conn, *role_id)
+                .await
+                .map_err(ApiError::Domain)?
+                .into_iter()
+                .collect(),
+            GrantAuthority::Builtin { .. } | GrantAuthority::Actions(_) => Vec::new(),
+        };
 
-        match authority {
-            GrantAuthority::Builtin { name, version } => {
-                spec.builtin_role = Some(RoleRef {
-                    product: target.product().to_string(),
-                    name: name.clone(),
-                    version: *version,
-                });
-            }
-            GrantAuthority::CustomRole(role_id) => {
-                let role = PgRoleRepo::get_in(&roles.conn, *role_id)
-                    .await
-                    .map_err(ApiError::Domain)?
-                    .ok_or_else(|| invalid(format!("unknown custom role `{role_id}`")))?;
-                spec.custom_role = Some(
-                    self.catalog
-                        .custom_role(role.actions.iter().cloned())
-                        .map_err(Self::catalog_error)?,
-                );
-            }
-            GrantAuthority::Actions(actions) => {
-                spec.actions = Some(action_set(actions)?);
-            }
-        }
+        let spec =
+            grant_spec(candidate, &self.catalog, &custom_roles).map_err(Self::catalog_error)?;
 
         self.catalog
             .resolve_grant(spec)
@@ -268,16 +255,21 @@ impl Validation {
             .map_err(Self::catalog_error)
     }
 
-    /// A deny rule is validated like a grant with an explicit action set:
-    /// same target, subject and action rules.
-    fn validate_deny(
-        &self,
-        subject: &SubjectRecord,
-        target: &TargetRecord,
-        actions: &[ActionId],
-    ) -> Result<(), ApiError> {
-        let mut spec = self.spec_for(subject, target);
-        spec.actions = Some(action_set(actions)?);
+    /// A deny rule is validated like a grant with an explicit action set
+    /// (same target, subject and action rules), so an undeclared kind or
+    /// action is refused here and not only at evaluation time.
+    fn validate_deny(&self, candidate: &DenyRecord) -> Result<(), ApiError> {
+        let mut spec = GrantSpec {
+            target: Some(GrantTarget::from(&candidate.target)),
+            actions: Some(action_set(&candidate.actions)?),
+            ..GrantSpec::default()
+        };
+
+        match Subject::from(&candidate.subject) {
+            Subject::Principal(id) => spec.principal = Some(id),
+            Subject::Group(id) => spec.group = Some(id),
+            Subject::PrincipalSet(set) => spec.principal_set = Some(set),
+        }
 
         self.catalog
             .resolve_grant(spec)
@@ -305,33 +297,10 @@ impl Validation {
             _ => Ok(()),
         }
     }
-
-    fn spec_for(&self, subject: &SubjectRecord, target: &TargetRecord) -> GrantSpec {
-        let mut spec = GrantSpec {
-            target: Some(grant_target(target)),
-            ..GrantSpec::default()
-        };
-
-        match subject {
-            SubjectRecord::Principal(id) => spec.principal = Some(*id),
-            SubjectRecord::Group(id) => spec.group = Some(*id),
-            SubjectRecord::PrincipalSet(set) => spec.principal_set = Some(set.clone()),
-        }
-
-        spec
-    }
 }
 
 fn action_set(actions: &[ActionId]) -> Result<ActionSet, ApiError> {
     ActionSet::new(actions.iter().cloned()).map_err(|e| invalid(e.to_string()))
-}
-
-fn grant_target(target: &TargetRecord) -> GrantTarget {
-    match target {
-        TargetRecord::Ref(reference) => GrantTarget::Ref(reference.clone()),
-        TargetRecord::Path(path) => GrantTarget::Path(path.clone()),
-        TargetRecord::Selector(selector) => GrantTarget::Selector(selector.clone()),
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -796,23 +765,27 @@ pub(crate) async fn create_grant_v2(
 ) -> Result<impl IntoResponse, ApiError> {
     let admin = platform_admin(&state, principal).await?;
 
-    let subject = parse_subject(&body.subject)?;
-    let target = parse_target(&body.target)?;
-    let authority = parse_authority(&body.authority)?;
-
+    let candidate = GrantRecord {
+        id: GrantId::new(),
+        subject: parse_subject(&body.subject)?,
+        target: parse_target(&body.target)?,
+        authority: parse_authority(&body.authority)?,
+        created_by: PrincipalId::from(admin.id),
+        created_at: Utc::now(),
+    };
     Validation::new(&state.registry)?
-        .validate_grant(&subject, &target, &authority, &role_repo(&state))
+        .validate_grant(&candidate, &role_repo(&state))
         .await?;
 
     let txn = begin(&state).await?;
     let grant = PgGrantV2Repo::create_in(
         &txn,
         NewGrantRecord {
-            id: GrantId::new(),
-            subject,
-            target,
-            authority,
-            created_by: PrincipalId::from(admin.id),
+            id: candidate.id,
+            subject: candidate.subject,
+            target: candidate.target,
+            authority: candidate.authority,
+            created_by: candidate.created_by,
         },
     )
     .await
@@ -929,21 +902,25 @@ pub(crate) async fn create_deny(
     let admin = platform_admin(&state, principal).await?;
     require_deny_administration(&state)?;
 
-    let subject = parse_subject(&body.subject)?;
-    let target = parse_target(&body.target)?;
-    let actions = parse_actions(&body.actions)?;
-
-    Validation::new(&state.registry)?.validate_deny(&subject, &target, &actions)?;
+    let candidate = DenyRecord {
+        id: DenyRuleId::new(),
+        subject: parse_subject(&body.subject)?,
+        target: parse_target(&body.target)?,
+        actions: parse_actions(&body.actions)?,
+        created_by: PrincipalId::from(admin.id),
+        created_at: Utc::now(),
+    };
+    Validation::new(&state.registry)?.validate_deny(&candidate)?;
 
     let txn = begin(&state).await?;
     let deny = PgDenyRuleRepo::create_in(
         &txn,
         NewDenyRecord {
-            id: DenyRuleId::new(),
-            subject,
-            target,
-            actions,
-            created_by: PrincipalId::from(admin.id),
+            id: candidate.id,
+            subject: candidate.subject,
+            target: candidate.target,
+            actions: candidate.actions,
+            created_by: candidate.created_by,
         },
     )
     .await
