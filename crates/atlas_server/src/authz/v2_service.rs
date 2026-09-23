@@ -5,9 +5,10 @@
 //! declaration contributes to.
 //!
 //! The registry is the product catalog declaration: a product enters the
-//! catalog only once it declares V2 resource kinds, and only its actions of
-//! a declared (singular, V2) kind are taken, so a V1 plural scope such as
-//! `custos::grants::read` never becomes a grantable action.
+//! catalog only once it declares V2 resource kinds, only its actions of a
+//! declared (singular, V2) kind are taken, so a V1 plural scope such as
+//! `custos::grants::read` never becomes a grantable action, and its
+//! versioned built-in roles come from `role_definitions_v2` verbatim.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,7 +18,7 @@ use sea_orm::DatabaseConnection;
 
 use atlas_core::registry::{ComponentId, Registry};
 use atlas_custos::authorize::{AuthorizationService, AuthorizationSettings, ProviderSet, Sleeper};
-use atlas_custos::eval::{Catalog, CatalogError, DenyMode, ProductSpec};
+use atlas_custos::eval::{Catalog, CatalogError, DenyMode, ProductSpec, RoleSpec};
 use atlas_custos::provider::CustosResourceProvider;
 use atlas_custos_postgres::repos::authorize::{
     PgAuthorizationFactsStore, PgCustosResourceStore, PgGroupMembershipSource,
@@ -56,11 +57,22 @@ pub fn product_specs(registry: &Registry) -> Vec<ProductSpec> {
                 .cloned()
                 .collect();
 
+            let roles = entry
+                .authorization
+                .role_definitions_v2
+                .iter()
+                .map(|role| RoleSpec {
+                    name: role.name.clone(),
+                    version: role.version,
+                    actions: role.actions.clone(),
+                })
+                .collect();
+
             ProductSpec {
                 product: entry.identity.stable_id.as_str().to_string(),
                 kinds,
                 actions,
-                roles: vec![],
+                roles,
                 principal_sets: entry.authorization.principal_sets.clone(),
             }
         })
@@ -129,6 +141,48 @@ mod tests {
         TokioSleeper.sleep(Duration::from_millis(20)).await;
 
         assert!(started.elapsed() >= Duration::from_millis(20));
+    }
+
+    #[test]
+    fn product_specs_carry_the_declared_versioned_roles() {
+        let registry = atlas_core::registry::build(crate::reg5::reg5_component_entries(
+            crate::reg5::StorageBackend::Filesystem,
+        ))
+        .expect("REG-5 entries build");
+
+        let specs = product_specs(&registry);
+        let acta = specs
+            .iter()
+            .find(|spec| spec.product == "acta")
+            .expect("acta publishes a catalog");
+        let names: Vec<(&str, u32)> = acta
+            .roles
+            .iter()
+            .map(|role| (role.name.as_str(), role.version))
+            .collect();
+        assert_eq!(names, [("viewer", 1), ("editor", 1), ("admin", 1)]);
+
+        let editor = &acta.roles[1];
+        assert!(
+            editor
+                .actions
+                .iter()
+                .any(|action| action.to_string() == "custos::grant::create"),
+            "editor carries the delegation action"
+        );
+
+        let custos = specs
+            .iter()
+            .find(|spec| spec.product == "custos")
+            .expect("custos publishes a catalog");
+        assert!(custos.roles.is_empty(), "custos declares no built-in roles");
+        assert!(
+            custos
+                .actions
+                .iter()
+                .all(|action| action.kind() != "grants"),
+            "the plural V1 family never enters the catalog"
+        );
     }
 
     #[test]

@@ -1036,6 +1036,7 @@ async fn an_enforced_deny_on_a_canonical_custos_id_cannot_be_bypassed_by_an_alia
             resource_kinds: vec!["user".to_string()],
             actions: vec![action("custos::user::read")],
             role_definitions: Vec::new(),
+            role_definitions_v2: vec![],
             principal_sets: Vec::new(),
             provider: true,
         },
