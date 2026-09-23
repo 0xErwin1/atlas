@@ -8,11 +8,13 @@
     )
 )]
 
+pub mod authorize;
 pub mod capability;
 pub mod entities;
 pub mod eval;
 pub mod ids;
 pub mod ports;
+pub mod provider;
 
 /// The opaque scope key Custos rows are filed under. Custos never dereferences
 /// this to a `Workspace` entity (an Acta type) — it is treated purely as a
