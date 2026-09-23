@@ -64,6 +64,7 @@ fn authorization() -> Authorization {
         resource_kinds: vec!["user".to_string(), "platform".to_string()],
         actions: vec!["custos::user::read".parse().unwrap()],
         role_definitions: Vec::new(),
+        role_definitions_v2: vec![],
         principal_sets: Vec::new(),
         provider: true,
     }

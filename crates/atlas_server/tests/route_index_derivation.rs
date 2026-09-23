@@ -67,6 +67,7 @@ fn synthetic_probe_entry() -> ComponentEntry {
             resource_kinds: vec![],
             actions: vec![],
             role_definitions: vec![],
+            role_definitions_v2: vec![],
             principal_sets: vec![],
             provider: false,
         },

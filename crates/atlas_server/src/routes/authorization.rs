@@ -29,12 +29,11 @@
 //!   are resolved through the [`Catalog`] the service also uses
 //!   (`authz::v2_service::validation_catalog`), built from the registry's
 //!   `Authorization` declarations. A product enters the catalog only once it
-//!   declares V2 resource kinds; today only Custos does, so an Acta target
-//!   answers 422 until E7 publishes Acta's catalog, after which these routes
-//!   accept it without code changes. No product declares built-in roles
-//!   yet, and custom roles may never carry Custos actions (GRANT-5), so in
-//!   this release the only usable authority on a Custos target is an
-//!   explicit action set.
+//!   declares V2 resource kinds: Custos and Acta do, so their targets,
+//!   actions and Acta's versioned built-in roles validate here, while a
+//!   product without a published catalog answers 422. Custom roles may
+//!   never carry Custos actions (GRANT-5), so the only usable authority on
+//!   a Custos target is an explicit action set.
 //! - **Every mutation writes its audit row in the same transaction** as the
 //!   row it changes (CUSTOS-DB-1).
 

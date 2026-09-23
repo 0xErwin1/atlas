@@ -36,7 +36,7 @@ mod schema_id;
 mod validated;
 mod worker;
 
-pub use authorization::Authorization;
+pub use authorization::{Authorization, RoleDeclaration};
 pub use build::build;
 pub use capability_id::CapabilityId;
 pub use component_id::ComponentId;

@@ -415,9 +415,11 @@ async fn malformed_questions_are_400_and_unpublished_products_are_422() {
         assert_eq!(problem.status, 400, "{action_raw} on {target}");
     }
 
+    // `platform` declares no V2 resource kinds, so it is the product without
+    // a published catalog (Acta publishes one since v2-e7-s1a).
     for (action_raw, target) in [
-        ("acta::document::read", "acta::document::d1"),
-        (GROUP_READ, "acta::document::d1"),
+        ("platform::thing::read", "platform::thing::t1"),
+        (GROUP_READ, "platform::thing::t1"),
     ] {
         let problem = problem_of(
             client
