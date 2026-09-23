@@ -18,7 +18,9 @@ pub use diagnostics::{
     Doctor, DoctorFinding, Health, HealthStatus, Readiness, ReadinessStatus, Severity,
 };
 pub use error::CapabilityError;
-pub use resource_provider::{ProviderCatalog, ResourceProvider};
+pub use resource_provider::{
+    ProviderCatalog, ResourceExistence, ResourceFacts, ResourceProvider, RoleDefinition,
+};
 pub use search::{IndexedDocument, LexicalQuery, SearchHit, SemanticQuery};
 pub use search_lexical::SearchLexical;
 pub use search_semantic::SearchSemantic;

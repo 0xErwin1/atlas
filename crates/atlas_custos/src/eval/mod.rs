@@ -75,6 +75,7 @@ pub use delegation::{
 pub use evaluator::{
     Decision, DenyCause, DenyEvidence, DenyMode, EvalRequest, Evaluated, EvaluationFacts, evaluate,
 };
+pub(crate) use model::CUSTOS_PRODUCT;
 pub use model::{
     ActionSet, Ceiling, CeilingActions, DenyRule, Existence, Grant, GrantTarget, Membership,
     MembershipFacts, Subject, is_delegation_action,
