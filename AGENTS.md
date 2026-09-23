@@ -72,7 +72,7 @@ Schema ownership:
 
 | Schema | Owning crate | Content |
 |--------|--------------|---------|
-| `custos.*` | `atlas_custos_postgres` | Identity/auth: users, sessions, api keys, groups, security audit log, and related tables (8 tables) |
+| `custos.*` | `atlas_custos_postgres` | Identity/auth: principals, users, sessions, api keys, groups, security audit log, V2 roles/grants/deny rules, and related tables (12 tables) |
 | `acta.*` | `atlas_acta_postgres` | Workspace/content: workspaces, projects, folders, documents + revisions, boards/tasks, comments, search, webhooks, automation, and related tables (36 tables) |
 | `platform.*` | `atlas_server` | Cross-cutting UI state (`ui_state`), owned directly by the composition layer, not by either product crate |
 

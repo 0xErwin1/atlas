@@ -27,7 +27,7 @@ mod search;
 mod storage;
 
 pub use acta::ActaConfig;
-pub use custos::CustosConfig;
+pub use custos::{CustosConfig, DenyModeConfig};
 pub use platform::{MetricsConfig, PlatformConfig};
 pub use search::{SearchLexicalConfig, SearchSemanticConfig};
 pub use storage::StorageConfig;
@@ -560,6 +560,7 @@ mod tests {
     fn custos_config_debug_never_contains_the_root_password() {
         let config = CustosConfig {
             root_password: Some(Secret::new("rootsecret".to_string())),
+            explicit_deny_mode: DenyModeConfig::Disabled,
         };
 
         let output = format!("{config:?}");
