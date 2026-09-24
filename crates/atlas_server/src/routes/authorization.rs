@@ -66,7 +66,7 @@ use atlas_custos::entities::identity::User;
 use atlas_custos::entities::security_audit::{NewSecurityAuditEvent, SecurityAction};
 use atlas_custos::eval::{
     ActionSet, Catalog, CatalogError, Ceiling, DelegationRefused, GrantSpec, GrantTarget, Subject,
-    can_delegate, grant_spec,
+    can_delegate,
 };
 use atlas_custos::ids::{GroupId, PrincipalId};
 use atlas_custos_postgres::repos::authorization::{PgDenyRuleRepo, PgGrantV2Repo, PgRoleRepo};
@@ -74,8 +74,9 @@ use atlas_custos_postgres::repos::security_audit::PgSecurityAuditRepo;
 
 use crate::{
     auth::middleware::Principal as AuthPrincipal,
+    authz::v2_access::MEMBERSHIP_ROLE_PREFIX,
     authz::v2_caller::{Caller, actor_of, caller, unavailable},
-    authz::v2_service::{product_specs, validation_catalog},
+    authz::v2_service::{product_specs, resolve_grant_actions, validation_catalog},
     config::DenyModeConfig,
     error::{ApiError, custos_conflict},
     state::AppState,
@@ -148,15 +149,30 @@ fn invalid(message: impl Into<String>) -> ApiError {
     }
 }
 
-/// A custom role name: trimmed and non-empty.
+/// A custom role name: trimmed, non-empty, and outside the prefix reserved
+/// for the workspace membership roles.
 fn role_name(raw: &str) -> Result<String, ApiError> {
     let name = raw.trim();
 
     if name.is_empty() {
         return Err(invalid("a role name must not be empty"));
     }
+    if is_membership_role(name) {
+        return Err(reserved_role_name());
+    }
 
     Ok(name.to_string())
+}
+
+fn is_membership_role(name: &str) -> bool {
+    name.starts_with(MEMBERSHIP_ROLE_PREFIX)
+}
+
+fn reserved_role_name() -> ApiError {
+    invalid(format!(
+        "role names starting with `{MEMBERSHIP_ROLE_PREFIX}` are reserved for workspace \
+         membership roles"
+    ))
 }
 
 #[cfg(test)]
@@ -172,6 +188,18 @@ mod role_name_tests {
     fn an_empty_or_whitespace_only_name_is_rejected() {
         assert!(role_name("").is_err());
         assert!(role_name("   \t").is_err());
+    }
+
+    #[test]
+    fn a_membership_role_name_is_reserved() {
+        assert!(role_name("acta:workspace-owner").is_err());
+        assert!(role_name(" acta:workspace-admin ").is_err());
+        assert!(role_name("acta:workspace-anything").is_err());
+        assert_eq!(
+            role_name("acta:workspace").unwrap(),
+            "acta:workspace",
+            "only the prefix with its trailing dash is reserved"
+        );
     }
 }
 
@@ -224,22 +252,7 @@ impl Validation {
         candidate: &GrantRecord,
         roles: &PgRoleRepo,
     ) -> Result<ActionSet, ApiError> {
-        let custom_roles: Vec<CustomRole> = match &candidate.authority {
-            GrantAuthority::CustomRole(role_id) => PgRoleRepo::get_in(&roles.conn, *role_id)
-                .await
-                .map_err(ApiError::Domain)?
-                .into_iter()
-                .collect(),
-            GrantAuthority::Builtin { .. } | GrantAuthority::Actions(_) => Vec::new(),
-        };
-
-        let spec =
-            grant_spec(candidate, &self.catalog, &custom_roles).map_err(Self::catalog_error)?;
-
-        self.catalog
-            .resolve_grant(spec)
-            .map(|grant| grant.actions().clone())
-            .map_err(Self::catalog_error)
+        resolve_grant_actions(&roles.conn, &self.catalog, candidate, Self::catalog_error).await
     }
 
     /// A deny rule is validated like a grant with an explicit action set
@@ -881,6 +894,9 @@ pub(crate) async fn update_role(
         .ok_or(ApiError::NotFound)?;
 
     let name = body.name.as_deref().map(role_name).transpose()?;
+    if name.is_some() && is_membership_role(&existing.name) {
+        return Err(reserved_role_name());
+    }
     let actions = body.actions.as_deref().map(parse_actions).transpose()?;
     if let Some(actions) = &actions {
         Validation::new(&state.registry)?.validate_custom_role(&existing.product, actions)?;

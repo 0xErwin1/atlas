@@ -3,11 +3,12 @@ use atlas_core::error::DomainError;
 use atlas_core::ids::ActionId;
 use atlas_custos::entities::authorization::{
     CustomRole, DenyRecord, DenyRuleId, GrantId, GrantRecord, NewCustomRole, NewDenyRecord,
-    NewGrantRecord, ROLE_IN_USE_CONFLICT, RoleId, SubjectSet,
+    NewGrantRecord, ROLE_IN_USE_CONFLICT, RoleId, SubjectRecord, SubjectSet, TargetRecord,
 };
 use atlas_custos::ports::authorization::{DenyRuleRepo, GrantV2Repo, RoleRepo};
 use chrono::Utc;
 use sea_orm::error::SqlxError;
+use sea_orm::sea_query::OnConflict;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, ConnectionTrait,
     DatabaseConnection, DbErr, EntityTrait, QueryFilter, QueryOrder, RuntimeErr,
@@ -199,6 +200,61 @@ impl PgRoleRepo {
             .map(Some)
     }
 
+    /// The custom role named `name` in `product`, if any.
+    pub async fn find_by_name_in<C: ConnectionTrait>(
+        conn: &C,
+        product: &str,
+        name: &str,
+    ) -> Result<Option<CustomRole>, DomainError> {
+        role::Entity::find()
+            .filter(role::Column::Product.eq(product))
+            .filter(role::Column::Name.eq(name))
+            .one(conn)
+            .await
+            .map_err(db_err)?
+            .map(role_from)
+            .transpose()
+    }
+
+    /// The role named `new.name` in `new.product`, created from `new` when
+    /// absent. A taken `(product, name)` is skipped with `ON CONFLICT DO
+    /// NOTHING` rather than raised, so a creation that loses a race leaves
+    /// the caller's transaction usable and returns the stored row, whose
+    /// actions win over `new.actions`.
+    pub async fn find_or_create_in<C: ConnectionTrait>(
+        conn: &C,
+        new: NewCustomRole,
+    ) -> Result<CustomRole, DomainError> {
+        let product = new.product.clone();
+        let name = new.name.clone();
+        let now = Utc::now();
+        let model = role::ActiveModel {
+            id: Set(new.id.0),
+            product: Set(new.product),
+            name: Set(new.name),
+            actions: Set(actions_to_stored(&new.actions)),
+            created_by: Set(new.created_by.0),
+            created_at: Set(now),
+            updated_at: Set(now),
+        };
+
+        role::Entity::insert(model)
+            .on_conflict(
+                OnConflict::columns([role::Column::Product, role::Column::Name])
+                    .do_nothing()
+                    .to_owned(),
+            )
+            .exec_without_returning(conn)
+            .await
+            .map_err(db_err)?;
+
+        Self::find_by_name_in(conn, &product, &name)
+            .await?
+            .ok_or_else(|| DomainError::Internal {
+                message: format!("role `{name}` of `{product}` is missing after its upsert"),
+            })
+    }
+
     /// Deletes a role by id. The `ON DELETE RESTRICT` foreign key from
     /// `custos.grants_v2.role_id` makes the delete fail while any grant
     /// still references the role; that failure surfaces as
@@ -322,6 +378,46 @@ impl PgGrantV2Repo {
             .map_err(db_err)?;
 
         Ok(result.rows_affected > 0)
+    }
+
+    /// Every grant addressed to exactly `subject` on exactly `target`,
+    /// whatever its authority, oldest id first.
+    pub async fn find_matching_in<C: ConnectionTrait>(
+        conn: &C,
+        subject: &SubjectRecord,
+        target: &TargetRecord,
+    ) -> Result<Vec<GrantRecord>, DomainError> {
+        let (subject_kind, principal_id, group_id, principal_set) = subject_to_columns(subject);
+
+        // `eq(None)` renders `= NULL`, which matches nothing: the absent
+        // subject columns must be matched with `IS NULL`.
+        fn nullable<C: ColumnTrait, V: Into<sea_orm::Value>>(
+            column: C,
+            value: Option<V>,
+        ) -> sea_orm::sea_query::SimpleExpr {
+            match value {
+                Some(value) => column.eq(value),
+                None => column.is_null(),
+            }
+        }
+
+        grant_v2::Entity::find()
+            .filter(grant_v2::Column::SubjectKind.eq(subject_kind.to_string()))
+            .filter(nullable(grant_v2::Column::SubjectPrincipalId, principal_id))
+            .filter(nullable(grant_v2::Column::SubjectGroupId, group_id))
+            .filter(nullable(
+                grant_v2::Column::SubjectPrincipalSet,
+                principal_set,
+            ))
+            .filter(grant_v2::Column::TargetKind.eq(target.kind().as_str().to_string()))
+            .filter(grant_v2::Column::Target.eq(target.canonical()))
+            .order_by_asc(grant_v2::Column::Id)
+            .all(conn)
+            .await
+            .map_err(db_err)?
+            .into_iter()
+            .map(grant_from)
+            .collect()
     }
 
     pub async fn list_for_subjects_in<C: ConnectionTrait>(
