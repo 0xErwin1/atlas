@@ -11,6 +11,7 @@ mod batch_authorization_tests;
 pub mod extract_scope;
 pub mod extractors;
 pub mod policy;
+pub mod v2_access;
 pub(crate) mod v2_caller;
 pub mod v2_ceiling;
 pub mod v2_service;

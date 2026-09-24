@@ -250,36 +250,7 @@ impl ProjectRepo for PgProjectRepo {
         id: ProjectId,
         update: UpdateProject,
     ) -> Result<Project, DomainError> {
-        let row = project::Entity::find_by_id(id.0)
-            .filter(project::Column::WorkspaceId.eq(ctx.workspace_id.0))
-            .filter(project::Column::DeletedAt.is_null())
-            .one(&self.conn)
-            .await
-            .map_err(db_err)?
-            .ok_or(DomainError::NotFound {
-                entity: "project",
-                id: id.0,
-            })?;
-
-        let mut active = row.into_active_model();
-
-        if let Some(name) = update.name {
-            active.name = Set(name);
-        }
-
-        if let Some(vis) = update.visibility {
-            let (vis_str, vis_role_str) = visibility_to_str(&vis);
-            active.visibility = Set(vis_str.to_string());
-            active.visibility_role = Set(vis_role_str.map(|s| s.to_string()));
-        }
-
-        if let Some(prefix) = update.task_prefix {
-            active.task_prefix = Set(prefix);
-        }
-
-        active.updated_at = Set(Utc::now());
-        let updated = active.update(&self.conn).await.map_err(db_err)?;
-        Ok(project_from(updated))
+        Self::update_in(&self.conn, ctx, id, update).await
     }
 
     async fn find(
@@ -603,4 +574,47 @@ fn db_err(e: sea_orm::DbErr) -> DomainError {
     }
 
     internal_db_err(e)
+}
+
+impl PgProjectRepo {
+    /// Updates a project using the provided connection or transaction, so
+    /// a visibility change can commit together with the rows derived from
+    /// it.
+    pub async fn update_in<C: ConnectionTrait>(
+        conn: &C,
+        ctx: &WorkspaceCtx,
+        id: ProjectId,
+        update: UpdateProject,
+    ) -> Result<Project, DomainError> {
+        let row = project::Entity::find_by_id(id.0)
+            .filter(project::Column::WorkspaceId.eq(ctx.workspace_id.0))
+            .filter(project::Column::DeletedAt.is_null())
+            .one(conn)
+            .await
+            .map_err(db_err)?
+            .ok_or(DomainError::NotFound {
+                entity: "project",
+                id: id.0,
+            })?;
+
+        let mut active = row.into_active_model();
+
+        if let Some(name) = update.name {
+            active.name = Set(name);
+        }
+
+        if let Some(vis) = update.visibility {
+            let (vis_str, vis_role_str) = visibility_to_str(&vis);
+            active.visibility = Set(vis_str.to_string());
+            active.visibility_role = Set(vis_role_str.map(|s| s.to_string()));
+        }
+
+        if let Some(prefix) = update.task_prefix {
+            active.task_prefix = Set(prefix);
+        }
+
+        active.updated_at = Set(Utc::now());
+        let updated = active.update(conn).await.map_err(db_err)?;
+        Ok(project_from(updated))
+    }
 }

@@ -835,6 +835,7 @@ const ATLAS_SERVER_TEST_PINS: &[(&str, usize)] = &[
     ("api_unmatched_path_fallback.rs", 0),
     ("api_user_api_keys.rs", 0),
     ("api_users.rs", 0),
+    ("api_v2_access_dual_write.rs", 0),
     ("api_webhooks.rs", 0),
     ("api_workspace_activity.rs", 0),
     ("api_workspace_attachments.rs", 0),
@@ -930,6 +931,7 @@ const ATLAS_SERVER_TEST_PINS: &[(&str, usize)] = &[
     ("v2_acta_provider_registration.rs", 0),
     ("visibility_ancestors.rs", 0),
     ("workspace_core.rs", 0),
+    ("workspace_owner_members_migration.rs", 0),
 ];
 
 /// The self-test harness (design T2.7/T2.8): a pure, independently-testable
