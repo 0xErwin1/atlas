@@ -117,6 +117,7 @@ fn synthetic_index() -> RouteIndex {
                 path: RoutePath::new("/owned").expect("valid route path"),
                 operation_id: "s7_span_probe_owned".to_string(),
                 action: None,
+                v2: None,
                 idempotent: false,
                 is_public: false,
             }],

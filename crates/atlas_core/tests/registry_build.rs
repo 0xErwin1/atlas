@@ -183,6 +183,7 @@ fn multi_violation_entries() -> Vec<ComponentEntry> {
         path: RoutePath::new("/tasks").expect("valid route path"),
         operation_id: "listTasks".to_string(),
         action: None,
+        v2: None,
         idempotent: true,
         is_public: false,
     });
@@ -223,6 +224,7 @@ fn multi_violation_entries() -> Vec<ComponentEntry> {
         path: RoutePath::new("/tasks").expect("valid route path"),
         operation_id: "listTasksDuplicate".to_string(),
         action: None,
+        v2: None,
         idempotent: true,
         is_public: false,
     });

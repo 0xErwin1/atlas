@@ -47,7 +47,10 @@ pub use entry::{Api, Capabilities, ComponentEntry, Dependency, Diagnostics, Expe
 pub use error::RegistryBuildError;
 pub use name::RegistryIdError;
 pub use persistence::Persistence;
-pub use route::{HttpMethod, HttpMethodParseError, RouteDeclaration, RoutePath, RoutePathError};
+pub use route::{
+    HttpMethod, HttpMethodParseError, RouteDeclaration, RoutePath, RoutePathError, TargetSource,
+    V2Target,
+};
 pub use satellite::{SatelliteDeclaration, SatelliteDeclarationError};
 pub use satellite_mode::{SatelliteMode, SatelliteModeParseError};
 pub use schema_contract_id::SchemaContractId;

@@ -58,6 +58,7 @@ fn synthetic_probe_entry() -> ComponentEntry {
                 path: RoutePath::new("/probe/only").expect("valid route path"),
                 operation_id: "s7_probe".to_string(),
                 action: None,
+                v2: None,
                 idempotent: false,
                 is_public: false,
             }],
