@@ -4,11 +4,14 @@ use atlas_acta::entities::identity::MemberRole;
 use atlas_acta::entities::identity::NewWorkspace;
 use atlas_acta::entities::workspace_core::NewProject;
 use atlas_acta::ids::WorkspaceId;
+use atlas_acta::permissions::{ResourceRef, Visibility, VisibilityRole, resource_ref_codec};
 use atlas_core::principal::UserId;
 use atlas_custos::entities::identity::NewUser;
-use sea_orm::DatabaseConnection;
+use atlas_custos::ids::PrincipalId;
+use sea_orm::{DatabaseConnection, TransactionTrait};
 
 use crate::auth::password;
+use crate::authz::v2_access;
 use crate::persistence::repos::{PgProjectRepo, ProjectRepo, UserRepo};
 use atlas_acta_postgres::repos::identity::{
     MembershipRepo, PgMembershipRepo, PgWorkspaceRepo, WorkspaceRepo,
@@ -121,21 +124,45 @@ pub async fn run_dev_seed(cfg: &BootstrapConfig, conn: &DatabaseConnection) -> R
         .map_err(|e| e.to_string())?;
 
     if existing.is_none() {
-        project_repo
-            .create(
-                &ctx,
-                NewProject {
-                    name: "Sandbox".to_string(),
-                    slug: "sandbox".to_string(),
-                    task_prefix: "SBX".to_string(),
-                    visibility: atlas_acta::permissions::Visibility::Workspace(
-                        atlas_acta::permissions::VisibilityRole::Editor,
-                    ),
-                },
-            )
-            .await
-            .map_err(|e| e.to_string())?;
+        seed_sandbox_project(conn, &ctx, root.id).await?;
     }
 
     Ok(())
+}
+
+/// Creates the dev `Sandbox` project, visible to every member as editor,
+/// together with the members-set grant that visibility stands for in V2, in
+/// one transaction.
+async fn seed_sandbox_project(
+    conn: &DatabaseConnection,
+    ctx: &WorkspaceCtx,
+    root: UserId,
+) -> Result<(), String> {
+    let visibility = Visibility::Workspace(VisibilityRole::Editor);
+
+    let txn = conn.begin().await.map_err(|e| e.to_string())?;
+    let project = PgProjectRepo::create_in(
+        &txn,
+        ctx,
+        NewProject {
+            name: "Sandbox".to_string(),
+            slug: "sandbox".to_string(),
+            task_prefix: "SBX".to_string(),
+            visibility: visibility.clone(),
+        },
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    v2_access::visibility_written(
+        &txn,
+        ctx.workspace_id,
+        resource_ref_codec::to_core(&ResourceRef::Project(project.id), ctx.workspace_id),
+        &visibility,
+        PrincipalId::from(root),
+    )
+    .await
+    .map_err(|e| format!("{e:?}"))?;
+
+    txn.commit().await.map_err(|e| e.to_string())
 }

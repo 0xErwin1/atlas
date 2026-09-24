@@ -112,6 +112,21 @@ fn detail_of(err: ClientError) -> String {
     }
 }
 
+/// A 422 naming the reserved membership-role prefix.
+fn assert_reserved(err: ClientError) {
+    match err {
+        ClientError::Api(problem) => {
+            assert_eq!(problem.status, 422, "{problem:?}");
+            let detail = problem.detail.unwrap_or_default();
+            assert!(
+                detail.contains("reserved for workspace membership roles"),
+                "{detail}"
+            );
+        }
+        other => panic!("expected an API problem, got {other:?}"),
+    }
+}
+
 fn principal_subject() -> SubjectDto {
     SubjectDto::Principal {
         id: uuid::Uuid::now_v7(),
@@ -441,6 +456,74 @@ async fn role_creation_accepts_a_published_product_and_rejects_the_rest_with_422
             .is_empty()
     );
     assert_eq!(audit_rows(&db, admin_id, "role.").await.len(), 1);
+
+    db.teardown().await;
+}
+
+/// Names under `acta:workspace-` belong to the workspace membership roles
+/// the access dual-write maintains: an admin can neither create one, nor
+/// rename a role into one, nor rename one out of it.
+#[tokio::test]
+async fn membership_role_names_are_reserved() {
+    let db = support::TestDb::create().await.expect("TestDb::create");
+    let server = support::TestServer::spawn(&db).await;
+    let (admin, admin_id) = login_platform_admin(&server, &db).await;
+    let reviewer = seed_acta_role(&db, "reviewer").await;
+    let membership = seed_acta_role(&db, "acta:workspace-owner").await;
+
+    for name in [
+        "acta:workspace-owner",
+        "acta:workspace-admin",
+        "  acta:workspace-anything",
+    ] {
+        let err = admin
+            .custos()
+            .create_role(CreateRoleRequest {
+                product: "acta".to_string(),
+                name: name.to_string(),
+                actions: vec!["acta::document::read".to_string()],
+            })
+            .await
+            .expect_err("a reserved name cannot be created");
+        assert_reserved(err);
+    }
+
+    let into = admin
+        .custos()
+        .update_role(
+            reviewer.id.0,
+            UpdateRoleRequest {
+                name: Some("acta:workspace-admin".to_string()),
+                actions: None,
+            },
+        )
+        .await
+        .expect_err("a role cannot be renamed into a reserved name");
+    assert_reserved(into);
+
+    let out_of = admin
+        .custos()
+        .update_role(
+            membership.id.0,
+            UpdateRoleRequest {
+                name: Some("renamed".to_string()),
+                actions: None,
+            },
+        )
+        .await
+        .expect_err("a membership role cannot be renamed");
+    assert_reserved(out_of);
+
+    let names: Vec<String> = admin
+        .custos()
+        .list_roles("acta")
+        .await
+        .expect("list roles")
+        .into_iter()
+        .map(|role| role.name)
+        .collect();
+    assert_eq!(names, vec!["reviewer", "acta:workspace-owner"]);
+    assert!(audit_rows(&db, admin_id, "role.").await.is_empty());
 
     db.teardown().await;
 }

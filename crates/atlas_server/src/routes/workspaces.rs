@@ -12,8 +12,8 @@ use atlas_acta::entities::identity::MemberRole;
 use atlas_acta::entities::identity::NewWorkspace;
 use atlas_acta::entities::identity::Workspace;
 use atlas_acta::entities::status_templates::NewStatusTemplate;
-use atlas_acta::entities::workspace_core::NewProject;
-use atlas_acta::ids::WorkspaceId;
+use atlas_acta::entities::workspace_core::{NewProject, Project};
+use atlas_acta::ids::{ProjectId, WorkspaceId};
 use atlas_acta::permissions::Visibility;
 use atlas_acta::permissions::VisibilityRole;
 use atlas_api::dtos::{
@@ -27,18 +27,20 @@ use atlas_custos::capability::Capability;
 use atlas_custos::capability::CapabilityAction;
 use atlas_custos::capability::CapabilityFamily;
 
+use atlas_custos::ids::PrincipalId;
+use sea_orm::{ConnectionTrait, TransactionTrait};
+
 use crate::{
     auth::middleware::Principal,
+    authz::v2_access,
     authz::{RequireUserAdmin, WorkspaceMember, enforce_api_key_scope},
     error::ApiError,
-    persistence::repos::{ApiKeyRepo, PgProjectRepo, ProjectRepo, UserRepo},
+    persistence::repos::{ApiKeyRepo, PgProjectRepo, UserRepo},
     routes::validation::{validate_name, validate_slug},
     state::AppState,
 };
 use atlas_acta_postgres::repos::boards_tasks::{BoardRepo, PgBoardRepo};
-use atlas_acta_postgres::repos::identity::{
-    MembershipRepo, PgMembershipRepo, PgWorkspaceRepo, WorkspaceRepo,
-};
+use atlas_acta_postgres::repos::identity::{PgMembershipRepo, PgWorkspaceRepo, WorkspaceRepo};
 use atlas_acta_postgres::repos::platform_status_templates::{
     PgPlatformStatusTemplateRepo, PlatformStatusTemplateRepo,
 };
@@ -90,9 +92,6 @@ pub(crate) async fn create_workspace(
     let ws_repo = PgWorkspaceRepo {
         conn: (*state.db).clone(),
     };
-    let membership_repo = PgMembershipRepo {
-        conn: (*state.db).clone(),
-    };
 
     let existing_slugs = ws_repo.list_slugs().await.map_err(|e| ApiError::Internal {
         message: e.to_string(),
@@ -101,75 +100,114 @@ pub(crate) async fn create_workspace(
     let slug = resolve_collision(&slugify(&body.name), &taken);
 
     let workspace_id = WorkspaceId::new();
-    let workspace = ws_repo
-        .create(NewWorkspace {
+
+    // The workspace, its owner membership, its default project and the V2
+    // rows derived from them commit or roll back together.
+    let txn = state.db.begin().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+    let workspace = PgWorkspaceRepo::create_in(
+        &txn,
+        NewWorkspace {
             id: workspace_id,
             name: body.name,
             slug,
-        })
-        .await
-        .map_err(|e| ApiError::Internal {
-            message: e.to_string(),
-        })?;
+        },
+    )
+    .await
+    .map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
 
     let ctx = WorkspaceCtx::new(
         workspace.id,
         Actor::User(atlas_acta::actor::UserAttributionId(user_id.0)),
     );
-    membership_repo
-        .add(&ctx, user_id, MemberRole::Owner)
+    PgMembershipRepo::add_in(&txn, &ctx, user_id, MemberRole::Owner)
         .await
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
         })?;
 
-    seed_default_content(&state, workspace.id, user_id).await?;
+    v2_access::membership_written(
+        &txn,
+        &state.registry,
+        workspace.id,
+        user_id,
+        MemberRole::Owner,
+        PrincipalId::from(user_id),
+    )
+    .await?;
+
+    let project = seed_default_project_in(&txn, &ctx, PrincipalId::from(user_id)).await?;
+
+    txn.commit().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    seed_default_content(&state, &ctx, project.id).await?;
 
     Ok((StatusCode::CREATED, Json(workspace_to_dto(&workspace))))
 }
 
-/// Seeds a new workspace with the scaffolding that makes it usable on first open:
-/// a default project, the default status templates, and a default board (whose
-/// columns are derived from those templates). The creator already has Owner
-/// membership, which resolves to Admin on all workspace content, so no explicit
-/// grant is needed here.
-///
-/// Best-effort consistency: each step runs in its own repository call rather than
-/// one transaction, matching the surrounding create flow. A partial failure leaves
-/// the workspace under-seeded but still valid; the UI renders missing scaffolding
-/// as empty states, never as an error.
-async fn seed_default_content(
-    state: &AppState,
-    workspace_id: WorkspaceId,
-    creator: UserId,
-) -> Result<(), ApiError> {
-    let ctx = WorkspaceCtx::new(
-        workspace_id,
-        Actor::User(atlas_acta::actor::UserAttributionId(creator.0)),
-    );
-
-    let project = PgProjectRepo {
-        conn: (*state.db).clone(),
-    }
-    .create(
-        &ctx,
+/// Creates the new workspace's default project, `General`, visible to every
+/// member as editor, together with the members-set grant that visibility
+/// stands for in V2. The creator already has Owner membership, which
+/// resolves to Admin on all workspace content, so no creator grant is
+/// written.
+async fn seed_default_project_in<C: ConnectionTrait>(
+    conn: &C,
+    ctx: &WorkspaceCtx,
+    created_by: PrincipalId,
+) -> Result<Project, ApiError> {
+    let visibility = Visibility::Workspace(VisibilityRole::Editor);
+    let project = PgProjectRepo::create_in(
+        conn,
+        ctx,
         NewProject {
             name: "General".to_string(),
             slug: "general".to_string(),
             task_prefix: "GEN".to_string(),
-            visibility: Visibility::Workspace(VisibilityRole::Editor),
+            visibility: visibility.clone(),
         },
     )
     .await
     .map_err(ApiError::Domain)?;
 
-    seed_status_templates(state, &ctx).await?;
+    v2_access::visibility_written(
+        conn,
+        ctx.workspace_id,
+        atlas_acta::permissions::resource_ref_codec::to_core(
+            &atlas_acta::permissions::ResourceRef::Project(project.id),
+            ctx.workspace_id,
+        ),
+        &visibility,
+        created_by,
+    )
+    .await?;
+
+    Ok(project)
+}
+
+/// Seeds the rest of the scaffolding that makes a new workspace usable on
+/// first open: the default status templates, and a default board in the
+/// default project (whose columns are derived from those templates).
+///
+/// Best-effort consistency: each step runs in its own repository call rather than
+/// one transaction. A partial failure leaves the workspace under-seeded but still
+/// valid; the UI renders missing scaffolding as empty states, never as an error.
+async fn seed_default_content(
+    state: &AppState,
+    ctx: &WorkspaceCtx,
+    project_id: ProjectId,
+) -> Result<(), ApiError> {
+    seed_status_templates(state, ctx).await?;
 
     PgBoardRepo::new((*state.db).clone())
         .create_board(
-            &ctx,
+            ctx,
             NewBoard {
-                project_id: project.id,
+                project_id,
                 folder_id: None,
                 name: "Board".to_string(),
             },

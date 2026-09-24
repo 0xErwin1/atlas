@@ -604,6 +604,61 @@ async fn roles_round_trip_and_list_by_product() {
     db.teardown().await.expect("teardown");
 }
 
+/// `find_or_create_in` answers the stored role for a taken
+/// `(product, name)` instead of failing, so the caller's transaction stays
+/// usable, and a creation racing another one resolves to the row that won.
+#[tokio::test]
+async fn find_or_create_returns_the_stored_role_without_aborting_the_transaction() {
+    use sea_orm::TransactionTrait;
+
+    let db = TestDb::create().await.expect("TestDb::create");
+
+    let first = PgRoleRepo::find_or_create_in(db.conn(), new_role("acta", "owner"))
+        .await
+        .expect("create on first use");
+    let second = PgRoleRepo::find_or_create_in(db.conn(), new_role("acta", "owner"))
+        .await
+        .expect("find on second use");
+    assert_eq!(second, first, "the stored role is returned unchanged");
+
+    let txn = db.conn().begin().await.expect("begin");
+    let inside = PgRoleRepo::find_or_create_in(
+        &txn,
+        NewCustomRole {
+            actions: vec![action("acta::document::read")],
+            ..new_role("acta", "owner")
+        },
+    )
+    .await
+    .expect("find inside a transaction");
+    assert_eq!(inside, first);
+    PgRoleRepo::get_in(&txn, first.id)
+        .await
+        .expect("the transaction is still usable after the conflict");
+    txn.commit().await.expect("commit");
+
+    let winner_txn = db.conn().begin().await.expect("begin winner");
+    let winner = PgRoleRepo::find_or_create_in(&winner_txn, new_role("acta", "raced"))
+        .await
+        .expect("winner creates");
+    let conn = db.conn().clone();
+    let racer = tokio::spawn(async move {
+        let txn = conn.begin().await.expect("begin racer");
+        let role = PgRoleRepo::find_or_create_in(&txn, new_role("acta", "raced")).await;
+        txn.commit().await.expect("commit racer");
+        role
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    winner_txn.commit().await.expect("commit winner");
+    let raced = racer
+        .await
+        .expect("racer task")
+        .expect("the racer resolves to the winner's row");
+    assert_eq!(raced.id, winner.id);
+
+    db.teardown().await.expect("teardown");
+}
+
 #[tokio::test]
 async fn grants_v2_round_trip_every_subject_target_and_authority_shape() {
     let db = TestDb::create().await.expect("TestDb::create");

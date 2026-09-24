@@ -7,6 +7,7 @@ use atlas_server::persistence::{
     bootstrap::{BootstrapConfig, run_bootstrap, run_dev_seed},
     repos::{ProjectRepo, UserRepo},
 };
+use sea_orm::{DatabaseBackend, FromQueryResult, Statement};
 
 #[tokio::test]
 async fn bootstrap_fail_fast_when_no_root_password() {
@@ -110,5 +111,37 @@ async fn dev_seeder_is_idempotent() {
     let projects = project_repo.list(&ctx).await.expect("list projects");
     assert_eq!(projects.len(), 1, "exactly one project after double seed");
 
+    let sandbox = projects.first().expect("sandbox project");
+    let grants = VisibilityGrantRow::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "SELECT subject_principal_set, role_name, role_version, created_by \
+         FROM custos.grants_v2 WHERE target = $1",
+        [format!("acta::project::{}", sandbox.id.0).into()],
+    ))
+    .all(db.conn())
+    .await
+    .expect("query grants");
+    assert_eq!(
+        grants,
+        vec![VisibilityGrantRow {
+            subject_principal_set: Some(format!(
+                "acta::workspace::{}::members",
+                workspaces.first().expect("workspace").id.0
+            )),
+            role_name: Some("editor".to_string()),
+            role_version: Some(1),
+            created_by: root.id.0,
+        }],
+        "the Sandbox visibility is mirrored once as a members-set grant"
+    );
+
     db.teardown().await;
+}
+
+#[derive(Debug, PartialEq, FromQueryResult)]
+struct VisibilityGrantRow {
+    subject_principal_set: Option<String>,
+    role_name: Option<String>,
+    role_version: Option<i32>,
+    created_by: uuid::Uuid,
 }

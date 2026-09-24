@@ -12,7 +12,10 @@ use atlas_core::error::DomainError;
 use atlas_custos::entities::security_audit::NewSecurityAuditEvent;
 use atlas_custos::entities::security_audit::SecurityAction;
 
+use atlas_custos::ids::PrincipalId;
+
 use crate::{
+    authz::v2_access,
     authz::{CallerClass, WorkspaceMember, WorkspaceOwnerOrAdmin},
     error::ApiError,
     persistence::repos::{ApiKeyRepo, UserRepo},
@@ -211,6 +214,16 @@ pub(crate) async fn add_member(
             message: e.to_string(),
         })?;
 
+    let v2_grant = v2_access::membership_written(
+        &txn,
+        &state.registry,
+        caller.workspace.id,
+        target_user_id,
+        added.role.clone(),
+        PrincipalId::from(caller.caller_user_id),
+    )
+    .await?;
+
     PgSecurityAuditRepo::append_in(
         &txn,
         NewSecurityAuditEvent {
@@ -234,6 +247,11 @@ pub(crate) async fn add_member(
     txn.commit().await.map_err(|e| ApiError::Internal {
         message: e.to_string(),
     })?;
+
+    if let Some(grant) = &v2_grant {
+        let actor = atlas_core::principal::Principal::User(caller.caller_user_id);
+        v2_access::audit_delegation(&state, "add_member", &actor, grant);
+    }
 
     let status = account_status(target_user.disabled_at, target_user.activated_at).to_string();
 
@@ -415,6 +433,16 @@ pub(crate) async fn update_member_role(
             message: e.to_string(),
         })?;
 
+    let v2_grant = v2_access::membership_written(
+        &txn,
+        &state.registry,
+        caller.workspace.id,
+        target_user_id,
+        updated.role.clone(),
+        PrincipalId::from(caller.caller_user_id),
+    )
+    .await?;
+
     // The audit row and the role update commit or roll back together.
     PgSecurityAuditRepo::append_in(
         &txn,
@@ -440,6 +468,11 @@ pub(crate) async fn update_member_role(
     txn.commit().await.map_err(|e| ApiError::Internal {
         message: e.to_string(),
     })?;
+
+    if let Some(grant) = &v2_grant {
+        let actor = atlas_core::principal::Principal::User(caller.caller_user_id);
+        v2_access::audit_delegation(&state, "update_member_role", &actor, grant);
+    }
 
     Ok(Json(PrincipalDto {
         principal_type: "user".to_string(),
@@ -519,6 +552,8 @@ pub(crate) async fn remove_member(
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
         })?;
+
+    v2_access::membership_removed(&txn, caller.workspace.id, target_user_id).await?;
 
     // The audit row and the removal commit or roll back together.
     PgSecurityAuditRepo::append_in(

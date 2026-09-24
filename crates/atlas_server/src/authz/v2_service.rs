@@ -14,19 +14,24 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use sea_orm::DatabaseConnection;
+use sea_orm::{ConnectionTrait, DatabaseConnection};
 
 use atlas_acta::provider::ActaResourceProvider;
 use atlas_acta_postgres::repos::resource_store::PgActaResourceStore;
 use atlas_core::registry::{ComponentId, Registry};
 use atlas_custos::authorize::{AuthorizationService, AuthorizationSettings, ProviderSet, Sleeper};
-use atlas_custos::eval::{Catalog, CatalogError, DenyMode, ProductSpec, RoleSpec};
+use atlas_custos::entities::authorization::{CustomRole, GrantAuthority, GrantRecord};
+use atlas_custos::eval::{
+    ActionSet, Catalog, CatalogError, DenyMode, ProductSpec, RoleSpec, grant_spec,
+};
 use atlas_custos::provider::CustosResourceProvider;
+use atlas_custos_postgres::repos::authorization::PgRoleRepo;
 use atlas_custos_postgres::repos::authorize::{
     PgAuthorizationFactsStore, PgCustosResourceStore, PgGroupMembershipSource,
 };
 
 use crate::config::DenyModeConfig;
+use crate::error::ApiError;
 
 /// The service the server composes: Postgres-backed facts and membership.
 pub type ServerAuthorizationService =
@@ -84,6 +89,34 @@ pub fn product_specs(registry: &Registry) -> Vec<ProductSpec> {
 /// The validation catalog built from [`product_specs`].
 pub fn validation_catalog(registry: &Registry) -> Result<Catalog, CatalogError> {
     Catalog::new(product_specs(registry))
+}
+
+/// Resolves `candidate` through `catalog` exactly as the evaluator would
+/// (`eval::records::grant_spec`): declared product and kinds, a declared
+/// principal set, and one authority whose actions exist and match the
+/// target's product. A custom-role authority is read from its stored row.
+/// `catalog_error` maps a catalog refusal to the caller's error.
+pub(crate) async fn resolve_grant_actions<C: ConnectionTrait>(
+    conn: &C,
+    catalog: &Catalog,
+    candidate: &GrantRecord,
+    catalog_error: impl Fn(CatalogError) -> ApiError,
+) -> Result<ActionSet, ApiError> {
+    let custom_roles: Vec<CustomRole> = match &candidate.authority {
+        GrantAuthority::CustomRole(role_id) => PgRoleRepo::get_in(conn, *role_id)
+            .await
+            .map_err(ApiError::Domain)?
+            .into_iter()
+            .collect(),
+        GrantAuthority::Builtin { .. } | GrantAuthority::Actions(_) => Vec::new(),
+    };
+
+    let spec = grant_spec(candidate, catalog, &custom_roles).map_err(&catalog_error)?;
+
+    catalog
+        .resolve_grant(spec)
+        .map(|grant| grant.actions().clone())
+        .map_err(catalog_error)
 }
 
 /// The evaluator's deny mode for the configured one. `Enforced` is refused

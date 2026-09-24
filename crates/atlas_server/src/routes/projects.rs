@@ -27,7 +27,10 @@ use atlas_custos::capability::Capability;
 use atlas_custos::capability::CapabilityAction;
 use atlas_custos::capability::CapabilityFamily;
 
+use atlas_custos::entities::authorization::SubjectRecord;
+
 use crate::{
+    authz::v2_access,
     authz::{
         Authorized, EditorMin, ProjectsCreate, ProjectsDelete, ProjectsRead, ProjectsUpdate,
         ViewerMin, WorkspaceMember, authorized::ProjectRes, enforce_api_key_scope,
@@ -71,6 +74,7 @@ pub(crate) async fn create_project(
 
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
+    let v2_created_by = v2_access::created_by(&state, &auth.principal).await?;
     let txn = state.db.begin().await.map_err(|e| ApiError::Internal {
         message: e.to_string(),
     })?;
@@ -102,6 +106,10 @@ pub(crate) async fn create_project(
         Principal::User(_) | Principal::Group(_) => None,
     };
 
+    let project_ref = atlas_acta::permissions::resource_ref_codec::to_core(
+        &atlas_acta::permissions::ResourceRef::Project(project.id),
+        auth.workspace.id,
+    );
     PgPermissionGrantRepo::upsert_in(
         &txn,
         NewPermissionGrant {
@@ -109,10 +117,7 @@ pub(crate) async fn create_project(
             user_id: created_by_user_id,
             api_key_id: created_by_api_key_id,
             group_id: None,
-            resource_ref: atlas_acta::permissions::resource_ref_codec::to_core(
-                &atlas_acta::permissions::ResourceRef::Project(project.id),
-                auth.workspace.id,
-            ),
+            resource_ref: project_ref.clone(),
             role: creator_role,
             created_by_user_id,
             created_by_api_key_id,
@@ -122,6 +127,23 @@ pub(crate) async fn create_project(
     .map_err(|e| ApiError::Internal {
         message: e.to_string(),
     })?;
+
+    v2_access::grant_written(
+        &txn,
+        SubjectRecord::Principal(v2_created_by),
+        project_ref.clone(),
+        creator_role,
+        v2_created_by,
+    )
+    .await?;
+    let v2_visibility_grant = v2_access::visibility_written(
+        &txn,
+        auth.workspace.id,
+        project_ref,
+        &visibility,
+        v2_created_by,
+    )
+    .await?;
 
     PgOutboxRepo::insert_in(
         &txn,
@@ -140,6 +162,10 @@ pub(crate) async fn create_project(
     txn.commit().await.map_err(|e| ApiError::Internal {
         message: e.to_string(),
     })?;
+
+    if let Some(grant) = &v2_visibility_grant {
+        v2_access::audit_delegation(&state, "create_project", &auth.principal, grant);
+    }
 
     Ok((StatusCode::CREATED, Json(project_to_dto(&project))))
 }
@@ -282,20 +308,45 @@ pub(crate) async fn update_project(
 
     let update = UpdateProject {
         name: body.name,
-        visibility: new_visibility,
+        visibility: new_visibility.clone(),
         task_prefix: body.task_prefix,
     };
 
     let actor = principal_to_actor(&auth.principal);
     let ctx = WorkspaceCtx::new(auth.workspace.id, actor);
-    let repo = PgProjectRepo {
-        conn: (*state.db).clone(),
-    };
+    let v2_created_by = v2_access::created_by(&state, &auth.principal).await?;
 
-    let updated = repo
-        .update(&ctx, auth.resource.0.id, update)
+    // The project row and the V2 visibility grant derived from it commit
+    // or roll back together.
+    let txn = state.db.begin().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+    let updated = PgProjectRepo::update_in(&txn, &ctx, auth.resource.0.id, update)
         .await
         .map_err(ApiError::Domain)?;
+
+    let mut v2_grant = None;
+    if let Some(visibility) = &new_visibility {
+        v2_grant = v2_access::visibility_written(
+            &txn,
+            auth.workspace.id,
+            atlas_acta::permissions::resource_ref_codec::to_core(
+                &atlas_acta::permissions::ResourceRef::Project(updated.id),
+                auth.workspace.id,
+            ),
+            visibility,
+            v2_created_by,
+        )
+        .await?;
+    }
+
+    txn.commit().await.map_err(|e| ApiError::Internal {
+        message: e.to_string(),
+    })?;
+
+    if let Some(grant) = &v2_grant {
+        v2_access::audit_delegation(&state, "update_project", &auth.principal, grant);
+    }
 
     Ok(Json(project_to_dto(&updated)))
 }

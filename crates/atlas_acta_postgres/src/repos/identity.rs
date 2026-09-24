@@ -28,7 +28,9 @@ use sea_orm::{
 };
 use uuid::Uuid;
 
-use crate::entities::identity::{membership, membership_from, workspace, workspace_from};
+use crate::entities::identity::{
+    membership, membership_from, workspace, workspace_from, workspace_member,
+};
 use atlas_postgres::db_err;
 
 pub use atlas_acta::entities::identity::NewWorkspace;
@@ -44,19 +46,7 @@ pub struct PgWorkspaceRepo {
 #[async_trait]
 impl WorkspaceRepo for PgWorkspaceRepo {
     async fn create(&self, new: NewWorkspace) -> Result<Workspace, DomainError> {
-        let model = workspace::ActiveModel {
-            id: Set(new.id.0),
-            name: Set(new.name),
-            slug: Set(new.slug),
-            created_at: Set(Utc::now()),
-            updated_at: Set(Utc::now()),
-            deleted_at: Set(None),
-        };
-        model
-            .insert(&self.conn)
-            .await
-            .map(workspace_from)
-            .map_err(db_err)
+        Self::create_in(&self.conn, new).await
     }
 
     async fn find_by_id(&self, id: WorkspaceId) -> Result<Option<Workspace>, DomainError> {
@@ -462,5 +452,113 @@ impl PgMembershipRepo {
             .and_then(|m: membership::Model| {
                 membership_from(m).map_err(|e| DomainError::Internal { message: e })
             })
+    }
+}
+
+impl PgWorkspaceRepo {
+    /// Creates a workspace using the provided connection or transaction, so
+    /// the row can commit together with its first membership.
+    pub async fn create_in<C: ConnectionTrait>(
+        conn: &C,
+        new: NewWorkspace,
+    ) -> Result<Workspace, DomainError> {
+        let model = workspace::ActiveModel {
+            id: Set(new.id.0),
+            name: Set(new.name),
+            slug: Set(new.slug),
+            created_at: Set(Utc::now()),
+            updated_at: Set(Utc::now()),
+            deleted_at: Set(None),
+            owner_principal_id: Set(None),
+        };
+        model.insert(conn).await.map(workspace_from).map_err(db_err)
+    }
+
+    /// The workspace's V2 owner metadata (`owner_principal_id`), `None`
+    /// when unset or when the workspace is unknown.
+    pub async fn owner_principal_in<C: ConnectionTrait>(
+        conn: &C,
+        workspace_id: WorkspaceId,
+    ) -> Result<Option<Uuid>, DomainError> {
+        Ok(workspace::Entity::find_by_id(workspace_id.0)
+            .one(conn)
+            .await
+            .map_err(db_err)?
+            .and_then(|m| m.owner_principal_id))
+    }
+
+    /// Sets the workspace's V2 owner metadata.
+    pub async fn set_owner_principal_in<C: ConnectionTrait>(
+        conn: &C,
+        workspace_id: WorkspaceId,
+        owner: Option<Uuid>,
+    ) -> Result<(), DomainError> {
+        workspace::Entity::update_many()
+            .col_expr(
+                workspace::Column::OwnerPrincipalId,
+                sea_orm::sea_query::Expr::value(owner),
+            )
+            .filter(workspace::Column::Id.eq(workspace_id.0))
+            .exec(conn)
+            .await
+            .map(|_| ())
+            .map_err(db_err)
+    }
+}
+
+/// Writes to the `acta.workspace_members` projection (ACTA-WS-2).
+pub struct PgWorkspaceMemberProjection;
+
+impl PgWorkspaceMemberProjection {
+    /// Inserts or replaces the projected row for `principal` in `workspace`.
+    pub async fn upsert_in<C: ConnectionTrait>(
+        conn: &C,
+        workspace_id: WorkspaceId,
+        principal_id: Uuid,
+        role: MemberRole,
+        source: &str,
+    ) -> Result<(), DomainError> {
+        use sea_orm::sea_query::OnConflict;
+
+        let model = workspace_member::ActiveModel {
+            workspace_id: Set(workspace_id.0),
+            principal_id: Set(principal_id),
+            role: Set(role.as_str().to_string()),
+            source: Set(source.to_string()),
+            updated_at: Set(Utc::now()),
+        };
+
+        workspace_member::Entity::insert(model)
+            .on_conflict(
+                OnConflict::columns([
+                    workspace_member::Column::WorkspaceId,
+                    workspace_member::Column::PrincipalId,
+                ])
+                .update_columns([
+                    workspace_member::Column::Role,
+                    workspace_member::Column::Source,
+                    workspace_member::Column::UpdatedAt,
+                ])
+                .to_owned(),
+            )
+            .exec(conn)
+            .await
+            .map(|_| ())
+            .map_err(db_err)
+    }
+
+    /// Removes the projected row for `principal` in `workspace`, if any.
+    pub async fn remove_in<C: ConnectionTrait>(
+        conn: &C,
+        workspace_id: WorkspaceId,
+        principal_id: Uuid,
+    ) -> Result<(), DomainError> {
+        workspace_member::Entity::delete_many()
+            .filter(workspace_member::Column::WorkspaceId.eq(workspace_id.0))
+            .filter(workspace_member::Column::PrincipalId.eq(principal_id))
+            .exec(conn)
+            .await
+            .map(|_| ())
+            .map_err(db_err)
     }
 }

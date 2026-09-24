@@ -41,6 +41,7 @@ use atlas_custos::entities::security_audit::NewSecurityAuditEvent;
 use atlas_custos::entities::security_audit::SecurityAction;
 
 use crate::{
+    authz::v2_access,
     authz::{
         Authorized, EditorMin, GrantsRead,
         authorized::{ProjectRes, WorkspaceRes},
@@ -131,6 +132,10 @@ pub(crate) async fn create_project_grant(
     let (grantee_type, grantee_id) =
         grantee_fields(new_grant.user_id, new_grant.api_key_id, new_grant.group_id);
 
+    let v2_subject = v2_access::subject_of(&state, user_id, api_key_id, group_id).await?;
+    let v2_created_by = v2_access::created_by(&state, &auth.principal).await?;
+    let v2_resource = new_grant.resource_ref.clone();
+
     let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
         message: e.to_string(),
     })?;
@@ -140,6 +145,10 @@ pub(crate) async fn create_project_grant(
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
         })?;
+
+    let v2_grant =
+        v2_access::grant_written(&txn, v2_subject, v2_resource, role_in_play, v2_created_by)
+            .await?;
 
     // The audit row and the upsert commit or roll back together.
     PgSecurityAuditRepo::append_in(
@@ -167,6 +176,8 @@ pub(crate) async fn create_project_grant(
     txn.commit().await.map_err(|e| ApiError::Internal {
         message: e.to_string(),
     })?;
+
+    v2_access::audit_delegation(&state, "create_project_grant", &auth.principal, &v2_grant);
 
     Ok((
         StatusCode::CREATED,
@@ -296,6 +307,14 @@ pub(crate) async fn delete_project_grant(
         target_grant.group_id,
     );
 
+    let v2_subject = v2_access::subject_of(
+        &state,
+        target_grant.user_id,
+        target_grant.api_key_id,
+        target_grant.group_id,
+    )
+    .await?;
+
     let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
         message: e.to_string(),
     })?;
@@ -309,6 +328,8 @@ pub(crate) async fn delete_project_grant(
     .map_err(|e| ApiError::Internal {
         message: e.to_string(),
     })?;
+
+    v2_access::grant_revoked(&txn, v2_subject, target_grant.resource_ref.clone()).await?;
 
     // The audit row and the delete commit or roll back together.
     PgSecurityAuditRepo::append_in(
@@ -407,6 +428,10 @@ pub(crate) async fn create_workspace_grant(
     let (grantee_type, grantee_id) =
         grantee_fields(new_grant.user_id, new_grant.api_key_id, new_grant.group_id);
 
+    let v2_subject = v2_access::subject_of(&state, user_id, api_key_id, group_id).await?;
+    let v2_created_by = v2_access::created_by(&state, &auth.principal).await?;
+    let v2_resource = new_grant.resource_ref.clone();
+
     let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
         message: e.to_string(),
     })?;
@@ -416,6 +441,10 @@ pub(crate) async fn create_workspace_grant(
         .map_err(|e| ApiError::Internal {
             message: e.to_string(),
         })?;
+
+    let v2_grant =
+        v2_access::grant_written(&txn, v2_subject, v2_resource, role_in_play, v2_created_by)
+            .await?;
 
     // The audit row and the upsert commit or roll back together.
     PgSecurityAuditRepo::append_in(
@@ -443,6 +472,8 @@ pub(crate) async fn create_workspace_grant(
     txn.commit().await.map_err(|e| ApiError::Internal {
         message: e.to_string(),
     })?;
+
+    v2_access::audit_delegation(&state, "create_workspace_grant", &auth.principal, &v2_grant);
 
     Ok((
         StatusCode::CREATED,
@@ -569,6 +600,14 @@ pub(crate) async fn delete_workspace_grant(
         target_grant.group_id,
     );
 
+    let v2_subject = v2_access::subject_of(
+        &state,
+        target_grant.user_id,
+        target_grant.api_key_id,
+        target_grant.group_id,
+    )
+    .await?;
+
     let txn = (*state.db).begin().await.map_err(|e| ApiError::Internal {
         message: e.to_string(),
     })?;
@@ -582,6 +621,8 @@ pub(crate) async fn delete_workspace_grant(
     .map_err(|e| ApiError::Internal {
         message: e.to_string(),
     })?;
+
+    v2_access::grant_revoked(&txn, v2_subject, target_grant.resource_ref.clone()).await?;
 
     // The audit row and the delete commit or roll back together.
     PgSecurityAuditRepo::append_in(
