@@ -18,6 +18,7 @@ mod m20260903_000055_acta_boards_tasks_set_schema;
 mod m20260904_000056_acta_comments_events_tags_set_schema;
 mod m20260905_000057_acta_search_attachments_lifecycle_set_schema;
 mod m20260906_000058_acta_platform_idempotency_keys;
+mod m20260924_000059_acta_workspace_owner_members;
 
 use sea_orm_migration::prelude::MigrationTrait;
 
@@ -31,5 +32,6 @@ pub fn acta_new() -> Vec<Box<dyn MigrationTrait>> {
         Box::new(m20260904_000056_acta_comments_events_tags_set_schema::Migration),
         Box::new(m20260905_000057_acta_search_attachments_lifecycle_set_schema::Migration),
         Box::new(m20260906_000058_acta_platform_idempotency_keys::Migration),
+        Box::new(m20260924_000059_acta_workspace_owner_members::Migration),
     ]
 }

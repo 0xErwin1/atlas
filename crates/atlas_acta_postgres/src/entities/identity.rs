@@ -20,6 +20,30 @@ pub mod workspace {
         pub created_at: DateTime<Utc>,
         pub updated_at: DateTime<Utc>,
         pub deleted_at: Option<DateTime<Utc>>,
+        pub owner_principal_id: Option<Uuid>,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+/// `acta.workspace_members`: the V2 projection of workspace membership
+/// (one row per principal), maintained by the access dual-write.
+pub mod workspace_member {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(schema_name = "acta", table_name = "workspace_members")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub workspace_id: Uuid,
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub principal_id: Uuid,
+        pub role: String,
+        pub source: String,
+        pub updated_at: DateTime<Utc>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

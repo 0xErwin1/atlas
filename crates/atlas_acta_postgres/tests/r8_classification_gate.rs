@@ -65,6 +65,7 @@ const CLASSIFIED_ACTA_TABLES: &[&str] = &[
     // Batch 1 — identity/workspaces
     "workspaces",
     "workspace_memberships",
+    "workspace_members",
     // Batch 2 — documents
     "property_definitions",
     "projects",
@@ -354,13 +355,14 @@ fn no_table_name_is_classified_under_more_than_one_disposition() {
     }
 }
 
-/// `CLASSIFIED_ACTA_TABLES` records exactly the D1 36-table inventory — a
-/// regression guard against silently dropping or duplicating an entry.
+/// `CLASSIFIED_ACTA_TABLES` records exactly the D1 36-table inventory plus
+/// `workspace_members` (V2-E7 S4) — a regression guard against silently
+/// dropping or duplicating an entry.
 #[test]
 fn classified_acta_tables_has_the_full_d1_inventory_count() {
     assert_eq!(
         CLASSIFIED_ACTA_TABLES.len(),
-        36,
-        "expected the full D1 36-table Acta inventory"
+        37,
+        "expected the full D1 36-table Acta inventory plus workspace_members"
     );
 }

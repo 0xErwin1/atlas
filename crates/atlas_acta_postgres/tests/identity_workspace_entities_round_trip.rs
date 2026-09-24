@@ -26,6 +26,7 @@ fn workspace_from_round_trips_every_column() {
         created_at,
         updated_at,
         deleted_at: None,
+        owner_principal_id: None,
     };
 
     let domain = workspace_from(model);
