@@ -18,6 +18,7 @@ pub mod position;
 pub mod principal;
 pub mod registry;
 pub mod slug;
+pub mod visibility;
 
 pub use attribution::Attribution;
 pub use ids::{

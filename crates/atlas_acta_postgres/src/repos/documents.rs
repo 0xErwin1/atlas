@@ -47,6 +47,7 @@ use atlas_core::error::DomainError;
 use atlas_core::error::RevisionConflict;
 use atlas_core::principal::Principal;
 use atlas_core::slug::slugify;
+use atlas_core::visibility::ListVisibility;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
@@ -66,6 +67,7 @@ use crate::live_ancestors::{
     folder_chain_is_live_sql, live_document_chain, live_folder_chain, live_project,
     live_task_chain, project_is_live_sql, task_chain_is_live_sql,
 };
+use crate::visibility_sql::{VisibleKind, predicate_to_sql};
 use atlas_postgres::db_err;
 
 pub use atlas_acta::ports::documents::DocumentLinkRepo;
@@ -152,6 +154,147 @@ impl PgDocumentRepo {
             conn,
             anchor_interval,
         }
+    }
+
+    /// Lists the workspace's live documents that `visibility` (the V2 list
+    /// predicate for `acta::document::read`) selects, with the same filters,
+    /// cursor and LIMIT as `list_visible_with_folder_presence`. No route
+    /// calls it yet.
+    pub async fn list_visible_v2_with_folder_presence(
+        &self,
+        ctx: &WorkspaceCtx,
+        visibility: &ListVisibility,
+        project_filter: Option<ProjectId>,
+        folder_presence: atlas_acta::ports::documents::FolderPresence,
+        after_id: Option<uuid::Uuid>,
+        limit: u64,
+    ) -> Result<Vec<DocumentSummary>, DomainError> {
+        let mut values: Vec<sea_orm::Value> = vec![ctx.workspace_id.0.into()];
+        let fragment = predicate_to_sql(visibility, VisibleKind::Document, "d", values.len() + 1);
+        values.extend(fragment.binds);
+
+        self.list_summaries(
+            values,
+            &fragment.where_clause,
+            project_filter,
+            folder_presence,
+            after_id,
+            limit,
+        )
+        .await
+    }
+
+    /// The live documents of workspace `$1` that `permission` admits, ordered
+    /// by id after `after_id`, at most `limit`. `values` already binds every
+    /// placeholder `permission` uses.
+    async fn list_summaries(
+        &self,
+        mut values: Vec<sea_orm::Value>,
+        permission: &str,
+        project_filter: Option<ProjectId>,
+        folder_presence: atlas_acta::ports::documents::FolderPresence,
+        after_id: Option<uuid::Uuid>,
+        limit: u64,
+    ) -> Result<Vec<DocumentSummary>, DomainError> {
+        use sea_orm::FromQueryResult;
+
+        #[derive(Debug, FromQueryResult)]
+        struct Row {
+            id: uuid::Uuid,
+            workspace_id: uuid::Uuid,
+            project_id: Option<uuid::Uuid>,
+            folder_id: Option<uuid::Uuid>,
+            title: String,
+            slug: Option<String>,
+            frontmatter: sea_orm::prelude::Json,
+            current_revision_id: Option<uuid::Uuid>,
+            current_revision_seq: i64,
+            created_by_user_id: Option<uuid::Uuid>,
+            created_by_api_key_id: Option<uuid::Uuid>,
+            created_at: chrono::DateTime<chrono::Utc>,
+            updated_at: chrono::DateTime<chrono::Utc>,
+        }
+
+        let cursor_cond = if let Some(cursor) = after_id {
+            values.push(cursor.into());
+            format!("AND d.id > ${}", values.len())
+        } else {
+            String::new()
+        };
+
+        let project_cond = if let Some(project_id) = project_filter {
+            values.push(project_id.0.into());
+            format!("AND d.project_id = ${}", values.len())
+        } else {
+            String::new()
+        };
+
+        let folder_presence_cond = match folder_presence {
+            atlas_acta::ports::documents::FolderPresence::Any => String::new(),
+            atlas_acta::ports::documents::FolderPresence::Unfiled => {
+                "AND d.folder_id IS NULL".to_string()
+            }
+            atlas_acta::ports::documents::FolderPresence::Filed => {
+                "AND d.folder_id IS NOT NULL".to_string()
+            }
+        };
+
+        let sql = format!(
+            r#"
+            SELECT d.id, d.workspace_id, d.project_id, d.folder_id, d.title, d.slug,
+                   d.frontmatter, d.current_revision_id, d.current_revision_seq,
+                   d.created_by_user_id, d.created_by_api_key_id, d.created_at, d.updated_at
+            FROM acta.documents d
+            WHERE d.workspace_id = $1
+              AND d.deleted_at IS NULL
+              AND {project_live}
+              AND {folder_live}
+              AND {permission}
+               {project_cond}
+               {folder_presence_cond}
+               {cursor_cond}
+            ORDER BY d.id
+            LIMIT {limit}
+            "#,
+            project_live = project_is_live_sql("d.project_id"),
+            folder_live = folder_chain_is_live_sql("d.folder_id"),
+        );
+
+        let rows = Row::find_by_statement(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            sql,
+            values,
+        ))
+        .all(&self.conn)
+        .await
+        .map_err(db_err)?;
+
+        rows.into_iter()
+            .map(|r| {
+                let current_revision_id = r
+                    .current_revision_id
+                    .ok_or_else(|| "document missing current_revision_id".to_string())?;
+
+                Ok(DocumentSummary {
+                    id: atlas_acta::ids::DocumentId(r.id),
+                    workspace_id: atlas_acta::ids::WorkspaceId(r.workspace_id),
+                    project_id: r.project_id.map(atlas_acta::ids::ProjectId),
+                    folder_id: r.folder_id.map(atlas_acta::ids::FolderId),
+                    title: r.title,
+                    slug: r.slug,
+                    frontmatter: r.frontmatter,
+                    current_revision_id: atlas_acta::ids::RevisionId(current_revision_id),
+                    current_revision_seq: r.current_revision_seq,
+                    created_by_user_id: r.created_by_user_id.map(atlas_core::principal::UserId),
+                    created_by_api_key_id: r
+                        .created_by_api_key_id
+                        .map(atlas_core::principal::ApiKeyId),
+                    created_at: r.created_at,
+                    updated_at: r.updated_at,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()
+            .map_err(internal_err)
     }
 
     /// Reads the leading `max_chars` characters of each requested document's raw
@@ -248,25 +391,6 @@ impl DocumentRepo for PgDocumentRepo {
         after_id: Option<uuid::Uuid>,
         limit: u64,
     ) -> Result<Vec<DocumentSummary>, DomainError> {
-        use sea_orm::FromQueryResult;
-
-        #[derive(Debug, FromQueryResult)]
-        struct Row {
-            id: uuid::Uuid,
-            workspace_id: uuid::Uuid,
-            project_id: Option<uuid::Uuid>,
-            folder_id: Option<uuid::Uuid>,
-            title: String,
-            slug: Option<String>,
-            frontmatter: sea_orm::prelude::Json,
-            current_revision_id: Option<uuid::Uuid>,
-            current_revision_seq: i64,
-            created_by_user_id: Option<uuid::Uuid>,
-            created_by_api_key_id: Option<uuid::Uuid>,
-            created_at: chrono::DateTime<chrono::Utc>,
-            updated_at: chrono::DateTime<chrono::Utc>,
-        }
-
         let mut values: Vec<sea_orm::Value> = Vec::new();
         values.push(ctx.workspace_id.0.into()); // $1
 
@@ -304,41 +428,9 @@ impl DocumentRepo for PgDocumentRepo {
             }
         }
 
-        let cursor_cond = if let Some(cursor) = after_id {
-            values.push(cursor.into());
-            format!("AND d.id > ${}", values.len())
-        } else {
-            String::new()
-        };
-
-        let project_cond = if let Some(project_id) = project_filter {
-            values.push(project_id.0.into());
-            format!("AND d.project_id = ${}", values.len())
-        } else {
-            String::new()
-        };
-
-        let folder_presence_cond = match folder_presence {
-            atlas_acta::ports::documents::FolderPresence::Any => String::new(),
-            atlas_acta::ports::documents::FolderPresence::Unfiled => {
-                "AND d.folder_id IS NULL".to_string()
-            }
-            atlas_acta::ports::documents::FolderPresence::Filed => {
-                "AND d.folder_id IS NOT NULL".to_string()
-            }
-        };
-
-        let sql = format!(
+        let permission = format!(
             r#"
-            SELECT d.id, d.workspace_id, d.project_id, d.folder_id, d.title, d.slug,
-                   d.frontmatter, d.current_revision_id, d.current_revision_seq,
-                   d.created_by_user_id, d.created_by_api_key_id, d.created_at, d.updated_at
-            FROM acta.documents d
-            WHERE d.workspace_id = $1
-              AND d.deleted_at IS NULL
-              AND {project_live}
-              AND {folder_live}
-              AND (
+(
                     {membership_clause}
                     OR EXISTS (
                         SELECT 1 FROM custos.permission_grants
@@ -385,51 +477,18 @@ impl DocumentRepo for PgDocumentRepo {
                           AND pg.{principal_col} = $2
                     )
                )
-               {project_cond}
-               {folder_presence_cond}
-               {cursor_cond}
-            ORDER BY d.id
-            LIMIT {limit}
-            "#,
-            project_live = project_is_live_sql("d.project_id"),
-            folder_live = folder_chain_is_live_sql("d.folder_id"),
+            "#
         );
 
-        let rows = Row::find_by_statement(sea_orm::Statement::from_sql_and_values(
-            sea_orm::DatabaseBackend::Postgres,
-            sql,
+        self.list_summaries(
             values,
-        ))
-        .all(&self.conn)
+            &permission,
+            project_filter,
+            folder_presence,
+            after_id,
+            limit,
+        )
         .await
-        .map_err(db_err)?;
-
-        rows.into_iter()
-            .map(|r| {
-                let current_revision_id = r
-                    .current_revision_id
-                    .ok_or_else(|| "document missing current_revision_id".to_string())?;
-
-                Ok(DocumentSummary {
-                    id: atlas_acta::ids::DocumentId(r.id),
-                    workspace_id: atlas_acta::ids::WorkspaceId(r.workspace_id),
-                    project_id: r.project_id.map(atlas_acta::ids::ProjectId),
-                    folder_id: r.folder_id.map(atlas_acta::ids::FolderId),
-                    title: r.title,
-                    slug: r.slug,
-                    frontmatter: r.frontmatter,
-                    current_revision_id: atlas_acta::ids::RevisionId(current_revision_id),
-                    current_revision_seq: r.current_revision_seq,
-                    created_by_user_id: r.created_by_user_id.map(atlas_core::principal::UserId),
-                    created_by_api_key_id: r
-                        .created_by_api_key_id
-                        .map(atlas_core::principal::ApiKeyId),
-                    created_at: r.created_at,
-                    updated_at: r.updated_at,
-                })
-            })
-            .collect::<Result<Vec<_>, String>>()
-            .map_err(internal_err)
     }
 
     async fn find_by_slug(

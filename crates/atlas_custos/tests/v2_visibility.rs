@@ -636,3 +636,57 @@ fn membership_facts_for_another_principal_are_rejected() {
         Err(EvalError::InconsistentFacts { .. })
     ));
 }
+
+#[test]
+fn the_predicate_converts_to_its_storage_neutral_form_unchanged() {
+    use atlas_core::visibility::{ListVisibility, VisibilityGrant, VisibilityTarget};
+    use atlas_custos::eval::{GrantTarget, VisibilityRule};
+
+    let workspace = ref_target("acta::workspace::w1");
+    let folder = path_target("acta::workspace::w1/folder::f1");
+    let documents = selector_target("acta::workspace::w1/**");
+    let predicate = VisibilityPredicate::Rules {
+        grants: vec![
+            VisibilityRule {
+                target: workspace.clone(),
+                effect: RuleEffect::Allow,
+            },
+            VisibilityRule {
+                target: folder.clone(),
+                effect: RuleEffect::Block,
+            },
+        ],
+        denies: vec![documents.clone()],
+    };
+
+    let neutral = |target: GrantTarget| match target {
+        GrantTarget::Ref(reference) => VisibilityTarget::Ref(reference),
+        GrantTarget::Path(path) => VisibilityTarget::Path(path),
+        GrantTarget::Selector(selector) => VisibilityTarget::Selector(selector),
+    };
+
+    assert_eq!(
+        ListVisibility::from(&predicate),
+        ListVisibility::Rules {
+            grants: vec![
+                VisibilityGrant {
+                    target: neutral(workspace),
+                    allow: true,
+                },
+                VisibilityGrant {
+                    target: neutral(folder),
+                    allow: false,
+                },
+            ],
+            denies: vec![neutral(documents)],
+        }
+    );
+    assert_eq!(
+        ListVisibility::from(&VisibilityPredicate::All),
+        ListVisibility::All
+    );
+    assert_eq!(
+        ListVisibility::from(&VisibilityPredicate::Nothing),
+        ListVisibility::Nothing
+    );
+}

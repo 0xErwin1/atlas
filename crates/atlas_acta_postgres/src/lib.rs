@@ -18,3 +18,4 @@ pub mod entities;
 pub mod live_ancestors;
 pub mod migrations;
 pub mod repos;
+pub mod visibility_sql;

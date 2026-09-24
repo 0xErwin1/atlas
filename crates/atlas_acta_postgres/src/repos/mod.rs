@@ -15,6 +15,7 @@ pub mod semantic_search;
 pub mod status_templates;
 pub mod tags;
 pub mod task_views;
+pub mod visible_lists;
 pub mod webhook_delivery;
 pub mod webhook_subscription;
 pub mod workspace_core;
