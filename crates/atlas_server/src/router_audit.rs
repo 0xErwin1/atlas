@@ -238,6 +238,48 @@ pub fn capability_from_action_id(action: &ActionId) -> Capability {
     })
 }
 
+/// Acta routes that run outside any workspace: platform-scoped
+/// administration (trash, workspace administration, platform status
+/// templates) and the workspace collection itself. They resolve no
+/// workspace-scoped V2 target, so they declare no `v2` question
+/// (`v2-e7-s2`); every other non-public Acta route must.
+pub const V2_PLATFORM_SCOPED_PATHS: &[&str] = &[
+    "/admin/trash",
+    "/admin/trash/restore",
+    "/admin/trash/purge",
+    "/admin/trash/purges/{operation_id}",
+    "/admin/workspaces",
+    "/admin/workspaces/{ws}",
+    "/admin/status-templates",
+    "/admin/status-templates/{template_id}",
+    "/workspaces",
+];
+
+/// The inverse V2 declaration audit (ACTA-AUTHZ-2): every mounted route of
+/// `entry`'s component that is neither public nor platform-scoped must have
+/// a registry declaration carrying a `v2` target. Returns the mounted
+/// routes that do not.
+pub(crate) fn v2_declaration_gaps(
+    routes: &[AuditedRoute],
+    entry: &atlas_core::registry::ComponentEntry,
+) -> Vec<(HttpMethod, &'static str)> {
+    routes
+        .iter()
+        .filter(|route| !V2_PLATFORM_SCOPED_PATHS.contains(&route.path))
+        .filter(|route| {
+            let declaration = entry.api.routes.iter().find(|declared| {
+                declared.method == route.method && declared.path.as_str() == route.path
+            });
+
+            match declaration {
+                None => true,
+                Some(declared) => !declared.is_public && declared.v2.is_none(),
+            }
+        })
+        .map(|route| (route.method, route.path))
+        .collect()
+}
+
 /// A route whose declared action (registry side) and enforced capability
 /// (handler side, via `ExtractScope`) disagree.
 #[derive(Debug, PartialEq, Eq)]
