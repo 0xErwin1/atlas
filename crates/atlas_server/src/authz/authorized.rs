@@ -31,6 +31,7 @@ use atlas_custos::entities::identity::ApiKey;
 
 use super::batch_authorization::ProjectionAuthContext;
 use super::policy::{ChainSegment, ResolutionInput, ResolutionQuery, ResourceChain, resolve};
+use crate::authz::v2_shadow::{ShadowProbe, V1Outcome, acta_ref, observe};
 use crate::{
     auth::middleware::Principal as MiddlewarePrincipal,
     error::ApiError,
@@ -162,6 +163,13 @@ capability_marker!(TaskViewsDelete, TaskViews, Delete);
 pub trait ResolvedResource: Sized + Send {
     type PathParams: DeserializeOwned + Send;
 
+    /// The V2 reference of the resolved resource (`acta::<kind>::<id>`),
+    /// for the shadow authorization path. `None` for resources the V2
+    /// catalog does not address directly.
+    fn v2_target(&self) -> Option<atlas_core::ids::ResourceRef> {
+        None
+    }
+
     /// Whether a mutating request may reach this resource on an archived board.
     ///
     /// False everywhere except the route that lifts the archive: an archived
@@ -180,6 +188,10 @@ pub struct ProjectRes(pub Project);
 pub struct WorkspaceRes(pub Workspace);
 
 impl ResolvedResource for ProjectRes {
+    fn v2_target(&self) -> Option<atlas_core::ids::ResourceRef> {
+        acta_ref("project", self.0.id.0)
+    }
+
     type PathParams = HashMap<String, String>;
 
     async fn resolve(
@@ -220,6 +232,10 @@ impl ResolvedResource for ProjectRes {
 }
 
 impl ResolvedResource for WorkspaceRes {
+    fn v2_target(&self) -> Option<atlas_core::ids::ResourceRef> {
+        acta_ref("workspace", self.0.id.0)
+    }
+
     type PathParams = ();
 
     async fn resolve(
@@ -245,6 +261,10 @@ impl ResolvedResource for WorkspaceRes {
 pub struct FolderRes(pub atlas_acta::entities::workspace_core::Folder);
 
 impl ResolvedResource for FolderRes {
+    fn v2_target(&self) -> Option<atlas_core::ids::ResourceRef> {
+        acta_ref("folder", self.0.id.0)
+    }
+
     type PathParams = HashMap<String, String>;
 
     async fn resolve(
@@ -347,6 +367,10 @@ pub struct ArchivableBoardRes(pub Board);
 pub struct TaskRes(pub Task);
 
 impl ResolvedResource for ArchivableBoardRes {
+    fn v2_target(&self) -> Option<atlas_core::ids::ResourceRef> {
+        acta_ref("board", self.0.id.0)
+    }
+
     type PathParams = HashMap<String, String>;
 
     const ALLOWS_ARCHIVED_WRITES: bool = true;
@@ -362,6 +386,10 @@ impl ResolvedResource for ArchivableBoardRes {
 }
 
 impl ResolvedResource for BoardRes {
+    fn v2_target(&self) -> Option<atlas_core::ids::ResourceRef> {
+        acta_ref("board", self.0.id.0)
+    }
+
     type PathParams = HashMap<String, String>;
 
     async fn resolve(
@@ -395,6 +423,10 @@ impl ResolvedResource for BoardRes {
 }
 
 impl ResolvedResource for TaskRes {
+    fn v2_target(&self) -> Option<atlas_core::ids::ResourceRef> {
+        acta_ref("task", self.0.id.0)
+    }
+
     type PathParams = HashMap<String, String>;
 
     async fn resolve(
@@ -572,6 +604,10 @@ pub struct DocumentCompactRes {
 }
 
 impl ResolvedResource for DocumentRes {
+    fn v2_target(&self) -> Option<atlas_core::ids::ResourceRef> {
+        acta_ref("document", self.0.id.0)
+    }
+
     type PathParams = HashMap<String, String>;
 
     async fn resolve(
@@ -606,6 +642,10 @@ impl ResolvedResource for DocumentRes {
 }
 
 impl ResolvedResource for DocumentSlugRes {
+    fn v2_target(&self) -> Option<atlas_core::ids::ResourceRef> {
+        acta_ref("document", self.0.id.0)
+    }
+
     type PathParams = HashMap<String, String>;
 
     async fn resolve(
@@ -647,6 +687,10 @@ impl ResolvedResource for DocumentSlugRes {
 }
 
 impl ResolvedResource for DocumentCompactRes {
+    fn v2_target(&self) -> Option<atlas_core::ids::ResourceRef> {
+        acta_ref("document", self.id)
+    }
+
     type PathParams = HashMap<String, String>;
 
     async fn resolve(
@@ -1011,15 +1055,37 @@ where
 {
     type Rejection = ApiError;
 
+    /// The V1 decision, shadowed by the V2 question the route declares
+    /// (`v2-e7-s2`) once it is known. The decision is returned unchanged.
     async fn from_request_parts(
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
+        let mut probe = ShadowProbe::new(state, parts);
+        let outcome = Self::decide(parts, state, &mut probe).await;
+        observe(state, &probe, V1Outcome::of(&outcome)).await;
+        outcome
+    }
+}
+
+impl<R, M, S> Authorized<R, M, S>
+where
+    R: ResolvedResource,
+    R::PathParams: DeserializeOwned + Send,
+    M: MinRole + 'static,
+    S: RequiredScope + 'static,
+{
+    async fn decide(
+        parts: &mut Parts,
+        state: &AppState,
+        probe: &mut ShadowProbe,
+    ) -> Result<Self, ApiError> {
         let middleware_principal = parts
             .extensions
             .get::<MiddlewarePrincipal>()
             .cloned()
             .ok_or(ApiError::Unauthorized)?;
+        probe.set_principal(middleware_principal.clone());
 
         let path_params: Path<HashMap<String, String>> = Path::from_request_parts(parts, state)
             .await
@@ -1126,6 +1192,7 @@ where
             })?;
 
         let (resource, chain) = R::resolve(&state.db, &workspace, params).await?;
+        probe.set_target(&path_params.0, &workspace, || resource.v2_target());
 
         if !R::ALLOWS_ARCHIVED_WRITES && is_mutating(&parts.method) {
             reject_archived_board(&state.db, &chain).await?;

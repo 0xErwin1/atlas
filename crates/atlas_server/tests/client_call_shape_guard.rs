@@ -835,6 +835,7 @@ const ATLAS_SERVER_TEST_PINS: &[(&str, usize)] = &[
     ("api_unmatched_path_fallback.rs", 0),
     ("api_user_api_keys.rs", 0),
     ("api_users.rs", 0),
+    ("api_v2_shadow.rs", 0),
     ("api_webhooks.rs", 0),
     ("api_workspace_activity.rs", 0),
     ("api_workspace_attachments.rs", 0),

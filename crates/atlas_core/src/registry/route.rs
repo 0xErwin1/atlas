@@ -188,6 +188,54 @@ impl fmt::Display for RoutePath {
 
 impl_string_conversions!(RoutePath, RoutePathError);
 
+/// How a route's handler locates the V2 target of its declared action
+/// (`v2-e7-s2`): the resource its V1 extractor resolves from the path, or a
+/// workspace child named by one path parameter carrying a UUID.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TargetSource {
+    Workspace,
+    Project,
+    Folder,
+    Document,
+    Board,
+    Task,
+    Comment,
+    Attachment,
+    WorkspaceChild {
+        kind: &'static str,
+        param: &'static str,
+    },
+}
+
+impl TargetSource {
+    /// The V2 resource kind the source resolves to.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Workspace => "workspace",
+            Self::Project => "project",
+            Self::Folder => "folder",
+            Self::Document => "document",
+            Self::Board => "board",
+            Self::Task => "task",
+            Self::Comment => "comment",
+            Self::Attachment => "attachment",
+            Self::WorkspaceChild { kind, .. } => kind,
+        }
+    }
+}
+
+/// The V2 authorization question a route asks (ACTA-AUTHZ-2, `v2-e7-s2`):
+/// the target kind, the action evaluated on it, and how the handler locates
+/// the target. Creation routes target the parent (`kind` is the parent's
+/// kind, `action` the child's `create`). Declared once per route in the
+/// registry; the shadow path evaluates it beside the V1 decision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct V2Target {
+    pub kind: &'static str,
+    pub action: ActionId,
+    pub target: TargetSource,
+}
+
 /// A declared HTTP route on a component's API surface (SHELL-REG-1, SHELL-CLI-2, SHELL-API-3).
 #[derive(Debug)]
 pub struct RouteDeclaration {
@@ -195,6 +243,10 @@ pub struct RouteDeclaration {
     pub path: RoutePath,
     pub operation_id: String,
     pub action: Option<ActionId>,
+    /// The V2 target and action this route evaluates in shadow
+    /// (`v2-e7-s2`). `None` for public routes and for routes outside any
+    /// workspace (platform-scoped administration).
+    pub v2: Option<V2Target>,
     /// Whether this route honors a client-supplied `Idempotency-Key` request
     /// header and dedupes on it (`v2-e3-s3`, D8) — NOT HTTP-method
     /// idempotence. Pre-S3, this field meant "repeating this request has no

@@ -14,6 +14,7 @@ pub mod policy;
 pub(crate) mod v2_caller;
 pub mod v2_ceiling;
 pub mod v2_service;
+pub mod v2_shadow;
 
 pub use extract_scope::ExtractScope;
 

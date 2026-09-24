@@ -132,7 +132,7 @@ Resource-sharing (not IAM). Grants `(principal, resource, role)` with roles `vie
 
 ### V2 authorization model
 
-**Every request is still authorized by the resource-sharing model above.** The V2 model (V2-E5) exists beside it: its records are stored and administered, and a pure evaluator plus a fact-loading service decide over them, but no request path consults it yet. Wiring it into request authorization is V2-E7 work.
+**Every request is still authorized by the resource-sharing model above.** The V2 model (V2-E5) exists beside it: its records are stored and administered, a pure evaluator plus a fact-loading service decide over them, and since V2-E7 every workspace-scoped Acta route declares the V2 question it will ask and can evaluate it in shadow beside the V1 decision. No V1 decision, list filter or 403/404 changes until the cutover.
 
 | Part | Where | Role |
 |------|-------|------|
@@ -156,9 +156,15 @@ Resource-sharing (not IAM). Grants `(principal, resource, role)` with roles `vie
 
 #### Admin routes in this release
 
-- Only Custos declares V2 resource kinds in the registry, so only Custos targets are accepted. An Acta target answers 422 until Acta publishes its catalog; the routes take it without code changes once it does.
-- No product declares built-in roles, and custom roles may never carry Custos actions, so `POST /roles` answers 422 for every product today. On a Custos target the only usable authority is an explicit action set.
+- Custos and Acta declare V2 resource kinds in the registry (`reg5.rs`, the product's catalog declaration), so their targets are accepted; a product without a published catalog answers 422. Acta also declares its versioned built-in roles (`viewer`/`editor`/`admin` @1) and the `members` principal set.
+- Custom roles may never carry Custos actions, so custom roles exist for Acta; a built-in role authority is accepted only for a product that declares that role.
 - Creating or deleting a deny rule answers 409 while the deny mode is `disabled`. Stored denies are inert either way: nothing evaluates them for requests yet.
+
+#### Per-route V2 declarations and shadow authorization (V2-E7 S2)
+
+- **Declaration rule.** Every non-public, workspace-scoped Acta route declares `v2: Some(V2Target { kind, action, target })` in `reg5.rs`: the V2 kind of the resource the handler resolves, the catalog action evaluated on it, and how the handler locates it (`TargetSource`: the V1-resolved workspace/project/folder/document/board/task, a comment or attachment path parameter, or a workspace child named by a parameter). Creation routes target the container with the child's `create`; kind-specific lists target their container with the child's `read` (documents under a project ask `document::read` on the project, saved searches ask `saved_search::read` on the workspace); workspace-wide lists, search, activity and the event stream target the workspace with its `read`, `read_activity` or `subscribe_events`; moves and copies declare the source. Platform-scoped Acta routes (`/admin/*`, the workspace collection) declare nothing (`router_audit::V2_PLATFORM_SCOPED_PATHS`). Both directions are audited: every declaration names a catalog action on the source's kind, and every mounted route has its declaration.
+- **Shadow mode.** `ATLAS_CUSTOS_SHADOW_AUTHORIZE` (`CustosConfig`): `off` (default, no cost), `log`, `metrics`. When on, the V1 extractors (`Authorized<..>`, `WorkspaceMember`, `WorkspaceAccess`, `WorkspaceOwnerOrAdmin`) ask `AppState.authorization` the declared question for the actor and target they resolved, within a 100 ms budget separate from the provider timeout, and record `atlas_v2_shadow_total{component, operation, outcome}` plus a structured `authz.v2_shadow` line with the route, kind, action and both decisions, never a reason. Outcomes: `agree` (logged at debug), `v1_allow_v2_deny`, `v1_allow_v2_not_found`, `v1_deny_v2_allow`, `v1_notfound_v2_allow`, `v2_unavailable` (budget exhausted, provider missing or failing) and `skipped` (the route declares a target but V1 refused before one was resolved), all logged at info. The V1 decision is returned unchanged and no audit row is written.
+- **Key ceiling.** An API key's V1 scopes translate to V2 actions through `authz::v2_ceiling` (each plural family stands for the singular actions of its kind; `config` reads the workspace and manages its configuration; `grants:read` is `custos::grant::read`); no scope maps to `custos::grant::create`.
 
 #### Authorization service and providers
 

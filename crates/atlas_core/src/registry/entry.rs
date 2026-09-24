@@ -100,6 +100,7 @@ mod tests {
                 namespace: Some("acta".to_string()),
                 routes: vec![RouteDeclaration {
                     method: HttpMethod::Get,
+                    v2: None,
                     path: RoutePath::new("/tasks/{task_id}").expect("valid route path"),
                     operation_id: "getTask".to_string(),
                     action: Some(

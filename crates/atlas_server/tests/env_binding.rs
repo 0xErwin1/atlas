@@ -1159,14 +1159,18 @@ const V2_VARS: &[VarCase] = &[
         name: "ATLAS_CUSTOS_AUTHORIZE_TIMEOUT_MS",
         check: check_custos_authorize_timeout_ms,
     },
+    VarCase {
+        name: "ATLAS_CUSTOS_SHADOW_AUTHORIZE",
+        check: check_custos_shadow_authorize,
+    },
 ];
 
 #[test]
-fn enumerates_all_2_v2_variables_by_name() {
+fn enumerates_all_3_v2_variables_by_name() {
     assert_eq!(
         V2_VARS.len(),
-        2,
-        "the by-name V2 enumeration must cover exactly 2 variables; got {}",
+        3,
+        "the by-name V2 enumeration must cover exactly 3 variables; got {}",
         V2_VARS.len()
     );
 }
@@ -1223,6 +1227,26 @@ fn check_custos_authorize_timeout_ms() -> Result<(), String> {
         return Err(format!(
             "expected 2000ms when unset, got {:?}",
             unset.authorize_timeout
+        ));
+    }
+
+    Ok(())
+}
+
+fn check_custos_shadow_authorize() -> Result<(), String> {
+    use atlas_server::config::{CustosConfig, ShadowMode};
+
+    let set = CustosConfig::from_env(&env(&[("ATLAS_CUSTOS_SHADOW_AUTHORIZE", "metrics")]))
+        .map_err(|e| e.to_string())?;
+    if set.shadow_authorize != ShadowMode::Metrics {
+        return Err(format!("expected Metrics, got {:?}", set.shadow_authorize));
+    }
+
+    let unset = CustosConfig::from_env(&empty()).map_err(|e| e.to_string())?;
+    if unset.shadow_authorize != ShadowMode::Off {
+        return Err(format!(
+            "expected Off when unset, got {:?}",
+            unset.shadow_authorize
         ));
     }
 

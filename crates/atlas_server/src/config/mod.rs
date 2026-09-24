@@ -27,7 +27,7 @@ mod search;
 mod storage;
 
 pub use acta::ActaConfig;
-pub use custos::{CustosConfig, DenyModeConfig};
+pub use custos::{CustosConfig, DenyModeConfig, ShadowMode};
 pub use platform::{MetricsConfig, PlatformConfig};
 pub use search::{SearchLexicalConfig, SearchSemanticConfig};
 pub use storage::StorageConfig;
@@ -562,6 +562,7 @@ mod tests {
             root_password: Some(Secret::new("rootsecret".to_string())),
             explicit_deny_mode: DenyModeConfig::Disabled,
             authorize_timeout: std::time::Duration::from_millis(2000),
+            shadow_authorize: ShadowMode::Off,
         };
 
         let output = format!("{config:?}");

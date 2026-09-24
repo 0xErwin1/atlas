@@ -1374,3 +1374,138 @@ mod tests {
         );
     }
 }
+
+/// ACTA-AUTHZ-2 (`v2-e7-s2`): the per-route V2 declarations, audited in
+/// both directions against the registry and the mounted router.
+#[cfg(test)]
+mod v2_declaration_tests {
+    use std::collections::HashSet;
+
+    use atlas_core::ids::ActionId;
+    use atlas_core::registry::{ComponentId, build};
+
+    use super::declared_routes;
+    use crate::authz::v2_service::product_specs;
+    use crate::reg5::{StorageBackend, reg5_component_entries};
+    use crate::router_audit::{V2_PLATFORM_SCOPED_PATHS, v2_declaration_gaps};
+
+    fn registry() -> atlas_core::registry::Registry {
+        build(reg5_component_entries(StorageBackend::Filesystem))
+            .expect("REG-5 entries must satisfy every registry::build() validator")
+    }
+
+    fn acta_catalog_actions(registry: &atlas_core::registry::Registry) -> HashSet<ActionId> {
+        product_specs(registry)
+            .into_iter()
+            .find(|spec| spec.product == "acta")
+            .expect("acta publishes a catalog")
+            .actions
+            .into_iter()
+            .collect()
+    }
+
+    /// Forward audit: every non-public, workspace-scoped Acta route declares
+    /// a V2 target whose kind is the source's kind and whose action is an
+    /// Acta catalog action on that kind (or a child `create` on a parent).
+    #[test]
+    fn every_workspace_scoped_acta_route_declares_a_valid_v2_question() {
+        let registry = registry();
+        let entry = registry
+            .get(&ComponentId::new("acta").expect("valid id"))
+            .expect("acta is a REG-5 component");
+        let catalog = acta_catalog_actions(&registry);
+        let mut declared = 0usize;
+
+        for route in &entry.api.routes {
+            let scoped =
+                !route.is_public && !V2_PLATFORM_SCOPED_PATHS.contains(&route.path.as_str());
+            let Some(target) = &route.v2 else {
+                assert!(
+                    !scoped,
+                    "{:?} {} is workspace-scoped and declares no V2 target",
+                    route.method,
+                    route.path.as_str()
+                );
+                continue;
+            };
+            assert!(
+                scoped,
+                "{:?} {} is not workspace-scoped but declares a V2 target",
+                route.method,
+                route.path.as_str()
+            );
+            declared += 1;
+
+            assert_eq!(
+                target.kind,
+                target.target.kind(),
+                "{}: the declared kind must be the target source's kind",
+                route.operation_id
+            );
+            assert_eq!(target.action.product(), "acta", "{}", route.operation_id);
+            assert!(
+                catalog.contains(&target.action),
+                "{}: `{}` is not an Acta catalog action",
+                route.operation_id,
+                target.action
+            );
+            let child_on_parent = matches!(target.action.action(), "create" | "read");
+            let batch_move = route.operation_id == "move_documents_batch"
+                && target.action.to_string() == "acta::document::move";
+            assert!(
+                target.action.kind() == target.kind || child_on_parent || batch_move,
+                "{}: `{}` is evaluated on a `{}` target; only a child's `create` (creation on \
+                 the container) or `read` (a kind-specific list on its container) or the \
+                 documented batch move may cross kinds",
+                route.operation_id,
+                target.action,
+                target.kind
+            );
+        }
+
+        assert_eq!(
+            declared, 155,
+            "every workspace-scoped acta route is declared"
+        );
+    }
+
+    /// Inverse audit: every mounted Acta route has a registry declaration
+    /// with a V2 target, except the platform-scoped ones.
+    #[test]
+    fn every_mounted_acta_route_has_its_v2_declaration() {
+        let registry = registry();
+        let entry = registry
+            .get(&ComponentId::new("acta").expect("valid id"))
+            .expect("acta is a REG-5 component");
+
+        let gaps = v2_declaration_gaps(&declared_routes(), entry);
+
+        assert!(
+            gaps.is_empty(),
+            "mounted acta routes without a V2 declaration: {gaps:?}"
+        );
+    }
+
+    /// The exception list names real routes only, all of them outside any
+    /// workspace-scoped V2 target.
+    #[test]
+    fn the_platform_scoped_exceptions_are_real_undeclared_routes() {
+        let registry = registry();
+        let entry = registry
+            .get(&ComponentId::new("acta").expect("valid id"))
+            .expect("acta is a REG-5 component");
+
+        for path in V2_PLATFORM_SCOPED_PATHS {
+            let routes: Vec<_> = entry
+                .api
+                .routes
+                .iter()
+                .filter(|route| route.path.as_str() == *path)
+                .collect();
+            assert!(!routes.is_empty(), "{path} is not a declared acta route");
+            for route in routes {
+                assert!(route.v2.is_none(), "{path} must not declare a V2 target");
+            }
+        }
+    }
+}

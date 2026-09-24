@@ -10,6 +10,7 @@ use atlas_core::principal::ApiKeyId;
 use atlas_core::principal::UserId;
 use atlas_custos::entities::identity::User;
 
+use crate::authz::v2_shadow::{ShadowProbe, V1Outcome, observe};
 use crate::{
     auth::middleware::Principal,
     authz::authorized::ReadScopeSet,
@@ -38,15 +39,31 @@ pub struct WorkspaceMember {
 impl FromRequestParts<AppState> for WorkspaceMember {
     type Rejection = ApiError;
 
+    /// The V1 decision, shadowed by the V2 question the route declares
+    /// (`v2-e7-s2`) once it is known. The decision is returned unchanged.
     async fn from_request_parts(
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
+        let mut probe = ShadowProbe::new(state, parts);
+        let outcome = Self::decide(parts, state, &mut probe).await;
+        observe(state, &probe, V1Outcome::of(&outcome)).await;
+        outcome
+    }
+}
+
+impl WorkspaceMember {
+    async fn decide(
+        parts: &mut Parts,
+        state: &AppState,
+        probe: &mut ShadowProbe,
+    ) -> Result<Self, ApiError> {
         let principal = parts
             .extensions
             .get::<Principal>()
             .cloned()
             .ok_or(ApiError::Unauthorized)?;
+        probe.set_principal(principal.clone());
 
         let Path(params): Path<HashMap<String, String>> = Path::from_request_parts(parts, state)
             .await
@@ -64,6 +81,7 @@ impl FromRequestParts<AppState> for WorkspaceMember {
                 message: e.to_string(),
             })?
             .ok_or(ApiError::NotFound)?;
+        probe.set_target(&params, &workspace, || None);
 
         match principal {
             Principal::User(user_id) => {
@@ -170,15 +188,31 @@ pub struct WorkspaceAccess {
 impl FromRequestParts<AppState> for WorkspaceAccess {
     type Rejection = ApiError;
 
+    /// The V1 decision, shadowed by the V2 question the route declares
+    /// (`v2-e7-s2`) once it is known. The decision is returned unchanged.
     async fn from_request_parts(
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
+        let mut probe = ShadowProbe::new(state, parts);
+        let outcome = Self::decide(parts, state, &mut probe).await;
+        observe(state, &probe, V1Outcome::of(&outcome)).await;
+        outcome
+    }
+}
+
+impl WorkspaceAccess {
+    async fn decide(
+        parts: &mut Parts,
+        state: &AppState,
+        probe: &mut ShadowProbe,
+    ) -> Result<Self, ApiError> {
         let principal = parts
             .extensions
             .get::<Principal>()
             .cloned()
             .ok_or(ApiError::Unauthorized)?;
+        probe.set_principal(principal.clone());
 
         let Path(params): Path<HashMap<String, String>> = Path::from_request_parts(parts, state)
             .await
@@ -196,6 +230,7 @@ impl FromRequestParts<AppState> for WorkspaceAccess {
                 message: e.to_string(),
             })?
             .ok_or(ApiError::NotFound)?;
+        probe.set_target(&params, &workspace, || None);
 
         let grant_repo = PgPermissionGrantRepo {
             conn: (*state.db).clone(),
@@ -454,15 +489,31 @@ pub struct WorkspaceOwnerOrAdmin {
 impl FromRequestParts<AppState> for WorkspaceOwnerOrAdmin {
     type Rejection = ApiError;
 
+    /// The V1 decision, shadowed by the V2 question the route declares
+    /// (`v2-e7-s2`) once it is known. The decision is returned unchanged.
     async fn from_request_parts(
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
+        let mut probe = ShadowProbe::new(state, parts);
+        let outcome = Self::decide(parts, state, &mut probe).await;
+        observe(state, &probe, V1Outcome::of(&outcome)).await;
+        outcome
+    }
+}
+
+impl WorkspaceOwnerOrAdmin {
+    async fn decide(
+        parts: &mut Parts,
+        state: &AppState,
+        probe: &mut ShadowProbe,
+    ) -> Result<Self, ApiError> {
         let principal = parts
             .extensions
             .get::<Principal>()
             .cloned()
             .ok_or(ApiError::Unauthorized)?;
+        probe.set_principal(principal.clone());
 
         let user_id = match principal {
             Principal::User(uid) => uid,
@@ -504,6 +555,7 @@ impl FromRequestParts<AppState> for WorkspaceOwnerOrAdmin {
                 message: e.to_string(),
             })?
             .ok_or(ApiError::NotFound)?;
+        probe.set_target(&params, &workspace, || None);
 
         if user.is_root || user.is_system_admin {
             return Ok(WorkspaceOwnerOrAdmin {
