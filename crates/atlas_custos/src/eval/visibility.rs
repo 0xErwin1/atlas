@@ -16,6 +16,7 @@ use crate::eval::evaluator::{
 use crate::eval::model::{Ceiling, GrantTarget, is_delegation_action};
 use crate::ids::{GroupId, PrincipalId};
 use atlas_core::ids::{ActionId, ResourcePath};
+use atlas_core::visibility::{ListVisibility, VisibilityGrant, VisibilityTarget};
 
 /// Which resources of one kind the actor may act on with one action.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,6 +89,35 @@ impl VisibilityPredicate {
             .collect();
 
         winners(candidates).contains(&RuleEffect::Allow)
+    }
+}
+
+/// The storage-neutral form a product's storage adapter translates: the
+/// same targets and effects, carried in core ids only.
+impl From<&VisibilityPredicate> for ListVisibility {
+    fn from(predicate: &VisibilityPredicate) -> Self {
+        match predicate {
+            VisibilityPredicate::All => Self::All,
+            VisibilityPredicate::Nothing => Self::Nothing,
+            VisibilityPredicate::Rules { grants, denies } => Self::Rules {
+                grants: grants
+                    .iter()
+                    .map(|rule| VisibilityGrant {
+                        target: neutral_target(&rule.target),
+                        allow: rule.effect == RuleEffect::Allow,
+                    })
+                    .collect(),
+                denies: denies.iter().map(neutral_target).collect(),
+            },
+        }
+    }
+}
+
+fn neutral_target(target: &GrantTarget) -> VisibilityTarget {
+    match target {
+        GrantTarget::Ref(reference) => VisibilityTarget::Ref(reference.clone()),
+        GrantTarget::Path(path) => VisibilityTarget::Path(path.clone()),
+        GrantTarget::Selector(selector) => VisibilityTarget::Selector(selector.clone()),
     }
 }
 
