@@ -15,11 +15,11 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use atlas_acta::provider::{ActaKind, ActaNode, ActaResourceProvider, ActaResourceStore};
 use atlas_core::capabilities::{
-    CapabilityError, ResourceExistence, ResourceFacts, ResourceProvider,
+    CapabilityError, ResourceExistence, ResourceFacts, ResourceProvider, RoleDefinition,
 };
 use atlas_core::error::DomainError;
 use atlas_core::ids::{ResourcePath, ResourceRef};
-use atlas_core::registry::Authorization;
+use atlas_core::registry::{Authorization, RoleDeclaration};
 use uuid::Uuid;
 
 const KINDS: [(&str, ActaKind); 19] = [
@@ -110,6 +110,11 @@ fn authorization() -> Authorization {
         resource_kinds: vec!["document".to_string(), "workspace".to_string()],
         actions: vec!["acta::document::read".parse().unwrap()],
         role_definitions: vec!["viewer".to_string()],
+        role_definitions_v2: vec![RoleDeclaration {
+            name: "viewer".to_string(),
+            version: 1,
+            actions: vec!["acta::document::read".parse().unwrap()],
+        }],
         principal_sets: vec!["members".to_string()],
         provider: true,
     }
@@ -570,4 +575,12 @@ async fn the_catalog_is_the_registry_declaration() {
     assert_eq!(catalog.actions, declared.actions);
     assert_eq!(catalog.role_definitions, declared.role_definitions);
     assert_eq!(catalog.principal_sets, declared.principal_sets);
+    assert_eq!(
+        catalog.role_definitions_v2,
+        vec![RoleDefinition {
+            name: "viewer".to_string(),
+            version: 1,
+            actions: vec!["acta::document::read".parse().unwrap()],
+        }]
+    );
 }

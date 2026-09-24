@@ -5,6 +5,7 @@ use crate::ids::principal_id::PrincipalId;
 use crate::ids::principal_set_id::PrincipalSetId;
 use crate::ids::resource_path::{PathSegment, ResourcePath};
 use crate::ids::resource_ref::ResourceRef;
+use crate::registry::{Authorization, RoleDeclaration};
 
 use super::error::CapabilityError;
 
@@ -34,6 +35,35 @@ pub struct RoleDefinition {
     pub name: String,
     pub version: u32,
     pub actions: Vec<ActionId>,
+}
+
+impl From<&RoleDeclaration> for RoleDefinition {
+    fn from(role: &RoleDeclaration) -> Self {
+        Self {
+            name: role.name.clone(),
+            version: role.version,
+            actions: role.actions.clone(),
+        }
+    }
+}
+
+/// The catalog a provider publishes for its registry declaration: the
+/// declared kinds, actions, role names, principal sets and versioned roles,
+/// unchanged, so the SHELL-REG-4 cross-check holds by construction.
+impl From<&Authorization> for ProviderCatalog {
+    fn from(authorization: &Authorization) -> Self {
+        Self {
+            resource_kinds: authorization.resource_kinds.clone(),
+            actions: authorization.actions.clone(),
+            role_definitions: authorization.role_definitions.clone(),
+            principal_sets: authorization.principal_sets.clone(),
+            role_definitions_v2: authorization
+                .role_definitions_v2
+                .iter()
+                .map(RoleDefinition::from)
+                .collect(),
+        }
+    }
 }
 
 /// Whether a provider found a resource.
@@ -390,5 +420,39 @@ mod tests {
         assert_eq!(catalog.role_definitions, vec!["owner".to_string()]);
         assert_eq!(catalog.role_definitions_v2.len(), 1);
         assert_eq!(catalog.role_definitions_v2[0].version, 1);
+    }
+
+    #[test]
+    fn a_declaration_becomes_the_catalog_its_provider_publishes() {
+        let action: ActionId = "acta::document::read".parse().unwrap();
+        let authorization = Authorization {
+            resource_kinds: vec!["document".to_string()],
+            actions: vec![action.clone()],
+            role_definitions: vec!["viewer".to_string()],
+            role_definitions_v2: vec![RoleDeclaration {
+                name: "viewer".to_string(),
+                version: 1,
+                actions: vec![action.clone()],
+            }],
+            principal_sets: vec!["members".to_string()],
+            provider: true,
+        };
+
+        let catalog = ProviderCatalog::from(&authorization);
+
+        assert_eq!(
+            catalog,
+            ProviderCatalog {
+                resource_kinds: vec!["document".to_string()],
+                actions: vec![action.clone()],
+                role_definitions: vec!["viewer".to_string()],
+                principal_sets: vec!["members".to_string()],
+                role_definitions_v2: vec![RoleDefinition {
+                    name: "viewer".to_string(),
+                    version: 1,
+                    actions: vec![action],
+                }],
+            }
+        );
     }
 }

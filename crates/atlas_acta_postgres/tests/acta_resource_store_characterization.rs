@@ -249,6 +249,7 @@ fn provider(db: &TestDb) -> ActaResourceProvider<PgActaResourceStore> {
             resource_kinds: vec!["document".to_string()],
             actions: Vec::new(),
             role_definitions: Vec::new(),
+            role_definitions_v2: Vec::new(),
             principal_sets: vec![MEMBERS_SET.to_string()],
             provider: true,
         },

@@ -1,10 +1,9 @@
 //! Acta's resource provider inside the server's V2 authorization service
-//! (`v2-e7-s1b-acta-provider`, ACTA-AUTHZ-1/5): the composed service answers
-//! Acta targets from Acta's own rows, and a V2 grant on a live document
-//! allows while the same document in the trash is not found.
-//!
-//! The registry's Acta declaration publishes no V2 kinds yet, so the grant
-//! test validates against a catalog carrying an explicit Acta product spec.
+//! (`v2-e7-s1b-acta-provider`, ACTA-AUTHZ-1/5): through
+//! `POST /api/v2/custos/authorize`, a V2 `editor@1` grant on a live document
+//! allows while another document, or the same one in the trash, is not
+//! found. Existence comes from Acta's own rows through the provider the
+//! server registers, and the catalog is the registry's Acta declaration.
 
 #![allow(
     clippy::unwrap_used,
@@ -15,35 +14,19 @@
 
 mod support;
 
-use std::sync::Arc;
-use std::time::Duration;
-
-use atlas_acta::provider::ActaResourceProvider;
-use atlas_acta_postgres::repos::resource_store::PgActaResourceStore;
-use atlas_core::ids::{ActionId, ResourceRef};
-use atlas_core::registry::ComponentId;
-use atlas_custos::authorize::{
-    ActorContext, AuthorizationService, AuthorizationSettings, ProviderSet,
-};
+use atlas_api::dtos::authorization::{AuthorizeDecision, AuthorizeRequest};
+use atlas_client::AtlasClient;
+use atlas_core::ids::ResourceRef;
 use atlas_custos::entities::authorization::{
     GrantAuthority, GrantId, NewGrantRecord, SubjectRecord, TargetRecord,
 };
-use atlas_custos::eval::{Catalog, Ceiling, Decision, DenyMode, ProductSpec};
 use atlas_custos::ids::PrincipalId;
 use atlas_custos::ports::authorization::GrantV2Repo;
 use atlas_custos_postgres::repos::authorization::PgGrantV2Repo;
-use atlas_custos_postgres::repos::authorize::{PgAuthorizationFactsStore, PgGroupMembershipSource};
-use atlas_server::authz::v2_service::{TokioSleeper, build_authorization_service, product_specs};
-use atlas_server::config::DenyModeConfig;
-use atlas_server::state::AppState;
 use sea_orm::ConnectionTrait;
 use uuid::Uuid;
 
-const DOCUMENT_READ: &str = "acta::document::read";
-
-fn action(raw: &str) -> ActionId {
-    raw.parse().expect("valid action id")
-}
+const DOCUMENT_UPDATE: &str = "acta::document::update";
 
 fn document_ref(id: Uuid) -> ResourceRef {
     format!("acta::document::{id}")
@@ -51,16 +34,8 @@ fn document_ref(id: Uuid) -> ResourceRef {
         .expect("valid document ref")
 }
 
-fn actor(principal: PrincipalId, is_root: bool) -> ActorContext {
-    ActorContext {
-        principal,
-        is_root,
-        ceiling: Ceiling::Unrestricted,
-    }
-}
-
-/// A live document at the root of a fresh workspace, and its creator.
-async fn seed_document(db: &support::TestDb, name: &str) -> (Uuid, PrincipalId) {
+/// A live document at the root of a fresh workspace.
+async fn seed_document(db: &support::TestDb, name: &str) -> Uuid {
     let (ws, owner) = support::seed_workspace(db, name).await;
     let document = Uuid::now_v7();
     db.conn()
@@ -72,7 +47,19 @@ async fn seed_document(db: &support::TestDb, name: &str) -> (Uuid, PrincipalId) 
         .await
         .expect("seed document");
 
-    (document, PrincipalId::from(owner.id))
+    document
+}
+
+async fn decide(client: &AtlasClient, action_raw: &str, document: Uuid) -> AuthorizeDecision {
+    client
+        .custos()
+        .authorize(&AuthorizeRequest {
+            action: action_raw.to_string(),
+            target: document_ref(document).to_string(),
+        })
+        .await
+        .expect("authorize answers")
+        .decision
 }
 
 async fn trash_document(db: &support::TestDb, document: Uuid) {
@@ -84,118 +71,35 @@ async fn trash_document(db: &support::TestDb, document: Uuid) {
         .expect("trash document");
 }
 
-/// The registry's catalog with an explicit Acta product spec in place of
-/// the registry's own Acta declaration.
-fn catalog_with_acta(state: &AppState) -> Catalog {
-    let mut specs: Vec<ProductSpec> = product_specs(&state.registry)
-        .into_iter()
-        .filter(|spec| spec.product != "acta")
-        .collect();
-    specs.push(ProductSpec {
-        product: "acta".to_string(),
-        kinds: vec!["workspace".to_string(), "document".to_string()],
-        actions: vec![action(DOCUMENT_READ)],
-        roles: vec![],
-        principal_sets: vec!["members".to_string()],
-    });
-
-    Catalog::new(specs).expect("catalog with acta")
-}
-
 #[tokio::test]
-async fn the_composed_service_answers_acta_targets_from_acta_rows() {
+async fn an_editor_grant_on_an_acta_document_answers_through_the_authorize_route() {
     let db = support::TestDb::create().await.expect("TestDb::create");
-    let state = AppState::for_test(db.conn().clone())
-        .await
-        .expect("AppState::for_test");
-    let service = build_authorization_service(
-        &state.registry,
-        db.conn().clone(),
-        DenyModeConfig::Disabled,
-        Duration::from_secs(5),
-    )
-    .expect("authorization service");
-    let (document, owner) = seed_document(&db, "acta-registration").await;
-    let root = actor(owner, true);
-
-    let live = service
-        .authorize(&root, &action(DOCUMENT_READ), &document_ref(document))
-        .await
-        .expect("acta facts are available");
-    trash_document(&db, document).await;
-    let trashed = service
-        .authorize(&root, &action(DOCUMENT_READ), &document_ref(document))
-        .await
-        .expect("acta facts are available");
-
-    assert_eq!(live.decision, Decision::Allowed);
-    assert_eq!(trashed.decision, Decision::NotFound);
-}
-
-#[tokio::test]
-async fn a_v2_grant_on_an_acta_document_allows_until_the_document_is_trashed() {
-    let db = support::TestDb::create().await.expect("TestDb::create");
-    let state = AppState::for_test(db.conn().clone())
-        .await
-        .expect("AppState::for_test");
-    let acta = ComponentId::new("acta")
-        .ok()
-        .and_then(|id| state.registry.get(&id))
-        .expect("the registry declares acta");
-    let service = AuthorizationService::new(
-        ProviderSet::new().with(
-            "acta",
-            Arc::new(ActaResourceProvider::new(
-                PgActaResourceStore {
-                    conn: db.conn().clone(),
-                },
-                &acta.authorization,
-            )),
-        ),
-        PgAuthorizationFactsStore {
-            conn: db.conn().clone(),
-        },
-        PgGroupMembershipSource {
-            conn: db.conn().clone(),
-        },
-        Arc::new(TokioSleeper),
-        AuthorizationSettings {
-            catalog: catalog_with_acta(&state),
-            deny_mode: DenyMode::Disabled,
-            provider_timeout: Duration::from_secs(5),
-        },
-    );
-    let (document, owner) = seed_document(&db, "acta-grant").await;
-    let (other, _) = seed_document(&db, "acta-grant-other").await;
+    let server = support::TestServer::spawn(&db).await;
+    let (client, user) = support::login_user(&server, &db, "acta-authorize-editor").await;
+    let document = seed_document(&db, "acta-authorize-granted").await;
+    let other = seed_document(&db, "acta-authorize-other").await;
     PgGrantV2Repo {
         conn: db.conn().clone(),
     }
     .create(NewGrantRecord {
         id: GrantId::new(),
-        subject: SubjectRecord::Principal(owner),
+        subject: SubjectRecord::Principal(PrincipalId::from(user.id)),
         target: TargetRecord::Ref(document_ref(document)),
-        authority: GrantAuthority::Actions(vec![action(DOCUMENT_READ)]),
+        authority: GrantAuthority::Builtin {
+            name: "editor".to_string(),
+            version: 1,
+        },
         created_by: PrincipalId::new(),
     })
     .await
-    .expect("seed grant");
-    let grantee = actor(owner, false);
+    .expect("seed editor grant");
 
-    let granted = service
-        .authorize(&grantee, &action(DOCUMENT_READ), &document_ref(document))
-        .await
-        .expect("granted document");
-    let ungranted = service
-        .authorize(&grantee, &action(DOCUMENT_READ), &document_ref(other))
-        .await
-        .expect("ungranted document");
+    let granted = decide(&client, DOCUMENT_UPDATE, document).await;
+    let ungranted = decide(&client, DOCUMENT_UPDATE, other).await;
     trash_document(&db, document).await;
-    let trashed = service
-        .authorize(&grantee, &action(DOCUMENT_READ), &document_ref(document))
-        .await
-        .expect("trashed document");
+    let trashed = decide(&client, DOCUMENT_UPDATE, document).await;
 
-    assert_eq!(granted.decision, Decision::Allowed);
-    assert_eq!(ungranted.decision, Decision::NotFound);
-    assert_eq!(trashed.decision, Decision::NotFound);
+    assert_eq!(granted, AuthorizeDecision::Allow);
+    assert_eq!(ungranted, AuthorizeDecision::NotFound);
+    assert_eq!(trashed, AuthorizeDecision::NotFound);
 }

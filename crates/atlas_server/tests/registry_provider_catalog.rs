@@ -6,9 +6,9 @@
 //! `role_definitions`, role actions drawn from the product's own catalog or
 //! the Custos delegation vocabulary).
 //!
-//! The provider side is generic over a `(product, provider)` list: Custos
-//! today; Acta joins once its provider registers (`v2-e7-s1b`), by adding
-//! one constructor to [`providers_under_test`].
+//! The provider side is generic over a `(product, provider)` list: every
+//! provider the server composes, Custos and Acta, in
+//! [`providers_under_test`].
 
 #![allow(
     clippy::unwrap_used,
@@ -21,6 +21,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use atlas_acta::provider::{ActaKind, ActaNode, ActaResourceProvider, ActaResourceStore};
 use atlas_core::capabilities::ResourceProvider;
 use atlas_core::error::DomainError;
 use atlas_core::ids::ActionId;
@@ -45,6 +46,17 @@ impl CustosResourceStore for NoStore {
     }
 }
 
+#[async_trait]
+impl ActaResourceStore for NoStore {
+    async fn nodes(&self, _kind: ActaKind, _ids: &[Uuid]) -> Result<Vec<ActaNode>, DomainError> {
+        Ok(Vec::new())
+    }
+
+    async fn workspace_members(&self, _workspace: Uuid) -> Result<Option<Vec<Uuid>>, DomainError> {
+        Ok(None)
+    }
+}
+
 fn registry() -> Registry {
     build(reg5_component_entries(StorageBackend::Filesystem))
         .expect("REG-5 entries must satisfy every registry::build() validator")
@@ -60,11 +72,18 @@ fn entry<'a>(registry: &'a Registry, product: &str) -> &'a ComponentEntry {
 /// declaration the server passes it.
 fn providers_under_test(registry: &Registry) -> Vec<(&'static str, Arc<dyn ResourceProvider>)> {
     let custos = entry(registry, "custos");
+    let acta = entry(registry, "acta");
 
-    vec![(
-        "custos",
-        Arc::new(CustosResourceProvider::new(NoStore, &custos.authorization)),
-    )]
+    vec![
+        (
+            "custos",
+            Arc::new(CustosResourceProvider::new(NoStore, &custos.authorization)),
+        ),
+        (
+            "acta",
+            Arc::new(ActaResourceProvider::new(NoStore, &acta.authorization)),
+        ),
+    ]
 }
 
 /// The delegation actions a product's built-in role may carry beside its

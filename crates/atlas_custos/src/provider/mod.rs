@@ -88,18 +88,11 @@ pub struct CustosResourceProvider<S> {
 
 impl<S: CustosResourceStore> CustosResourceProvider<S> {
     /// Builds the provider over `store`, publishing `authorization` (the
-    /// registry's Custos declaration) as its catalog. Custos declares no
-    /// versioned built-in roles.
+    /// registry's Custos declaration) as its catalog.
     pub fn new(store: S, authorization: &Authorization) -> Self {
         Self {
             store,
-            catalog: ProviderCatalog {
-                resource_kinds: authorization.resource_kinds.clone(),
-                actions: authorization.actions.clone(),
-                role_definitions: authorization.role_definitions.clone(),
-                principal_sets: authorization.principal_sets.clone(),
-                role_definitions_v2: Vec::new(),
-            },
+            catalog: ProviderCatalog::from(authorization),
         }
     }
 
