@@ -10,12 +10,14 @@ use atlas_acta::search::SearchQuery;
 use atlas_acta::search::SearchSort;
 use atlas_core::error::DomainError;
 use atlas_core::principal::Principal;
+use atlas_core::visibility::ListVisibility;
 use chrono::{DateTime, TimeZone, Utc};
 use sea_orm::{DatabaseConnection, FromQueryResult};
 
 use crate::live_ancestors::{
     board_chain_is_live_sql, folder_chain_is_live_sql, project_is_live_sql,
 };
+use crate::visibility_sql::{VisibleKind, predicate_to_sql};
 use atlas_postgres::db_err;
 
 pub struct PgSearchRepo {
@@ -105,8 +107,6 @@ impl SearchRepo for PgSearchRepo {
         may_read_docs: bool,
         may_read_tasks: bool,
     ) -> Result<Vec<SearchHit>, DomainError> {
-        use sea_orm::Statement;
-
         let mut values: Vec<sea_orm::Value> = Vec::new();
 
         // $1 — workspace_id
@@ -166,6 +166,52 @@ impl SearchRepo for PgSearchRepo {
             }
         }
 
+        let permission = ArmPermission::V1 {
+            owner_admin_clause: &owner_admin_clause,
+            member_clause: &member_clause,
+            principal_col,
+            may_read_docs,
+            may_read_tasks,
+        };
+
+        self.search_with(values, query, limit, after, permission)
+            .await
+    }
+}
+
+impl PgSearchRepo {
+    /// Searches the workspace's documents and tasks that the V2 list
+    /// predicates `documents` (for `acta::document::read`) and `tasks` (for
+    /// `acta::task::read`) select, with the same query, filters, ordering,
+    /// cursor and LIMIT as the V1 search. No route calls it yet.
+    pub async fn search_v2(
+        &self,
+        ctx: &WorkspaceCtx,
+        query: &SearchQuery,
+        limit: u64,
+        after: Option<SearchAfter>,
+        documents: &ListVisibility,
+        tasks: &ListVisibility,
+    ) -> Result<Vec<SearchHit>, DomainError> {
+        let values: Vec<sea_orm::Value> = vec![ctx.workspace_id.0.into()];
+        let permission = ArmPermission::V2 { documents, tasks };
+
+        self.search_with(values, query, limit, after, permission)
+            .await
+    }
+
+    /// The search body both permission models share. `values` binds `$1`,
+    /// the workspace, and whatever `permission` itself reads.
+    async fn search_with(
+        &self,
+        mut values: Vec<sea_orm::Value>,
+        query: &SearchQuery,
+        limit: u64,
+        after: Option<SearchAfter>,
+        permission: ArmPermission<'_>,
+    ) -> Result<Vec<SearchHit>, DomainError> {
+        use sea_orm::Statement;
+
         let has_task_only_filter = query.filters.iter().any(|f| {
             matches!(
                 f,
@@ -177,8 +223,8 @@ impl SearchRepo for PgSearchRepo {
         // a family the principal cannot read has its arm dropped here, before the
         // LIMIT/cursor stage, so page size and cursors stay exact. When both arms
         // are dropped the early return yields a correct empty page.
-        let emit_docs = query.type_filter.notes && !has_task_only_filter && may_read_docs;
-        let emit_tasks = query.type_filter.tasks && may_read_tasks;
+        let emit_docs = query.type_filter.notes && !has_task_only_filter && permission.reads_docs();
+        let emit_tasks = query.type_filter.tasks && permission.reads_tasks();
 
         if !emit_docs && !emit_tasks {
             return Ok(vec![]);
@@ -279,9 +325,7 @@ impl SearchRepo for PgSearchRepo {
         };
 
         let arm_ctx = ArmCtx {
-            owner_admin_clause: &owner_admin_clause,
-            member_clause: &member_clause,
-            principal_col,
+            permission,
             has_text,
             tsq_param,
             tsq_fn,
@@ -370,9 +414,7 @@ impl SearchRepo for PgSearchRepo {
 // ---------------------------------------------------------------------------
 
 struct ArmCtx<'a> {
-    owner_admin_clause: &'a str,
-    member_clause: &'a str,
-    principal_col: &'a str,
+    permission: ArmPermission<'a>,
     has_text: bool,
     tsq_param: usize,
     /// SQL function used to build the tsquery: `to_tsquery` in prefix mode,
@@ -381,6 +423,53 @@ struct ArmCtx<'a> {
     project_filter_subquery: &'a str,
     updated_after_cond: &'a str,
     updated_before_cond: &'a str,
+}
+
+/// Which authorization model filters the arms: the V1 membership, grant
+/// and visibility disjunctions, or the V2 list predicates.
+#[derive(Clone, Copy)]
+enum ArmPermission<'a> {
+    V1 {
+        owner_admin_clause: &'a str,
+        member_clause: &'a str,
+        principal_col: &'a str,
+        may_read_docs: bool,
+        may_read_tasks: bool,
+    },
+    V2 {
+        documents: &'a ListVisibility,
+        tasks: &'a ListVisibility,
+    },
+}
+
+impl ArmPermission<'_> {
+    fn reads_docs(&self) -> bool {
+        match self {
+            Self::V1 { may_read_docs, .. } => *may_read_docs,
+            Self::V2 { documents, .. } => **documents != ListVisibility::Nothing,
+        }
+    }
+
+    fn reads_tasks(&self) -> bool {
+        match self {
+            Self::V1 { may_read_tasks, .. } => *may_read_tasks,
+            Self::V2 { tasks, .. } => **tasks != ListVisibility::Nothing,
+        }
+    }
+}
+
+/// The V2 permission condition of one search arm: `visibility` translated
+/// over the arm's row alias, its values appended to `values`.
+pub fn build_visibility_from_predicate(
+    values: &mut Vec<sea_orm::Value>,
+    visibility: &ListVisibility,
+    kind: VisibleKind,
+    alias: &str,
+) -> String {
+    let fragment = predicate_to_sql(visibility, kind, alias, values.len() + 1);
+    values.extend(fragment.binds);
+
+    fragment.where_clause
 }
 
 // ---------------------------------------------------------------------------
@@ -420,7 +509,17 @@ fn build_doc_arm(
     let doc_tag_cond = build_doc_tag_cond(values, tag_values);
 
     // Permission pushdown: embedded in WHERE so LIMIT applies after permission filtering.
-    let perm = build_doc_permission(ctx.owner_admin_clause, ctx.member_clause, ctx.principal_col);
+    let perm = match ctx.permission {
+        ArmPermission::V1 {
+            owner_admin_clause,
+            member_clause,
+            principal_col,
+            ..
+        } => build_doc_permission(owner_admin_clause, member_clause, principal_col),
+        ArmPermission::V2 { documents, .. } => {
+            build_visibility_from_predicate(values, documents, VisibleKind::Document, "d")
+        }
+    };
 
     let project_filter_subquery = ctx.project_filter_subquery;
     let updated_after_cond = ctx.updated_after_cond;
@@ -598,7 +697,17 @@ fn build_task_arm(
     let priority_cond = build_priority_cond(values, priority_values);
     let assignee_cond = build_assignee_cond(values, assignee_values);
 
-    let perm = build_task_permission(ctx.owner_admin_clause, ctx.member_clause, ctx.principal_col);
+    let perm = match ctx.permission {
+        ArmPermission::V1 {
+            owner_admin_clause,
+            member_clause,
+            principal_col,
+            ..
+        } => build_task_permission(owner_admin_clause, member_clause, principal_col),
+        ArmPermission::V2 { tasks, .. } => {
+            build_visibility_from_predicate(values, tasks, VisibleKind::Task, "t")
+        }
+    };
 
     let project_filter_subquery = ctx.project_filter_subquery;
     let updated_after_cond = ctx.updated_after_cond;
