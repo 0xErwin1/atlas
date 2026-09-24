@@ -7,9 +7,11 @@ use atlas_acta::ports::attachment_store::AttachmentStore;
 use atlas_acta::semantic_search::EmbeddingProvider;
 
 use crate::authz::v2_service::{ServerAuthorizationService, build_authorization_service};
+use crate::authz::v2_shadow::ShadowIndex;
 use crate::config::{
     AtlasConfig, DEFAULT_MAX_ATTACHMENT_BYTES, DenyModeConfig, DispatcherConfig,
-    EmbeddingProviderKind, SearchSemanticConfig, StorageConfig, env_var_nonempty, read_env,
+    EmbeddingProviderKind, SearchSemanticConfig, ShadowMode, StorageConfig, env_var_nonempty,
+    read_env,
 };
 use crate::crypto::WebhookCrypto;
 use crate::embeddings::{DeterministicEmbeddingProvider, OpenAiCompatibleEmbeddingProvider};
@@ -113,6 +115,13 @@ pub struct AppState {
     /// The provider timeout the service was built with, kept so
     /// [`Self::with_deny_mode`] can rebuild it unchanged.
     pub authorize_timeout: std::time::Duration,
+    /// `ATLAS_CUSTOS_SHADOW_AUTHORIZE`: whether V1 decisions on declared
+    /// Acta routes are shadowed by the V2 service (`v2-e7-s2`). Off by
+    /// default; never changes a V1 decision.
+    pub shadow_authorize: ShadowMode,
+    /// Registry-derived `operation_id -> V2Target` for the shadow path,
+    /// built once beside `route_index`.
+    pub shadow_index: Arc<ShadowIndex>,
 }
 
 impl AppState {
@@ -136,6 +145,7 @@ impl AppState {
         let workers = Arc::new(crate::ops::workers::WorkerStates::from_registry(&registry));
         let route_index =
             Arc::new(crate::observability::route_index::RouteIndex::from_registry(&registry));
+        let shadow_index = Arc::new(ShadowIndex::from_registry(&registry));
         let diagnostics = Arc::new(crate::ops::default_registry(
             &registry,
             Arc::new(db.clone()),
@@ -175,6 +185,8 @@ impl AppState {
             explicit_deny_mode: cfg.custos.explicit_deny_mode,
             authorization,
             authorize_timeout: cfg.custos.authorize_timeout,
+            shadow_authorize: cfg.custos.shadow_authorize,
+            shadow_index,
             registry,
             diagnostics,
             readiness_timeout: DEFAULT_READINESS_TIMEOUT,
@@ -219,6 +231,7 @@ impl AppState {
         let registry = Arc::new(crate::ops::component_registry(&storage)?);
         let route_index =
             Arc::new(crate::observability::route_index::RouteIndex::from_registry(&registry));
+        let shadow_index = Arc::new(ShadowIndex::from_registry(&registry));
         // `for_test` seeds every declared worker `Running` (design R11,
         // orchestrator's 2026-09-04 correction), modelling a supervised
         // process: a container test forces exactly the worker it cares
@@ -270,6 +283,8 @@ impl AppState {
             explicit_deny_mode: DenyModeConfig::Disabled,
             authorization,
             authorize_timeout: std::time::Duration::from_millis(2000),
+            shadow_authorize: ShadowMode::Off,
+            shadow_index,
             registry,
             diagnostics,
             readiness_timeout: DEFAULT_READINESS_TIMEOUT,
@@ -332,6 +347,13 @@ impl AppState {
         )?);
 
         Ok(self)
+    }
+
+    /// Sets the shadow authorization mode; the seam a test uses to observe
+    /// the shadow path against an otherwise identical server.
+    pub fn with_shadow_mode(mut self, mode: ShadowMode) -> Self {
+        self.shadow_authorize = mode;
+        self
     }
 
     /// Swaps the V2 authorization service: the seam a test uses to drive the

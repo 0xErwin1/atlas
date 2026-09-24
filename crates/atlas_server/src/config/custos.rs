@@ -10,6 +10,32 @@ use super::env_var_nonempty;
 
 const EXPLICIT_DENY_MODE_VAR: &str = "ATLAS_EXPLICIT_DENY_MODE";
 const AUTHORIZE_TIMEOUT_VAR: &str = "ATLAS_CUSTOS_AUTHORIZE_TIMEOUT_MS";
+const SHADOW_AUTHORIZE_VAR: &str = "ATLAS_CUSTOS_SHADOW_AUTHORIZE";
+
+/// Whether V1 decisions on declared Acta routes are shadowed by the V2
+/// authorization service (`ATLAS_CUSTOS_SHADOW_AUTHORIZE`). `off` costs
+/// nothing; `log` records one structured line per comparison; `metrics`
+/// also counts them. The V1 decision is never changed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ShadowMode {
+    #[default]
+    Off,
+    Log,
+    Metrics,
+}
+
+impl std::str::FromStr for ShadowMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "off" => Ok(ShadowMode::Off),
+            "log" => Ok(ShadowMode::Log),
+            "metrics" => Ok(ShadowMode::Metrics),
+            other => Err(format!("unknown shadow mode: {other}")),
+        }
+    }
+}
 const DEFAULT_AUTHORIZE_TIMEOUT: Duration = Duration::from_millis(2000);
 
 /// How explicit deny rules take part in authorization
@@ -51,6 +77,9 @@ pub struct CustosConfig {
     /// makes (`ATLAS_CUSTOS_AUTHORIZE_TIMEOUT_MS`, whole milliseconds, at
     /// least 1), 2000 ms when unset.
     pub authorize_timeout: Duration,
+    /// Shadow authorization mode (`ATLAS_CUSTOS_SHADOW_AUTHORIZE`), `off`
+    /// when unset.
+    pub shadow_authorize: ShadowMode,
 }
 
 impl ComponentConfig for CustosConfig {
@@ -59,6 +88,7 @@ impl ComponentConfig for CustosConfig {
             root_password: env_var_nonempty(source, "ATLAS_ROOT_PASSWORD").map(Secret::new),
             explicit_deny_mode: read_explicit_deny_mode(source)?,
             authorize_timeout: read_authorize_timeout(source)?,
+            shadow_authorize: read_shadow_mode(source)?,
         })
     }
 }
@@ -75,6 +105,16 @@ fn read_authorize_timeout(source: &dyn EnvSource) -> Result<Duration, ConfigErro
             "must be a whole number of milliseconds greater than zero",
         )),
     }
+}
+
+fn read_shadow_mode(source: &dyn EnvSource) -> Result<ShadowMode, ConfigError> {
+    let Some(raw) = env_var_nonempty(source, SHADOW_AUTHORIZE_VAR) else {
+        return Ok(ShadowMode::default());
+    };
+
+    raw.parse::<ShadowMode>().map_err(|_| {
+        ConfigError::invalid(SHADOW_AUTHORIZE_VAR, "must be 'off', 'log' or 'metrics'")
+    })
 }
 
 fn read_explicit_deny_mode(source: &dyn EnvSource) -> Result<DenyModeConfig, ConfigError> {
@@ -190,6 +230,37 @@ mod tests {
             DenyModeConfig::Enforced
         );
         assert!("Enforced".parse::<DenyModeConfig>().is_err());
+    }
+
+    #[test]
+    fn shadow_mode_defaults_to_off_and_parses_every_spelling() {
+        let unset = CustosConfig::from_env(&env(&[])).expect("expected Ok");
+        assert_eq!(unset.shadow_authorize, ShadowMode::Off);
+
+        let cases: [(&'static [(&'static str, &'static str)], ShadowMode); 3] = [
+            (&[("ATLAS_CUSTOS_SHADOW_AUTHORIZE", "off")], ShadowMode::Off),
+            (&[("ATLAS_CUSTOS_SHADOW_AUTHORIZE", "log")], ShadowMode::Log),
+            (
+                &[("ATLAS_CUSTOS_SHADOW_AUTHORIZE", "metrics")],
+                ShadowMode::Metrics,
+            ),
+        ];
+        for (pairs, expected) in cases {
+            let cfg = CustosConfig::from_env(&env(pairs)).expect("expected Ok");
+            assert_eq!(cfg.shadow_authorize, expected, "{pairs:?}");
+        }
+    }
+
+    #[test]
+    fn shadow_mode_garbage_is_rejected_without_echoing_the_value() {
+        let error = CustosConfig::from_env(&env(&[("ATLAS_CUSTOS_SHADOW_AUTHORIZE", "sometimes")]))
+            .expect_err("garbage must not load");
+
+        assert!(
+            matches!(&error, ConfigError::Invalid { name, .. } if name == "ATLAS_CUSTOS_SHADOW_AUTHORIZE"),
+            "got: {error:?}"
+        );
+        assert!(!error.to_string().contains("sometimes"), "got: {error}");
     }
 
     #[test]
