@@ -17,7 +17,7 @@ use atlas_core::capabilities::{
     CapabilityError, ProviderCatalog, ResourceExistence, ResourceFacts, ResourceProvider,
 };
 use atlas_core::error::DomainError;
-use atlas_core::ids::{PrincipalId, PrincipalSetId, ResourcePath, ResourceRef};
+use atlas_core::ids::{PrincipalId, PrincipalSetId, ResourcePath, ResourceRef, canonical_uuid};
 use atlas_core::registry::Authorization;
 use uuid::Uuid;
 
@@ -72,17 +72,6 @@ impl CustosKind {
     }
 }
 
-/// The row id `id` names, only when it is spelled canonically: lowercase,
-/// hyphenated. Deny and grant targets are stored on that spelling, so any
-/// other spelling `Uuid::parse_str` accepts (uppercase, simple, braced)
-/// would name the same row under a path no deny covers. Such aliases are
-/// missing instead.
-fn canonical_row_id(id: &str) -> Option<Uuid> {
-    Uuid::parse_str(id)
-        .ok()
-        .filter(|parsed| parsed.hyphenated().to_string() == id)
-}
-
 /// Existence lookups for the row-backed Custos kinds.
 #[async_trait]
 pub trait CustosResourceStore: Send + Sync {
@@ -99,18 +88,11 @@ pub struct CustosResourceProvider<S> {
 
 impl<S: CustosResourceStore> CustosResourceProvider<S> {
     /// Builds the provider over `store`, publishing `authorization` (the
-    /// registry's Custos declaration) as its catalog. Custos declares no
-    /// versioned built-in roles.
+    /// registry's Custos declaration) as its catalog.
     pub fn new(store: S, authorization: &Authorization) -> Self {
         Self {
             store,
-            catalog: ProviderCatalog {
-                resource_kinds: authorization.resource_kinds.clone(),
-                actions: authorization.actions.clone(),
-                role_definitions: authorization.role_definitions.clone(),
-                principal_sets: authorization.principal_sets.clone(),
-                role_definitions_v2: Vec::new(),
-            },
+            catalog: ProviderCatalog::from(authorization),
         }
     }
 
@@ -181,7 +163,7 @@ impl<S: CustosResourceStore> ResourceProvider for CustosResourceProvider<S> {
                     *slot = resource.id() == PLATFORM_ID;
                 }
             } else if kind.row_backed()
-                && let Some(id) = canonical_row_id(resource.id())
+                && let Some(id) = canonical_uuid(resource.id())
             {
                 by_kind.entry(kind).or_default().push((index, id));
             }

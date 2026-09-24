@@ -7,6 +7,7 @@ pub mod identity;
 pub mod lifecycle;
 pub mod outbox;
 pub mod platform_status_templates;
+pub mod resource_store;
 pub mod saved_searches;
 pub mod search;
 pub mod search_index_queue;

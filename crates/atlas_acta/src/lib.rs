@@ -15,6 +15,7 @@ pub mod frontmatter;
 pub mod ids;
 pub mod permissions;
 pub mod ports;
+pub mod provider;
 pub mod revision;
 pub mod search;
 pub mod semantic_search;
